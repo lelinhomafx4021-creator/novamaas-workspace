@@ -16,25 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, it } from 'vitest'
 
 import { CHANNEL_TYPE_YIKE } from '../../constants'
 import { formatYikeCredits, isYikeChannel } from '../yike-balance'
 
 describe('Yike credit balance', () => {
-  test('formats native credits without a currency symbol', () => {
-    assert.equal(formatYikeCredits(104, '积分', 'zh-CN'), '104 积分')
+  it('formats native credits without a currency symbol', () => {
+    expect(formatYikeCredits(104, '积分', 'zh-CN')).toBe('104 积分')
   })
 
-  test('falls back for missing or invalid balances', () => {
-    assert.equal(formatYikeCredits(null, 'Credits', 'en-US'), '-')
-    assert.equal(formatYikeCredits(undefined, 'Credits', 'en-US'), '-')
-    assert.equal(formatYikeCredits(Number.NaN, 'Credits', 'en-US'), '-')
+  it('falls back for missing or invalid balances', () => {
+    expect(formatYikeCredits(null, 'Credits', 'en-US')).toBe('-')
+    expect(formatYikeCredits(undefined, 'Credits', 'en-US')).toBe('-')
+    expect(formatYikeCredits(Number.NaN, 'Credits', 'en-US')).toBe('-')
   })
 
-  test('recognizes only the Yike channel type', () => {
-    assert.equal(isYikeChannel(CHANNEL_TYPE_YIKE), true)
-    assert.equal(isYikeChannel(1), false)
+  it('recognizes only the Yike channel type', () => {
+    expect(isYikeChannel(CHANNEL_TYPE_YIKE)).toBe(true)
+    expect(isYikeChannel(1)).toBe(false)
   })
 })

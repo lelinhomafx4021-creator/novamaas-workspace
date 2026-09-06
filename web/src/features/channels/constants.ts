@@ -144,7 +144,6 @@ const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   56,
   CHANNEL_TYPE_YIKE,
 ]
-]
 
 export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
   const ordered: { value: number; label: string }[] = []

@@ -64,8 +64,8 @@ const (
 	ChannelTypeVolcNative = 61
 	// Yike video generation channel. Keep distinct from VolcNative for
 	// compatibility with the company's existing channel IDs.
-	ChannelTypeYike = 62
-	ChannelTypeDummy      // this one is only for count, do not add any channel after this
+	ChannelTypeYike  = 62
+	ChannelTypeDummy // this one is only for count, do not add any channel after this
 
 )
 

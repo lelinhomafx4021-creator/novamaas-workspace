@@ -62,6 +62,9 @@ const (
 	// It only serves Fire Ark's native /api/v3/* API and must never be selected
 	// for OpenAI-compatible /v1 requests.
 	ChannelTypeVolcNative = 61
+	// Yike video generation channel. Keep distinct from VolcNative for
+	// compatibility with the company's existing channel IDs.
+	ChannelTypeYike = 62
 	ChannelTypeDummy      // this one is only for count, do not add any channel after this
 
 )
@@ -129,6 +132,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //59
 	"",                                          //60
 	"https://ark.cn-beijing.volces.com",         //61
+	"https://yike.cn-shanghai.aliyuncs.com",     //62
 }
 
 var ChannelTypeNames = map[int]string{
@@ -190,6 +194,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeVolcNative:     "Volc Native",
+	ChannelTypeYike:           "Yike",
 }
 
 func GetChannelTypeName(channelType int) string {

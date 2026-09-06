@@ -16,7 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CHANNEL_TYPES, CHANNEL_TYPE_VOLC_NATIVE } from '../constants'
+import {
+  CHANNEL_TYPES,
+  CHANNEL_TYPE_VOLC_NATIVE,
+  CHANNEL_TYPE_YIKE,
+  YIKE_KEY_INPUT_GUIDES,
+} from '../constants'
 
 // ============================================================================
 // Channel Type Configuration
@@ -174,6 +179,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'Use an upstream model ID or a mapped alias',
       other:
         'Use native /api/v3 endpoints. Model mapping rewrites only the top-level model field; parameter overrides are not supported.',
+    },
+  },
+  [CHANNEL_TYPE_YIKE]: {
+    id: CHANNEL_TYPE_YIKE,
+    name: CHANNEL_TYPES[CHANNEL_TYPE_YIKE],
+    icon: 'yike',
+    defaultBaseUrl: 'https://yike.cn-shanghai.aliyuncs.com',
+    hints: {
+      key: YIKE_KEY_INPUT_GUIDES.single.placeholder,
+      models: 'Wonder-Pro, Wonder-Standard, happyhorse-1.1, happyhorse-1.0, wan2.7',
+      other: YIKE_KEY_INPUT_GUIDES.single.description,
     },
   },
 }

@@ -422,7 +422,11 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 			return ctx.Err()
 		}
 		if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, taskId, taskM); err != nil {
-			logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, err.Error()))
+			errorMessage := err.Error()
+			if cacheGetChannel.Type == constant.ChannelTypeYike {
+				errorMessage = relaycommon.SanitizeErrorForLog(err)
+			}
+			logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, errorMessage))
 		}
 		if disablePollingSleep || i == len(taskIds)-1 {
 			continue
@@ -481,7 +485,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("readAll failed for task %s: %w", taskId, err)
 	}
 
-	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", responseBody)
+	if ch.Type != constant.ChannelTypeYike {
+		logger.LogDebug(ctx, "updateVideoSingleTask response: %s", responseBody)
+	}
 
 	snap := task.Snapshot()
 
@@ -501,9 +507,13 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
 	}
 
-	task.Data = redactVideoResponseBody(responseBody)
+	task.Data = redactVideoResponseBody(responseBody, ch.Type)
 
-	logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
+	if ch.Type == constant.ChannelTypeYike {
+		logger.LogDebug(ctx, "updateVideoSingleTask Yike status: task=%s status=%s progress=%s", taskId, taskResult.Status, taskResult.Progress)
+	} else {
+		logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
+	}
 
 	now := time.Now().Unix()
 	if taskResult.Status == "" {
@@ -522,7 +532,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 				taskResult = relaycommon.FailTaskInfo("upstream returned error")
 			} else {
 				// unknown error format, log original response
-				logger.LogError(ctx, fmt.Sprintf("Task %s returned empty status with unrecognized error format, response: %s", taskId, string(responseBody)))
+				if ch.Type == constant.ChannelTypeYike {
+					logger.LogError(ctx, fmt.Sprintf("Task %s returned an unrecognized Yike polling response", taskId))
+				} else {
+					logger.LogError(ctx, fmt.Sprintf("Task %s returned empty status with unrecognized error format, response: %s", taskId, string(responseBody)))
+				}
 				taskResult = relaycommon.FailTaskInfo("upstream returned unrecognized message")
 			}
 		}
@@ -610,7 +624,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	return nil
 }
 
-func redactVideoResponseBody(body []byte) []byte {
+func redactVideoResponseBody(body []byte, channelType int) []byte {
 	var m map[string]any
 	if err := common.Unmarshal(body, &m); err != nil {
 		return body
@@ -627,6 +641,17 @@ func redactVideoResponseBody(body []byte) []byte {
 					delete(vm, "bytesBase64Encoded")
 				}
 			}
+		}
+	}
+	if channelType == constant.ChannelTypeYike {
+		if job, ok := m["VideoGenerationJob"].(map[string]any); ok {
+			// Keep Output for the legacy /v1/video/generations task response, which
+			// follows the same provider-data behavior as other video channels.
+			// Request inputs remain redacted because they may contain prompts,
+			// private media locations, or caller-defined metadata.
+			delete(job, "Input")
+			delete(job, "UserData")
+			delete(job, "JobParameters")
 		}
 	}
 	b, err := common.Marshal(m)

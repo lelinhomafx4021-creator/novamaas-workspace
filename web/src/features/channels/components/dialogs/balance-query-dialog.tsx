@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import { Loader2, RefreshCw, DollarSign } from 'lucide-react'
+import { Coins, DollarSign, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -30,11 +30,12 @@ import { Dialog } from '@/components/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { IconBadge } from '@/components/ui/icon-badge'
+import { toIntlLocale } from '@/i18n/languages'
 import { formatCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { getCodexUsage, updateChannelBalance } from '../../api'
-import { channelsQueryKeys } from '../../lib'
+import { channelsQueryKeys, formatYikeCredits, isYikeChannel } from '../../lib'
 import { useChannels } from '../channels-provider'
 import {
   CodexUsageDialog,
@@ -48,9 +49,10 @@ type BalanceQueryDialogProps = {
 }
 
 export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
-  const { t } = useTranslation()
-  const { currentRow, setCurrentRow } = useChannels()
-  const queryClient = useQueryClient()
+	const { t, i18n } = useTranslation()
+	const { currentRow, setCurrentRow } = useChannels()
+	const queryClient = useQueryClient()
+	const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const [isQuerying, setIsQuerying] = useState(false)
   const [balance, setBalance] = useState<number | null>(null)
   const [balanceUpdatedTime, setBalanceUpdatedTime] = useState<number | null>(
@@ -63,6 +65,7 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
     useState<CodexUsageDialogData | null>(null)
 
   const isCodex = currentRow?.type === 57
+  const isYike = isYikeChannel(currentRow?.type)
 
   const handleQueryCodexUsage = async () => {
     const row = currentRow
@@ -139,11 +142,13 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
   }
 
   const formatBalance = (bal: number) =>
-    formatCurrencyFromUSD(bal, {
-      digitsLarge: 2,
-      digitsSmall: 4,
-      abbreviate: false,
-    })
+    isYike
+      ? formatYikeCredits(bal, t('Credits'), locale)
+      : formatCurrencyFromUSD(bal, {
+          digitsLarge: 2,
+          digitsSmall: 4,
+          abbreviate: false,
+        })
 
   const formatDate = (timestamp: number) => {
     if (!timestamp) return 'Never'

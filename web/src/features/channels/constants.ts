@@ -23,6 +23,11 @@ For commercial licensing, please contact support@quantumnous.com
 
 export const CHANNEL_TYPE_NEW_API = 60
 export const CHANNEL_TYPE_VOLC_NATIVE = 61
+export const CHANNEL_TYPE_YIKE = 62
+
+const YIKE_KEY_PAIR_PLACEHOLDER = 'AccessKeyId|AccessKeySecret'
+const YIKE_MULTI_KEY_PLACEHOLDER =
+  'AccessKeyId_1|AccessKeySecret_1\nAccessKeyId_2|AccessKeySecret_2'
 
 export const CHANNEL_TYPES = {
   0: 'Unknown',
@@ -83,6 +88,7 @@ export const CHANNEL_TYPES = {
   59: 'Sub2API',
   60: 'New API',
   [CHANNEL_TYPE_VOLC_NATIVE]: 'Volc Native',
+  [CHANNEL_TYPE_YIKE]: 'Yike',
 } as const
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
@@ -136,6 +142,8 @@ const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   54,
   55,
   56,
+  CHANNEL_TYPE_YIKE,
+]
 ]
 
 export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
@@ -248,6 +256,24 @@ export const ADD_MODE_OPTIONS = [
     label: 'Multi-Key Mode (multiple keys, one channel)',
   },
 ] as const
+
+export const YIKE_KEY_INPUT_GUIDES = {
+  single: {
+    placeholder: YIKE_KEY_PAIR_PLACEHOLDER,
+    description:
+      'Enter one complete credential pair in the format AccessKeyId|AccessKeySecret. Use a half-width vertical bar (|) with no spaces. This channel can query its credits independently.',
+  },
+  batch: {
+    placeholder: YIKE_MULTI_KEY_PLACEHOLDER,
+    description:
+      'Enter one complete AccessKeyId|AccessKeySecret pair per line. A separate channel is created for each line, and each channel can query its own credits. Do not put the ID and secret on separate lines.',
+  },
+  multi_to_single: {
+    placeholder: YIKE_MULTI_KEY_PLACEHOLDER,
+    description:
+      'Enter one complete AccessKeyId|AccessKeySecret pair per line. All pairs are stored in one channel and selected randomly or by polling. This mode is for request rotation and does not support querying or summing credits.',
+  },
+} as const
 
 // ============================================================================
 // Multi-Key Management
@@ -438,7 +464,7 @@ export const FIELD_DESCRIPTIONS = {
 
 export const MODEL_FETCHABLE_TYPES = new Set([
   1, 4, 14, 17, 20, 23, 24, 25, 26, 27, 31, 34, 35, 40, 42, 43, 47, 48, 57, 58,
-  59, 60,
+  59, 60, 61, 62,
 ])
 
 export const FIELD_PASSTHROUGH_TYPES = new Set([
@@ -477,6 +503,7 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
   59: 'Enter API key for this channel',
   60: 'Enter API key for this channel',
   [CHANNEL_TYPE_VOLC_NATIVE]: 'Volcengine Ark API Key',
+  [CHANNEL_TYPE_YIKE]: YIKE_KEY_PAIR_PLACEHOLDER,
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {

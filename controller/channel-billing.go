@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/advancedcustom"
+	taskyike "github.com/QuantumNous/new-api/relay/channel/task/yike"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -369,6 +371,27 @@ func updateChannelMoonshotBalance(channel *model.Channel) (float64, error) {
 	return availableBalanceUsd, nil
 }
 
+func updateChannelYikeBalance(channel *model.Channel) (float64, error) {
+	client, err := service.GetHttpClientWithProxy(channel.GetSetting().Proxy)
+	if err != nil {
+		return 0, err
+	}
+	credit, err := taskyike.FetchAccountCredit(context.Background(), channel.GetBaseURL(), channel.Key, client)
+	if err != nil {
+		return 0, err
+	}
+	balance := credit.Remaining.InexactFloat64()
+	channel.UpdateBalance(balance)
+	return balance, nil
+}
+
+func channelBalanceUnit(channelType int) string {
+	if channelType == constant.ChannelTypeYike {
+		return "credits"
+	}
+	return ""
+}
+
 func fetchAdvancedCustomBalance(channel *model.Channel) (channelBalanceResult, error) {
 	key := strings.TrimSpace(channel.Key)
 	info := &relaycommon.RelayInfo{
@@ -492,6 +515,8 @@ func updateStandardChannelBalance(channel *model.Channel) (float64, error) {
 		return updateChannelOpenRouterBalance(channel)
 	case constant.ChannelTypeMoonshot:
 		return updateChannelMoonshotBalance(channel)
+	case constant.ChannelTypeYike:
+		return updateChannelYikeBalance(channel)
 	default:
 		return 0, errors.New("尚未实现")
 	}
@@ -556,6 +581,9 @@ func UpdateChannelBalance(c *gin.Context) {
 	}
 	if result.RawResponse == "" {
 		response["balance"] = result.Balance
+		if unit := channelBalanceUnit(channel.Type); unit != "" {
+			response["unit"] = unit
+		}
 	} else {
 		response["raw_response"] = result.RawResponse
 	}

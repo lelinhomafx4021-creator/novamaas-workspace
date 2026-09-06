@@ -64,6 +64,8 @@ import {
   getChannelTypeIcon,
   getChannelTypeLabel,
   getResponseTimeConfig,
+  formatYikeCredits,
+  isYikeChannel,
   isMultiKeyChannel,
   parseModelsList,
   parseGroupsList,
@@ -332,8 +334,9 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const layout = useContext(ChannelRowActionsLayoutContext)
   const { sensitiveVisible, setCurrentRow } = useChannels()
   const isTagRow = isTagAggregateRow(channel)
-  const balance = channel.balance || 0
-  const usedQuota = channel.used_quota || 0
+	const balance = channel.balance || 0
+	const usedQuota = channel.used_quota || 0
+	const yikeChannel = isYikeChannel(channel.type)
   const [isUpdating, setIsUpdating] = useState(false)
   const [rawBalanceResponse, setRawBalanceResponse] = useState<string | null>(
     null
@@ -362,9 +365,9 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       showSymbol: layout !== 'card',
     })
   )
-  const remainingFull = withSuffix(
-    formatCurrencyFromUSD(balance, balanceFormatOptions)
-  )
+  const remainingFull = yikeChannel
+    ? formatYikeCredits(balance, t('Credits'), locale)
+    : withSuffix(formatCurrencyFromUSD(balance, balanceFormatOptions))
   const usedDisplay =
     usedFull.length > MAX_INLINE_BALANCE_CHARS
       ? withSuffix(
@@ -375,16 +378,18 @@ export function BalanceCell({ channel }: { channel: Channel }) {
           })
         )
       : usedFull
-  const remainingDisplay =
-    remainingFull.length > MAX_INLINE_BALANCE_CHARS
-      ? withSuffix(
+  let remainingDisplay = remainingFull
+  if (remainingFull.length > MAX_INLINE_BALANCE_CHARS) {
+    remainingDisplay = yikeChannel
+      ? formatYikeCredits(balance, t('Credits'), locale, true)
+      : withSuffix(
           formatCurrencyFromUSD(balance, {
             compact: true,
             locale,
             showSymbol: layout !== 'card',
           })
         )
-      : remainingFull
+  }
   const usedLabel = `${t('Used:')} ${usedFull}`
   const remainingLabel = `${t('Remaining:')} ${remainingFull}`
   const maskedUsedLabel = `${t('Used:')} ${SENSITIVE_MASK}`
@@ -451,11 +456,14 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       if (response.success && response.balance !== undefined) {
         toast.success(
           t('Balance updated: {{balance}}', {
-            balance: formatCurrencyFromUSD(response.balance, {
-              digitsLarge: 2,
-              digitsSmall: 4,
-              abbreviate: false,
-            }),
+            balance:
+              response.unit === 'credits'
+                ? formatYikeCredits(response.balance, t('Credits'), locale)
+                : formatCurrencyFromUSD(response.balance, {
+                    digitsLarge: 2,
+                    digitsSmall: 4,
+                    abbreviate: false,
+                  }),
           })
         )
         void queryClient.invalidateQueries({

@@ -197,6 +197,7 @@ export interface ChannelBalanceResponse {
   message?: string
   balance?: number
   currency?: string
+  unit?: string
   raw_response?: string
 }
 

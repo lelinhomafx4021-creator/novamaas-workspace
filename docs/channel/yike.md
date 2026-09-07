@@ -25,7 +25,9 @@ AccessKeyId|AccessKeySecret
 
 多 Key 渠道的任务轮询会继续使用提交时选中的 Key，不会在任务执行中切换凭证。
 
-适配器负责阿里云 V3 签名、`SubmitVideoGenerationJob` 提交、`GetVideoGenerationJob` 轮询及状态和结果转换。后台“测试渠道”使用选中的一组凭证调用免费只读的 `GetYikeAccountCredit`；单密钥渠道的“更新余额”也调用该接口，不会生成视频。余额为会员计划、加油包和赠送积分三类可用积分之和，刷新响应同时返回 `unit=credits`，渠道列表按“积分”展示，不把积分解释为美元。
+适配器负责阿里云 V3 签名、`SubmitVideoGenerationJob` 提交、`GetVideoGenerationJob` 轮询及状态和结果转换。任务计费以模型配置价格为基准，并按请求时长相对默认 5 秒进行倍率调整；失败任务沿用 new-api 的退款流程。后台“测试渠道”使用选中的一组凭证调用免费只读的 `GetYikeAccountCredit`；单密钥渠道的“更新余额”也调用该接口，不会生成视频。余额为会员计划、加油包和赠送积分三类可用积分之和，刷新响应同时返回 `unit=credits`，渠道列表按“积分”展示，不把积分解释为美元。
+
+当前没有把 `GetYikeJobCredit` 的 provider 返回值写入用户账单。官方任务积分字段需要真实账号联调确认后，才能安全加入按任务实际消耗的结算；在此之前不使用猜测字段进行补扣或退款。
 
 ## 用户调用
 

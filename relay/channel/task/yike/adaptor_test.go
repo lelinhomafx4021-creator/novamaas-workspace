@@ -44,6 +44,26 @@ func TestConvertRequestTextToVideo(t *testing.T) {
 	assert.Empty(t, input.Medias)
 }
 
+func TestEstimateBillingScalesFromDefaultDuration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name     string
+		req      relaycommon.TaskSubmitReq
+		expected float64
+	}{
+		{name: "default duration", req: relaycommon.TaskSubmitReq{Prompt: "test"}, expected: 1},
+		{name: "ten seconds", req: relaycommon.TaskSubmitReq{Prompt: "test", Duration: 10}, expected: 2},
+		{name: "seconds string", req: relaycommon.TaskSubmitReq{Prompt: "test", Seconds: "4"}, expected: 0.8},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Set("task_request", test.req)
+			ratio := (&TaskAdaptor{}).EstimateBilling(c, nil)
+			require.InDelta(t, test.expected, ratio["seconds"], 1e-9)
+		})
+	}
+}
+
 func TestFetchAccountCreditUsesReadOnlySignedRequest(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)

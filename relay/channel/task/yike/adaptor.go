@@ -34,6 +34,11 @@ const (
 	getAction           = "GetVideoGenerationJob"
 	accountCreditAction = "GetYikeAccountCredit"
 
+	// Yike's task price is configured per model in new-api. The public task
+	// contract uses five seconds as the default duration, so duration billing
+	// is normalized against that unit before applying the configured price.
+	defaultBillingDurationSeconds = 5
+
 	accountCreditRequestTimeout = 15 * time.Second
 )
 
@@ -166,6 +171,24 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.accessKeyID, a.accessKeySecret, _ = parseCredentials(info.ApiKey)
 	if a.signer == nil {
 		a.signer = defaultV3Signer()
+	}
+}
+
+// EstimateBilling scales the configured per-model task price by the requested
+// duration. The provider's per-job credit response is not stable enough to
+// use for settlement yet, so this keeps the charge deterministic and bounded
+// by the same validation used to build the upstream request.
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, _ *relaycommon.RelayInfo) map[string]float64 {
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil
+	}
+	duration, err := resolveDuration(req)
+	if err != nil {
+		return nil
+	}
+	return map[string]float64{
+		"seconds": float64(duration) / defaultBillingDurationSeconds,
 	}
 }
 
@@ -589,19 +612,9 @@ func convertRequestForValidation(req relaycommon.TaskSubmitReq, modelName, clien
 	if err != nil {
 		return "", nil, err
 	}
-	duration := req.Duration
-	if duration == 0 && strings.TrimSpace(req.Seconds) != "" {
-		var parseErr error
-		duration, parseErr = strconv.Atoi(strings.TrimSpace(req.Seconds))
-		if parseErr != nil {
-			return "", nil, fmt.Errorf("invalid Yike seconds: %s", req.Seconds)
-		}
-	}
-	if duration == 0 {
-		duration = 5
-	}
-	if duration < 4 || duration > 15 {
-		return "", nil, fmt.Errorf("Yike duration must be between 4 and 15 seconds")
+	duration, err := resolveDuration(req)
+	if err != nil {
+		return "", nil, err
 	}
 	if metadata.N != nil && *metadata.N != 1 {
 		return "", nil, fmt.Errorf("metadata.n must be exactly 1")
@@ -632,6 +645,24 @@ func convertRequestForValidation(req relaycommon.TaskSubmitReq, modelName, clien
 		query.Set("ClientToken", clientToken)
 	}
 	return jobType, query, nil
+}
+
+func resolveDuration(req relaycommon.TaskSubmitReq) (int, error) {
+	duration := req.Duration
+	if duration == 0 && strings.TrimSpace(req.Seconds) != "" {
+		var err error
+		duration, err = strconv.Atoi(strings.TrimSpace(req.Seconds))
+		if err != nil {
+			return 0, fmt.Errorf("invalid Yike seconds: %s", req.Seconds)
+		}
+	}
+	if duration == 0 {
+		duration = defaultBillingDurationSeconds
+	}
+	if duration < 4 || duration > 15 {
+		return 0, fmt.Errorf("Yike duration must be between 4 and 15 seconds")
+	}
+	return duration, nil
 }
 
 func collectMedias(req relaycommon.TaskSubmitReq, configured []inputMedia) ([]upstreamMedia, error) {

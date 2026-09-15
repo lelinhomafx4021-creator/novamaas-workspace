@@ -156,6 +156,10 @@ func joinOpenAIPath(raw, leaf string) (string, error) {
 		return "", err
 	}
 	path := strings.TrimRight(parsed.Path, "/")
+	for _, suffix := range []string{"/supplier-test", "/console", "/dashboard"} {
+		path = strings.TrimSuffix(path, suffix)
+	}
+	path = strings.TrimRight(path, "/")
 	switch {
 	case strings.HasSuffix(path, "/"+leaf):
 		parsed.Path = path
@@ -199,10 +203,11 @@ func ListModels(ctx context.Context, httpClient *http.Client, baseURL, apiKey st
 	}
 	ids, err := parseModelIDs(raw)
 	if err != nil {
+		snippet := strings.ToLower(strings.TrimSpace(string(raw)))
+		if strings.HasPrefix(snippet, "<!doctype") || strings.HasPrefix(snippet, "<html") {
+			return nil, fmt.Errorf("base URL should be the API origin, not the web console")
+		}
 		return nil, err
-	}
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("upstream returned an empty model list")
 	}
 	return ids, nil
 }

@@ -23,6 +23,10 @@ func TestModelsURL(t *testing.T) {
 	got, err = ModelsURL("https://api.example.com/v1")
 	require.NoError(t, err)
 	assert.Equal(t, "https://api.example.com/v1/models", got)
+
+	got, err = ModelsURL("https://api.example.com/supplier-test")
+	require.NoError(t, err)
+	assert.Equal(t, "https://api.example.com/v1/models", got)
 }
 
 func TestParseModelIDs(t *testing.T) {
@@ -49,6 +53,30 @@ func TestListModelsAgainstFakeUpstream(t *testing.T) {
 	ids, err := ListModels(context.Background(), server.Client(), server.URL, "good-key")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"vendor-a", "vendor-b"}, ids)
+}
+
+func TestListModelsAllowsEmptyList(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	defer server.Close()
+
+	ids, err := ListModels(context.Background(), server.Client(), server.URL, "good-key")
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+}
+
+func TestListModelsRejectsConsoleHTML(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "<!doctype html><html><body>console</body></html>")
+	}))
+	defer server.Close()
+
+	_, err := ListModels(context.Background(), server.Client(), server.URL, "good-key")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "API origin")
 }
 
 func TestChatCompletionsURL(t *testing.T) {

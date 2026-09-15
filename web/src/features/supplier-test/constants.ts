@@ -47,6 +47,19 @@ export const CORPORA: Array<{
   { id: 'custom', labelKey: 'Custom prompt', prompt: '' },
 ]
 
+export function thisPlatformBaseURL(): string {
+  const fromEnv = String(
+    import.meta.env.VITE_REACT_APP_SERVER_URL ?? ''
+  )
+    .trim()
+    .replace(/\/$/, '')
+  if (fromEnv) return fromEnv
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return window.location.origin
+  }
+  return ''
+}
+
 export function resolveCorpusPrompt(form: {
   corpus: string
   prompt: string

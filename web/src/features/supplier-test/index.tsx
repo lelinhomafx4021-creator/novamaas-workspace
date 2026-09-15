@@ -82,6 +82,7 @@ import {
   MAX_TOKENS_CAP,
   STRESS_WARN_TOTAL,
   resolveCorpusPrompt,
+  thisPlatformBaseURL,
 } from './constants'
 import { useSupplierTestRun } from './hooks/use-supplier-test-run'
 import {
@@ -381,29 +382,50 @@ export function SupplierTest() {
           <TitledCard
             title={t('Target')}
             description={t(
-              'Paste Base URL. Type the model ID. Fetching /v1/models and API key are optional.'
+              'Paste an upstream Base URL, or use this platform with a token from Keys. Fetching /v1/models is optional.'
             )}
             icon={<ClipboardCheck />}
             action={
-              <Button
-                variant='outline'
-                onClick={() => {
-                  if (!target.baseUrl.trim()) {
-                    toast.error(t('Enter a base URL first'))
-                    return
-                  }
-                  modelsMutation.mutate({
-                    base_url: target.baseUrl.trim(),
-                    api_key: target.apiKey,
-                  })
-                }}
-                disabled={busy || modelsMutation.isPending}
-              >
-                {modelsMutation.isPending ? (
-                  <Loader2 className='animate-spin' />
-                ) : null}
-                {t('Fetch models')}
-              </Button>
+              <div className='flex flex-wrap gap-2'>
+                <Button
+                  variant='outline'
+                  disabled={busy}
+                  onClick={() => {
+                    const baseUrl = thisPlatformBaseURL()
+                    if (!baseUrl) {
+                      toast.error(t('Enter a base URL first'))
+                      return
+                    }
+                    setTarget((current) => ({ ...current, baseUrl }))
+                    toast.success(
+                      t(
+                        'Filled this platform Base URL. Paste a token from Keys, then fetch models.'
+                      )
+                    )
+                  }}
+                >
+                  {t('Use this platform')}
+                </Button>
+                <Button
+                  variant='outline'
+                  onClick={() => {
+                    if (!target.baseUrl.trim()) {
+                      toast.error(t('Enter a base URL first'))
+                      return
+                    }
+                    modelsMutation.mutate({
+                      base_url: target.baseUrl.trim(),
+                      api_key: target.apiKey,
+                    })
+                  }}
+                  disabled={busy || modelsMutation.isPending}
+                >
+                  {modelsMutation.isPending ? (
+                    <Loader2 className='animate-spin' />
+                  ) : null}
+                  {t('Fetch models')}
+                </Button>
+              </div>
             }
           >
             <div className='grid gap-4 md:grid-cols-3'>

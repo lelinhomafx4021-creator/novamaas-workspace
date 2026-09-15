@@ -38,6 +38,9 @@ export const STATIC_I18N_KEYS = [
 
   // Supplier test checks
   'Supplier Test',
+  'Use this platform',
+  'Filled this platform Base URL. Paste a token from Keys, then fetch models.',
+  'Paste an upstream Base URL, or use this platform with a token from Keys. Fetching /v1/models is optional.',
   'Connectivity',
   'Stream format',
   'Usage fields',

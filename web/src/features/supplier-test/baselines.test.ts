@@ -1,0 +1,102 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { describe, expect, test } from 'vitest'
+
+import { assessCache, assessStress, overallLabel } from './baselines'
+import type { CacheMetrics, StressMetrics } from './types'
+
+function stress(partial: Partial<StressMetrics>): StressMetrics {
+  return {
+    total: 10,
+    succeeded: 10,
+    failed: 0,
+    error_rate: 0,
+    elapsed_ms: 1200,
+    tokens_per_sec: 40,
+    prompt_tokens: 800,
+    completion_tokens: 200,
+    ttft_avg_ms: 1200,
+    ttft_p50_ms: 1100,
+    ttft_p90_ms: 1800,
+    ttft_n: 10,
+    tpot_avg_ms: 40,
+    tpot_p50_ms: 38,
+    tpot_p90_ms: 55,
+    tpot_n: 10,
+    rpm: 500,
+    tpm: 50000,
+    ...partial,
+  }
+}
+
+describe('supplier-test verdicts', () => {
+  test('a slightly slower vendor is still normal', () => {
+    const assessment = assessStress(
+      stress({
+        error_rate: 0.08,
+        succeeded: 92,
+        failed: 8,
+        total: 100,
+        ttft_avg_ms: 4500,
+        ttft_p50_ms: 4200,
+        ttft_p90_ms: 7000,
+        tpot_avg_ms: 72,
+        tpot_p50_ms: 68,
+        tpot_p90_ms: 140,
+      })
+    )
+    expect(assessment.overall).toBe('ok')
+    expect(overallLabel(assessment.overall)).toBe('Overall: normal')
+  })
+
+  test('marks only clearly slow runs as slow, never abnormal', () => {
+    const assessment = assessStress(
+      stress({
+        error_rate: 0.2,
+        succeeded: 8,
+        failed: 2,
+        ttft_avg_ms: 12000,
+        ttft_p50_ms: 11000,
+        ttft_p90_ms: 18000,
+        tpot_avg_ms: 200,
+        tpot_p50_ms: 180,
+        tpot_p90_ms: 260,
+      })
+    )
+    expect(assessment.overall).toBe('slow')
+    expect(overallLabel(assessment.overall)).toBe('Overall: slow')
+    expect(assessment.rows.some((row) => row.verdict === 'slow')).toBe(true)
+  })
+
+  test('treats a 60% cache hit as normal', () => {
+    const metrics: CacheMetrics = {
+      warm_prompt_tokens: 3000,
+      avg_hit_rate: 0.6,
+      min_hit_rate: 0.55,
+      last_cached_tokens: 1800,
+      last_prompt_tokens: 3000,
+      wait_seconds: 5,
+      rounds: 3,
+      has_cached_tokens: true,
+    }
+    const assessment = assessCache(metrics)
+    expect(assessment.overall).toBe('ok')
+    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('ok')
+  })
+})

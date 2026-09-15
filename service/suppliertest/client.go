@@ -36,10 +36,12 @@ type chatRequest struct {
 }
 
 type usageFields struct {
-	PromptTokens        *float64 `json:"prompt_tokens"`
-	CompletionTokens    *float64 `json:"completion_tokens"`
-	CachedTokens        *float64 `json:"cached_tokens"`
-	PromptTokensDetails *struct {
+	PromptTokens         *float64 `json:"prompt_tokens"`
+	CompletionTokens     *float64 `json:"completion_tokens"`
+	CachedTokens         *float64 `json:"cached_tokens"`
+	PromptCacheHitTokens *float64 `json:"prompt_cache_hit_tokens"`
+	CacheReadInputTokens *float64 `json:"cache_read_input_tokens"`
+	PromptTokensDetails  *struct {
 		CachedTokens *float64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
 }
@@ -427,12 +429,18 @@ func applyUsage(usage *usageFields, result *StreamResult) {
 	if usage.CompletionTokens != nil {
 		result.CompletionTokens = int(*usage.CompletionTokens)
 	}
-	if usage.CachedTokens != nil {
-		result.CachedTokens = int(*usage.CachedTokens)
-		result.HasCachedTokens = true
+	cached := usage.CachedTokens
+	if cached == nil && usage.PromptTokensDetails != nil {
+		cached = usage.PromptTokensDetails.CachedTokens
 	}
-	if usage.PromptTokensDetails != nil && usage.PromptTokensDetails.CachedTokens != nil {
-		result.CachedTokens = int(*usage.PromptTokensDetails.CachedTokens)
+	if cached == nil {
+		cached = usage.PromptCacheHitTokens
+	}
+	if cached == nil {
+		cached = usage.CacheReadInputTokens
+	}
+	if cached != nil {
+		result.CachedTokens = int(*cached)
 		result.HasCachedTokens = true
 	}
 }

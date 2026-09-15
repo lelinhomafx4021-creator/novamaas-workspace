@@ -19,6 +19,7 @@ const (
 	CheckCacheProbe   = "cache_probe"
 	CheckCacheTokens  = "cache_tokens"
 	CheckCacheHitRate = "cache_hit_rate"
+	CheckCacheTTL     = "cache_ttl"
 
 	DefaultStressPrompt  = "请用简洁的中文写一段话，说明流式输出在接口压测中的作用。"
 	DefaultBasicPrompt   = "请用一句话介绍你自己。"

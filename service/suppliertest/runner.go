@@ -65,21 +65,39 @@ type Event struct {
 	Completed int            `json:"completed,omitempty"`
 	Total     int            `json:"total,omitempty"`
 	Metrics   *StressMetrics `json:"metrics,omitempty"`
+	Cache     *CacheMetrics  `json:"cache,omitempty"`
 }
 
 type StressMetrics struct {
-	Total        int     `json:"total"`
-	Succeeded    int     `json:"succeeded"`
-	Failed       int     `json:"failed"`
-	ErrorRate    float64 `json:"error_rate"`
-	ElapsedMS    float64 `json:"elapsed_ms"`
-	TokensPerSec float64 `json:"tokens_per_sec"`
-	TTFTAvgMS    float64 `json:"ttft_avg_ms"`
-	TTFTP50MS    float64 `json:"ttft_p50_ms"`
-	TTFTP90MS    float64 `json:"ttft_p90_ms"`
-	TPOTAvgMS    float64 `json:"tpot_avg_ms"`
-	TPOTP50MS    float64 `json:"tpot_p50_ms"`
-	TPOTP90MS    float64 `json:"tpot_p90_ms"`
+	Total            int     `json:"total"`
+	Succeeded        int     `json:"succeeded"`
+	Failed           int     `json:"failed"`
+	ErrorRate        float64 `json:"error_rate"`
+	ElapsedMS        float64 `json:"elapsed_ms"`
+	TokensPerSec     float64 `json:"tokens_per_sec"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	TTFTAvgMS        float64 `json:"ttft_avg_ms"`
+	TTFTP50MS        float64 `json:"ttft_p50_ms"`
+	TTFTP90MS        float64 `json:"ttft_p90_ms"`
+	TTFTN            int     `json:"ttft_n"`
+	TPOTAvgMS        float64 `json:"tpot_avg_ms"`
+	TPOTP50MS        float64 `json:"tpot_p50_ms"`
+	TPOTP90MS        float64 `json:"tpot_p90_ms"`
+	TPOTN            int     `json:"tpot_n"`
+	RPM              float64 `json:"rpm"`
+	TPM              float64 `json:"tpm"`
+}
+
+type CacheMetrics struct {
+	WarmPromptTokens int     `json:"warm_prompt_tokens"`
+	AvgHitRate       float64 `json:"avg_hit_rate"`
+	MinHitRate       float64 `json:"min_hit_rate"`
+	LastCachedTokens int     `json:"last_cached_tokens"`
+	LastPromptTokens int     `json:"last_prompt_tokens"`
+	WaitSeconds      int     `json:"wait_seconds"`
+	Rounds           int     `json:"rounds"`
+	HasCachedTokens  bool    `json:"has_cached_tokens"`
 }
 
 type Emitter func(Event)
@@ -556,8 +574,27 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		}
 	}
 
+	emitCache := func(avgHit, minHit float64) {
+		emit(Event{
+			Type:   "metrics",
+			Module: ModuleCache,
+			Cache: &CacheMetrics{
+				WarmPromptTokens: warm.PromptTokens,
+				AvgHitRate:       avgHit,
+				MinHitRate:       minHit,
+				LastCachedTokens: lastCached,
+				LastPromptTokens: lastPrompt,
+				WaitSeconds:      req.Cache.WaitSeconds,
+				Rounds:           rounds,
+				HasCachedTokens:  sawCached,
+			},
+		})
+	}
+
 	if failedRound == rounds {
 		emitCheck(CheckCacheProbe, "Cache probe", "fail", strings.Join(probeDetails, "；"))
+		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "探测全部失败，不能判定缓存存活")
+		emitCache(0, 0)
 		emit(Event{Type: "summary", Module: ModuleCache, Summary: fmt.Sprintf("缓存测试失败：探测 %d 轮全部失败。", rounds)})
 		return
 	}
@@ -566,6 +603,8 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	if !sawCached {
 		emitCheck(CheckCacheTokens, "Cached tokens", "skip", "供应商没返回 cached_tokens，无法确认真实命中")
 		emitCheck(CheckCacheHitRate, "Cache hit rate", "skip", "没有 cached_tokens，算不出命中率")
+		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "没有 cached_tokens，不能判定缓存存活")
+		emitCache(0, 0)
 		emit(Event{
 			Type:    "summary",
 			Module:  ModuleCache,
@@ -576,6 +615,8 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	emitCheck(CheckCacheTokens, "Cached tokens", "pass", fmt.Sprintf("最后一轮 cached_tokens=%d", lastCached))
 	if len(hitRates) == 0 {
 		emitCheck(CheckCacheHitRate, "Cache hit rate", "skip", "prompt_tokens 缺失，算不出命中率")
+		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "没有命中率，不能判定缓存存活")
+		emitCache(0, 0)
 		emit(Event{Type: "summary", Module: ModuleCache, Summary: fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。有 cached_tokens=%d，但没有 prompt_tokens。", rounds, lastCached)})
 		return
 	}
@@ -586,7 +627,22 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 			minHit = rate
 		}
 	}
-	emitCheck(CheckCacheHitRate, "Cache hit rate", "pass", fmt.Sprintf("平均命中率 %.1f%%，最低 %.1f%%（%d 轮，最后一轮 %d/%d）", avgHit*100, minHit*100, len(hitRates), lastCached, lastPrompt))
+	hitStatus := "pass"
+	hitNote := ""
+	if avgHit < 0.50 {
+		hitStatus = "fail"
+		hitNote = "，命中过低，缓存可能没生效"
+	}
+	emitCheck(CheckCacheHitRate, "Cache hit rate", hitStatus, fmt.Sprintf("平均命中率 %.1f%%，最低 %.1f%%（%d 轮，最后一轮 %d/%d）%s", avgHit*100, minHit*100, len(hitRates), lastCached, lastPrompt, hitNote))
+	switch {
+	case req.Cache.WaitSeconds < 30:
+		emitCheck(CheckCacheTTL, "Cache TTL", "skip", fmt.Sprintf("等待 %ds，不足 30s，不能判定缓存存活", req.Cache.WaitSeconds))
+	case avgHit >= 0.50:
+		emitCheck(CheckCacheTTL, "Cache TTL", "pass", fmt.Sprintf("等待 %ds 后平均命中率 %.1f%%", req.Cache.WaitSeconds, avgHit*100))
+	default:
+		emitCheck(CheckCacheTTL, "Cache TTL", "fail", fmt.Sprintf("等待 %ds 后平均命中率 %.1f%%，缓存可能没保住", req.Cache.WaitSeconds, avgHit*100))
+	}
+	emitCache(avgHit, minHit)
 	emit(Event{
 		Type:    "summary",
 		Module:  ModuleCache,
@@ -603,6 +659,7 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 		completed atomic.Int64
 		succeeded atomic.Int64
 		failed    atomic.Int64
+		inTokens  atomic.Int64
 		outTokens atomic.Int64
 		ttftMu    sync.Mutex
 		ttfts     []float64
@@ -646,6 +703,9 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 				ok := result.StatusCode == http.StatusOK && result.ErrorMessage == "" && (result.Content != "" || result.Reasoning != "" || result.FinishReason != "")
 				if ok {
 					succeeded.Add(1)
+					if result.PromptTokens > 0 {
+						inTokens.Add(int64(result.PromptTokens))
+					}
 					if result.CompletionTokens > 0 {
 						outTokens.Add(int64(result.CompletionTokens))
 					} else if result.Content != "" {
@@ -684,17 +744,27 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 	elapsed := time.Since(started)
 	ok := int(succeeded.Load())
 	bad := int(failed.Load())
+	promptTotal := int(inTokens.Load())
+	completionTotal := int(outTokens.Load())
 	metrics := &StressMetrics{
-		Total:     total,
-		Succeeded: ok,
-		Failed:    bad,
-		ElapsedMS: float64(elapsed.Milliseconds()),
+		Total:            total,
+		Succeeded:        ok,
+		Failed:           bad,
+		ElapsedMS:        float64(elapsed.Milliseconds()),
+		PromptTokens:     promptTotal,
+		CompletionTokens: completionTotal,
+		TTFTN:            len(ttfts),
+		TPOTN:            len(tpots),
 	}
 	if total > 0 {
 		metrics.ErrorRate = float64(bad) / float64(total)
 	}
 	if elapsed.Seconds() > 0 {
-		metrics.TokensPerSec = float64(outTokens.Load()) / elapsed.Seconds()
+		metrics.TokensPerSec = float64(completionTotal) / elapsed.Seconds()
+	}
+	if elapsed.Minutes() > 0 {
+		metrics.RPM = float64(ok) / elapsed.Minutes()
+		metrics.TPM = float64(promptTotal+completionTotal) / elapsed.Minutes()
 	}
 	metrics.TTFTAvgMS = average(ttfts)
 	metrics.TTFTP50MS = percentile(ttfts, 50)
@@ -710,13 +780,16 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 	summary := fmt.Sprintf("%s压测结束：%d 并发 × %d 轮，共 %d 次，成功 %d，失败 %d，耗时 %.0f ms。",
 		mode, req.Stress.Concurrency, req.Stress.Rounds, metrics.Total, metrics.Succeeded, metrics.Failed, metrics.ElapsedMS)
 	if metrics.TTFTAvgMS > 0 {
-		summary += fmt.Sprintf(" TTFT首字: 均值 %.0f ms / P50 %.0f ms / P90 %.0f ms。", metrics.TTFTAvgMS, metrics.TTFTP50MS, metrics.TTFTP90MS)
+		summary += fmt.Sprintf(" TTFT首字: 均值 %.0f ms / P50 %.0f ms / P90 %.0f ms（n=%d）。", metrics.TTFTAvgMS, metrics.TTFTP50MS, metrics.TTFTP90MS, metrics.TTFTN)
 	}
 	if metrics.TPOTAvgMS > 0 {
-		summary += fmt.Sprintf(" TPOT每Token: 均值 %.1f ms / P50 %.1f ms / P90 %.1f ms。", metrics.TPOTAvgMS, metrics.TPOTP50MS, metrics.TPOTP90MS)
+		summary += fmt.Sprintf(" TPOT每Token: 均值 %.1f ms / P50 %.1f ms / P90 %.1f ms（n=%d）。", metrics.TPOTAvgMS, metrics.TPOTP50MS, metrics.TPOTP90MS, metrics.TPOTN)
 	}
 	if metrics.TokensPerSec > 0 {
 		summary += fmt.Sprintf(" 吞吐: 约 %.1f tok/s。", metrics.TokensPerSec)
+	}
+	if metrics.RPM > 0 || metrics.TPM > 0 {
+		summary += fmt.Sprintf(" 短测推算 RPM %.0f，TPM %.0f。", metrics.RPM, metrics.TPM)
 	}
 	emit(Event{Type: "metrics", Module: ModuleStress, Completed: total, Total: total, Metrics: metrics, Summary: summary})
 	emit(Event{Type: "summary", Module: ModuleStress, Summary: summary})

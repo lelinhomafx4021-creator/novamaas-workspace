@@ -25,6 +25,7 @@ import { getFreshAuthHeaders } from '@/lib/api'
 
 import { API_ENDPOINTS, BASIC_CHECKS, CACHE_CHECKS } from '../constants'
 import type {
+  CacheMetrics,
   CheckResult,
   StressMetrics,
   SupplierTestEvent,
@@ -93,6 +94,7 @@ export function useSupplierTestRun() {
   const [streamText, setStreamText] = useState('')
   const [progress, setProgress] = useState({ completed: 0, total: 0 })
   const [metrics, setMetrics] = useState<StressMetrics | null>(null)
+  const [cacheMetrics, setCacheMetrics] = useState<CacheMetrics | null>(null)
   const [summaries, setSummaries] = useState({
     basic: '',
     cache: '',
@@ -121,6 +123,7 @@ export function useSupplierTestRun() {
       }
       if (module === 'cache') {
         setCacheChecks(CACHE_CHECKS.map((check) => ({ ...check, status: 'idle' })))
+        setCacheMetrics(null)
         setSummaries((current) => ({ ...current, cache: '' }))
       }
       if (module === 'stress') {
@@ -213,6 +216,12 @@ export function useSupplierTestRun() {
           })
           return
         }
+        if (parsed.type === 'metrics' && parsed.cache) {
+          setCacheMetrics(parsed.cache)
+          if (!parsed.metrics) {
+            return
+          }
+        }
         if (parsed.type === 'metrics' && parsed.metrics) {
           setMetrics(parsed.metrics)
           setProgress({
@@ -270,6 +279,7 @@ export function useSupplierTestRun() {
     streamText,
     progress,
     metrics,
+    cacheMetrics,
     summaries,
     errorMessage,
     start,

@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation } from '@tanstack/react-query'
 import {
-  Activity,
   ClipboardCheck,
   Copy,
   Database,
@@ -60,25 +59,38 @@ import { TitledCard } from '@/components/ui/titled-card'
 
 import { fetchSupplierModels } from './api'
 import {
-  CACHE_CORPORA,
+  assessCache,
+  assessStress,
+  displayMeasured,
+  overallLabel,
+  VERDICT_LABEL,
+  type Assessment,
+  type Verdict,
+} from './baselines'
+import {
   CACHE_ROUND_PRESETS,
   CACHE_WAIT_PRESETS,
-  CACHE_WARM_TOKEN_PRESETS,
+  CORPORA,
   DEFAULT_BASIC_FORM,
   DEFAULT_CACHE_FORM,
   DEFAULT_STRESS_FORM,
+  LOAD_PRESETS,
   MAX_CACHE_ROUNDS,
   MAX_CACHE_WAIT_SECONDS,
   MAX_CONCURRENCY,
   MAX_ROUNDS,
   MAX_TOKENS_CAP,
-  STRESS_CORPORA,
-  STRESS_PRESETS,
   STRESS_WARN_TOTAL,
-  TARGET_TOKEN_PRESETS,
-  resolveStressPrompt,
+  resolveCorpusPrompt,
 } from './constants'
 import { useSupplierTestRun } from './hooks/use-supplier-test-run'
+import {
+  buildHtmlReport,
+  buildMarkdownReport,
+  downloadFile,
+  stampFileName,
+  type ReportInput,
+} from './report'
 import type {
   BasicForm,
   CacheForm,
@@ -96,16 +108,6 @@ function statusVariant(status: CheckStatus): StatusVariant {
   if (status === 'skip') return 'warning'
   if (status === 'running') return 'info'
   return 'neutral'
-}
-
-function formatMs(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '-'
-  return `${value.toFixed(0)} ms`
-}
-
-function formatRate(value: number): string {
-  if (!Number.isFinite(value)) return '-'
-  return `${(value * 100).toFixed(1)}%`
 }
 
 function axiosErrorMessage(error: unknown, fallback: string): string {
@@ -197,9 +199,9 @@ export function SupplierTest() {
         ...(checks && checks.length > 0 ? { checks } : {}),
       },
       cache: {
-        prompt: cache.prompt,
+        prompt: resolveCorpusPrompt(cache),
         follow_up: cache.followUp,
-        warm_tokens: cache.warmTokens,
+        warm_tokens: 0,
         wait_seconds: cache.waitSeconds,
         max_tokens: cache.maxTokens,
         rounds: cache.rounds,
@@ -209,8 +211,7 @@ export function SupplierTest() {
         concurrency: stress.concurrency,
         rounds: stress.rounds,
         max_tokens: stress.maxTokens,
-        prompt: resolveStressPrompt(stress),
-        target_tokens: stress.targetTokens > 0 ? stress.targetTokens : undefined,
+        prompt: resolveCorpusPrompt(stress),
         stream: stress.stream,
       },
     }
@@ -231,14 +232,6 @@ export function SupplierTest() {
       }
     }
     if (module === 'cache') {
-      if (cache.warmTokens < 0 || cache.warmTokens > MAX_TOKENS_CAP) {
-        toast.error(
-          t('Cache prefix tokens must be between 0 and {{max}}', {
-            max: MAX_TOKENS_CAP,
-          })
-        )
-        return
-      }
       if (cache.waitSeconds < 0 || cache.waitSeconds > MAX_CACHE_WAIT_SECONDS) {
         toast.error(
           t('Cache wait must be between 0 and {{max}} seconds', {
@@ -303,17 +296,27 @@ export function SupplierTest() {
         )
         return
       }
-      if (stress.targetTokens < 0 || stress.targetTokens > MAX_TOKENS_CAP) {
-        toast.error(
-          t('Target tokens must be between 0 and {{max}}', {
-            max: MAX_TOKENS_CAP,
-          })
-        )
-        return
-      }
     }
     void run.start(buildPayload(module, checks))
   }
+
+  const stressAssessment = run.metrics ? assessStress(run.metrics) : null
+  const cacheAssessment = run.cacheMetrics
+    ? assessCache(run.cacheMetrics)
+    : null
+
+  const reportInput = (): ReportInput => ({
+    baseUrl: target.baseUrl.trim(),
+    model: target.model.trim(),
+    basicChecks: run.basicChecks,
+    cacheChecks: run.cacheChecks,
+    summaries: run.summaries,
+    stressAssessment,
+    cacheAssessment,
+    errorMessage: run.errorMessage,
+    statusLabel,
+    t: (key, options) => t(key, options),
+  })
 
   return (
     <SectionPageLayout>
@@ -329,19 +332,10 @@ export function SupplierTest() {
           variant='outline'
           disabled={busy || !hasReport}
           onClick={async () => {
-            const report = buildTestReport({
-              baseUrl: target.baseUrl.trim(),
-              model: target.model.trim(),
-              basicChecks: run.basicChecks,
-              cacheChecks: run.cacheChecks,
-              summaries: run.summaries,
-              metrics: run.metrics,
-              errorMessage: run.errorMessage,
-              statusLabel,
-              t,
-            })
             try {
-              await navigator.clipboard.writeText(report)
+              await navigator.clipboard.writeText(
+                buildMarkdownReport(reportInput())
+              )
               toast.success(t('Report copied to clipboard'))
             } catch {
               toast.error(t('Failed to copy report'))
@@ -355,25 +349,31 @@ export function SupplierTest() {
           variant='outline'
           disabled={busy || !hasReport}
           onClick={() => {
-            downloadTextFile(
-              `supplier-test-${stampFileName()}.txt`,
-              buildTestReport({
-                baseUrl: target.baseUrl.trim(),
-                model: target.model.trim(),
-                basicChecks: run.basicChecks,
-                cacheChecks: run.cacheChecks,
-                summaries: run.summaries,
-                metrics: run.metrics,
-                errorMessage: run.errorMessage,
-                statusLabel,
-                t,
-              })
+            downloadFile(
+              `supplier-test-${stampFileName()}.md`,
+              buildMarkdownReport(reportInput()),
+              'text/markdown'
             )
-            toast.success(t('Report exported'))
+            toast.success(t('Markdown report exported'))
           }}
         >
           <Download />
-          {t('Export report')}
+          {t('Export Markdown')}
+        </Button>
+        <Button
+          variant='outline'
+          disabled={busy || !hasReport}
+          onClick={() => {
+            downloadFile(
+              `supplier-test-${stampFileName()}.html`,
+              buildHtmlReport(reportInput()),
+              'text/html'
+            )
+            toast.success(t('HTML report exported'))
+          }}
+        >
+          <Download />
+          {t('Export HTML')}
         </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
@@ -566,7 +566,7 @@ export function SupplierTest() {
           <TitledCard
             title={t('Cache test')}
             description={t(
-              'Pick a size and corpus. The server pads the prefix. Do not paste a huge block here.'
+              'Pick a corpus and send it as-is. The first request warms cache; later rounds check the hit.'
             )}
             icon={<Database />}
             action={
@@ -579,21 +579,6 @@ export function SupplierTest() {
             }
           >
             <div className='grid gap-4 md:grid-cols-4'>
-              <NumberField
-                id='cache-warm-tokens'
-                label={t('Warm tokens')}
-                value={cache.warmTokens}
-                disabled={busy}
-                min={0}
-                max={MAX_TOKENS_CAP}
-                presets={CACHE_WARM_TOKEN_PRESETS}
-                onChange={(value) =>
-                  setCache((current) => ({
-                    ...current,
-                    warmTokens: value,
-                  }))
-                }
-              />
               <NumberField
                 id='cache-wait'
                 label={t('Wait seconds')}
@@ -643,28 +628,6 @@ export function SupplierTest() {
                   setCache((current) => ({ ...current, maxTokens: value }))
                 }
               />
-            </div>
-            <div className='mt-4 grid gap-4 md:grid-cols-2'>
-              <FieldSelect
-                label={t('Cache corpus')}
-                value={cache.corpus}
-                disabled={busy}
-                items={CACHE_CORPORA.map((item) => ({
-                  value: item.id,
-                  label: t(item.labelKey),
-                }))}
-                onChange={(value) => {
-                  const corpus = CACHE_CORPORA.find((item) => item.id === value)
-                  setCache((current) => ({
-                    ...current,
-                    corpus: value,
-                    prompt:
-                      corpus?.id === 'custom'
-                        ? current.prompt
-                        : (corpus?.prompt ?? ''),
-                  }))
-                }}
-              />
               <StreamSwitch
                 id='cache-stream'
                 checked={cache.stream}
@@ -674,26 +637,20 @@ export function SupplierTest() {
                 }
               />
             </div>
-            {cache.corpus === 'custom' ? (
-              <div className='mt-4 space-y-2'>
-                <Label htmlFor='cache-prompt'>{t('Prefix override')}</Label>
-                <Textarea
-                  id='cache-prompt'
-                  rows={3}
-                  placeholder={t(
-                    'Short prefix only. The server pads it to the selected size.'
-                  )}
-                  value={cache.prompt}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setCache((current) => ({
-                      ...current,
-                      prompt: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            ) : null}
+            <div className='mt-4'>
+              <CorpusPicker
+                id='cache-prompt'
+                form={cache}
+                disabled={busy}
+                onChange={(next) =>
+                  setCache((current) => ({
+                    ...current,
+                    corpus: next.corpus,
+                    prompt: next.prompt,
+                  }))
+                }
+              />
+            </div>
             <div className='mt-4 space-y-2'>
               <Label htmlFor='cache-follow-up'>{t('Follow-up question')}</Label>
               <Input
@@ -716,12 +673,15 @@ export function SupplierTest() {
             <div className='mt-4'>
               <CheckTable checks={run.cacheChecks} busy={busy} />
             </div>
+            {cacheAssessment && cacheAssessment.rows.length > 0 ? (
+              <AssessmentTable assessment={cacheAssessment} />
+            ) : null}
           </TitledCard>
 
           <TitledCard
             title={t('Stress test')}
             description={t(
-              'Pick a built-in corpus, including long text. Replace the files if you need different wording. Stream is optional.'
+              'Pick a corpus, then set concurrency. The selected text is sent as-is.'
             )}
             icon={<Zap />}
             action={
@@ -734,7 +694,7 @@ export function SupplierTest() {
             }
           >
             <div className='flex flex-wrap gap-2'>
-              {STRESS_PRESETS.map((preset) => (
+              {LOAD_PRESETS.map((preset) => (
                 <Button
                   key={preset.id}
                   type='button'
@@ -744,11 +704,9 @@ export function SupplierTest() {
                   onClick={() =>
                     setStress((current) => ({
                       ...current,
-                      corpus: preset.id,
                       concurrency: preset.concurrency,
                       rounds: preset.rounds,
                       maxTokens: preset.maxTokens,
-                      targetTokens: preset.targetTokens ?? 0,
                     }))
                   }
                 >
@@ -819,60 +777,20 @@ export function SupplierTest() {
                 }
               />
             </div>
-            <div className='mt-4 grid gap-4 md:grid-cols-2'>
-              <NumberField
-                id='stress-target-tokens'
-                label={t('Target tokens (prompt padding)')}
-                value={stress.targetTokens}
+            <div className='mt-4'>
+              <CorpusPicker
+                id='stress-prompt'
+                form={stress}
                 disabled={busy}
-                min={0}
-                max={MAX_TOKENS_CAP}
-                presets={TARGET_TOKEN_PRESETS}
-                onChange={(value) =>
+                onChange={(next) =>
                   setStress((current) => ({
                     ...current,
-                    targetTokens: value,
+                    corpus: next.corpus,
+                    prompt: next.prompt,
                   }))
                 }
               />
-              <FieldSelect
-                label={t('Stress corpus')}
-                value={stress.corpus}
-                disabled={busy}
-                items={STRESS_CORPORA.map((item) => ({
-                  value: item.id,
-                  label: t(item.labelKey),
-                }))}
-                onChange={(value) =>
-                  setStress((current) => ({ ...current, corpus: value }))
-                }
-              />
             </div>
-            {stress.corpus === 'custom' ? (
-              <div className='mt-4 space-y-2'>
-                <Label htmlFor='stress-prompt'>{t('Prompt')}</Label>
-                <Textarea
-                  id='stress-prompt'
-                  rows={3}
-                  placeholder={t('Write a short prompt, or pick a built-in corpus')}
-                  value={stress.prompt}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setStress((current) => ({
-                      ...current,
-                      prompt: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            ) : (
-              <p className='text-muted-foreground mt-4 text-sm'>
-                {t(
-                  'Using built-in corpus ({{chars}} characters). Replace files in supplier-test/corpora to change the text.',
-                  { chars: resolveStressPrompt(stress).length }
-                )}
-              </p>
-            )}
             {stressTotal >= STRESS_WARN_TOTAL ? (
               <Alert className='mt-4'>
                 <AlertDescription>
@@ -901,7 +819,9 @@ export function SupplierTest() {
                 {run.summaries.stress}
               </p>
             ) : null}
-            {run.metrics ? <StressMetricsDashboard metrics={run.metrics} /> : null}
+            {stressAssessment ? (
+              <AssessmentTable assessment={stressAssessment} />
+            ) : null}
           </TitledCard>
 
           {run.errorMessage ? (
@@ -912,6 +832,56 @@ export function SupplierTest() {
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>
+  )
+}
+
+function CorpusPicker(props: {
+  id: string
+  form: { corpus: string; prompt: string }
+  disabled: boolean
+  onChange: (next: { corpus: string; prompt: string }) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className='space-y-4'>
+      <FieldSelect
+        label={t('Corpus')}
+        value={props.form.corpus}
+        disabled={props.disabled}
+        items={CORPORA.map((item) => ({
+          value: item.id,
+          label: t(item.labelKey),
+        }))}
+        onChange={(corpus) =>
+          props.onChange({ corpus, prompt: props.form.prompt })
+        }
+      />
+      {props.form.corpus === 'custom' ? (
+        <div className='space-y-2'>
+          <Label htmlFor={props.id}>{t('Prompt')}</Label>
+          <Textarea
+            id={props.id}
+            rows={3}
+            placeholder={t('Write a short prompt, or pick a built-in corpus')}
+            value={props.form.prompt}
+            disabled={props.disabled}
+            onChange={(event) =>
+              props.onChange({
+                corpus: props.form.corpus,
+                prompt: event.target.value,
+              })
+            }
+          />
+        </div>
+      ) : (
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Using built-in corpus ({{chars}} characters). Replace files in supplier-test/corpora to change the text.',
+            { chars: resolveCorpusPrompt(props.form).length }
+          )}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -1102,84 +1072,6 @@ function CheckTable(props: {
   )
 }
 
-function stampFileName(): string {
-  const now = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-}
-
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-  const href = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = href
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(href)
-}
-
-function buildTestReport(input: {
-  baseUrl: string
-  model: string
-  basicChecks: CheckResult[]
-  cacheChecks: CheckResult[]
-  summaries: { basic: string; cache: string; stress: string }
-  metrics: ReturnType<typeof useSupplierTestRun>['metrics']
-  errorMessage: string
-  statusLabel: (status: CheckStatus) => string
-  t: (key: string) => string
-}): string {
-  const lines = [
-    '========================================',
-    input.t('Supplier Test Report'),
-    `Time: ${new Date().toLocaleString()}`,
-    `Base URL: ${input.baseUrl || '-'}`,
-    `Model: ${input.model || '-'}`,
-    '========================================',
-    '',
-    `## ${input.t('Basic acceptance')}`,
-  ]
-  for (const check of input.basicChecks) {
-    const detail = check.message ? ` — ${check.message}` : ''
-    lines.push(`- ${input.t(check.title)}: ${input.t(input.statusLabel(check.status))}${detail}`)
-  }
-  if (input.summaries.basic) {
-    lines.push(`  ${input.summaries.basic}`)
-  }
-
-  lines.push('', `## ${input.t('Cache test')}`)
-  for (const check of input.cacheChecks) {
-    const detail = check.message ? ` — ${check.message}` : ''
-    lines.push(`- ${input.t(check.title)}: ${input.t(input.statusLabel(check.status))}${detail}`)
-  }
-  if (input.summaries.cache) {
-    lines.push(`  ${input.summaries.cache}`)
-  }
-
-  lines.push('', `## ${input.t('Stress test')}`)
-  if (input.metrics) {
-    const m = input.metrics
-    lines.push(
-      `- ${input.t('Total requests')}: ${m.total}`,
-      `- ${input.t('Succeeded')}: ${m.succeeded}`,
-      `- ${input.t('Failed')}: ${m.failed}`,
-      `- ${input.t('Error rate')}: ${(m.error_rate * 100).toFixed(1)}%`,
-      `- ${input.t('Duration')}: ${m.elapsed_ms >= 1000 ? `${(m.elapsed_ms / 1000).toFixed(2)} s` : `${m.elapsed_ms.toFixed(0)} ms`}`,
-      `- ${input.t('Throughput')}: ${Number.isFinite(m.tokens_per_sec) ? m.tokens_per_sec.toFixed(1) : '-'} tok/s`,
-      `- TTFT: ${input.t('Avg')} ${formatMs(m.ttft_avg_ms)} | P50 ${formatMs(m.ttft_p50_ms)} | P90 ${formatMs(m.ttft_p90_ms)}`,
-      `- TPOT: ${input.t('Avg')} ${formatMs(m.tpot_avg_ms)} | P50 ${formatMs(m.tpot_p50_ms)} | P90 ${formatMs(m.tpot_p90_ms)}`
-    )
-  }
-  if (input.summaries.stress) {
-    lines.push(`  ${input.summaries.stress}`)
-  }
-
-  if (input.errorMessage) {
-    lines.push('', `## ${input.t('Error')}`, input.errorMessage)
-  }
-  return `${lines.join('\n')}\n`
-}
-
 function statusLabel(status: CheckStatus): string {
   if (status === 'pass') return 'Passed'
   if (status === 'fail') return 'Failed'
@@ -1188,213 +1080,45 @@ function statusLabel(status: CheckStatus): string {
   return 'Idle'
 }
 
-function StressMetricsDashboard(props: {
-  metrics: NonNullable<ReturnType<typeof useSupplierTestRun>['metrics']>
-}) {
+function verdictClass(verdict: Verdict): string {
+  if (verdict === 'ok') return 'text-success font-medium'
+  if (verdict === 'slow') return 'text-warning font-medium'
+  return 'text-muted-foreground'
+}
+
+function AssessmentTable(props: { assessment: Assessment }) {
   const { t } = useTranslation()
-  const metrics = props.metrics
-  const errorRatePercent = metrics.error_rate * 100
-
-  let stabilityLabel = t('Excellent stability (0% errors)')
-  let stabilityVariant: StatusVariant = 'success'
-  if (metrics.error_rate > 0 && metrics.error_rate < 0.05) {
-    stabilityLabel = t('Minor failures ({{rate}}% errors)', {
-      rate: errorRatePercent.toFixed(1),
-    })
-    stabilityVariant = 'warning'
-  } else if (metrics.error_rate >= 0.05) {
-    stabilityLabel = t('High failure rate ({{rate}}% errors)', {
-      rate: errorRatePercent.toFixed(1),
-    })
-    stabilityVariant = 'danger'
-  }
-
-  let ttftRating = t('Fast first token (< 1s)')
-  let ttftVariant: StatusVariant = 'success'
-  if (metrics.ttft_avg_ms > 3000) {
-    ttftRating = t('Higher first token latency (> 3s)')
-    ttftVariant = 'neutral'
-  } else if (metrics.ttft_avg_ms > 1000) {
-    ttftRating = t('Normal first token (1s - 3s)')
-    ttftVariant = 'info'
-  }
-
-  let speedRating = t('High generation speed (> 40 tok/s)')
-  let speedVariant: StatusVariant = 'success'
-  if (
-    metrics.tpot_avg_ms > 60 ||
-    (metrics.tokens_per_sec > 0 && metrics.tokens_per_sec < 15)
-  ) {
-    speedRating = t('Moderate generation speed (< 15 tok/s)')
-    speedVariant = 'neutral'
-  } else if (
-    metrics.tpot_avg_ms > 25 ||
-    (metrics.tokens_per_sec > 0 && metrics.tokens_per_sec < 40)
-  ) {
-    speedRating = t('Standard generation speed (15 - 40 tok/s)')
-    speedVariant = 'info'
-  }
-
   return (
-    <div className='mt-6 space-y-4'>
-      {/* Overview stats bar */}
-      <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-        <div className='bg-muted/40 rounded-lg border p-3'>
-          <div className='text-muted-foreground text-xs font-medium'>
-            {t('Success rate')}
-          </div>
-          <div className='mt-1 flex items-baseline gap-2'>
-            <span className='text-xl font-bold'>
-              {metrics.succeeded}/{metrics.total}
-            </span>
-            <StatusBadge
-              variant={stabilityVariant}
-              copyable={false}
-              label={stabilityLabel}
-            />
-          </div>
-        </div>
-
-        <div className='bg-muted/40 rounded-lg border p-3'>
-          <div className='text-muted-foreground text-xs font-medium'>
-            {t('Total duration')}
-          </div>
-          <div className='mt-1 text-xl font-bold'>
-            {metrics.elapsed_ms >= 1000
-              ? `${(metrics.elapsed_ms / 1000).toFixed(2)} s`
-              : `${metrics.elapsed_ms.toFixed(0)} ms`}
-          </div>
-        </div>
-
-        <div className='bg-muted/40 rounded-lg border p-3'>
-          <div className='text-muted-foreground text-xs font-medium'>
-            {t('Throughput')}
-          </div>
-          <div className='mt-1 text-xl font-bold'>
-            {Number.isFinite(metrics.tokens_per_sec) &&
-            metrics.tokens_per_sec > 0
-              ? `${metrics.tokens_per_sec.toFixed(1)} tok/s`
-              : '-'}
-          </div>
-        </div>
-
-        <div className='bg-muted/40 rounded-lg border p-3'>
-          <div className='text-muted-foreground text-xs font-medium'>
-            {t('Failed requests')}
-          </div>
-          <div className='mt-1 flex items-baseline gap-2'>
-            <span className='text-xl font-bold'>{metrics.failed}</span>
-            <span className='text-muted-foreground text-xs'>
-              {formatRate(metrics.error_rate)} {t('error rate')}
-            </span>
-          </div>
-        </div>
+    <div className='mt-4 space-y-2 overflow-x-auto'>
+      <div className={verdictClass(props.assessment.overall)}>
+        {t(overallLabel(props.assessment.overall))}
       </div>
-
-      {/* Latency Breakdown (TTFT & TPOT) */}
-      <div className='grid gap-4 md:grid-cols-2'>
-        <div className='bg-muted/20 rounded-lg border p-4'>
-          <div className='flex items-center justify-between pb-2'>
-            <div className='font-semibold text-sm'>
-              {t('TTFT (Time to First Token)')}
-            </div>
-            {metrics.ttft_avg_ms > 0 ? (
-              <StatusBadge
-                variant={ttftVariant}
-                copyable={false}
-                label={ttftRating}
-              />
-            ) : null}
-          </div>
-          <p className='text-muted-foreground mb-3 text-xs'>
-            {t(
-              'Measures latency from sending the request until the first token is received.'
-            )}
-          </p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('Average')}</TableHead>
-                <TableHead>{t('P50')}</TableHead>
-                <TableHead>{t('P90')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell className='font-medium'>
-                  {formatMs(metrics.ttft_avg_ms)}
-                </TableCell>
-                <TableCell>{formatMs(metrics.ttft_p50_ms)}</TableCell>
-                <TableCell>{formatMs(metrics.ttft_p90_ms)}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className='bg-muted/20 rounded-lg border p-4'>
-          <div className='flex items-center justify-between pb-2'>
-            <div className='font-semibold text-sm'>
-              {t('TPOT (Time Per Output Token)')}
-            </div>
-            {metrics.tpot_avg_ms > 0 ? (
-              <StatusBadge
-                variant={speedVariant}
-                copyable={false}
-                label={speedRating}
-              />
-            ) : null}
-          </div>
-          <p className='text-muted-foreground mb-3 text-xs'>
-            {t(
-              'Measures generation latency per output token (inter-token time).'
-            )}
-          </p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('Average')}</TableHead>
-                <TableHead>{t('P50')}</TableHead>
-                <TableHead>{t('P90')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell className='font-medium'>
-                  {formatMs(metrics.tpot_avg_ms)}
-                </TableCell>
-                <TableCell>{formatMs(metrics.tpot_p50_ms)}</TableCell>
-                <TableCell>{formatMs(metrics.tpot_p90_ms)}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-
-      {/* General Informative Assessment Note */}
-      <div className='bg-background/50 text-muted-foreground space-y-1 rounded-lg border border-dashed p-3 text-xs'>
-        <div className='text-foreground flex items-center gap-1.5 font-medium'>
-          <Activity className='size-3.5' />
-          {t('General Quality Assessment')}
-        </div>
-        <div>
-          {t(
-            'Reference indicators: stability {{stability}}, TTFT avg {{ttft}}, TPOT avg {{tpot}}, throughput {{tps}} tok/s. Latencies vary naturally with model size, concurrency, prompt length, and reasoning overhead.',
-            {
-              stability:
-                errorRatePercent === 0
-                  ? t('100% available')
-                  : `${formatRate(metrics.error_rate)} ${t('error rate')}`,
-              ttft: formatMs(metrics.ttft_avg_ms),
-              tpot: formatMs(metrics.tpot_avg_ms),
-              tps:
-                Number.isFinite(metrics.tokens_per_sec) &&
-                metrics.tokens_per_sec > 0
-                  ? metrics.tokens_per_sec.toFixed(1)
-                  : '-',
-            }
-          )}
-        </div>
-      </div>
+      <Table className='min-w-[640px]'>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('Metric')}</TableHead>
+            <TableHead>{t('Measured')}</TableHead>
+            <TableHead>{t('Threshold')}</TableHead>
+            <TableHead>{t('Verdict')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {props.assessment.rows.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className='whitespace-nowrap'>{t(row.label)}</TableCell>
+              <TableCell className='font-medium whitespace-nowrap'>
+                {displayMeasured(row, t)}
+              </TableCell>
+              <TableCell className='text-muted-foreground'>
+                {t(row.threshold)}
+              </TableCell>
+              <TableCell className={verdictClass(row.verdict)}>
+                {t(VERDICT_LABEL[row.verdict])}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   )
 }

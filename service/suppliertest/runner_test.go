@@ -338,6 +338,11 @@ func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
 	assert.Greater(t, metrics.TTFTAvgMS, 0.0)
 	assert.Greater(t, metrics.TTFTP50MS, 0.0)
 	assert.Greater(t, metrics.TTFTP90MS, 0.0)
+	assert.Equal(t, 18, metrics.PromptTokens)
+	assert.Equal(t, 2, metrics.CompletionTokens)
+	assert.GreaterOrEqual(t, metrics.TTFTN, 1)
+	assert.Greater(t, metrics.RPM, 0.0)
+	assert.Greater(t, metrics.TPM, 0.0)
 	assert.True(t, sawStream)
 	assert.True(t, sawDone)
 }
@@ -498,6 +503,7 @@ func TestCacheModuleReportsMissingCachedTokens(t *testing.T) {
 	assert.Equal(t, "pass", statusByCheck[CheckCacheProbe])
 	assert.Equal(t, "skip", statusByCheck[CheckCacheTokens])
 	assert.Equal(t, "skip", statusByCheck[CheckCacheHitRate])
+	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
 }
 
 func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
@@ -539,7 +545,103 @@ func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
 	assert.Equal(t, "pass", statusByCheck[CheckCacheProbe])
 	assert.Equal(t, "pass", statusByCheck[CheckCacheTokens])
 	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
+	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
 	assert.Contains(t, summary, "探测 3 轮")
+}
+
+func TestCacheHitRateFailsWhenBelowHalf(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1,\"cached_tokens\":4}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleCache},
+		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8, Rounds: 1},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	var cacheMetrics *CacheMetrics
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+		if event.Type == "metrics" && event.Cache != nil {
+			cacheMetrics = event.Cache
+		}
+	}
+	assert.Equal(t, "fail", statusByCheck[CheckCacheHitRate])
+	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
+	require.NotNil(t, cacheMetrics)
+	assert.True(t, cacheMetrics.HasCachedTokens)
+	assert.InDelta(t, 0.2, cacheMetrics.AvgHitRate, 0.001)
+}
+
+func TestCacheHitRatePassesWhenSlightlyBelowEighty(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1,\"cached_tokens\":12}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleCache},
+		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8, Rounds: 1},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	var hitMessage string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+		if event.Type == "check" && event.CheckID == CheckCacheHitRate {
+			hitMessage = event.Message
+		}
+	}
+	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
+	assert.NotContains(t, hitMessage, "不正常")
+	assert.NotContains(t, hitMessage, "偏弱")
+}
+
+func TestStreamChatReadsVendorCacheAliases(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":40,\"completion_tokens\":1,\"prompt_cache_hit_tokens\":18}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL+"/v1/chat/completions", "test-key", chatRequest{
+		Model:  "demo",
+		Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.True(t, result.HasCachedTokens)
+	assert.Equal(t, 18, result.CachedTokens)
 }
 
 func TestLooksLikeJSON(t *testing.T) {

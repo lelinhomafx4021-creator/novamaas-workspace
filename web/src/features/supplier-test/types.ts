@@ -28,12 +28,29 @@ export type StressMetrics = {
   error_rate: number
   elapsed_ms: number
   tokens_per_sec: number
+  prompt_tokens: number
+  completion_tokens: number
   ttft_avg_ms: number
   ttft_p50_ms: number
   ttft_p90_ms: number
+  ttft_n: number
   tpot_avg_ms: number
   tpot_p50_ms: number
   tpot_p90_ms: number
+  tpot_n: number
+  rpm: number
+  tpm: number
+}
+
+export type CacheMetrics = {
+  warm_prompt_tokens: number
+  avg_hit_rate: number
+  min_hit_rate: number
+  last_cached_tokens: number
+  last_prompt_tokens: number
+  wait_seconds: number
+  rounds: number
+  has_cached_tokens: boolean
 }
 
 export type SupplierTestEvent = {
@@ -49,6 +66,7 @@ export type SupplierTestEvent = {
   completed?: number
   total?: number
   metrics?: StressMetrics
+  cache?: CacheMetrics
 }
 
 export type SupplierTestRunRequest = {
@@ -100,7 +118,6 @@ export type StressForm = {
   concurrency: number
   rounds: number
   maxTokens: number
-  targetTokens: number
   corpus: string
   prompt: string
   stream: boolean
@@ -118,7 +135,6 @@ export type CacheForm = {
   corpus: string
   prompt: string
   followUp: string
-  warmTokens: number
   waitSeconds: number
   maxTokens: number
   rounds: number

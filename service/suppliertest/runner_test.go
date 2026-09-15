@@ -1,0 +1,550 @@
+package suppliertest
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestModelsURL(t *testing.T) {
+	t.Parallel()
+	got, err := ModelsURL("https://api.example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "https://api.example.com/v1/models", got)
+
+	got, err = ModelsURL("https://api.example.com/v1")
+	require.NoError(t, err)
+	assert.Equal(t, "https://api.example.com/v1/models", got)
+}
+
+func TestParseModelIDs(t *testing.T) {
+	t.Parallel()
+	ids, err := parseModelIDs([]byte(`{"data":[{"id":"alpha"},{"id":"beta"},{"id":"alpha"}]}`))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta"}, ids)
+
+	ids, err = parseModelIDs([]byte(`{"models":["one","two"]}`))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"one", "two"}, ids)
+}
+
+func TestListModelsAgainstFakeUpstream(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/v1/models", r.URL.Path)
+		assert.Equal(t, "Bearer good-key", r.Header.Get("Authorization"))
+		_, _ = io.WriteString(w, `{"data":[{"id":"vendor-a"},{"id":"vendor-b"}]}`)
+	}))
+	defer server.Close()
+
+	ids, err := ListModels(context.Background(), server.Client(), server.URL, "good-key")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"vendor-a", "vendor-b"}, ids)
+}
+
+func TestChatCompletionsURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "host only", input: "https://api.example.com", want: "https://api.example.com/v1/chat/completions"},
+		{name: "v1 suffix", input: "https://api.example.com/v1", want: "https://api.example.com/v1/chat/completions"},
+		{name: "already complete", input: "https://api.example.com/v1/chat/completions", want: "https://api.example.com/v1/chat/completions"},
+		{name: "trailing slash", input: "https://api.example.com/v1/", want: "https://api.example.com/v1/chat/completions"},
+		{name: "rejects ftp", input: "ftp://api.example.com", wantErr: true},
+		{name: "rejects empty", input: "   ", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ChatCompletionsURL(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestPercentileAndAverage(t *testing.T) {
+	t.Parallel()
+
+	values := []float64{10, 20, 30, 40, 50}
+	assert.Equal(t, 30.0, average(values))
+	assert.Equal(t, 50.0, percentile(values, 90))
+	assert.Equal(t, 30.0, percentile(values, 50))
+	assert.Equal(t, 10.0, percentile(values, 0))
+	assert.Equal(t, 50.0, percentile(values, 100))
+	assert.Equal(t, 0.0, percentile(nil, 90))
+
+	single := []float64{42.5}
+	assert.Equal(t, 42.5, average(single))
+	assert.Equal(t, 42.5, percentile(single, 50))
+	assert.Equal(t, 42.5, percentile(single, 90))
+
+	even := []float64{10, 20, 30, 40}
+	assert.Equal(t, 25.0, average(even))
+	assert.Equal(t, 20.0, percentile(even, 50))
+	assert.Equal(t, 40.0, percentile(even, 90))
+}
+
+func TestNormalizeRunRequest(t *testing.T) {
+	t.Parallel()
+
+	req := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo-model",
+		Modules: []string{ModuleStress},
+		Stress:  StressConfig{Concurrency: 3, Rounds: 2, MaxTokens: 16},
+	}
+	require.NoError(t, NormalizeRunRequest(&req))
+	assert.Equal(t, DefaultStressPrompt, req.Stress.Prompt)
+	assert.Equal(t, allBasicChecks, req.Basic.Checks)
+	assert.Nil(t, req.Basic.Temperature)
+	assert.Nil(t, req.Basic.TopP)
+	assert.Equal(t, 5, req.Cache.Rounds)
+	assert.Equal(t, DefaultCacheFollowUp, req.Cache.FollowUp)
+	assert.Equal(t, 0, req.Cache.WarmTokens)
+
+	unknownCheck := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{"not-a-check"}},
+	}
+	require.Error(t, NormalizeRunRequest(&unknownCheck))
+
+	oneCheck := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{CheckJSONMode, CheckJSONMode}},
+	}
+	require.NoError(t, NormalizeRunRequest(&oneCheck))
+	assert.Equal(t, []string{CheckJSONMode}, oneCheck.Basic.Checks)
+
+	bad := RunRequest{BaseURL: "https://api.example.com", Model: "demo", Modules: []string{"baseline"}}
+	require.Error(t, NormalizeRunRequest(&bad))
+
+	tooWide := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress:  StressConfig{Concurrency: 1001, Rounds: 1, MaxTokens: 16},
+	}
+	require.Error(t, NormalizeRunRequest(&tooWide))
+
+	withTargetTokens := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress:  StressConfig{Concurrency: 5, Rounds: 1, MaxTokens: 64, TargetTokens: 16000},
+	}
+	require.NoError(t, NormalizeRunRequest(&withTargetTokens))
+	assert.Equal(t, 16000, withTargetTokens.Stress.TargetTokens)
+
+	negTargetTokens := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress:  StressConfig{Concurrency: 5, Rounds: 1, MaxTokens: 64, TargetTokens: -1},
+	}
+	require.Error(t, NormalizeRunRequest(&negTargetTokens))
+
+	overCapTargetTokens := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress:  StressConfig{Concurrency: 5, Rounds: 1, MaxTokens: 64, TargetTokens: 300000},
+	}
+	require.Error(t, NormalizeRunRequest(&overCapTargetTokens))
+}
+
+func TestChatRequestOmitsEmptySampling(t *testing.T) {
+	t.Parallel()
+
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		bodies = append(bodies, string(raw))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-1","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL+"/v1/chat/completions", "k", chatRequest{
+		Model:     "demo",
+		Messages:  []chatMessage{{Role: "user", Content: "hi"}},
+		MaxTokens: ptrInt(8),
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	require.Len(t, bodies, 1)
+	assert.NotContains(t, bodies[0], `"temperature"`)
+	assert.NotContains(t, bodies[0], `"top_p"`)
+	assert.Contains(t, bodies[0], `"max_tokens"`)
+}
+
+func TestPadPrompt(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, DefaultCachePrefix, padPrompt("", 0))
+	assert.Equal(t, "hello", padPrompt("hello", 0))
+	padded := padPrompt("prefix", 32)
+	assert.True(t, strings.HasPrefix(padded, "prefix"))
+	assert.Greater(t, len(padded), 32*4)
+	assert.Equal(t, fillPrompt(40), padPrompt("", 40))
+}
+
+func TestStreamChatParsesSSE(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
+		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("X-Request-Id", "req-123")
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+		_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n")
+		flusher.Flush()
+		time.Sleep(20 * time.Millisecond)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":2,\"cached_tokens\":3}}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var streamed strings.Builder
+	result := streamChat(context.Background(), server.Client(), server.URL+"/v1/chat/completions", "test-key", chatRequest{
+		Model:  "demo",
+		Stream: true,
+	}, 5*time.Second, func(delta StreamDelta) {
+		streamed.WriteString(delta.Content)
+	})
+
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.True(t, result.SSE)
+	assert.Equal(t, "hello", result.Content)
+	assert.Equal(t, "hello", streamed.String())
+	assert.Equal(t, "stop", result.FinishReason)
+	assert.Equal(t, 8, result.PromptTokens)
+	assert.Equal(t, 2, result.CompletionTokens)
+	assert.True(t, result.HasCachedTokens)
+	assert.Equal(t, 3, result.CachedTokens)
+	assert.Equal(t, "chatcmpl-1", requestIDFrom(result))
+	assert.Equal(t, "req-123", result.Header.Get("X-Request-Id"))
+	assert.Greater(t, result.TTFT, time.Duration(0))
+}
+
+func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer good-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":{"message":"invalid api key"}}`)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		if !strings.Contains(string(body), `"messages"`) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"message":"messages required"}}`)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("X-Request-Id", "req-basic")
+		if strings.Contains(string(body), "get_weather") {
+			_, _ = fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-tool\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Beijing\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":8}}\n\n")
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			return
+		}
+		if strings.Contains(string(body), "json_object") {
+			_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-json\",\"choices\":[{\"delta\":{\"content\":\"{\\\"ping\\\":\\\"pong\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":6}}\n\n")
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			return
+		}
+		_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-ok\",\"choices\":[{\"delta\":{\"content\":\"pong\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":1}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "good-key",
+		Model:   "demo-model",
+		Modules: []string{ModuleBasic, ModuleStress},
+		Stress: StressConfig{
+			Concurrency: 2,
+			Rounds:      1,
+			MaxTokens:   16,
+			Prompt:      "hello",
+		},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	var metrics *StressMetrics
+	var sawStream bool
+	var sawDone bool
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+		if event.Type == "stream" && event.Text != "" {
+			sawStream = true
+		}
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+		if event.Type == "done" {
+			sawDone = true
+		}
+	}
+
+	assert.Equal(t, "pass", statusByCheck[CheckConnectivity])
+	assert.Equal(t, "pass", statusByCheck[CheckUsage])
+	assert.Equal(t, "pass", statusByCheck[CheckJSONMode])
+	assert.Equal(t, "pass", statusByCheck[CheckToolCall])
+	assert.Equal(t, "pass", statusByCheck[CheckAuthError])
+	assert.Equal(t, "pass", statusByCheck[CheckBadRequest])
+	assert.Equal(t, "skip", statusByCheck[CheckThinking])
+	require.NotNil(t, metrics)
+	assert.Equal(t, 2, metrics.Total)
+	assert.Equal(t, 2, metrics.Succeeded)
+	assert.Equal(t, 0, metrics.Failed)
+	assert.Equal(t, 0.0, metrics.ErrorRate)
+	assert.Greater(t, metrics.TTFTAvgMS, 0.0)
+	assert.Greater(t, metrics.TTFTP50MS, 0.0)
+	assert.Greater(t, metrics.TTFTP90MS, 0.0)
+	assert.True(t, sawStream)
+	assert.True(t, sawDone)
+}
+
+func TestRunStressWithTargetTokensPadsPrompt(t *testing.T) {
+	t.Parallel()
+
+	var receivedPrompt string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		receivedPrompt = string(body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"id\":\"c-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":1}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "key",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress: StressConfig{
+			Concurrency:  1,
+			Rounds:       1,
+			MaxTokens:    16,
+			Prompt:       "custom-stress-prompt",
+			TargetTokens: 100,
+		},
+	}, func(e Event) {
+		events = append(events, e)
+	})
+	require.NoError(t, err)
+	assert.Contains(t, receivedPrompt, "custom-stress-prompt")
+	// TargetTokens=100 requires 500 chars, so prompt must be padded
+	assert.Greater(t, len(receivedPrompt), 450)
+	var foundMetrics bool
+	for _, e := range events {
+		if e.Type == "metrics" && e.Metrics != nil {
+			foundMetrics = true
+			assert.Equal(t, 1, e.Metrics.Total)
+			assert.Equal(t, 1, e.Metrics.Succeeded)
+		}
+	}
+	assert.True(t, foundMetrics)
+}
+
+func TestBasicSkipsVendorSpecificFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+	}
+	assert.Equal(t, "pass", statusByCheck[CheckConnectivity])
+	assert.Equal(t, "skip", statusByCheck[CheckStream])
+	assert.Equal(t, "skip", statusByCheck[CheckUsage])
+	assert.Equal(t, "skip", statusByCheck[CheckRequestID])
+	assert.Equal(t, "skip", statusByCheck[CheckJSONMode])
+	assert.Equal(t, "skip", statusByCheck[CheckToolCall])
+	assert.Equal(t, "skip", statusByCheck[CheckThinking])
+	assert.Equal(t, "skip", statusByCheck[CheckAuthError])
+	assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
+}
+
+func TestBasicRunsOnlyRequestedChecks(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-json\",\"choices\":[{\"delta\":{\"content\":\"{\\\"ping\\\":\\\"pong\\\"}\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{CheckJSONMode}},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+
+	statusByCheck := map[string]string{}
+	var summary string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+		if event.Type == "summary" {
+			summary = event.Summary
+		}
+	}
+	assert.Equal(t, "pass", statusByCheck[CheckJSONMode])
+	_, hasConnectivity := statusByCheck[CheckConnectivity]
+	assert.False(t, hasConnectivity)
+	assert.Contains(t, summary, "通过 1")
+}
+
+func TestCacheModuleReportsMissingCachedTokens(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleCache},
+		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+	}
+	assert.Equal(t, "pass", statusByCheck[CheckCacheWarm])
+	assert.Equal(t, "pass", statusByCheck[CheckCacheProbe])
+	assert.Equal(t, "skip", statusByCheck[CheckCacheTokens])
+	assert.Equal(t, "skip", statusByCheck[CheckCacheHitRate])
+}
+
+func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1,\"cached_tokens\":16}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleCache},
+		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8, Rounds: 3},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 4, calls)
+
+	statusByCheck := map[string]string{}
+	var summary string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+		if event.Type == "summary" {
+			summary = event.Summary
+		}
+	}
+	assert.Equal(t, "pass", statusByCheck[CheckCacheWarm])
+	assert.Equal(t, "pass", statusByCheck[CheckCacheProbe])
+	assert.Equal(t, "pass", statusByCheck[CheckCacheTokens])
+	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
+	assert.Contains(t, summary, "探测 3 轮")
+}
+
+func TestLooksLikeJSON(t *testing.T) {
+	t.Parallel()
+	assert.True(t, looksLikeJSON(`{"ping":"pong"}`))
+	assert.False(t, looksLikeJSON("not json"))
+	assert.False(t, looksLikeJSON(""))
+}

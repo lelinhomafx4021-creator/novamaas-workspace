@@ -1,0 +1,126 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+export type SupplierTestModule = 'basic' | 'stress' | 'cache'
+
+export type CheckStatus = 'idle' | 'running' | 'pass' | 'fail' | 'skip'
+
+export type StressMetrics = {
+  total: number
+  succeeded: number
+  failed: number
+  error_rate: number
+  elapsed_ms: number
+  tokens_per_sec: number
+  ttft_avg_ms: number
+  ttft_p50_ms: number
+  ttft_p90_ms: number
+  tpot_avg_ms: number
+  tpot_p50_ms: number
+  tpot_p90_ms: number
+}
+
+export type SupplierTestEvent = {
+  type: 'check' | 'progress' | 'stream' | 'metrics' | 'summary' | 'done' | 'error'
+  module?: SupplierTestModule
+  check_id?: string
+  status?: CheckStatus
+  title?: string
+  message?: string
+  summary?: string
+  worker?: number
+  text?: string
+  completed?: number
+  total?: number
+  metrics?: StressMetrics
+}
+
+export type SupplierTestRunRequest = {
+  base_url: string
+  api_key: string
+  model: string
+  modules: SupplierTestModule[]
+  basic: {
+    prompt: string
+    max_tokens: number
+    temperature?: number
+    top_p?: number
+    stream: boolean
+    checks?: string[]
+  }
+  cache: {
+    prompt: string
+    follow_up: string
+    warm_tokens: number
+    wait_seconds: number
+    max_tokens: number
+    rounds: number
+    stream: boolean
+  }
+  stress: {
+    concurrency: number
+    rounds: number
+    max_tokens: number
+    prompt: string
+    target_tokens?: number
+    stream: boolean
+  }
+}
+
+export type CheckResult = {
+  id: string
+  title: string
+  status: CheckStatus
+  message?: string
+}
+
+export type TargetForm = {
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+export type StressForm = {
+  concurrency: number
+  rounds: number
+  maxTokens: number
+  targetTokens: number
+  corpus: string
+  prompt: string
+  stream: boolean
+}
+
+export type BasicForm = {
+  prompt: string
+  maxTokens: number
+  temperature: string
+  topP: string
+  stream: boolean
+}
+
+export type CacheForm = {
+  corpus: string
+  prompt: string
+  followUp: string
+  warmTokens: number
+  waitSeconds: number
+  maxTokens: number
+  rounds: number
+  stream: boolean
+}

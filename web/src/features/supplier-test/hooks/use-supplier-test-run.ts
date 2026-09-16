@@ -92,6 +92,7 @@ export function useSupplierTestRun() {
   const [basicChecks, setBasicChecks] = useState<CheckResult[]>(BASIC_CHECKS)
   const [cacheChecks, setCacheChecks] = useState<CheckResult[]>(CACHE_CHECKS)
   const [streamText, setStreamText] = useState('')
+  const [basicStreamText, setBasicStreamText] = useState('')
   const [progress, setProgress] = useState({ completed: 0, total: 0 })
   const [metrics, setMetrics] = useState<StressMetrics | null>(null)
   const [cacheMetrics, setCacheMetrics] = useState<CacheMetrics | null>(null)
@@ -118,7 +119,7 @@ export function useSupplierTestRun() {
       setProgress({ completed: 0, total: 0 })
       if (module === 'basic') {
         setBasicChecks((current) => resetChecks(current, payload.basic.checks))
-        setStreamText('')
+        setBasicStreamText('')
         setSummaries((current) => ({ ...current, basic: '' }))
       }
       if (module === 'cache') {
@@ -206,7 +207,13 @@ export function useSupplierTestRun() {
           return
         }
         if (parsed.type === 'stream' && parsed.text) {
-          setStreamText((text) => text + parsed.text)
+          if (parsed.module === 'basic') {
+            setBasicStreamText((text) => text + parsed.text)
+            return
+          }
+          if (parsed.module === 'stress') {
+            setStreamText((text) => text + parsed.text)
+          }
           return
         }
         if (parsed.type === 'progress') {
@@ -277,6 +284,7 @@ export function useSupplierTestRun() {
     basicChecks,
     cacheChecks,
     streamText,
+    basicStreamText,
     progress,
     metrics,
     cacheMetrics,

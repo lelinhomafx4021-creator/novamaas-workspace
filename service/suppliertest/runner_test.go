@@ -231,6 +231,32 @@ func TestRunBasicOmitsUnsetSampling(t *testing.T) {
 	assert.NotContains(t, bodies[0], `"top_p"`)
 }
 
+func TestRunBasicOnlyStreamsConnectivity(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"ping\\\":\\\"pong\\\"}\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var sawStream bool
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "k",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Prompt: "hi", MaxTokens: 8, Checks: []string{CheckJSONMode}},
+	}, func(event Event) {
+		if event.Type == "stream" {
+			sawStream = true
+		}
+	})
+	require.NoError(t, err)
+	assert.False(t, sawStream)
+}
+
 func TestStreamChatParsesSSE(t *testing.T) {
 	t.Parallel()
 

@@ -311,15 +311,19 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		if wanted[CheckConnectivity] {
 			emitCheck(CheckConnectivity, "running", "")
 		}
-		connected = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, 60*time.Second, func(delta StreamDelta) {
-			text := delta.Content
-			if text == "" {
-				text = delta.Reasoning
+		var onDelta func(StreamDelta)
+		if wanted[CheckConnectivity] && stream {
+			onDelta = func(delta StreamDelta) {
+				text := delta.Content
+				if text == "" {
+					text = delta.Reasoning
+				}
+				if text != "" {
+					emit(Event{Type: "stream", Module: ModuleBasic, Text: text})
+				}
 			}
-			if text != "" {
-				emit(Event{Type: "stream", Module: ModuleBasic, Text: text})
-			}
-		})
+		}
+		connected = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, 60*time.Second, onDelta)
 		gotOutput := connected.Content != "" || connected.Reasoning != "" || connected.ToolName != ""
 		httpFailed := connected.StatusCode != http.StatusOK || connected.ErrorMessage != ""
 		if httpFailed {

@@ -566,9 +566,9 @@ export function SupplierTest() {
                 }
               />
             </div>
-            {run.runningModule === 'basic' && run.streamText ? (
+            {run.basicStreamText ? (
               <pre className='bg-muted mt-4 max-h-48 overflow-auto rounded-lg p-3 text-sm whitespace-pre-wrap'>
-                {run.streamText}
+                {run.basicStreamText}
               </pre>
             ) : null}
             {run.summaries.basic ? (

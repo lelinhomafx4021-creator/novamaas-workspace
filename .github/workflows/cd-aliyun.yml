@@ -14,6 +14,8 @@
 name: CD Alibaba ACR
 
 on:
+  push:
+    branches: [feat/supplier-test]
   workflow_dispatch:
     inputs:
       deploy:

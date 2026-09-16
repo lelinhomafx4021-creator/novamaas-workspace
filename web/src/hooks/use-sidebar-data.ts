@@ -134,6 +134,7 @@ export function useSidebarData(): SidebarData {
             title: t('Supplier Test'),
             url: '/supplier-test',
             icon: ClipboardCheck,
+            requiredRole: ROLE.ADMIN,
           },
           {
             title: t('Models'),

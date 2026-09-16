@@ -49,6 +49,8 @@
 
 手动：管理员打开「供应商测试」→「用本平台」→ 粘贴令牌页 Key → 拉取模型。测上游时仍只填对方 Base URL。请在 GitHub PR 里补一张页面截图。
 
+半成品 CI：push / PR 会跑 `.github/workflows/ci-draft.yml`（Go 相关包测试 + 前端 typecheck/oxlint/vitest）。不改现有 `build.yml`。CD 仅 `workflow_dispatch` 占位，不 SSH、不要机器密码；以后在仓库 Secrets 加 `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` 再接部署。
+
 ---
 
 **建议 Title:** `feat: add admin supplier test workbench`

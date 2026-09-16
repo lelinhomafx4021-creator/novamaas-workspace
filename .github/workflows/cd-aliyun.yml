@@ -158,9 +158,25 @@ jobs:
           key_file="$RUNNER_TEMP/deploy_key"
           printf '%s\n' "$KEY" | tr -d '\r' > "$key_file"
           chmod 600 "$key_file"
-          ssh_opts=(-i "$key_file" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes)
+          if ! grep -q "BEGIN .*PRIVATE KEY" "$key_file"; then
+            echo "DEPLOY_SSH_KEY is not an OpenSSH private key (need BEGIN/END PRIVATE KEY, not the .pub file)."
+            exit 1
+          fi
+          echo "Checking whether GitHub Actions can reach port 22..."
+          if ! timeout 12 bash -c "echo >/dev/tcp/${HOST}/22"; then
+            echo "Cannot reach DEPLOY_HOST port 22 from GitHub-hosted runners."
+            echo "Open the server security group for TCP 22 (key login only), then re-run."
+            exit 1
+          fi
+          ssh_opts=(
+            -i "$key_file"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o BatchMode=yes
+            -o ConnectTimeout=15
+          )
           ssh "${ssh_opts[@]}" "${USER}@${HOST}" "mkdir -p '$PATH_DIR/data' '$PATH_DIR/logs'"
-          scp "${ssh_opts[@]}" \
+          scp -O "${ssh_opts[@]}" \
             deploy/aliyun/docker-compose.yml \
             deploy/aliyun/.env.example \
             "${USER}@${HOST}:${PATH_DIR}/"

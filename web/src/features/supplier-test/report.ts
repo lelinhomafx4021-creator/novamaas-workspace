@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import {
   displayMeasured,
+  displayThreshold,
   overallLabel,
   VERDICT_LABEL,
   type Assessment,
@@ -34,6 +35,7 @@ export type ReportInput = {
   stressAssessment: Assessment | null
   cacheAssessment: Assessment | null
   errorMessage: string
+  standardLabel: string
   statusLabel: (status: CheckStatus) => string
   t: (key: string, options?: Record<string, string | number>) => string
 }
@@ -72,6 +74,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     `- ${t('Time')}: ${new Date().toLocaleString()}`,
     `- ${t('Base URL')}: ${input.baseUrl || '-'}`,
     `- ${t('Model')}: ${input.model || '-'}`,
+    `- ${t('Judgment standard')}: ${input.standardLabel}`,
     '',
     `## ${t('Basic acceptance')}`,
   ]
@@ -100,7 +103,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     lines.push('|---|---|---|---|')
     for (const row of input.cacheAssessment.rows) {
       lines.push(
-        `| ${t(row.label)} | ${displayMeasured(row, t)} | ${t(row.threshold)} | ${t(VERDICT_LABEL[row.verdict])} |`
+        `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(VERDICT_LABEL[row.verdict])} |`
       )
     }
   }
@@ -117,7 +120,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     lines.push('|---|---|---|---|')
     for (const row of input.stressAssessment.rows) {
       lines.push(
-        `| ${t(row.label)} | ${displayMeasured(row, t)} | ${t(row.threshold)} | ${t(VERDICT_LABEL[row.verdict])} |`
+        `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(VERDICT_LABEL[row.verdict])} |`
       )
     }
   }
@@ -155,7 +158,7 @@ function htmlRows(
       return `<tr>
 <td>${escapeHtml(t(row.label))}</td>
 <td>${escapeHtml(displayMeasured(row, t))}</td>
-<td>${escapeHtml(t(row.threshold))}</td>
+<td>${escapeHtml(displayThreshold(row, t))}</td>
 <td style="color:${color};font-weight:600">${escapeHtml(t(VERDICT_LABEL[row.verdict]))}</td>
 </tr>`
     })
@@ -204,7 +207,8 @@ th{background:#f3f4f6}
 <h1>${escapeHtml(t('Supplier Test Report'))}</h1>
 <p>${escapeHtml(t('Time'))}: ${escapeHtml(new Date().toLocaleString())}<br/>
 ${escapeHtml(t('Base URL'))}: ${escapeHtml(input.baseUrl || '-')}<br/>
-${escapeHtml(t('Model'))}: ${escapeHtml(input.model || '-')}</p>
+${escapeHtml(t('Model'))}: ${escapeHtml(input.model || '-')}<br/>
+${escapeHtml(t('Judgment standard'))}: ${escapeHtml(input.standardLabel)}</p>
 <h2>${escapeHtml(t('Basic acceptance'))}</h2>
 <ul>${checks(input.basicChecks)}</ul>
 ${input.summaries.basic ? `<p class="muted">${escapeHtml(input.summaries.basic)}</p>` : ''}

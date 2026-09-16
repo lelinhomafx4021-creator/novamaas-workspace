@@ -33,7 +33,57 @@ export type MetricRow = {
   measured: string
   measuredValues?: Record<string, string | number>
   threshold: string
+  thresholdValues?: Record<string, string | number>
   verdict: Verdict
+}
+
+export type SupplierStandard = {
+  id: string
+  labelKey: string
+  errorSlow: number
+  ttftShortOkMs: number
+  ttftLongOkMs: number
+  ttftP90AvgTimes: number
+  tpotAvgOkMs: number
+  tpotP90OkMs: number
+  cacheHitOk: number
+  ttlWaitSeconds: number
+  longInputTokens: number
+}
+
+export const SUPPLIER_STANDARDS: SupplierStandard[] = [
+  {
+    id: 'default',
+    labelKey: 'Default standard',
+    errorSlow: 0.1,
+    ttftShortOkMs: 8000,
+    ttftLongOkMs: 15000,
+    ttftP90AvgTimes: 3,
+    tpotAvgOkMs: 80,
+    tpotP90OkMs: 150,
+    cacheHitOk: 0.5,
+    ttlWaitSeconds: 30,
+    longInputTokens: 8000,
+  },
+  {
+    id: 'tight',
+    labelKey: 'Tight standard',
+    errorSlow: 0.05,
+    ttftShortOkMs: 3000,
+    ttftLongOkMs: 8000,
+    ttftP90AvgTimes: 2,
+    tpotAvgOkMs: 50,
+    tpotP90OkMs: 80,
+    cacheHitOk: 0.8,
+    ttlWaitSeconds: 30,
+    longInputTokens: 8000,
+  },
+]
+
+export const DEFAULT_STANDARD = SUPPLIER_STANDARDS[0]
+
+export function getStandard(id: string): SupplierStandard {
+  return SUPPLIER_STANDARDS.find((item) => item.id === id) ?? DEFAULT_STANDARD
 }
 
 export type Assessment = {
@@ -42,15 +92,13 @@ export type Assessment = {
 }
 
 const NO_SAMPLE = 'No sample (enable stream)'
-const TTFT_SHORT = 'Normal ≤ 8s; slower above that'
-const TTFT_LONG = 'Normal ≤ 15s; slower above that'
-const TTFT_P90 = 'Normal ≤ avg × 3; slower above that'
-const TPOT_AVG = 'Normal ≤ 80ms; slower above that'
-const TPOT_P90 = 'Normal ≤ 150ms; slower above that'
-const HIT_RATE = 'Normal ≥ 50%; slower below that'
-const TTL_RULE = 'Wait ≥ 30s and hit rate still ≥ 50%'
+const TTFT_RULE = 'Normal ≤ {{seconds}}s; slower above that'
+const TTFT_P90 = 'Normal ≤ avg × {{times}}; slower above that'
+const TPOT_RULE = 'Normal ≤ {{ms}}ms; slower above that'
+const HIT_RATE = 'Normal ≥ {{percent}}%; slower below that'
+const TTL_RULE = 'Wait ≥ {{seconds}}s and hit rate still ≥ {{percent}}%'
 const RATE_ESTIMATE = 'Short-run estimate, not a vendor limit'
-const ERROR_RATE = 'Normal < 10%; slower at 10%+'
+const ERROR_RATE = 'Normal < {{percent}}%; slower at that or above'
 const SUCCESS_RULE = 'Most requests succeed'
 
 export function worstVerdict(verdicts: Verdict[]): Verdict {
@@ -70,6 +118,13 @@ export function displayMeasured(
     return t(row.measured)
   }
   return row.measured
+}
+
+export function displayThreshold(
+  row: MetricRow,
+  t: (key: string, options?: Record<string, string | number>) => string
+): string {
+  return t(row.threshold, row.thresholdValues)
 }
 
 export function overallLabel(verdict: Verdict): string {
@@ -100,42 +155,51 @@ function sampleOr(value: string, fallback = NO_SAMPLE): string {
   return value || fallback
 }
 
-function ttftBand(ms: number, longInput: boolean): Verdict {
+function ttftBand(ms: number, longInput: boolean, standard: SupplierStandard): Verdict {
   if (!(ms > 0)) return 'na'
-  const limit = longInput ? 15000 : 8000
+  const limit = longInput ? standard.ttftLongOkMs : standard.ttftShortOkMs
   if (ms <= limit) return 'ok'
   return 'slow'
 }
 
-function tpotAvgBand(ms: number): Verdict {
+function tpotAvgBand(ms: number, standard: SupplierStandard): Verdict {
   if (!(ms > 0)) return 'na'
-  if (ms <= 80) return 'ok'
+  if (ms <= standard.tpotAvgOkMs) return 'ok'
   return 'slow'
 }
 
-function tpotP90Band(ms: number): Verdict {
+function tpotP90Band(ms: number, standard: SupplierStandard): Verdict {
   if (!(ms > 0)) return 'na'
-  if (ms <= 150) return 'ok'
+  if (ms <= standard.tpotP90OkMs) return 'ok'
   return 'slow'
 }
 
-function hitBand(rate: number): Verdict {
+function hitBand(rate: number, standard: SupplierStandard): Verdict {
   if (!(rate >= 0)) return 'na'
-  if (rate >= 0.5) return 'ok'
+  if (rate >= standard.cacheHitOk) return 'ok'
   return 'slow'
 }
 
-export function assessStress(metrics: StressMetrics): Assessment {
+function percentValue(rate: number): number {
+  return Math.round(rate * 1000) / 10
+}
+
+export function assessStress(
+  metrics: StressMetrics,
+  standard: SupplierStandard = DEFAULT_STANDARD
+): Assessment {
   const promptTokens = metrics.prompt_tokens ?? 0
   const avgPrompt =
     metrics.succeeded > 0 && promptTokens > 0
       ? promptTokens / metrics.succeeded
       : 0
-  const longInput = avgPrompt >= 8000
-  const ttftThreshold = longInput ? TTFT_LONG : TTFT_SHORT
+  const longInput = avgPrompt >= standard.longInputTokens
+  const ttftLimit = longInput ? standard.ttftLongOkMs : standard.ttftShortOkMs
+  const ttftThreshold = TTFT_RULE
+  const ttftValues = { seconds: ttftLimit / 1000 }
 
   let errorVerdict: Verdict = 'ok'
-  if (metrics.error_rate >= 0.1) {
+  if (metrics.error_rate >= standard.errorSlow) {
     errorVerdict = 'slow'
   }
 
@@ -145,6 +209,7 @@ export function assessStress(metrics: StressMetrics): Assessment {
       label: 'Error rate',
       measured: formatPercent(metrics.error_rate) || '0.0%',
       threshold: ERROR_RATE,
+      thresholdValues: { percent: percentValue(standard.errorSlow) },
       verdict: errorVerdict,
     },
     {
@@ -167,8 +232,11 @@ export function assessStress(metrics: StressMetrics): Assessment {
   ]
 
   if (metrics.ttft_avg_ms > 0) {
-    let p90Verdict = ttftBand(metrics.ttft_p90_ms, longInput)
-    if (metrics.ttft_avg_ms > 0 && metrics.ttft_p90_ms > metrics.ttft_avg_ms * 3) {
+    let p90Verdict = ttftBand(metrics.ttft_p90_ms, longInput, standard)
+    if (
+      metrics.ttft_avg_ms > 0 &&
+      metrics.ttft_p90_ms > metrics.ttft_avg_ms * standard.ttftP90AvgTimes
+    ) {
       p90Verdict = 'slow'
     }
     rows.push(
@@ -177,20 +245,23 @@ export function assessStress(metrics: StressMetrics): Assessment {
         label: 'TTFT avg',
         measured: formatMs(metrics.ttft_avg_ms),
         threshold: ttftThreshold,
-        verdict: ttftBand(metrics.ttft_avg_ms, longInput),
+        thresholdValues: ttftValues,
+        verdict: ttftBand(metrics.ttft_avg_ms, longInput, standard),
       },
       {
         id: 'ttft_p50',
         label: 'TTFT P50',
         measured: formatMs(metrics.ttft_p50_ms),
         threshold: ttftThreshold,
-        verdict: ttftBand(metrics.ttft_p50_ms, longInput),
+        thresholdValues: ttftValues,
+        verdict: ttftBand(metrics.ttft_p50_ms, longInput, standard),
       },
       {
         id: 'ttft_p90',
         label: 'TTFT P90',
         measured: formatMs(metrics.ttft_p90_ms),
         threshold: TTFT_P90,
+        thresholdValues: { times: standard.ttftP90AvgTimes },
         verdict: p90Verdict,
       }
     )
@@ -201,6 +272,7 @@ export function assessStress(metrics: StressMetrics): Assessment {
         label: 'TTFT avg',
         measured: NO_SAMPLE,
         threshold: ttftThreshold,
+        thresholdValues: ttftValues,
         verdict: 'na',
       },
       {
@@ -208,6 +280,7 @@ export function assessStress(metrics: StressMetrics): Assessment {
         label: 'TTFT P50',
         measured: NO_SAMPLE,
         threshold: ttftThreshold,
+        thresholdValues: ttftValues,
         verdict: 'na',
       },
       {
@@ -215,6 +288,7 @@ export function assessStress(metrics: StressMetrics): Assessment {
         label: 'TTFT P90',
         measured: NO_SAMPLE,
         threshold: TTFT_P90,
+        thresholdValues: { times: standard.ttftP90AvgTimes },
         verdict: 'na',
       }
     )
@@ -226,22 +300,25 @@ export function assessStress(metrics: StressMetrics): Assessment {
         id: 'tpot_avg',
         label: 'TPOT avg',
         measured: formatMs(metrics.tpot_avg_ms),
-        threshold: TPOT_AVG,
-        verdict: tpotAvgBand(metrics.tpot_avg_ms),
+        threshold: TPOT_RULE,
+        thresholdValues: { ms: standard.tpotAvgOkMs },
+        verdict: tpotAvgBand(metrics.tpot_avg_ms, standard),
       },
       {
         id: 'tpot_p50',
         label: 'TPOT P50',
         measured: formatMs(metrics.tpot_p50_ms),
-        threshold: TPOT_AVG,
-        verdict: tpotAvgBand(metrics.tpot_p50_ms),
+        threshold: TPOT_RULE,
+        thresholdValues: { ms: standard.tpotAvgOkMs },
+        verdict: tpotAvgBand(metrics.tpot_p50_ms, standard),
       },
       {
         id: 'tpot_p90',
         label: 'TPOT P90',
         measured: formatMs(metrics.tpot_p90_ms),
-        threshold: TPOT_P90,
-        verdict: tpotP90Band(metrics.tpot_p90_ms),
+        threshold: TPOT_RULE,
+        thresholdValues: { ms: standard.tpotP90OkMs },
+        verdict: tpotP90Band(metrics.tpot_p90_ms, standard),
       }
     )
   } else {
@@ -250,21 +327,24 @@ export function assessStress(metrics: StressMetrics): Assessment {
         id: 'tpot_avg',
         label: 'TPOT avg',
         measured: NO_SAMPLE,
-        threshold: TPOT_AVG,
+        threshold: TPOT_RULE,
+        thresholdValues: { ms: standard.tpotAvgOkMs },
         verdict: 'na',
       },
       {
         id: 'tpot_p50',
         label: 'TPOT P50',
         measured: NO_SAMPLE,
-        threshold: TPOT_AVG,
+        threshold: TPOT_RULE,
+        thresholdValues: { ms: standard.tpotAvgOkMs },
         verdict: 'na',
       },
       {
         id: 'tpot_p90',
         label: 'TPOT P90',
         measured: NO_SAMPLE,
-        threshold: TPOT_P90,
+        threshold: TPOT_RULE,
+        thresholdValues: { ms: standard.tpotP90OkMs },
         verdict: 'na',
       }
     )
@@ -297,7 +377,15 @@ export function assessStress(metrics: StressMetrics): Assessment {
   return { rows, overall: worstVerdict(rows.map((row) => row.verdict)) }
 }
 
-export function assessCache(metrics: CacheMetrics | null): Assessment {
+export function assessCache(
+  metrics: CacheMetrics | null,
+  standard: SupplierStandard = DEFAULT_STANDARD
+): Assessment {
+  const hitValues = { percent: percentValue(standard.cacheHitOk) }
+  const ttlValues = {
+    seconds: standard.ttlWaitSeconds,
+    percent: percentValue(standard.cacheHitOk),
+  }
   if (!metrics) {
     return { rows: [], overall: 'na' }
   }
@@ -309,6 +397,7 @@ export function assessCache(metrics: CacheMetrics | null): Assessment {
           label: 'Cache hit rate',
           measured: 'No cached_tokens field',
           threshold: HIT_RATE,
+          thresholdValues: hitValues,
           verdict: 'na',
         },
         {
@@ -316,6 +405,7 @@ export function assessCache(metrics: CacheMetrics | null): Assessment {
           label: 'Cache TTL',
           measured: 'Cannot compare',
           threshold: TTL_RULE,
+          thresholdValues: ttlValues,
           verdict: 'na',
         },
       ],
@@ -323,17 +413,21 @@ export function assessCache(metrics: CacheMetrics | null): Assessment {
     }
   }
 
-  const hitVerdict = hitBand(metrics.avg_hit_rate)
+  const hitVerdict = hitBand(metrics.avg_hit_rate, standard)
   const hitText = formatPercent(metrics.avg_hit_rate)
   let ttlRow: MetricRow = {
     id: 'ttl',
     label: 'Cache TTL',
-    measured: 'Waited {{seconds}}s (need ≥ 30s)',
-    measuredValues: { seconds: metrics.wait_seconds },
+    measured: 'Waited {{seconds}}s (need ≥ {{need}}s)',
+    measuredValues: {
+      seconds: metrics.wait_seconds,
+      need: standard.ttlWaitSeconds,
+    },
     threshold: TTL_RULE,
+    thresholdValues: ttlValues,
     verdict: 'na',
   }
-  if (metrics.wait_seconds >= 30) {
+  if (metrics.wait_seconds >= standard.ttlWaitSeconds) {
     ttlRow = {
       ...ttlRow,
       measured: 'Waited {{seconds}}s, hit {{rate}}',
@@ -348,6 +442,7 @@ export function assessCache(metrics: CacheMetrics | null): Assessment {
       label: 'Cache hit rate',
       measured: hitText,
       threshold: HIT_RATE,
+      thresholdValues: hitValues,
       verdict: hitVerdict,
     },
     ttlRow,

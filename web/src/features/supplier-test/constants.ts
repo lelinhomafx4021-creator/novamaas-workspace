@@ -29,10 +29,31 @@ export const API_ENDPOINTS = {
   RUNS: '/api/supplier-test/runs',
 } as const
 
+export function estimateTokens(text: string): number {
+  const raw = text.trim()
+  if (!raw) return 0
+  let cjk = 0
+  let other = 0
+  for (const ch of raw) {
+    const code = ch.codePointAt(0) ?? 0
+    if (
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x3040 && code <= 0x30ff)
+    ) {
+      cjk += 1
+    } else if (ch.trim() !== '') {
+      other += 1
+    }
+  }
+  return Math.max(1, Math.round(cjk + other / 4))
+}
+
 export const CORPORA: Array<{
   id: string
   labelKey: string
   prompt: string
+  tokens: number
 }> = [
   { id: 'min-qps', labelKey: 'Min QPS', prompt: minQpsText.trim() },
   { id: 'short', labelKey: 'Short text', prompt: shortText.trim() },
@@ -45,7 +66,7 @@ export const CORPORA: Array<{
     prompt: veryLongText.trim(),
   },
   { id: 'custom', labelKey: 'Custom prompt', prompt: '' },
-]
+].map((item) => ({ ...item, tokens: estimateTokens(item.prompt) }))
 
 export function thisPlatformBaseURL(): string {
   const fromEnv = String(

@@ -18,7 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { assessCache, assessStress, overallLabel } from './baselines'
+import {
+  assessCache,
+  assessStress,
+  getStandard,
+  overallLabel,
+} from './baselines'
+import { CORPORA, estimateTokens } from './constants'
 import type { CacheMetrics, StressMetrics } from './types'
 
 function stress(partial: Partial<StressMetrics>): StressMetrics {
@@ -98,5 +104,33 @@ describe('supplier-test verdicts', () => {
     const assessment = assessCache(metrics)
     expect(assessment.overall).toBe('ok')
     expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('ok')
+  })
+
+  test('switching to the tight standard can mark the same run slow', () => {
+    const metrics = stress({
+      error_rate: 0.08,
+      succeeded: 92,
+      failed: 8,
+      total: 100,
+      ttft_avg_ms: 4500,
+      ttft_p50_ms: 4200,
+      ttft_p90_ms: 7000,
+      tpot_avg_ms: 72,
+      tpot_p50_ms: 68,
+      tpot_p90_ms: 140,
+    })
+    expect(assessStress(metrics, getStandard('default')).overall).toBe('ok')
+    expect(assessStress(metrics, getStandard('tight')).overall).toBe('slow')
+  })
+
+  test('built-in corpora show a token estimate', () => {
+    for (const item of CORPORA) {
+      if (item.id === 'custom') {
+        expect(item.tokens).toBe(0)
+        continue
+      }
+      expect(item.tokens).toBeGreaterThan(0)
+      expect(item.tokens).toBe(estimateTokens(item.prompt))
+    }
   })
 })

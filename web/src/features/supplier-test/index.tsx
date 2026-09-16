@@ -62,7 +62,10 @@ import {
   assessCache,
   assessStress,
   displayMeasured,
+  displayThreshold,
+  getStandard,
   overallLabel,
+  SUPPLIER_STANDARDS,
   VERDICT_LABEL,
   type Assessment,
   type Verdict,
@@ -81,6 +84,7 @@ import {
   MAX_ROUNDS,
   MAX_TOKENS_CAP,
   STRESS_WARN_TOTAL,
+  estimateTokens,
   resolveCorpusPrompt,
   thisPlatformBaseURL,
 } from './constants'
@@ -141,7 +145,9 @@ export function SupplierTest() {
   const [basic, setBasic] = useState<BasicForm>(DEFAULT_BASIC_FORM)
   const [cache, setCache] = useState<CacheForm>(DEFAULT_CACHE_FORM)
   const [stress, setStress] = useState<StressForm>(DEFAULT_STRESS_FORM)
+  const [standardId, setStandardId] = useState(SUPPLIER_STANDARDS[0].id)
   const run = useSupplierTestRun()
+  const standard = getStandard(standardId)
   const stressTotal = stress.concurrency * stress.rounds
   const busy = run.runningModule !== null
   const hasReport =
@@ -301,14 +307,17 @@ export function SupplierTest() {
     void run.start(buildPayload(module, checks))
   }
 
-  const stressAssessment = run.metrics ? assessStress(run.metrics) : null
+  const stressAssessment = run.metrics
+    ? assessStress(run.metrics, standard)
+    : null
   const cacheAssessment = run.cacheMetrics
-    ? assessCache(run.cacheMetrics)
+    ? assessCache(run.cacheMetrics, standard)
     : null
 
   const reportInput = (): ReportInput => ({
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
+    standardLabel: t(standard.labelKey),
     basicChecks: run.basicChecks,
     cacheChecks: run.cacheChecks,
     summaries: run.summaries,
@@ -379,6 +388,18 @@ export function SupplierTest() {
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='space-y-4'>
+          <div className='max-w-sm'>
+            <FieldSelect
+              label={t('Judgment standard')}
+              value={standard.id}
+              disabled={false}
+              items={SUPPLIER_STANDARDS.map((item) => ({
+                value: item.id,
+                label: t(item.labelKey),
+              }))}
+              onChange={setStandardId}
+            />
+          </div>
           <TitledCard
             title={t('Target')}
             description={t(
@@ -896,7 +917,13 @@ function CorpusPicker(props: {
         disabled={props.disabled}
         items={CORPORA.map((item) => ({
           value: item.id,
-          label: t(item.labelKey),
+          label:
+            item.tokens > 0
+              ? t('{{label}} ({{tokens}} tokens)', {
+                  label: t(item.labelKey),
+                  tokens: item.tokens,
+                })
+              : t(item.labelKey),
         }))}
         onChange={(corpus) =>
           props.onChange({ corpus, prompt: props.form.prompt })
@@ -918,12 +945,20 @@ function CorpusPicker(props: {
               })
             }
           />
+          <p className='text-muted-foreground text-sm'>
+            {t('{{tokens}} tokens', {
+              tokens: estimateTokens(props.form.prompt),
+            })}
+          </p>
         </div>
       ) : (
         <p className='text-muted-foreground text-sm'>
           {t(
-            'Using built-in corpus ({{chars}} characters). Replace files in supplier-test/corpora to change the text.',
-            { chars: resolveCorpusPrompt(props.form).length }
+            'Using built-in corpus ({{tokens}} tokens, {{chars}} characters). Replace files in supplier-test/corpora to change the text.',
+            {
+              tokens: estimateTokens(resolveCorpusPrompt(props.form)),
+              chars: resolveCorpusPrompt(props.form).length,
+            }
           )}
         </p>
       )}
@@ -1156,7 +1191,7 @@ function AssessmentTable(props: { assessment: Assessment }) {
                 {displayMeasured(row, t)}
               </TableCell>
               <TableCell className='text-muted-foreground'>
-                {t(row.threshold)}
+                {displayThreshold(row, t)}
               </TableCell>
               <TableCell className={verdictClass(row.verdict)}>
                 {t(VERDICT_LABEL[row.verdict])}

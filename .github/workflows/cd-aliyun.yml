@@ -115,7 +115,10 @@ jobs:
   deploy:
     name: Restart server container
     needs: publish
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
+    if: >-
+      secrets.DEPLOY_HOST != '' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -130,11 +133,15 @@ jobs:
           [ -n "$USER" ] || { echo "Missing secret DEPLOY_USER"; missing=1; }
           [ -n "$KEY" ] || { echo "Missing secret DEPLOY_SSH_KEY"; missing=1; }
           if [ "$missing" -ne 0 ]; then
-            echo "Fill DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY, or re-run without Deploy."
+            echo "Fill DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY in this repository's Actions secrets."
             exit 1
           fi
 
-      - name: Pull image and recreate container
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Sync compose and recreate stack
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}
@@ -144,14 +151,17 @@ jobs:
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
         run: |
+          set -euo pipefail
           key_file="$RUNNER_TEMP/deploy_key"
-          printf '%s\n' "$KEY" > "$key_file"
+          printf '%s\n' "$KEY" | tr -d '\r' > "$key_file"
           chmod 600 "$key_file"
-          ssh -i "$key_file" \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=accept-new \
-            -o BatchMode=yes \
-            "${USER}@${HOST}" \
+          ssh_opts=(-i "$key_file" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes)
+          ssh "${ssh_opts[@]}" "${USER}@${HOST}" "mkdir -p '$PATH_DIR/data' '$PATH_DIR/logs'"
+          scp "${ssh_opts[@]}" \
+            deploy/aliyun/docker-compose.yml \
+            deploy/aliyun/.env.example \
+            "${USER}@${HOST}:${PATH_DIR}/"
+          ssh "${ssh_opts[@]}" "${USER}@${HOST}" \
             IMAGE="$IMAGE" \
             PATH_DIR="$PATH_DIR" \
             ACR_REGISTRY="$ACR_REGISTRY" \
@@ -161,18 +171,20 @@ jobs:
           set -euo pipefail
           echo "$ACR_PASSWORD" | docker login --username "$ACR_USERNAME" --password-stdin "$ACR_REGISTRY"
           docker pull "$IMAGE"
-          mkdir -p "$PATH_DIR"
           cd "$PATH_DIR"
-          printf 'NOVAMAAS_IMAGE=%s\n' "$IMAGE" > .image.env
-          if [ -f docker-compose.yml ] || [ -f compose.yml ]; then
-            docker compose --env-file .image.env up -d
-          else
-            docker rm -f new-api >/dev/null 2>&1 || true
-            docker run -d --name new-api --restart unless-stopped \
-              -p 3000:3000 \
-              -e TZ=Asia/Shanghai \
-              -v "$PATH_DIR/data:/data" \
-              "$IMAGE"
+          if [ ! -f .env ]; then
+            cp .env.example .env
           fi
+          printf 'NOVAMAAS_IMAGE=%s\n' "$IMAGE" > .image.env
+          if docker compose version >/dev/null 2>&1; then
+            compose=(docker compose)
+          elif command -v docker-compose >/dev/null 2>&1; then
+            compose=(docker-compose)
+          else
+            echo "docker compose is not installed on the server"
+            exit 1
+          fi
+          "${compose[@]}" --env-file .env --env-file .image.env up -d
+          "${compose[@]}" --env-file .env --env-file .image.env ps
           docker image prune -f >/dev/null 2>&1 || true
           REMOTE

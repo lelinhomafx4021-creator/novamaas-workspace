@@ -115,33 +115,36 @@ jobs:
   deploy:
     name: Restart server container
     needs: publish
-    if: >-
-      secrets.DEPLOY_HOST != '' &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'))
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Require SSH config
+        id: gate
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          WANT_DEPLOY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true' }}
         run: |
-          missing=0
-          [ -n "$HOST" ] || { echo "Missing secret DEPLOY_HOST"; missing=1; }
-          [ -n "$USER" ] || { echo "Missing secret DEPLOY_USER"; missing=1; }
-          [ -n "$KEY" ] || { echo "Missing secret DEPLOY_SSH_KEY"; missing=1; }
-          if [ "$missing" -ne 0 ]; then
+          if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$KEY" ]; then
             echo "Fill DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY in this repository's Actions secrets."
-            exit 1
+            if [ "$WANT_DEPLOY" = "true" ]; then
+              exit 1
+            fi
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Deploy secrets are empty; skipping server restart."
+            exit 0
           fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.gate.outputs.skip != 'true'
         with:
           persist-credentials: false
 
       - name: Sync compose and recreate stack
+        if: steps.gate.outputs.skip != 'true'
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}

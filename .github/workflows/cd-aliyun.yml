@@ -85,6 +85,8 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
             ${{ env.IMAGE }}:supplier-test

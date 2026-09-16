@@ -23,10 +23,11 @@ import {
   Database,
   Download,
   Loader2,
+  SlidersHorizontal,
   Square,
   Zap,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -61,13 +62,17 @@ import { fetchSupplierModels } from './api'
 import {
   assessCache,
   assessStress,
+  DEFAULT_STANDARD,
   displayMeasured,
   displayThreshold,
   getStandard,
+  matchingStandardId,
   overallLabel,
+  sanitizeStandard,
   SUPPLIER_STANDARDS,
   VERDICT_LABEL,
   type Assessment,
+  type SupplierStandard,
   type Verdict,
 } from './baselines'
 import {
@@ -134,6 +139,21 @@ function optionalNumber(raw: string): number | undefined {
   return value
 }
 
+const STANDARD_STORAGE_KEY = 'supplier-test-standard'
+
+function readStoredStandard(): SupplierStandard {
+  if (typeof sessionStorage === 'undefined') {
+    return { ...DEFAULT_STANDARD }
+  }
+  try {
+    const raw = sessionStorage.getItem(STANDARD_STORAGE_KEY)
+    if (!raw) return { ...DEFAULT_STANDARD }
+    return sanitizeStandard(JSON.parse(raw) as Partial<SupplierStandard>)
+  } catch {
+    return { ...DEFAULT_STANDARD }
+  }
+}
+
 export function SupplierTest() {
   const { t } = useTranslation()
   const [target, setTarget] = useState<TargetForm>({
@@ -145,9 +165,22 @@ export function SupplierTest() {
   const [basic, setBasic] = useState<BasicForm>(DEFAULT_BASIC_FORM)
   const [cache, setCache] = useState<CacheForm>(DEFAULT_CACHE_FORM)
   const [stress, setStress] = useState<StressForm>(DEFAULT_STRESS_FORM)
-  const [standardId, setStandardId] = useState(SUPPLIER_STANDARDS[0].id)
+  const [standard, setStandard] = useState<SupplierStandard>(readStoredStandard)
   const run = useSupplierTestRun()
-  const standard = getStandard(standardId)
+  const matchedStandardId = matchingStandardId(standard)
+  const standardLabel = t(
+    matchedStandardId
+      ? getStandard(matchedStandardId).labelKey
+      : 'Custom standard'
+  )
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STANDARD_STORAGE_KEY, JSON.stringify(standard))
+    } catch {
+      // ignore quota or private-mode failures
+    }
+  }, [standard])
   const stressTotal = stress.concurrency * stress.rounds
   const busy = run.runningModule !== null
   const hasReport =
@@ -317,7 +350,7 @@ export function SupplierTest() {
   const reportInput = (): ReportInput => ({
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
-    standardLabel: t(standard.labelKey),
+    standardLabel,
     basicChecks: run.basicChecks,
     cacheChecks: run.cacheChecks,
     summaries: run.summaries,
@@ -388,18 +421,170 @@ export function SupplierTest() {
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='space-y-4'>
-          <div className='max-w-sm'>
-            <FieldSelect
-              label={t('Judgment standard')}
-              value={standard.id}
-              disabled={false}
-              items={SUPPLIER_STANDARDS.map((item) => ({
-                value: item.id,
-                label: t(item.labelKey),
-              }))}
-              onChange={setStandardId}
-            />
-          </div>
+          <TitledCard
+            title={t('Judgment standard')}
+            description={t(
+              'Presets are starting points. Edit the numbers for this vendor; tables update immediately.'
+            )}
+            icon={<SlidersHorizontal />}
+          >
+            <div className='max-w-sm'>
+              <FieldSelect
+                label={t('Load preset')}
+                value={matchedStandardId ?? 'custom'}
+                disabled={false}
+                items={[
+                  ...SUPPLIER_STANDARDS.map((item) => ({
+                    value: item.id,
+                    label: t(item.labelKey),
+                  })),
+                  ...(matchedStandardId
+                    ? []
+                    : [
+                        {
+                          value: 'custom',
+                          label: t('Custom standard'),
+                        },
+                      ]),
+                ]}
+                onChange={(id) => {
+                  if (id === 'custom') return
+                  setStandard({ ...getStandard(id) })
+                }}
+              />
+            </div>
+            <div className='mt-4 grid gap-4 md:grid-cols-3 lg:grid-cols-5'>
+              <NumberField
+                id='std-error'
+                label={t('Error rate (%)')}
+                value={Math.round(standard.errorSlow * 100)}
+                disabled={false}
+                min={0}
+                max={100}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({ ...current, errorSlow: value / 100 })
+                  )
+                }
+              />
+              <NumberField
+                id='std-ttft-short'
+                label={t('TTFT short (s)')}
+                value={standard.ttftShortOkMs / 1000}
+                disabled={false}
+                min={0.1}
+                max={120}
+                step={0.5}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({
+                      ...current,
+                      ttftShortOkMs: value * 1000,
+                    })
+                  )
+                }
+              />
+              <NumberField
+                id='std-ttft-long'
+                label={t('TTFT long (s)')}
+                value={standard.ttftLongOkMs / 1000}
+                disabled={false}
+                min={0.1}
+                max={180}
+                step={0.5}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({
+                      ...current,
+                      ttftLongOkMs: value * 1000,
+                    })
+                  )
+                }
+              />
+              <NumberField
+                id='std-ttft-p90'
+                label={t('TTFT P90 × avg')}
+                value={standard.ttftP90AvgTimes}
+                disabled={false}
+                min={1}
+                max={10}
+                step={0.5}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({
+                      ...current,
+                      ttftP90AvgTimes: value,
+                    })
+                  )
+                }
+              />
+              <NumberField
+                id='std-tpot-avg'
+                label={t('TPOT avg (ms)')}
+                value={standard.tpotAvgOkMs}
+                disabled={false}
+                min={1}
+                max={5000}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({ ...current, tpotAvgOkMs: value })
+                  )
+                }
+              />
+              <NumberField
+                id='std-tpot-p90'
+                label={t('TPOT P90 (ms)')}
+                value={standard.tpotP90OkMs}
+                disabled={false}
+                min={1}
+                max={5000}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({ ...current, tpotP90OkMs: value })
+                  )
+                }
+              />
+              <NumberField
+                id='std-cache'
+                label={t('Cache hit (%)')}
+                value={Math.round(standard.cacheHitOk * 100)}
+                disabled={false}
+                min={0}
+                max={100}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({ ...current, cacheHitOk: value / 100 })
+                  )
+                }
+              />
+              <NumberField
+                id='std-ttl'
+                label={t('TTL wait (s)')}
+                value={standard.ttlWaitSeconds}
+                disabled={false}
+                min={0}
+                max={600}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({ ...current, ttlWaitSeconds: value })
+                  )
+                }
+              />
+              <NumberField
+                id='std-long-input'
+                label={t('Long input tokens')}
+                value={standard.longInputTokens}
+                disabled={false}
+                min={1}
+                max={MAX_TOKENS_CAP}
+                onChange={(value) =>
+                  setStandard((current) =>
+                    sanitizeStandard({ ...current, longInputTokens: value })
+                  )
+                }
+              />
+            </div>
+          </TitledCard>
           <TitledCard
             title={t('Target')}
             description={t(

@@ -22,7 +22,9 @@ import {
   assessCache,
   assessStress,
   getStandard,
+  matchingStandardId,
   overallLabel,
+  sanitizeStandard,
 } from './baselines'
 import { CORPORA, estimateTokens } from './constants'
 import type { CacheMetrics, StressMetrics } from './types'
@@ -121,6 +123,22 @@ describe('supplier-test verdicts', () => {
     })
     expect(assessStress(metrics, getStandard('default')).overall).toBe('ok')
     expect(assessStress(metrics, getStandard('tight')).overall).toBe('slow')
+  })
+
+  test('sanitizeStandard keeps editable vendor numbers in range', () => {
+    const custom = sanitizeStandard({
+      id: 'vendor-x',
+      errorSlow: 0.07,
+      ttftShortOkMs: 4500,
+      cacheHitOk: 0.65,
+    })
+    expect(custom.errorSlow).toBe(0.07)
+    expect(custom.ttftShortOkMs).toBe(4500)
+    expect(custom.cacheHitOk).toBe(0.65)
+    expect(matchingStandardId(custom)).toBeNull()
+    expect(
+      matchingStandardId(sanitizeStandard(getStandard('default')))
+    ).toBe('default')
   })
 
   test('built-in corpora show a token estimate', () => {

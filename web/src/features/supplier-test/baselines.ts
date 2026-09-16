@@ -82,8 +82,72 @@ export const SUPPLIER_STANDARDS: SupplierStandard[] = [
 
 export const DEFAULT_STANDARD = SUPPLIER_STANDARDS[0]
 
+const STANDARD_NUMBER_KEYS = [
+  'errorSlow',
+  'ttftShortOkMs',
+  'ttftLongOkMs',
+  'ttftP90AvgTimes',
+  'tpotAvgOkMs',
+  'tpotP90OkMs',
+  'cacheHitOk',
+  'ttlWaitSeconds',
+  'longInputTokens',
+] as const
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const next = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(next)) return fallback
+  return Math.min(max, Math.max(min, next))
+}
+
 export function getStandard(id: string): SupplierStandard {
   return SUPPLIER_STANDARDS.find((item) => item.id === id) ?? DEFAULT_STANDARD
+}
+
+export function sanitizeStandard(
+  raw?: Partial<SupplierStandard> | null
+): SupplierStandard {
+  const base = DEFAULT_STANDARD
+  return {
+    id: typeof raw?.id === 'string' && raw.id.trim() ? raw.id.trim() : 'custom',
+    labelKey:
+      typeof raw?.labelKey === 'string' && raw.labelKey.trim()
+        ? raw.labelKey.trim()
+        : 'Custom standard',
+    errorSlow: clampNumber(raw?.errorSlow, base.errorSlow, 0, 1),
+    ttftShortOkMs: clampNumber(raw?.ttftShortOkMs, base.ttftShortOkMs, 1, 120000),
+    ttftLongOkMs: clampNumber(raw?.ttftLongOkMs, base.ttftLongOkMs, 1, 180000),
+    ttftP90AvgTimes: clampNumber(
+      raw?.ttftP90AvgTimes,
+      base.ttftP90AvgTimes,
+      1,
+      10
+    ),
+    tpotAvgOkMs: clampNumber(raw?.tpotAvgOkMs, base.tpotAvgOkMs, 1, 5000),
+    tpotP90OkMs: clampNumber(raw?.tpotP90OkMs, base.tpotP90OkMs, 1, 5000),
+    cacheHitOk: clampNumber(raw?.cacheHitOk, base.cacheHitOk, 0, 1),
+    ttlWaitSeconds: clampNumber(
+      raw?.ttlWaitSeconds,
+      base.ttlWaitSeconds,
+      0,
+      600
+    ),
+    longInputTokens: clampNumber(
+      raw?.longInputTokens,
+      base.longInputTokens,
+      1,
+      256000
+    ),
+  }
+}
+
+export function matchingStandardId(standard: SupplierStandard): string | null {
+  const found = SUPPLIER_STANDARDS.find((preset) =>
+    STANDARD_NUMBER_KEYS.every(
+      (key) => Math.abs(preset[key] - standard[key]) < 1e-9
+    )
+  )
+  return found?.id ?? null
 }
 
 export type Assessment = {

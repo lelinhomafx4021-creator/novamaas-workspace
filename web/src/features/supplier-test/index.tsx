@@ -202,7 +202,6 @@ export function SupplierTest() {
       cache: {
         prompt: resolveCorpusPrompt(cache),
         follow_up: cache.followUp,
-        warm_tokens: 0,
         wait_seconds: cache.waitSeconds,
         max_tokens: cache.maxTokens,
         rounds: cache.rounds,
@@ -213,6 +212,7 @@ export function SupplierTest() {
         rounds: stress.rounds,
         max_tokens: stress.maxTokens,
         prompt: resolveCorpusPrompt(stress),
+        break_cache: stress.breakCache,
         stream: stress.stream,
       },
     }
@@ -486,7 +486,7 @@ export function SupplierTest() {
           <TitledCard
             title={t('Basic acceptance')}
             description={t(
-              'Run one check or the full suite. Empty temperature / top_p are omitted. Missing vendor fields are skipped, not failed.'
+              'Empty temperature / top_p are not sent. Missing vendor fields are skipped, not failed.'
             )}
             icon={<ClipboardCheck />}
             action={
@@ -588,7 +588,7 @@ export function SupplierTest() {
           <TitledCard
             title={t('Cache test')}
             description={t(
-              'Pick a corpus and send it as-is. The first request warms cache; later rounds check the hit.'
+              'Corpus is the input prefix, sent as-is. Max tokens only caps the reply. The first request warms cache; later rounds check the hit.'
             )}
             icon={<Database />}
             action={
@@ -703,7 +703,7 @@ export function SupplierTest() {
           <TitledCard
             title={t('Stress test')}
             description={t(
-              'Pick a corpus, then set concurrency. The selected text is sent as-is.'
+              'Corpus is sent as-is. Allow cache reuses it; break cache puts a random prefix in front of each request. Max tokens only caps the reply.'
             )}
             icon={<Zap />}
             action={
@@ -735,6 +735,30 @@ export function SupplierTest() {
                   {t(preset.labelKey)}
                 </Button>
               ))}
+            </div>
+            <div className='mt-3 flex flex-wrap gap-2'>
+              <Button
+                type='button'
+                variant={stress.breakCache ? 'outline' : 'secondary'}
+                size='sm'
+                disabled={busy}
+                onClick={() =>
+                  setStress((current) => ({ ...current, breakCache: false }))
+                }
+              >
+                {t('Allow prompt cache')}
+              </Button>
+              <Button
+                type='button'
+                variant={stress.breakCache ? 'secondary' : 'outline'}
+                size='sm'
+                disabled={busy}
+                onClick={() =>
+                  setStress((current) => ({ ...current, breakCache: true }))
+                }
+              >
+                {t('Break prompt cache')}
+              </Button>
             </div>
             <div className='mt-4 grid gap-4 md:grid-cols-4'>
               <NumberField

@@ -85,7 +85,6 @@ export type SupplierTestRunRequest = {
   cache: {
     prompt: string
     follow_up: string
-    warm_tokens: number
     wait_seconds: number
     max_tokens: number
     rounds: number
@@ -96,7 +95,7 @@ export type SupplierTestRunRequest = {
     rounds: number
     max_tokens: number
     prompt: string
-    target_tokens?: number
+    break_cache: boolean
     stream: boolean
   }
 }
@@ -120,6 +119,7 @@ export type StressForm = {
   maxTokens: number
   corpus: string
   prompt: string
+  breakCache: boolean
   stream: boolean
 }
 

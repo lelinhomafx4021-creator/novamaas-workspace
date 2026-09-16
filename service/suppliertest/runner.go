@@ -27,8 +27,8 @@ type RunRequest struct {
 type BasicConfig struct {
 	Prompt      string   `json:"prompt"`
 	MaxTokens   int      `json:"max_tokens"`
-	Temperature *float64 `json:"temperature"`
-	TopP        *float64 `json:"top_p"`
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
 	Stream      *bool    `json:"stream"`
 	Checks      []string `json:"checks,omitempty"`
 }
@@ -36,7 +36,6 @@ type BasicConfig struct {
 type CacheConfig struct {
 	Prompt      string `json:"prompt"`
 	FollowUp    string `json:"follow_up"`
-	WarmTokens  int    `json:"warm_tokens"`
 	WaitSeconds int    `json:"wait_seconds"`
 	MaxTokens   int    `json:"max_tokens"`
 	Rounds      int    `json:"rounds"`
@@ -44,12 +43,12 @@ type CacheConfig struct {
 }
 
 type StressConfig struct {
-	Concurrency  int    `json:"concurrency"`
-	Rounds       int    `json:"rounds"`
-	MaxTokens    int    `json:"max_tokens"`
-	Prompt       string `json:"prompt"`
-	TargetTokens int    `json:"target_tokens"`
-	Stream       *bool  `json:"stream"`
+	Concurrency int    `json:"concurrency"`
+	Rounds      int    `json:"rounds"`
+	MaxTokens   int    `json:"max_tokens"`
+	Prompt      string `json:"prompt"`
+	BreakCache  bool   `json:"break_cache"`
+	Stream      *bool  `json:"stream"`
 }
 
 type Event struct {
@@ -149,9 +148,6 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.Stress.MaxTokens < 1 || req.Stress.MaxTokens > maxTokensCap {
 		return fmt.Errorf("max_tokens must be between 1 and %d", maxTokensCap)
 	}
-	if req.Stress.TargetTokens < 0 || req.Stress.TargetTokens > maxTokensCap {
-		return fmt.Errorf("target_tokens must be between 0 and %d", maxTokensCap)
-	}
 	if strings.TrimSpace(req.Stress.Prompt) == "" {
 		req.Stress.Prompt = DefaultStressPrompt
 	}
@@ -180,9 +176,6 @@ func NormalizeRunRequest(req *RunRequest) error {
 	}
 	if req.Cache.Rounds == 0 {
 		req.Cache.Rounds = 5
-	}
-	if req.Cache.WarmTokens < 0 || req.Cache.WarmTokens > maxTokensCap {
-		return fmt.Errorf("cache prefix tokens must be between 0 and %d", maxTokensCap)
 	}
 	if req.Cache.WaitSeconds < 0 || req.Cache.WaitSeconds > 600 {
 		return fmt.Errorf("cache wait must be between 0 and 600 seconds")
@@ -492,7 +485,10 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emit(Event{Type: "check", Module: ModuleCache, CheckID: id, Title: title, Status: status, Message: message})
 	}
 	stream := boolVal(req.Cache.Stream, true)
-	prefix := padPrompt(req.Cache.Prompt, req.Cache.WarmTokens)
+	prefix := strings.TrimSpace(req.Cache.Prompt)
+	if prefix == "" {
+		prefix = DefaultCachePrefix
+	}
 	followUp := strings.TrimSpace(req.Cache.FollowUp)
 	if followUp == "" {
 		followUp = DefaultCacheFollowUp
@@ -666,12 +662,11 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 		tpots     []float64
 	)
 
-	stressPrompt := req.Stress.Prompt
-	if req.Stress.TargetTokens > 0 {
-		stressPrompt = padPrompt(stressPrompt, req.Stress.TargetTokens)
+	stressPrompt := strings.TrimSpace(req.Stress.Prompt)
+	if stressPrompt == "" {
+		stressPrompt = DefaultStressPrompt
 	}
-
-	stressReq := applyStream(chatRequest{
+	baseReq := applyStream(chatRequest{
 		Model:     req.Model,
 		Messages:  []chatMessage{{Role: "user", Content: stressPrompt}},
 		MaxTokens: ptrInt(req.Stress.MaxTokens),
@@ -698,6 +693,13 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 							emit(Event{Type: "stream", Module: ModuleStress, Worker: workerID, Text: text})
 						}
 					}
+				}
+				stressReq := baseReq
+				if req.Stress.BreakCache {
+					stressReq.Messages = []chatMessage{{
+						Role:    "user",
+						Content: cacheBustPrefix() + stressPrompt,
+					}}
 				}
 				result := streamChat(ctx, httpClient, endpoint, req.APIKey, stressReq, 180*time.Second, onDelta)
 				ok := result.StatusCode == http.StatusOK && result.ErrorMessage == "" && (result.Content != "" || result.Reasoning != "" || result.FinishReason != "")
@@ -777,8 +779,12 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 	if !stream {
 		mode = "非流式"
 	}
-	summary := fmt.Sprintf("%s压测结束：%d 并发 × %d 轮，共 %d 次，成功 %d，失败 %d，耗时 %.0f ms。",
-		mode, req.Stress.Concurrency, req.Stress.Rounds, metrics.Total, metrics.Succeeded, metrics.Failed, metrics.ElapsedMS)
+	cacheMode := "相同语料（可走缓存）"
+	if req.Stress.BreakCache {
+		cacheMode = "随机前缀（打断缓存）"
+	}
+	summary := fmt.Sprintf("%s压测结束（%s）：%d 并发 × %d 轮，共 %d 次，成功 %d，失败 %d，耗时 %.0f ms。",
+		mode, cacheMode, req.Stress.Concurrency, req.Stress.Rounds, metrics.Total, metrics.Succeeded, metrics.Failed, metrics.ElapsedMS)
 	if metrics.TTFTAvgMS > 0 {
 		summary += fmt.Sprintf(" TTFT首字: 均值 %.0f ms / P50 %.0f ms / P90 %.0f ms（n=%d）。", metrics.TTFTAvgMS, metrics.TTFTP50MS, metrics.TTFTP90MS, metrics.TTFTN)
 	}

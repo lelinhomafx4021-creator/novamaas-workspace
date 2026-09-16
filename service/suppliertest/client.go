@@ -3,6 +3,7 @@ package suppliertest
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net/http"
@@ -498,36 +499,12 @@ func requestIDFrom(result StreamResult) string {
 	return ""
 }
 
-func fillPrompt(tokenTarget int) string {
-	return padPrompt("", tokenTarget)
-}
-
-func padPrompt(base string, tokenTarget int) string {
-	base = strings.TrimSpace(base)
-	if tokenTarget <= 0 {
-		if base == "" {
-			return DefaultCachePrefix
-		}
-		return base
+func cacheBustPrefix() string {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return fmt.Sprintf("cache-bust %d\n\n", time.Now().UnixNano())
 	}
-	if tokenTarget < 8 {
-		tokenTarget = 8
-	}
-	need := tokenTarget * 5
-	if len(base) >= need {
-		return base
-	}
-	const block = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau "
-	var builder strings.Builder
-	builder.Grow(need + 8)
-	if base != "" {
-		builder.WriteString(base)
-		builder.WriteString("\n\n")
-	}
-	for builder.Len() < need {
-		builder.WriteString(block)
-	}
-	return builder.String()
+	return fmt.Sprintf("cache-bust %x\n\n", buf)
 }
 
 func ptrInt(v int) *int { return &v }

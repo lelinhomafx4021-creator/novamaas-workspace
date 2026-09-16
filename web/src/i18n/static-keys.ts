@@ -61,6 +61,8 @@ export const STATIC_I18N_KEYS = [
   'Light load',
   'Standard load',
   'Heavy load',
+  'Allow prompt cache',
+  'Break prompt cache',
   '3k text',
   'Metric',
   'Measured',

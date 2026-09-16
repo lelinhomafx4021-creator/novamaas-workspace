@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -147,7 +148,7 @@ func TestNormalizeRunRequest(t *testing.T) {
 	assert.Nil(t, req.Basic.TopP)
 	assert.Equal(t, 5, req.Cache.Rounds)
 	assert.Equal(t, DefaultCacheFollowUp, req.Cache.FollowUp)
-	assert.Equal(t, 0, req.Cache.WarmTokens)
+	assert.False(t, req.Stress.BreakCache)
 
 	unknownCheck := RunRequest{
 		BaseURL: "https://api.example.com",
@@ -176,31 +177,6 @@ func TestNormalizeRunRequest(t *testing.T) {
 		Stress:  StressConfig{Concurrency: 1001, Rounds: 1, MaxTokens: 16},
 	}
 	require.Error(t, NormalizeRunRequest(&tooWide))
-
-	withTargetTokens := RunRequest{
-		BaseURL: "https://api.example.com",
-		Model:   "demo",
-		Modules: []string{ModuleStress},
-		Stress:  StressConfig{Concurrency: 5, Rounds: 1, MaxTokens: 64, TargetTokens: 16000},
-	}
-	require.NoError(t, NormalizeRunRequest(&withTargetTokens))
-	assert.Equal(t, 16000, withTargetTokens.Stress.TargetTokens)
-
-	negTargetTokens := RunRequest{
-		BaseURL: "https://api.example.com",
-		Model:   "demo",
-		Modules: []string{ModuleStress},
-		Stress:  StressConfig{Concurrency: 5, Rounds: 1, MaxTokens: 64, TargetTokens: -1},
-	}
-	require.Error(t, NormalizeRunRequest(&negTargetTokens))
-
-	overCapTargetTokens := RunRequest{
-		BaseURL: "https://api.example.com",
-		Model:   "demo",
-		Modules: []string{ModuleStress},
-		Stress:  StressConfig{Concurrency: 5, Rounds: 1, MaxTokens: 64, TargetTokens: 300000},
-	}
-	require.Error(t, NormalizeRunRequest(&overCapTargetTokens))
 }
 
 func TestChatRequestOmitsEmptySampling(t *testing.T) {
@@ -228,15 +204,31 @@ func TestChatRequestOmitsEmptySampling(t *testing.T) {
 	assert.Contains(t, bodies[0], `"max_tokens"`)
 }
 
-func TestPadPrompt(t *testing.T) {
+func TestRunBasicOmitsUnsetSampling(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, DefaultCachePrefix, padPrompt("", 0))
-	assert.Equal(t, "hello", padPrompt("hello", 0))
-	padded := padPrompt("prefix", 32)
-	assert.True(t, strings.HasPrefix(padded, "prefix"))
-	assert.Greater(t, len(padded), 32*4)
-	assert.Equal(t, fillPrompt(40), padPrompt("", 40))
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		bodies = append(bodies, string(raw))
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "k",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Prompt: "hi", MaxTokens: 8, Checks: []string{CheckConnectivity}},
+	}, func(Event) {})
+	require.NoError(t, err)
+	require.NotEmpty(t, bodies)
+	assert.NotContains(t, bodies[0], `"temperature"`)
+	assert.NotContains(t, bodies[0], `"top_p"`)
 }
 
 func TestStreamChatParsesSSE(t *testing.T) {
@@ -375,7 +367,7 @@ func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
 	assert.True(t, sawDone)
 }
 
-func TestRunStressWithTargetTokensPadsPrompt(t *testing.T) {
+func TestRunStressSendsCorpusAsIs(t *testing.T) {
 	t.Parallel()
 
 	var receivedPrompt string
@@ -384,40 +376,66 @@ func TestRunStressWithTargetTokensPadsPrompt(t *testing.T) {
 		require.NoError(t, err)
 		receivedPrompt = string(body)
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"id\":\"c-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":1}}\n\n")
+		_, _ = io.WriteString(w, "data: {\"id\":\"c-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":1}}\n\n")
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
 
-	var events []Event
 	err := Run(context.Background(), server.Client(), RunRequest{
 		BaseURL: server.URL,
 		APIKey:  "key",
 		Model:   "demo",
 		Modules: []string{ModuleStress},
 		Stress: StressConfig{
-			Concurrency:  1,
-			Rounds:       1,
-			MaxTokens:    16,
-			Prompt:       "custom-stress-prompt",
-			TargetTokens: 100,
+			Concurrency: 1,
+			Rounds:      1,
+			MaxTokens:   16,
+			Prompt:      "custom-stress-prompt",
 		},
-	}, func(e Event) {
-		events = append(events, e)
-	})
+	}, func(Event) {})
 	require.NoError(t, err)
 	assert.Contains(t, receivedPrompt, "custom-stress-prompt")
-	// TargetTokens=100 requires 500 chars, so prompt must be padded
-	assert.Greater(t, len(receivedPrompt), 450)
-	var foundMetrics bool
-	for _, e := range events {
-		if e.Type == "metrics" && e.Metrics != nil {
-			foundMetrics = true
-			assert.Equal(t, 1, e.Metrics.Total)
-			assert.Equal(t, 1, e.Metrics.Succeeded)
-		}
-	}
-	assert.True(t, foundMetrics)
+	assert.NotContains(t, receivedPrompt, "cache-bust")
+	assert.NotContains(t, receivedPrompt, "alpha beta gamma")
+}
+
+func TestRunStressBreakCachePrefixesDiffer(t *testing.T) {
+	t.Parallel()
+
+	var prompts []string
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		mu.Lock()
+		prompts = append(prompts, string(body))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "key",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress: StressConfig{
+			Concurrency: 2,
+			Rounds:      1,
+			MaxTokens:   8,
+			Prompt:      "shared-corpus",
+			BreakCache:  true,
+		},
+	}, func(Event) {})
+	require.NoError(t, err)
+	require.Len(t, prompts, 2)
+	assert.Contains(t, prompts[0], "shared-corpus")
+	assert.Contains(t, prompts[1], "shared-corpus")
+	assert.Contains(t, prompts[0], "cache-bust")
+	assert.Contains(t, prompts[1], "cache-bust")
+	assert.NotEqual(t, prompts[0], prompts[1])
 }
 
 func TestBasicSkipsVendorSpecificFields(t *testing.T) {
@@ -515,7 +533,7 @@ func TestCacheModuleReportsMissingCachedTokens(t *testing.T) {
 		APIKey:  "any",
 		Model:   "demo",
 		Modules: []string{ModuleCache},
-		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8},
+		Cache:   CacheConfig{Prompt: "cache-corpus", WaitSeconds: 0, MaxTokens: 8},
 	}, func(event Event) {
 		events = append(events, event)
 	})
@@ -552,7 +570,7 @@ func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
 		APIKey:  "any",
 		Model:   "demo",
 		Modules: []string{ModuleCache},
-		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8, Rounds: 3},
+		Cache:   CacheConfig{Prompt: "cache-corpus", WaitSeconds: 0, MaxTokens: 8, Rounds: 3},
 	}, func(event Event) {
 		events = append(events, event)
 	})
@@ -593,7 +611,7 @@ func TestCacheHitRateFailsWhenBelowHalf(t *testing.T) {
 		APIKey:  "any",
 		Model:   "demo",
 		Modules: []string{ModuleCache},
-		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8, Rounds: 1},
+		Cache:   CacheConfig{Prompt: "cache-corpus", WaitSeconds: 0, MaxTokens: 8, Rounds: 1},
 	}, func(event Event) {
 		events = append(events, event)
 	})
@@ -632,7 +650,7 @@ func TestCacheHitRatePassesWhenSlightlyBelowEighty(t *testing.T) {
 		APIKey:  "any",
 		Model:   "demo",
 		Modules: []string{ModuleCache},
-		Cache:   CacheConfig{WaitSeconds: 0, WarmTokens: 32, MaxTokens: 8, Rounds: 1},
+		Cache:   CacheConfig{Prompt: "cache-corpus", WaitSeconds: 0, MaxTokens: 8, Rounds: 1},
 	}, func(event Event) {
 		events = append(events, event)
 	})

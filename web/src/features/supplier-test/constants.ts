@@ -79,6 +79,7 @@ export const DEFAULT_STRESS_FORM: StressForm = {
   maxTokens: 256,
   corpus: 'short',
   prompt: '',
+  breakCache: false,
   stream: true,
 }
 

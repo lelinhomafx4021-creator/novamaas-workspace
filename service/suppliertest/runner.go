@@ -307,6 +307,8 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 
 	needShared := wanted[CheckConnectivity] || wanted[CheckStream] || wanted[CheckUsage] || wanted[CheckRequestID]
 	var connected StreamResult
+	sharedFailed := false
+	sharedFailMsg := ""
 	if needShared {
 		if wanted[CheckConnectivity] {
 			emitCheck(CheckConnectivity, "running", "")
@@ -327,13 +329,14 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		gotOutput := connected.Content != "" || connected.Reasoning != "" || connected.ToolName != ""
 		httpFailed := connected.StatusCode != http.StatusOK || connected.ErrorMessage != ""
 		if httpFailed {
-			msg := firstNonEmpty(connected.ErrorMessage, fmt.Sprintf("HTTP %d", connected.StatusCode))
+			sharedFailed = true
+			sharedFailMsg = firstNonEmpty(connected.ErrorMessage, fmt.Sprintf("HTTP %d", connected.StatusCode))
 			if wanted[CheckConnectivity] {
-				emitCheck(CheckConnectivity, "fail", "连通失败："+msg)
+				emitCheck(CheckConnectivity, "fail", "连通失败："+sharedFailMsg)
 			}
 			for _, id := range []string{CheckStream, CheckUsage, CheckRequestID} {
 				if wanted[id] {
-					emitCheck(id, "fail", "连通请求失败，无法检查这项："+msg)
+					emitCheck(id, "skip", "连通失败，这项无法对照："+sharedFailMsg)
 				}
 			}
 		} else {
@@ -374,20 +377,24 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 
 	if wanted[CheckSampling] {
 		emitCheck(CheckSampling, "running", "")
-		sampled := connected
-		if !needShared {
-			sampled = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, 60*time.Second, nil)
-		}
-		samplingNote := "供应商接受了当前 max_tokens"
-		if req.Basic.Temperature != nil || req.Basic.TopP != nil {
-			samplingNote = "供应商接受了当前采样参数"
-		}
-		if sampled.StatusCode == http.StatusOK && sampled.ErrorMessage == "" {
-			emitCheck(CheckSampling, "pass", samplingNote)
-		} else if sampled.StatusCode >= 400 && sampled.StatusCode < 500 {
-			emitCheck(CheckSampling, "skip", "供应商拒绝了采样字段："+firstNonEmpty(sampled.ErrorMessage, fmt.Sprintf("HTTP %d", sampled.StatusCode)))
+		if sharedFailed {
+			emitCheck(CheckSampling, "skip", "连通失败，这项无法对照："+sharedFailMsg)
 		} else {
-			emitCheck(CheckSampling, "fail", firstNonEmpty(sampled.ErrorMessage, fmt.Sprintf("HTTP %d", sampled.StatusCode)))
+			sampled := connected
+			if !needShared {
+				sampled = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, 60*time.Second, nil)
+			}
+			samplingNote := "供应商接受了当前 max_tokens"
+			if req.Basic.Temperature != nil || req.Basic.TopP != nil {
+				samplingNote = "供应商接受了当前采样参数"
+			}
+			if sampled.StatusCode == http.StatusOK && sampled.ErrorMessage == "" {
+				emitCheck(CheckSampling, "pass", samplingNote)
+			} else if sampled.StatusCode >= 400 && sampled.StatusCode < 500 {
+				emitCheck(CheckSampling, "skip", "供应商拒绝了采样字段："+firstNonEmpty(sampled.ErrorMessage, fmt.Sprintf("HTTP %d", sampled.StatusCode)))
+			} else {
+				emitCheck(CheckSampling, "fail", firstNonEmpty(sampled.ErrorMessage, fmt.Sprintf("HTTP %d", sampled.StatusCode)))
+			}
 		}
 	}
 
@@ -627,20 +634,11 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 			minHit = rate
 		}
 	}
-	hitStatus := "pass"
-	hitNote := ""
-	if avgHit < 0.50 {
-		hitStatus = "fail"
-		hitNote = "，命中过低，缓存可能没生效"
-	}
-	emitCheck(CheckCacheHitRate, "Cache hit rate", hitStatus, fmt.Sprintf("平均命中率 %.1f%%，最低 %.1f%%（%d 轮，最后一轮 %d/%d）%s", avgHit*100, minHit*100, len(hitRates), lastCached, lastPrompt, hitNote))
-	switch {
-	case req.Cache.WaitSeconds < 30:
-		emitCheck(CheckCacheTTL, "Cache TTL", "skip", fmt.Sprintf("等待 %ds，不足 30s，不能判定缓存存活", req.Cache.WaitSeconds))
-	case avgHit >= 0.50:
-		emitCheck(CheckCacheTTL, "Cache TTL", "pass", fmt.Sprintf("等待 %ds 后平均命中率 %.1f%%", req.Cache.WaitSeconds, avgHit*100))
-	default:
-		emitCheck(CheckCacheTTL, "Cache TTL", "fail", fmt.Sprintf("等待 %ds 后平均命中率 %.1f%%，缓存可能没保住", req.Cache.WaitSeconds, avgHit*100))
+	emitCheck(CheckCacheHitRate, "Cache hit rate", "pass", fmt.Sprintf("平均命中率 %.1f%%，最低 %.1f%%（%d 轮，最后一轮 %d/%d）。是否达标看页面尺子。", avgHit*100, minHit*100, len(hitRates), lastCached, lastPrompt))
+	if req.Cache.WaitSeconds <= 0 {
+		emitCheck(CheckCacheTTL, "Cache TTL", "skip", fmt.Sprintf("等待 %ds，TTL 是否达标看页面尺子。", req.Cache.WaitSeconds))
+	} else {
+		emitCheck(CheckCacheTTL, "Cache TTL", "pass", fmt.Sprintf("等待 %ds 后平均命中率 %.1f%%。是否达标看页面尺子。", req.Cache.WaitSeconds, avgHit*100))
 	}
 	emitCache(avgHit, minHit)
 	emit(Event{

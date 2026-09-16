@@ -27,6 +27,8 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   na: 'Cannot compare',
 }
 
+export type MetricGroup = 'shallow' | 'perf'
+
 export type MetricRow = {
   id: string
   label: string
@@ -35,6 +37,7 @@ export type MetricRow = {
   threshold: string
   thresholdValues?: Record<string, string | number>
   verdict: Verdict
+  group?: MetricGroup
 }
 
 export type SupplierStandard = {
@@ -157,18 +160,30 @@ export type Assessment = {
 
 const NO_SAMPLE = 'No sample (enable stream)'
 const TTFT_RULE = 'Normal ≤ {{seconds}}s; slower above that'
-const TTFT_P90 = 'Normal ≤ avg × {{times}}; slower above that'
+const TTFT_P90 =
+  'Normal ≤ {{seconds}}s and ≤ avg × {{times}}; slower above that'
 const TPOT_RULE = 'Normal ≤ {{ms}}ms; slower above that'
 const HIT_RATE = 'Normal ≥ {{percent}}%; slower below that'
 const TTL_RULE = 'Wait ≥ {{seconds}}s and hit rate still ≥ {{percent}}%'
 const RATE_ESTIMATE = 'Short-run estimate, not a vendor limit'
 const ERROR_RATE = 'Normal < {{percent}}%; slower at that or above'
 const SUCCESS_RULE = 'Most requests succeed'
+const TOKEN_RULE = 'Used as the long-input TTFT cutoff; not a tokenizer audit'
 
 export function worstVerdict(verdicts: Verdict[]): Verdict {
   if (verdicts.includes('slow')) return 'slow'
   if (verdicts.includes('ok')) return 'ok'
   return 'na'
+}
+
+export function assessmentGroup(
+  assessment: Assessment,
+  group: MetricGroup
+): Assessment {
+  const rows = assessment.rows.filter(
+    (row) => (row.group ?? 'perf') === group
+  )
+  return { rows, overall: worstVerdict(rows.map((row) => row.verdict)) }
 }
 
 export function displayMeasured(
@@ -275,6 +290,7 @@ export function assessStress(
       threshold: ERROR_RATE,
       thresholdValues: { percent: percentValue(standard.errorSlow) },
       verdict: errorVerdict,
+      group: 'shallow',
     },
     {
       id: 'success',
@@ -282,6 +298,7 @@ export function assessStress(
       measured: `${metrics.succeeded}/${metrics.total}`,
       threshold: SUCCESS_RULE,
       verdict: errorVerdict,
+      group: 'shallow',
     },
     {
       id: 'duration',
@@ -292,6 +309,7 @@ export function assessStress(
           : `${Math.round(metrics.elapsed_ms)} ms`,
       threshold: 'Wall time of this run',
       verdict: 'na',
+      group: 'shallow',
     },
   ]
 
@@ -325,7 +343,10 @@ export function assessStress(
         label: 'TTFT P90',
         measured: formatMs(metrics.ttft_p90_ms),
         threshold: TTFT_P90,
-        thresholdValues: { times: standard.ttftP90AvgTimes },
+        thresholdValues: {
+          seconds: ttftLimit / 1000,
+          times: standard.ttftP90AvgTimes,
+        },
         verdict: p90Verdict,
       }
     )
@@ -352,7 +373,10 @@ export function assessStress(
         label: 'TTFT P90',
         measured: NO_SAMPLE,
         threshold: TTFT_P90,
-        thresholdValues: { times: standard.ttftP90AvgTimes },
+        thresholdValues: {
+          seconds: ttftLimit / 1000,
+          times: standard.ttftP90AvgTimes,
+        },
         verdict: 'na',
       }
     )
@@ -416,11 +440,20 @@ export function assessStress(
 
   rows.push(
     {
+      id: 'tokens',
+      label: 'Prompt / completion tokens',
+      measured: `${metrics.prompt_tokens} / ${metrics.completion_tokens}`,
+      threshold: TOKEN_RULE,
+      verdict: 'na',
+      group: 'perf',
+    },
+    {
       id: 'tps',
       label: 'Throughput',
       measured: sampleOr(formatCount(metrics.tokens_per_sec, 'tok/s')),
       threshold: 'Observed completion tokens per second',
       verdict: 'na',
+      group: 'perf',
     },
     {
       id: 'rpm',
@@ -428,6 +461,7 @@ export function assessStress(
       measured: sampleOr(formatCount(metrics.rpm, 'req/min')),
       threshold: RATE_ESTIMATE,
       verdict: 'na',
+      group: 'perf',
     },
     {
       id: 'tpm',
@@ -435,6 +469,7 @@ export function assessStress(
       measured: sampleOr(formatCount(metrics.tpm, 'tok/min')),
       threshold: RATE_ESTIMATE,
       verdict: 'na',
+      group: 'perf',
     }
   )
 

@@ -61,6 +61,7 @@ import { TitledCard } from '@/components/ui/titled-card'
 import { fetchSupplierModels } from './api'
 import {
   assessCache,
+  assessmentGroup,
   assessStress,
   DEFAULT_STANDARD,
   displayMeasured,
@@ -88,6 +89,8 @@ import {
   MAX_CONCURRENCY,
   MAX_ROUNDS,
   MAX_TOKENS_CAP,
+  PROTOCOL_BASIC_IDS,
+  SHALLOW_BASIC_IDS,
   STRESS_WARN_TOTAL,
   estimateTokens,
   resolveCorpusPrompt,
@@ -692,7 +695,7 @@ export function SupplierTest() {
           <TitledCard
             title={t('Basic acceptance')}
             description={t(
-              'Empty temperature / top_p are not sent. Missing vendor fields are skipped, not failed.'
+              'Shallow checks ask whether the door opens. Protocol checks are skipped when the vendor has no matching API. Empty temperature / top_p are not sent.'
             )}
             icon={<ClipboardCheck />}
             action={
@@ -782,12 +785,36 @@ export function SupplierTest() {
                 {run.summaries.basic}
               </p>
             ) : null}
-            <div className='mt-4'>
-              <CheckTable
-                checks={run.basicChecks}
-                busy={busy}
-                onRun={(id) => startModule('basic', [id])}
-              />
+            <div className='mt-4 space-y-4'>
+              <div>
+                <p className='mb-2 text-sm font-medium'>
+                  {t('Shallow · connectivity')}
+                </p>
+                <CheckTable
+                  checks={run.basicChecks.filter((check) =>
+                    (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
+                  )}
+                  busy={busy}
+                  onRun={(id) => startModule('basic', [id])}
+                />
+              </div>
+              <div>
+                <p className='mb-2 text-sm font-medium'>
+                  {t('Deep · protocol')}
+                </p>
+                <p className='text-muted-foreground mb-2 text-sm'>
+                  {t(
+                    'Protocol checks are skipped when the vendor has no matching API. That is incomplete protocol, not a broken supplier.'
+                  )}
+                </p>
+                <CheckTable
+                  checks={run.basicChecks.filter((check) =>
+                    (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+                  )}
+                  busy={busy}
+                  onRun={(id) => startModule('basic', [id])}
+                />
+              </div>
             </div>
           </TitledCard>
 
@@ -902,7 +929,10 @@ export function SupplierTest() {
               <CheckTable checks={run.cacheChecks} busy={busy} />
             </div>
             {cacheAssessment && cacheAssessment.rows.length > 0 ? (
-              <AssessmentTable assessment={cacheAssessment} />
+              <AssessmentTable
+                title={t('Deep · performance')}
+                assessment={cacheAssessment}
+              />
             ) : null}
           </TitledCard>
 
@@ -1072,7 +1102,16 @@ export function SupplierTest() {
               </p>
             ) : null}
             {stressAssessment ? (
-              <AssessmentTable assessment={stressAssessment} />
+              <>
+                <AssessmentTable
+                  title={t('Shallow · connectivity')}
+                  assessment={assessmentGroup(stressAssessment, 'shallow')}
+                />
+                <AssessmentTable
+                  title={t('Deep · performance')}
+                  assessment={assessmentGroup(stressAssessment, 'perf')}
+                />
+              </>
             ) : null}
           </TitledCard>
 
@@ -1352,10 +1391,14 @@ function verdictClass(verdict: Verdict): string {
   return 'text-muted-foreground'
 }
 
-function AssessmentTable(props: { assessment: Assessment }) {
+function AssessmentTable(props: { assessment: Assessment; title?: string }) {
   const { t } = useTranslation()
+  if (props.assessment.rows.length === 0) return null
   return (
     <div className='mt-4 space-y-2 overflow-x-auto'>
+      {props.title ? (
+        <p className='text-sm font-medium'>{props.title}</p>
+      ) : null}
       <div className={verdictClass(props.assessment.overall)}>
         {t(overallLabel(props.assessment.overall))}
       </div>

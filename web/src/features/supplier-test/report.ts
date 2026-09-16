@@ -18,12 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import {
+  assessmentGroup,
   displayMeasured,
   displayThreshold,
   overallLabel,
   VERDICT_LABEL,
   type Assessment,
 } from './baselines'
+import { PROTOCOL_BASIC_IDS, SHALLOW_BASIC_IDS } from './constants'
 import type { CheckResult, CheckStatus } from './types'
 
 export type ReportInput = {
@@ -65,9 +67,49 @@ function translate(
   return value || key
 }
 
+function checkLines(
+  checks: CheckResult[],
+  input: ReportInput,
+  t: ReportInput['t']
+): string[] {
+  return checks.map((check) => {
+    const detail = check.message ? ` — ${check.message}` : ''
+    return `- ${t(check.title)}: ${t(input.statusLabel(check.status))}${detail}`
+  })
+}
+
+function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
+  if (assessment.rows.length === 0) return []
+  const lines = [
+    `**${t(overallLabel(assessment.overall))}**`,
+    '',
+    `| ${t('Metric')} | ${t('Measured')} | ${t('Threshold')} | ${t('Verdict')} |`,
+    '|---|---|---|---|',
+  ]
+  for (const row of assessment.rows) {
+    lines.push(
+      `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(VERDICT_LABEL[row.verdict])} |`
+    )
+  }
+  return lines
+}
+
 export function buildMarkdownReport(input: ReportInput): string {
   const t: ReportInput['t'] = (key, options) =>
     translate(input.t, key, options)
+  const shallowChecks = input.basicChecks.filter((check) =>
+    (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
+  )
+  const protocolChecks = input.basicChecks.filter((check) =>
+    (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+  )
+  const stressShallow = input.stressAssessment
+    ? assessmentGroup(input.stressAssessment, 'shallow')
+    : null
+  const stressPerf = input.stressAssessment
+    ? assessmentGroup(input.stressAssessment, 'perf')
+    : null
+
   const lines = [
     `# ${t('Supplier Test Report')}`,
     '',
@@ -76,57 +118,39 @@ export function buildMarkdownReport(input: ReportInput): string {
     `- ${t('Model')}: ${input.model || '-'}`,
     `- ${t('Judgment standard')}: ${input.standardLabel}`,
     '',
-    `## ${t('Basic acceptance')}`,
+    `## ${t('Shallow · connectivity')}`,
+    ...checkLines(shallowChecks, input, t),
   ]
-  for (const check of input.basicChecks) {
-    const detail = check.message ? ` — ${check.message}` : ''
-    lines.push(
-      `- ${t(check.title)}: ${t(input.statusLabel(check.status))}${detail}`
-    )
-  }
   if (input.summaries.basic) {
     lines.push('', input.summaries.basic)
   }
-
-  lines.push('', `## ${t('Cache test')}`)
-  for (const check of input.cacheChecks) {
-    const detail = check.message ? ` — ${check.message}` : ''
-    lines.push(
-      `- ${t(check.title)}: ${t(input.statusLabel(check.status))}${detail}`
-    )
+  if (stressShallow && stressShallow.rows.length > 0) {
+    lines.push('', ...markdownTable(stressShallow, t))
   }
+
+  lines.push('', `## ${t('Deep · performance')}`)
+  lines.push(...checkLines(input.cacheChecks, input, t))
   if (input.cacheAssessment && input.cacheAssessment.rows.length > 0) {
-    lines.push('', `**${t(overallLabel(input.cacheAssessment.overall))}**`, '')
-    lines.push(
-      `| ${t('Metric')} | ${t('Measured')} | ${t('Threshold')} | ${t('Verdict')} |`
-    )
-    lines.push('|---|---|---|---|')
-    for (const row of input.cacheAssessment.rows) {
-      lines.push(
-        `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(VERDICT_LABEL[row.verdict])} |`
-      )
-    }
+    lines.push('', ...markdownTable(input.cacheAssessment, t))
   }
   if (input.summaries.cache) {
     lines.push('', input.summaries.cache)
   }
-
-  lines.push('', `## ${t('Stress test')}`)
-  if (input.stressAssessment && input.stressAssessment.rows.length > 0) {
-    lines.push(`**${t(overallLabel(input.stressAssessment.overall))}**`, '')
-    lines.push(
-      `| ${t('Metric')} | ${t('Measured')} | ${t('Threshold')} | ${t('Verdict')} |`
-    )
-    lines.push('|---|---|---|---|')
-    for (const row of input.stressAssessment.rows) {
-      lines.push(
-        `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(VERDICT_LABEL[row.verdict])} |`
-      )
-    }
+  if (stressPerf && stressPerf.rows.length > 0) {
+    lines.push('', ...markdownTable(stressPerf, t))
   }
   if (input.summaries.stress) {
     lines.push('', input.summaries.stress)
   }
+
+  lines.push('', `## ${t('Deep · protocol')}`)
+  lines.push(...checkLines(protocolChecks, input, t))
+  lines.push(
+    '',
+    t(
+      'Protocol checks are skipped when the vendor has no matching API. That is incomplete protocol, not a broken supplier.'
+    )
+  )
 
   if (input.errorMessage) {
     lines.push('', `## ${t('Error')}`, input.errorMessage)
@@ -181,13 +205,25 @@ export function buildHtmlReport(input: ReportInput): string {
       })
       .join('')
 
+  const shallowChecks = input.basicChecks.filter((check) =>
+    (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
+  )
+  const protocolChecks = input.basicChecks.filter((check) =>
+    (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+  )
   const cacheTable =
     input.cacheAssessment && input.cacheAssessment.rows.length > 0
       ? htmlRows(input.cacheAssessment, t)
       : ''
-  const stressTable =
-    input.stressAssessment && input.stressAssessment.rows.length > 0
-      ? htmlRows(input.stressAssessment, t)
+  const stressShallow =
+    input.stressAssessment &&
+    assessmentGroup(input.stressAssessment, 'shallow').rows.length > 0
+      ? htmlRows(assessmentGroup(input.stressAssessment, 'shallow'), t)
+      : ''
+  const stressPerf =
+    input.stressAssessment &&
+    assessmentGroup(input.stressAssessment, 'perf').rows.length > 0
+      ? htmlRows(assessmentGroup(input.stressAssessment, 'perf'), t)
       : ''
 
   return `<!doctype html>
@@ -209,16 +245,19 @@ th{background:#f3f4f6}
 ${escapeHtml(t('Base URL'))}: ${escapeHtml(input.baseUrl || '-')}<br/>
 ${escapeHtml(t('Model'))}: ${escapeHtml(input.model || '-')}<br/>
 ${escapeHtml(t('Judgment standard'))}: ${escapeHtml(input.standardLabel)}</p>
-<h2>${escapeHtml(t('Basic acceptance'))}</h2>
-<ul>${checks(input.basicChecks)}</ul>
+<h2>${escapeHtml(t('Shallow · connectivity'))}</h2>
+<ul>${checks(shallowChecks)}</ul>
 ${input.summaries.basic ? `<p class="muted">${escapeHtml(input.summaries.basic)}</p>` : ''}
-<h2>${escapeHtml(t('Cache test'))}</h2>
+${stressShallow}
+<h2>${escapeHtml(t('Deep · performance'))}</h2>
 <ul>${checks(input.cacheChecks)}</ul>
 ${cacheTable}
 ${input.summaries.cache ? `<p class="muted">${escapeHtml(input.summaries.cache)}</p>` : ''}
-<h2>${escapeHtml(t('Stress test'))}</h2>
-${stressTable}
+${stressPerf}
 ${input.summaries.stress ? `<p class="muted">${escapeHtml(input.summaries.stress)}</p>` : ''}
+<h2>${escapeHtml(t('Deep · protocol'))}</h2>
+<ul>${checks(protocolChecks)}</ul>
+<p class="muted">${escapeHtml(t('Protocol checks are skipped when the vendor has no matching API. That is incomplete protocol, not a broken supplier.'))}</p>
 ${input.errorMessage ? `<h2>${escapeHtml(t('Error'))}</h2><p>${escapeHtml(input.errorMessage)}</p>` : ''}
 </body>
 </html>

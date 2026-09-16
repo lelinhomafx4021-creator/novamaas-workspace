@@ -136,7 +136,7 @@ export const DEFAULT_CACHE_FORM: CacheForm = {
   corpus: '3k',
   prompt: '',
   followUp: DEFAULT_CACHE_FOLLOW_UP,
-  waitSeconds: 5,
+  waitSeconds: 30,
   maxTokens: 16,
   rounds: 5,
   stream: true,
@@ -148,12 +148,28 @@ export const BASIC_CHECKS: CheckResult[] = [
   { id: 'usage', title: 'Usage fields', status: 'idle' },
   { id: 'request_id', title: 'Request id', status: 'idle' },
   { id: 'sampling', title: 'Sampling parameters', status: 'idle' },
+  { id: 'auth_error', title: 'Auth error', status: 'idle' },
+  { id: 'bad_request', title: 'Bad request', status: 'idle' },
   { id: 'json_mode', title: 'JSON mode', status: 'idle' },
   { id: 'tool_call', title: 'Tool call', status: 'idle' },
   { id: 'thinking', title: 'Thinking mode', status: 'idle' },
-  { id: 'auth_error', title: 'Auth error', status: 'idle' },
-  { id: 'bad_request', title: 'Bad request', status: 'idle' },
 ]
+
+export const SHALLOW_BASIC_IDS = [
+  'connectivity',
+  'stream_format',
+  'usage',
+  'request_id',
+  'sampling',
+  'auth_error',
+  'bad_request',
+] as const
+
+export const PROTOCOL_BASIC_IDS = [
+  'json_mode',
+  'tool_call',
+  'thinking',
+] as const
 
 export const CACHE_CHECKS: CheckResult[] = [
   { id: 'cache_warm', title: 'Cache warm', status: 'idle' },

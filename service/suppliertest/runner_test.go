@@ -621,7 +621,7 @@ func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
 	assert.Contains(t, summary, "探测 3 轮")
 }
 
-func TestCacheHitRateFailsWhenBelowHalf(t *testing.T) {
+func TestCacheHitRateDoesNotFailOnLowHit(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -653,11 +653,47 @@ func TestCacheHitRateFailsWhenBelowHalf(t *testing.T) {
 			cacheMetrics = event.Cache
 		}
 	}
-	assert.Equal(t, "fail", statusByCheck[CheckCacheHitRate])
+	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
 	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
 	require.NotNil(t, cacheMetrics)
 	assert.True(t, cacheMetrics.HasCachedTokens)
 	assert.InDelta(t, 0.2, cacheMetrics.AvgHitRate, 0.001)
+}
+
+func TestBasicSkipsDependentsWhenConnectivityFails(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, `{"error":{"message":"upstream down"}}`)
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic: BasicConfig{
+			Checks: []string{CheckConnectivity, CheckStream, CheckUsage, CheckRequestID, CheckSampling},
+		},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+	}
+	assert.Equal(t, "fail", statusByCheck[CheckConnectivity])
+	assert.Equal(t, "skip", statusByCheck[CheckStream])
+	assert.Equal(t, "skip", statusByCheck[CheckUsage])
+	assert.Equal(t, "skip", statusByCheck[CheckRequestID])
+	assert.Equal(t, "skip", statusByCheck[CheckSampling])
 }
 
 func TestCacheHitRatePassesWhenSlightlyBelowEighty(t *testing.T) {

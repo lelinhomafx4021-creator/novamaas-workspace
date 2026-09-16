@@ -20,6 +20,7 @@ import { describe, expect, test } from 'vitest'
 
 import {
   assessCache,
+  assessmentGroup,
   assessStress,
   getStandard,
   matchingStandardId,
@@ -139,6 +140,37 @@ describe('supplier-test verdicts', () => {
     expect(
       matchingStandardId(sanitizeStandard(getStandard('default')))
     ).toBe('default')
+  })
+
+  test('splits stress rows into shallow connectivity and deep performance', () => {
+    const assessment = assessStress(stress({}))
+    const shallow = assessmentGroup(assessment, 'shallow')
+    const perf = assessmentGroup(assessment, 'perf')
+    expect(shallow.rows.map((row) => row.id)).toEqual([
+      'error_rate',
+      'success',
+      'duration',
+    ])
+    expect(perf.rows.some((row) => row.id === 'ttft_avg')).toBe(true)
+    expect(perf.rows.some((row) => row.id === 'tokens')).toBe(true)
+    expect(assessment.rows.find((row) => row.id === 'ttft_p90')?.threshold).toBe(
+      'Normal ≤ {{seconds}}s and ≤ avg × {{times}}; slower above that'
+    )
+  })
+
+  test('a 20% cache hit is slow on the default ruler, not a failed check', () => {
+    const assessment = assessCache({
+      warm_prompt_tokens: 3000,
+      avg_hit_rate: 0.2,
+      min_hit_rate: 0.2,
+      last_cached_tokens: 400,
+      last_prompt_tokens: 2000,
+      wait_seconds: 30,
+      rounds: 1,
+      has_cached_tokens: true,
+    })
+    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('slow')
+    expect(assessment.overall).toBe('slow')
   })
 
   test('built-in corpora show a token estimate', () => {

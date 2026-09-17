@@ -179,6 +179,39 @@ export const CACHE_CHECKS: CheckResult[] = [
   { id: 'cache_ttl', title: 'Cache TTL', status: 'idle' },
 ]
 
+export const CHECK_HINTS: Record<string, string> = {
+  connectivity:
+    'First chat request. Pass means HTTP 200 with text, thinking, or a tool call.',
+  stream_format:
+    'Streaming frames are valid. Missing finish_reason is skipped, not failed.',
+  usage:
+    'Response includes prompt_tokens and completion_tokens. Needed for billing, not intelligence.',
+  request_id:
+    'Response body or common headers include a request id, for troubleshooting.',
+  sampling:
+    'Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.',
+  auth_error:
+    'A bad key should return 401 or 403. Other codes are skipped.',
+  bad_request:
+    'A request missing required fields should return 4xx. Other codes are skipped.',
+  json_mode:
+    'Asks the vendor to return JSON. No JSON mode is skipped, not failed.',
+  tool_call:
+    'Asks the vendor to call a tool. No tools API is skipped, not failed.',
+  thinking:
+    'Asks the vendor for thinking / reasoning. No thinking API is skipped, not failed.',
+  cache_warm:
+    'First request with the same corpus prefix, to fill the vendor cache.',
+  cache_probe:
+    'Later rounds reuse that prefix plus a follow-up, to see if cache hits.',
+  cache_tokens:
+    'Whether usage.cached_tokens is present. Missing field is skipped, not failed.',
+  cache_hit_rate:
+    'Hits divided by probe rounds. Judged by the Cache hit (%) ruler above.',
+  cache_ttl:
+    'Hit rate after waiting. Wait less than TTL wait (s) and this cannot be compared.',
+}
+
 export const MAX_CONCURRENCY = 1000
 export const MAX_ROUNDS = 10000
 export const MAX_TOKENS_CAP = 256000

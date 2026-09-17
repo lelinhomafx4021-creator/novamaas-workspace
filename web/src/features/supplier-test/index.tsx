@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation } from '@tanstack/react-query'
 import {
+  ChevronDown,
   ClipboardCheck,
   Copy,
   Database,
@@ -27,7 +28,7 @@ import {
   Square,
   Zap,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -36,6 +37,11 @@ import { PasswordInput } from '@/components/password-input'
 import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
@@ -57,6 +63,7 @@ import {
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { TitledCard } from '@/components/ui/titled-card'
+import { cn } from '@/lib/utils'
 
 import { fetchSupplierModels } from './api'
 import {
@@ -425,247 +432,6 @@ export function SupplierTest() {
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='space-y-4'>
-          <TitledCard
-            title={t('Judgment standard')}
-            description={t(
-              'These numbers are the ruler after a run. They do not judge whether the model is smart. Change them for this vendor; tables update immediately.'
-            )}
-            icon={<SlidersHorizontal />}
-          >
-            <div className='space-y-2 text-sm'>
-              <p className='font-medium'>{t('What each test returns')}</p>
-              <ul className='text-muted-foreground list-disc space-y-1.5 pl-5'>
-                <li>
-                  {t(
-                    'Basic acceptance: pass, skip, or fail. Checks whether the API door opens, and whether JSON / tools / thinking exist. Missing optional APIs are skipped, not failed.'
-                  )}
-                </li>
-                <li>
-                  {t(
-                    'Cache test: hit rate and whether cache still works after waiting. This is the vendor prompt cache, not our Redis.'
-                  )}
-                </li>
-                <li>
-                  {t(
-                    'Stress test: how many requests failed (error rate) and how fast the first/next tokens arrived (TTFT / TPOT). Enable stream to get timing samples.'
-                  )}
-                </li>
-              </ul>
-            </div>
-            <div className='mt-4 max-w-sm'>
-              <FieldSelect
-                label={t('Load preset')}
-                value={matchedStandardId ?? 'custom'}
-                disabled={false}
-                items={[
-                  ...SUPPLIER_STANDARDS.map((item) => ({
-                    value: item.id,
-                    label: t(item.labelKey),
-                  })),
-                  ...(matchedStandardId
-                    ? []
-                    : [
-                        {
-                          value: 'custom',
-                          label: t('Custom standard'),
-                        },
-                      ]),
-                ]}
-                onChange={(id) => {
-                  if (id === 'custom') return
-                  setStandard({ ...getStandard(id) })
-                }}
-              />
-            </div>
-            <div className='mt-4 space-y-5'>
-              <div>
-                <p className='mb-1 text-sm font-medium'>
-                  {t('From stress test')}
-                </p>
-                <p className='text-muted-foreground mb-3 text-xs'>
-                  {t(
-                    'Error rate is the share of failed HTTP/API requests in that short run (timeouts, 5xx, refused). It is not wrong model answers.'
-                  )}
-                </p>
-                <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
-                  <NumberField
-                    id='std-error'
-                    label={t('Error rate (%)')}
-                    hint={t(
-                      'At or below this share of failed requests is still Normal. Comes from Stress test, not Basic acceptance.'
-                    )}
-                    value={Math.round(standard.errorSlow * 100)}
-                    disabled={false}
-                    min={0}
-                    max={100}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({ ...current, errorSlow: value / 100 })
-                      )
-                    }
-                  />
-                  <NumberField
-                    id='std-ttft-short'
-                    label={t('TTFT short (s)')}
-                    hint={t(
-                      'Time to first token on a short prompt. Stress test with stream on. Above this is Slow.'
-                    )}
-                    value={standard.ttftShortOkMs / 1000}
-                    disabled={false}
-                    min={0.1}
-                    max={120}
-                    step={0.5}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({
-                          ...current,
-                          ttftShortOkMs: value * 1000,
-                        })
-                      )
-                    }
-                  />
-                  <NumberField
-                    id='std-ttft-long'
-                    label={t('TTFT long (s)')}
-                    hint={t(
-                      'Time to first token when prompt tokens reach Long input tokens. Stress test with stream on.'
-                    )}
-                    value={standard.ttftLongOkMs / 1000}
-                    disabled={false}
-                    min={0.1}
-                    max={180}
-                    step={0.5}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({
-                          ...current,
-                          ttftLongOkMs: value * 1000,
-                        })
-                      )
-                    }
-                  />
-                  <NumberField
-                    id='std-ttft-p90'
-                    label={t('TTFT P90 × avg')}
-                    hint={t(
-                      'If P90 first-token time is more than this times the average, replies are jumpy.'
-                    )}
-                    value={standard.ttftP90AvgTimes}
-                    disabled={false}
-                    min={1}
-                    max={10}
-                    step={0.5}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({
-                          ...current,
-                          ttftP90AvgTimes: value,
-                        })
-                      )
-                    }
-                  />
-                  <NumberField
-                    id='std-tpot-avg'
-                    label={t('TPOT avg (ms)')}
-                    hint={t(
-                      'Milliseconds per output token after the first token. How fast it types. Stress test with stream on.'
-                    )}
-                    value={standard.tpotAvgOkMs}
-                    disabled={false}
-                    min={1}
-                    max={5000}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({ ...current, tpotAvgOkMs: value })
-                      )
-                    }
-                  />
-                  <NumberField
-                    id='std-tpot-p90'
-                    label={t('TPOT P90 (ms)')}
-                    hint={t(
-                      '90th percentile of time per output token. Stress test with stream on.'
-                    )}
-                    value={standard.tpotP90OkMs}
-                    disabled={false}
-                    min={1}
-                    max={5000}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({ ...current, tpotP90OkMs: value })
-                      )
-                    }
-                  />
-                  <NumberField
-                    id='std-long-input'
-                    label={t('Long input tokens')}
-                    hint={t(
-                      'Prompt tokens at or above this use the long TTFT ruler. Comes from stress usage, not a tokenizer audit.'
-                    )}
-                    value={standard.longInputTokens}
-                    disabled={false}
-                    min={1}
-                    max={MAX_TOKENS_CAP}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({
-                          ...current,
-                          longInputTokens: value,
-                        })
-                      )
-                    }
-                  />
-                </div>
-              </div>
-              <div>
-                <p className='mb-1 text-sm font-medium'>
-                  {t('From cache test')}
-                </p>
-                <p className='text-muted-foreground mb-3 text-xs'>
-                  {t(
-                    'These rulers score Cache test only. They do not use stress numbers.'
-                  )}
-                </p>
-                <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
-                  <NumberField
-                    id='std-cache'
-                    label={t('Cache hit (%)')}
-                    hint={t(
-                      'Share of cache probe rounds that returned cached_tokens. Below this is Slow.'
-                    )}
-                    value={Math.round(standard.cacheHitOk * 100)}
-                    disabled={false}
-                    min={0}
-                    max={100}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({
-                          ...current,
-                          cacheHitOk: value / 100,
-                        })
-                      )
-                    }
-                  />
-                  <NumberField
-                    id='std-ttl'
-                    label={t('TTL wait (s)')}
-                    hint={t(
-                      'Wait this long after the first cache request before judging TTL. Waiting less than this is Cannot compare.'
-                    )}
-                    value={standard.ttlWaitSeconds}
-                    disabled={false}
-                    min={0}
-                    max={600}
-                    onChange={(value) =>
-                      setStandard((current) =>
-                        sanitizeStandard({ ...current, ttlWaitSeconds: value })
-                      )
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-          </TitledCard>
           <TitledCard
             title={t('Target')}
             description={t(
@@ -1193,6 +959,12 @@ export function SupplierTest() {
             ) : null}
           </TitledCard>
 
+          <JudgmentStandardCard
+            standard={standard}
+            matchedStandardId={matchedStandardId}
+            onChange={setStandard}
+          />
+
           {run.errorMessage ? (
             <Alert variant='destructive'>
               <AlertDescription>{run.errorMessage}</AlertDescription>
@@ -1318,6 +1090,274 @@ function StreamSwitch(props: {
       />
       <Label htmlFor={props.id}>{t('Stream')}</Label>
     </div>
+  )
+}
+
+function JudgmentStandardCard(props: {
+  standard: SupplierStandard
+  matchedStandardId: string | null
+  onChange: Dispatch<SetStateAction<SupplierStandard>>
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <TitledCard
+        title={t('Judgment standard')}
+        description={t(
+          'These numbers are the ruler after a run. They do not judge whether the model is smart. Change them for this vendor; tables update immediately.'
+        )}
+        icon={<SlidersHorizontal />}
+        action={
+          <CollapsibleTrigger
+            render={<Button type='button' variant='outline' size='sm' />}
+          >
+            {open ? t('Collapse') : t('Expand')}
+            <ChevronDown
+              className={cn(
+                'size-4 transition-transform',
+                open && 'rotate-180'
+              )}
+            />
+          </CollapsibleTrigger>
+        }
+        contentClassName={open ? undefined : 'hidden'}
+      >
+        <CollapsibleContent>
+          <div className='space-y-2 text-sm'>
+            <p className='font-medium'>{t('What each test returns')}</p>
+            <ul className='text-muted-foreground list-disc space-y-1.5 pl-5'>
+              <li>
+                {t(
+                  'Basic acceptance: pass, skip, or fail. Checks whether the API door opens, and whether JSON / tools / thinking exist. Missing optional APIs are skipped, not failed.'
+                )}
+              </li>
+              <li>
+                {t(
+                  'Cache test: hit rate and whether cache still works after waiting. This is the vendor prompt cache, not our Redis.'
+                )}
+              </li>
+              <li>
+                {t(
+                  'Stress test: how many requests failed (error rate) and how fast the first/next tokens arrived (TTFT / TPOT). Enable stream to get timing samples.'
+                )}
+              </li>
+            </ul>
+          </div>
+          <div className='mt-4 max-w-sm'>
+            <FieldSelect
+              label={t('Load preset')}
+              value={props.matchedStandardId ?? 'custom'}
+              disabled={false}
+              items={[
+                ...SUPPLIER_STANDARDS.map((item) => ({
+                  value: item.id,
+                  label: t(item.labelKey),
+                })),
+                ...(props.matchedStandardId
+                  ? []
+                  : [
+                      {
+                        value: 'custom',
+                        label: t('Custom standard'),
+                      },
+                    ]),
+              ]}
+              onChange={(id) => {
+                if (id === 'custom') return
+                props.onChange({ ...getStandard(id) })
+              }}
+            />
+          </div>
+          <div className='mt-4 space-y-5'>
+            <div>
+              <p className='mb-1 text-sm font-medium'>
+                {t('From stress test')}
+              </p>
+              <p className='text-muted-foreground mb-3 text-xs'>
+                {t(
+                  'Error rate is the share of failed HTTP/API requests in that short run (timeouts, 5xx, refused). It is not wrong model answers.'
+                )}
+              </p>
+              <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
+                <NumberField
+                  id='std-error'
+                  label={t('Error rate (%)')}
+                  hint={t(
+                    'At or below this share of failed requests is still Normal. Comes from Stress test, not Basic acceptance.'
+                  )}
+                  value={Math.round(props.standard.errorSlow * 100)}
+                  disabled={false}
+                  min={0}
+                  max={100}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({ ...current, errorSlow: value / 100 })
+                    )
+                  }
+                />
+                <NumberField
+                  id='std-ttft-short'
+                  label={t('TTFT short (s)')}
+                  hint={t(
+                    'Time to first token on a short prompt. Stress test with stream on. Above this is Slow.'
+                  )}
+                  value={props.standard.ttftShortOkMs / 1000}
+                  disabled={false}
+                  min={0.1}
+                  max={120}
+                  step={0.5}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({
+                        ...current,
+                        ttftShortOkMs: value * 1000,
+                      })
+                    )
+                  }
+                />
+                <NumberField
+                  id='std-ttft-long'
+                  label={t('TTFT long (s)')}
+                  hint={t(
+                    'Time to first token when prompt tokens reach Long input tokens. Stress test with stream on.'
+                  )}
+                  value={props.standard.ttftLongOkMs / 1000}
+                  disabled={false}
+                  min={0.1}
+                  max={180}
+                  step={0.5}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({
+                        ...current,
+                        ttftLongOkMs: value * 1000,
+                      })
+                    )
+                  }
+                />
+                <NumberField
+                  id='std-ttft-p90'
+                  label={t('TTFT P90 × avg')}
+                  hint={t(
+                    'If P90 first-token time is more than this times the average, replies are jumpy.'
+                  )}
+                  value={props.standard.ttftP90AvgTimes}
+                  disabled={false}
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({
+                        ...current,
+                        ttftP90AvgTimes: value,
+                      })
+                    )
+                  }
+                />
+                <NumberField
+                  id='std-tpot-avg'
+                  label={t('TPOT avg (ms)')}
+                  hint={t(
+                    'Milliseconds per output token after the first token. How fast it types. Stress test with stream on.'
+                  )}
+                  value={props.standard.tpotAvgOkMs}
+                  disabled={false}
+                  min={1}
+                  max={5000}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({ ...current, tpotAvgOkMs: value })
+                    )
+                  }
+                />
+                <NumberField
+                  id='std-tpot-p90'
+                  label={t('TPOT P90 (ms)')}
+                  hint={t(
+                    '90th percentile of time per output token. Stress test with stream on.'
+                  )}
+                  value={props.standard.tpotP90OkMs}
+                  disabled={false}
+                  min={1}
+                  max={5000}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({ ...current, tpotP90OkMs: value })
+                    )
+                  }
+                />
+                <NumberField
+                  id='std-long-input'
+                  label={t('Long input tokens')}
+                  hint={t(
+                    'Prompt tokens at or above this use the long TTFT ruler. Comes from stress usage, not a tokenizer audit.'
+                  )}
+                  value={props.standard.longInputTokens}
+                  disabled={false}
+                  min={1}
+                  max={MAX_TOKENS_CAP}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({
+                        ...current,
+                        longInputTokens: value,
+                      })
+                    )
+                  }
+                />
+              </div>
+            </div>
+            <div>
+              <p className='mb-1 text-sm font-medium'>{t('From cache test')}</p>
+              <p className='text-muted-foreground mb-3 text-xs'>
+                {t(
+                  'These rulers score Cache test only. They do not use stress numbers.'
+                )}
+              </p>
+              <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
+                <NumberField
+                  id='std-cache'
+                  label={t('Cache hit (%)')}
+                  hint={t(
+                    'Share of cache probe rounds that returned cached_tokens. Below this is Slow.'
+                  )}
+                  value={Math.round(props.standard.cacheHitOk * 100)}
+                  disabled={false}
+                  min={0}
+                  max={100}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({
+                        ...current,
+                        cacheHitOk: value / 100,
+                      })
+                    )
+                  }
+                />
+                <NumberField
+                  id='std-ttl'
+                  label={t('TTL wait (s)')}
+                  hint={t(
+                    'Wait this long after the first cache request before judging TTL. Waiting less than this is Cannot compare.'
+                  )}
+                  value={props.standard.ttlWaitSeconds}
+                  disabled={false}
+                  min={0}
+                  max={600}
+                  onChange={(value) =>
+                    props.onChange((current) =>
+                      sanitizeStandard({ ...current, ttlWaitSeconds: value })
+                    )
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </TitledCard>
+    </Collapsible>
   )
 }
 

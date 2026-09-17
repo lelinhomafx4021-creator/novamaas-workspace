@@ -21,12 +21,10 @@ import {
   ChevronDown,
   ClipboardCheck,
   Copy,
-  Database,
   Download,
   Loader2,
   SlidersHorizontal,
   Square,
-  Zap,
 } from 'lucide-react'
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -53,6 +51,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -67,6 +66,7 @@ import { cn } from '@/lib/utils'
 
 import { fetchSupplierModels } from './api'
 import {
+  applyStandardEditorValue,
   assessCache,
   assessmentGroup,
   assessStress,
@@ -77,6 +77,8 @@ import {
   matchingStandardId,
   overallLabel,
   sanitizeStandard,
+  STANDARD_EDITOR_FIELDS,
+  standardEditorValue,
   SUPPLIER_STANDARDS,
   VERDICT_LABEL,
   type Assessment,
@@ -86,7 +88,6 @@ import {
 import {
   CACHE_ROUND_PRESETS,
   CACHE_WAIT_PRESETS,
-  CHECK_HINTS,
   CORPORA,
   DEFAULT_BASIC_FORM,
   DEFAULT_CACHE_FORM,
@@ -177,6 +178,7 @@ export function SupplierTest() {
   const [cache, setCache] = useState<CacheForm>(DEFAULT_CACHE_FORM)
   const [stress, setStress] = useState<StressForm>(DEFAULT_STRESS_FORM)
   const [standard, setStandard] = useState<SupplierStandard>(readStoredStandard)
+  const [moduleTab, setModuleTab] = useState<SupplierTestModule>('basic')
   const run = useSupplierTestRun()
   const matchedStandardId = matchingStandardId(standard)
   const standardLabel = t(
@@ -192,6 +194,10 @@ export function SupplierTest() {
       // ignore quota or private-mode failures
     }
   }, [standard])
+
+  useEffect(() => {
+    if (run.runningModule) setModuleTab(run.runningModule)
+  }, [run.runningModule])
   const stressTotal = stress.concurrency * stress.rounds
   const busy = run.runningModule !== null
   const hasReport =
@@ -203,6 +209,12 @@ export function SupplierTest() {
     run.progress.total > 0
       ? Math.min(100, (run.progress.completed / run.progress.total) * 100)
       : 0
+  let runLabel = t('Run all basic checks')
+  if (moduleTab === 'cache') {
+    runLabel = t('Run cache test')
+  } else if (moduleTab === 'stress') {
+    runLabel = t('Run stress test')
+  }
 
   const modelsMutation = useMutation({
     mutationFn: fetchSupplierModels,
@@ -481,7 +493,7 @@ export function SupplierTest() {
               </div>
             }
           >
-            <div className='grid gap-4 md:grid-cols-3'>
+            <div className='grid gap-3 md:grid-cols-3'>
               <div className='space-y-2'>
                 <Label htmlFor='supplier-base-url'>{t('Base URL')}</Label>
                 <Input
@@ -536,21 +548,44 @@ export function SupplierTest() {
             </div>
           </TitledCard>
 
-          <TitledCard
-            title={t('Basic acceptance')}
-            description={t(
-              'Shallow checks ask whether the door opens. Protocol checks are skipped when the vendor has no matching API. Empty temperature / top_p are not sent.'
-            )}
-            icon={<ClipboardCheck />}
-            action={
-              <Button onClick={() => startModule('basic')} disabled={busy}>
-                {run.runningModule === 'basic' ? (
-                  <Loader2 className='animate-spin' />
-                ) : null}
-                {t('Run all basic checks')}
-              </Button>
-            }
+          <Tabs
+            value={moduleTab}
+            onValueChange={(value) => {
+              const next = String(value)
+              if (next === 'basic' || next === 'cache' || next === 'stress') {
+                setModuleTab(next)
+              }
+            }}
           >
+            <TitledCard
+              title={t('Tests')}
+              description={t(
+                'Run one module at a time. Results stay when you switch tabs.'
+              )}
+              icon={<ClipboardCheck />}
+              action={
+                <Button
+                  onClick={() => startModule(moduleTab)}
+                  disabled={busy}
+                >
+                  {run.runningModule === moduleTab ? (
+                    <Loader2 className='animate-spin' />
+                  ) : null}
+                  {runLabel}
+                </Button>
+              }
+            >
+              <TabsList className='mb-4 grid h-auto w-full grid-cols-3 sm:w-fit'>
+                <TabsTrigger value='basic'>{t('Basic acceptance')}</TabsTrigger>
+                <TabsTrigger value='cache'>{t('Cache test')}</TabsTrigger>
+                <TabsTrigger value='stress'>{t('Stress test')}</TabsTrigger>
+              </TabsList>
+              <TabsContent value='basic' className='space-y-4'>
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Shallow checks ask whether the door opens. Protocol checks are skipped when the vendor has no matching API. Empty temperature / top_p are not sent.'
+              )}
+            </p>
             <div className='grid gap-4 md:grid-cols-4'>
               <NumberField
                 id='basic-max-tokens'
@@ -629,7 +664,7 @@ export function SupplierTest() {
                 {run.summaries.basic}
               </p>
             ) : null}
-            <div className='mt-4 space-y-4'>
+            <div className='space-y-4'>
               <div>
                 <p className='mb-2 text-sm font-medium'>
                   {t('Shallow · connectivity')}
@@ -660,23 +695,13 @@ export function SupplierTest() {
                 />
               </div>
             </div>
-          </TitledCard>
-
-          <TitledCard
-            title={t('Cache test')}
-            description={t(
-              'Corpus is the input prefix, sent as-is. Max tokens only caps the reply. The first request warms cache; later rounds check the hit.'
-            )}
-            icon={<Database />}
-            action={
-              <Button onClick={() => startModule('cache')} disabled={busy}>
-                {run.runningModule === 'cache' ? (
-                  <Loader2 className='animate-spin' />
-                ) : null}
-                {t('Run cache test')}
-              </Button>
-            }
-          >
+              </TabsContent>
+              <TabsContent value='cache' className='space-y-4'>
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Corpus is the input prefix, sent as-is. Max tokens only caps the reply. The first request warms cache; later rounds check the hit.'
+              )}
+            </p>
             <div className='grid gap-4 md:grid-cols-4'>
               <NumberField
                 id='cache-wait'
@@ -778,23 +803,13 @@ export function SupplierTest() {
                 assessment={cacheAssessment}
               />
             ) : null}
-          </TitledCard>
-
-          <TitledCard
-            title={t('Stress test')}
-            description={t(
-              'Corpus is sent as-is. Allow cache reuses it; break cache puts a random prefix in front of each request. Max tokens only caps the reply.'
-            )}
-            icon={<Zap />}
-            action={
-              <Button onClick={() => startModule('stress')} disabled={busy}>
-                {run.runningModule === 'stress' ? (
-                  <Loader2 className='animate-spin' />
-                ) : null}
-                {t('Run stress test')}
-              </Button>
-            }
-          >
+              </TabsContent>
+              <TabsContent value='stress' className='space-y-4'>
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Corpus is sent as-is. Allow cache reuses it; break cache puts a random prefix in front of each request. Max tokens only caps the reply.'
+              )}
+            </p>
             <div className='flex flex-wrap gap-2'>
               {LOAD_PRESETS.map((preset) => (
                 <Button
@@ -957,7 +972,9 @@ export function SupplierTest() {
                 />
               </>
             ) : null}
-          </TitledCard>
+              </TabsContent>
+            </TitledCard>
+          </Tabs>
 
           <JudgmentStandardCard
             standard={standard}
@@ -1081,14 +1098,16 @@ function StreamSwitch(props: {
 }) {
   const { t } = useTranslation()
   return (
-    <div className='flex items-end gap-3 pb-2'>
-      <Switch
-        id={props.id}
-        checked={props.checked}
-        disabled={props.disabled}
-        onCheckedChange={(checked) => props.onChange(Boolean(checked))}
-      />
+    <div className='space-y-1.5'>
       <Label htmlFor={props.id}>{t('Stream')}</Label>
+      <div className='flex h-8 items-center'>
+        <Switch
+          id={props.id}
+          checked={props.checked}
+          disabled={props.disabled}
+          onCheckedChange={(checked) => props.onChange(Boolean(checked))}
+        />
+      </div>
     </div>
   )
 }
@@ -1102,49 +1121,44 @@ function JudgmentStandardCard(props: {
   const [open, setOpen] = useState(false)
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <TitledCard
-        title={t('Judgment standard')}
-        description={t(
-          'These numbers are the ruler after a run. They do not judge whether the model is smart. Change them for this vendor; tables update immediately.'
-        )}
-        icon={<SlidersHorizontal />}
-        action={
-          <CollapsibleTrigger
-            render={<Button type='button' variant='outline' size='sm' />}
-          >
+      <div className='bg-card rounded-xl border'>
+        <CollapsibleTrigger
+          render={
+            <button
+              type='button'
+              className='hover:bg-muted/40 flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors'
+            />
+          }
+        >
+          <span className='flex min-w-0 items-center gap-3'>
+            <span className='bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md'>
+              <SlidersHorizontal className='size-4' aria-hidden='true' />
+            </span>
+            <span className='min-w-0'>
+              <span className='block text-sm font-medium'>
+                {t('Judgment standard')}
+              </span>
+              <span className='text-muted-foreground block text-xs'>
+                {t(
+                  'These numbers are the ruler after a run. They do not judge whether the model is smart. Change them for this vendor; tables update immediately.'
+                )}
+              </span>
+            </span>
+          </span>
+          <span className='text-muted-foreground flex shrink-0 items-center gap-1 text-sm'>
             {open ? t('Collapse') : t('Expand')}
             <ChevronDown
               className={cn(
                 'size-4 transition-transform',
                 open && 'rotate-180'
               )}
+              aria-hidden='true'
             />
-          </CollapsibleTrigger>
-        }
-        contentClassName={open ? undefined : 'hidden'}
-      >
+          </span>
+        </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className='space-y-2 text-sm'>
-            <p className='font-medium'>{t('What each test returns')}</p>
-            <ul className='text-muted-foreground list-disc space-y-1.5 pl-5'>
-              <li>
-                {t(
-                  'Basic acceptance: pass, skip, or fail. Checks whether the API door opens, and whether JSON / tools / thinking exist. Missing optional APIs are skipped, not failed.'
-                )}
-              </li>
-              <li>
-                {t(
-                  'Cache test: hit rate and whether cache still works after waiting. This is the vendor prompt cache, not our Redis.'
-                )}
-              </li>
-              <li>
-                {t(
-                  'Stress test: how many requests failed (error rate) and how fast the first/next tokens arrived (TTFT / TPOT). Enable stream to get timing samples.'
-                )}
-              </li>
-            </ul>
-          </div>
-          <div className='mt-4 max-w-sm'>
+          <div className='space-y-5 border-t px-4 py-4'>
+          <div className='max-w-sm'>
             <FieldSelect
               label={t('Load preset')}
               value={props.matchedStandardId ?? 'custom'}
@@ -1170,193 +1184,57 @@ function JudgmentStandardCard(props: {
             />
           </div>
           <div className='mt-4 space-y-5'>
-            <div>
-              <p className='mb-1 text-sm font-medium'>
-                {t('From stress test')}
-              </p>
-              <p className='text-muted-foreground mb-3 text-xs'>
-                {t(
-                  'Error rate is the share of failed HTTP/API requests in that short run (timeouts, 5xx, refused). It is not wrong model answers.'
-                )}
-              </p>
-              <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
-                <NumberField
-                  id='std-error'
-                  label={t('Error rate (%)')}
-                  hint={t(
-                    'At or below this share of failed requests is still Normal. Comes from Stress test, not Basic acceptance.'
-                  )}
-                  value={Math.round(props.standard.errorSlow * 100)}
-                  disabled={false}
-                  min={0}
-                  max={100}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({ ...current, errorSlow: value / 100 })
-                    )
-                  }
-                />
-                <NumberField
-                  id='std-ttft-short'
-                  label={t('TTFT short (s)')}
-                  hint={t(
-                    'Time to first token on a short prompt. Stress test with stream on. Above this is Slow.'
-                  )}
-                  value={props.standard.ttftShortOkMs / 1000}
-                  disabled={false}
-                  min={0.1}
-                  max={120}
-                  step={0.5}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({
-                        ...current,
-                        ttftShortOkMs: value * 1000,
-                      })
-                    )
-                  }
-                />
-                <NumberField
-                  id='std-ttft-long'
-                  label={t('TTFT long (s)')}
-                  hint={t(
-                    'Time to first token when prompt tokens reach Long input tokens. Stress test with stream on.'
-                  )}
-                  value={props.standard.ttftLongOkMs / 1000}
-                  disabled={false}
-                  min={0.1}
-                  max={180}
-                  step={0.5}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({
-                        ...current,
-                        ttftLongOkMs: value * 1000,
-                      })
-                    )
-                  }
-                />
-                <NumberField
-                  id='std-ttft-p90'
-                  label={t('TTFT P90 × avg')}
-                  hint={t(
-                    'If P90 first-token time is more than this times the average, replies are jumpy.'
-                  )}
-                  value={props.standard.ttftP90AvgTimes}
-                  disabled={false}
-                  min={1}
-                  max={10}
-                  step={0.5}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({
-                        ...current,
-                        ttftP90AvgTimes: value,
-                      })
-                    )
-                  }
-                />
-                <NumberField
-                  id='std-tpot-avg'
-                  label={t('TPOT avg (ms)')}
-                  hint={t(
-                    'Milliseconds per output token after the first token. How fast it types. Stress test with stream on.'
-                  )}
-                  value={props.standard.tpotAvgOkMs}
-                  disabled={false}
-                  min={1}
-                  max={5000}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({ ...current, tpotAvgOkMs: value })
-                    )
-                  }
-                />
-                <NumberField
-                  id='std-tpot-p90'
-                  label={t('TPOT P90 (ms)')}
-                  hint={t(
-                    '90th percentile of time per output token. Stress test with stream on.'
-                  )}
-                  value={props.standard.tpotP90OkMs}
-                  disabled={false}
-                  min={1}
-                  max={5000}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({ ...current, tpotP90OkMs: value })
-                    )
-                  }
-                />
-                <NumberField
-                  id='std-long-input'
-                  label={t('Long input tokens')}
-                  hint={t(
-                    'Prompt tokens at or above this use the long TTFT ruler. Comes from stress usage, not a tokenizer audit.'
-                  )}
-                  value={props.standard.longInputTokens}
-                  disabled={false}
-                  min={1}
-                  max={MAX_TOKENS_CAP}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({
-                        ...current,
-                        longInputTokens: value,
-                      })
-                    )
-                  }
-                />
+            {(
+              [
+                {
+                  group: 'stress' as const,
+                  title: t('From stress test'),
+                  note: t(
+                    'Error rate is the share of failed HTTP/API requests in that short run (timeouts, 5xx, refused). It is not wrong model answers.'
+                  ),
+                },
+                {
+                  group: 'cache' as const,
+                  title: t('From cache test'),
+                  note: t(
+                    'These rulers score Cache test only. They do not use stress numbers.'
+                  ),
+                },
+              ]
+            ).map((section) => (
+              <div key={section.group}>
+                <p className='mb-1 text-sm font-medium'>{section.title}</p>
+                <p className='text-muted-foreground mb-3 text-xs'>
+                  {section.note}
+                </p>
+                <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
+                  {STANDARD_EDITOR_FIELDS.filter(
+                    (field) => field.group === section.group
+                  ).map((field) => (
+                    <NumberField
+                      key={field.id}
+                      id={field.id}
+                      label={t(field.label)}
+                      hint={t(field.hint)}
+                      value={standardEditorValue(props.standard, field)}
+                      disabled={false}
+                      min={field.min}
+                      max={field.max}
+                      step={field.step}
+                      onChange={(value) =>
+                        props.onChange((current) =>
+                          applyStandardEditorValue(current, field, value)
+                        )
+                      }
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-            <div>
-              <p className='mb-1 text-sm font-medium'>{t('From cache test')}</p>
-              <p className='text-muted-foreground mb-3 text-xs'>
-                {t(
-                  'These rulers score Cache test only. They do not use stress numbers.'
-                )}
-              </p>
-              <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
-                <NumberField
-                  id='std-cache'
-                  label={t('Cache hit (%)')}
-                  hint={t(
-                    'Share of cache probe rounds that returned cached_tokens. Below this is Slow.'
-                  )}
-                  value={Math.round(props.standard.cacheHitOk * 100)}
-                  disabled={false}
-                  min={0}
-                  max={100}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({
-                        ...current,
-                        cacheHitOk: value / 100,
-                      })
-                    )
-                  }
-                />
-                <NumberField
-                  id='std-ttl'
-                  label={t('TTL wait (s)')}
-                  hint={t(
-                    'Wait this long after the first cache request before judging TTL. Waiting less than this is Cannot compare.'
-                  )}
-                  value={props.standard.ttlWaitSeconds}
-                  disabled={false}
-                  min={0}
-                  max={600}
-                  onChange={(value) =>
-                    props.onChange((current) =>
-                      sanitizeStandard({ ...current, ttlWaitSeconds: value })
-                    )
-                  }
-                />
-              </div>
-            </div>
+            ))}
+          </div>
           </div>
         </CollapsibleContent>
-      </TitledCard>
+      </div>
     </Collapsible>
   )
 }
@@ -1470,9 +1348,9 @@ function CheckTable(props: {
           <TableRow key={check.id}>
             <TableCell>
               <div>{t(check.title)}</div>
-              {CHECK_HINTS[check.id] ? (
-                <p className='text-muted-foreground mt-0.5 text-xs leading-snug'>
-                  {t(CHECK_HINTS[check.id])}
+              {check.hintKey ? (
+                <p className='text-muted-foreground mt-0.5 max-w-prose text-xs leading-snug'>
+                  {t(check.hintKey)}
                 </p>
               ) : null}
             </TableCell>

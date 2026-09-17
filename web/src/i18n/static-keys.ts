@@ -119,6 +119,8 @@ export const STATIC_I18N_KEYS = [
   '{{label}} ({{tokens}} tokens)',
   '{{tokens}} tokens',
   'Judgment standard',
+  'Tests',
+  'Run one module at a time. Results stay when you switch tabs.',
   'Default standard',
   'Tight standard',
   'Custom standard',

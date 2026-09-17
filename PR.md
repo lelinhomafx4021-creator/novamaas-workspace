@@ -5,15 +5,28 @@
 
 ## 📝 变更描述 / Description
 
-给管理员增加「供应商测试」工作台：只填 Base URL、可选 API Key 和模型，直连目标做基础验收、缓存命中和压测。不走 Channel / relay / 计费，也不写新表。
+给管理员加「供应商测试」页：填上游 Base URL、Key、模型，直连对方做基础验收、缓存、压测。不走 Channel / relay / 计费，不新建表。
 
-页面展示 TTFT / TPOT 的均值、P50、P90，以及这次短测推算的 RPM / TPM。结果可复制 Markdown，或导出 `.md` / `.html`。语料只保留一份内置列表（含约 3k token 文本），名称后标注大约 token 数；缓存和压测共用，按原文发送，不再做提示词填充或预热垫字。压测可选「可走缓存」（每枪相同语料）或「打断缓存」（语料前加随机前缀）。判定标准可切换、可编辑：默认宽松，另有较严预设；数字按厂商改完表格马上重算。当前值存在浏览器 sessionStorage，不写库。
+测完用页面上的判定标准打分，数字可改，表格马上重算，不必重跑。判定只有正常 / 偏慢 / 无法对照。空温度、top_p 不发送。语料原文发送，不做垫字。供应商缺字段就跳过。基础验收只在流式连通性展示模型回复。
 
-指标只分「正常 / 偏慢 / 无法对照」。差一点仍算正常：例如错误率 8%、TTFT 4–5 秒、缓存命中 60% 都算正常。供应商缺字段会跳过，不当失败。温度和 top_p 空着就不发送。
+**合进公司 `main` 时不要带个人 CD。** 从本 PR 排除：
 
-也可以测本平台：点「用本平台」填当前 API 地址，再粘贴令牌页的 Key，即可拉取 `/v1/models` 并跑同一套检查。空模型列表不再当成错误；如果误填了控制台页面地址，会提示改用 API 源站，而不是一串 HTML。基础验收只在「流式连通性」展示模型回复，其它检查只看通过/跳过/失败。gzip 只排除本功能的 SSE 路径，其它 API 仍压缩。侧边栏是加性入口：管理员和超级管理员默认可见，普通成员看不到，接口也走 AdminAuth。不改渠道、计费、转发。
+- `.github/workflows/cd-aliyun.yml`
+- `.github/workflows/ci-draft.yml`
+- `deploy/aliyun/`
+- `PR.md`（本文只作 GitHub 正文，不要进仓库）
+- `web/src/i18n/locales/_reports/`
 
-本段描述由作者整理；实现过程有 AI 辅助。
+官方文件动过原语句的只有两处，合之前看一眼：
+
+1. `router/api-router.go`：原 `gzip.Gzip(gzip.DefaultCompression)` 换成带 `WithExcludedPaths`，排除 `/api/supplier-test/runs`。其它 API 仍 gzip。下面再挂 `POST /api/supplier-test/models` 和 `/runs`，AdminAuth。
+2. `model/user.go`：管理员 / root 默认侧栏 map 整段重写对齐，原有 channel、models 等开关都还在，只多了 `supplier_test: true`。
+
+其余官方挂钩都是加项：侧栏菜单、模块开关、`/supplier-test` 路由、`env.d.ts` 允许读 `.txt`。没有删渠道、用户、计费代码。
+
+新逻辑在 `service/suppliertest/` 和 `web/src/features/supplier-test/`。`git --stat` 行数会被 7 份 i18n 和语料 txt 撑大，审代码看 runner、client、前端工作台即可。
+
+当前 git 用户不是仓库历史核心作者。实现过程有 AI 辅助。
 
 ## 🚀 变更类型 / Type of change
 - [ ] 🐛 Bug 修复 (Bug fix) - *请关联对应 Issue，避免将设计取舍、理解偏差或预期不一致直接归类为 bug*
@@ -33,28 +46,24 @@
 - [x] **非重复提交:** 我已搜索现有的 Issues 与 PRs，确认不是重复提交。
 - [x] **Bug fix 说明:** 若此 PR 标记为 `Bug fix`，我已提交或关联对应 Issue，且不会将设计取舍、预期不一致或理解偏差直接归类为 bug。
 - [x] **变更理解:** 我已理解这些更改的工作原理及可能影响。
-- [x] **范围聚焦:** 本 PR 未包含任何与当前任务无关的代码改动。
-- [x] **上游同步:** 若本 PR 引入或同步上游改动，我已同时更新 `UPSTREAM.md`；否则已在上方说明其为下游专属或不适用。
+- [x] **范围聚焦:** 合公司时已排除个人 CI/CD 与无关报告文件；功能代码限于供应商测试及其挂钩。
+- [x] **上游同步:** 下游专属，不更新 `UPSTREAM.md`。
 - [x] **本地验证:** 已在本地运行并通过测试或手动验证，维护者可以据此复核结果。
 - [x] **安全合规:** 代码中无敏感凭据，且符合项目代码规范。
 
 ## 📸 运行证明 / Proof of Work
 
-本地测试：
-
-- `go test ./service/suppliertest ./controller ./router ./model -count=1` 通过
+- `go test ./service/suppliertest ./controller ./model -count=1` 通过
 - `cd web && bun run typecheck` 通过
-- `oxlint src/features/supplier-test` 0 warning / 0 error
-- `vitest src/features/supplier-test/baselines.test.ts` 通过
+- `oxlint` 对 `src/features/supplier-test` 0 warning / 0 error
+- `vitest src/features/supplier-test` 通过（判定尺子、页面布局）
 
-手动：管理员打开「供应商测试」→「用本平台」→ 粘贴令牌页 Key → 拉取模型。测上游时仍只填对方 Base URL。请在 GitHub PR 里补一张页面截图。
-
-半成品 CI：push / PR 会跑 `.github/workflows/ci-draft.yml`（Go 相关包测试 + 前端 typecheck/oxlint/vitest）。不改现有 `build.yml`。CD 仅 `workflow_dispatch` 占位，不 SSH、不要机器密码；以后在仓库 Secrets 加 `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` 再接部署。
+手动：管理员打开「供应商测试」→ 填目标 → 标签页跑基础 / 缓存 / 压测 → 底下展开判定标准改数字，对照表马上重算。请在 GitHub PR 里补一张页面截图。
 
 ---
 
 **建议 Title:** `feat: add admin supplier test workbench`
 
-**分支:** `feat/supplier-test`（相对 `main`）
+**合向:** 公司 `main`（`yeruyi1024/novamaas-workspace`）
 
-**说明:** 当前 git 用户不是仓库历史核心作者，PR 已标明实现过程有 AI 辅助。合并前如不需要把本文件带进仓库，可从提交中移除 `PR.md`，只把正文贴到 GitHub。
+**说明:** 个人 fork 上的阿里云 CD 继续留在 `feat/supplier-test` 自己用，不要放进这个公司 PR。

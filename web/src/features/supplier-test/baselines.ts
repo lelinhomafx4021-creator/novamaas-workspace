@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import { MAX_TOKENS_CAP } from './constants'
 import type { CacheMetrics, StressMetrics } from './types'
 
 export type Verdict = 'ok' | 'slow' | 'na'
@@ -153,6 +154,137 @@ export function matchingStandardId(standard: SupplierStandard): string | null {
   return found?.id ?? null
 }
 
+export type StandardNumberKey = Exclude<keyof SupplierStandard, 'id' | 'labelKey'>
+
+export type StandardEditorField = {
+  id: string
+  key: StandardNumberKey
+  group: 'stress' | 'cache'
+  label: string
+  hint: string
+  min: number
+  max: number
+  step?: number
+  display: 'percent' | 'seconds' | 'raw'
+}
+
+export const STANDARD_EDITOR_FIELDS: StandardEditorField[] = [
+  {
+    id: 'std-error',
+    key: 'errorSlow',
+    group: 'stress',
+    label: 'Error rate (%)',
+    hint: 'At or below this share of failed requests is still Normal. Comes from Stress test, not Basic acceptance.',
+    min: 0,
+    max: 100,
+    display: 'percent',
+  },
+  {
+    id: 'std-ttft-short',
+    key: 'ttftShortOkMs',
+    group: 'stress',
+    label: 'TTFT short (s)',
+    hint: 'Time to first token on a short prompt. Stress test with stream on. Above this is Slow.',
+    min: 0.1,
+    max: 120,
+    step: 0.5,
+    display: 'seconds',
+  },
+  {
+    id: 'std-ttft-long',
+    key: 'ttftLongOkMs',
+    group: 'stress',
+    label: 'TTFT long (s)',
+    hint: 'Time to first token when prompt tokens reach Long input tokens. Stress test with stream on.',
+    min: 0.1,
+    max: 180,
+    step: 0.5,
+    display: 'seconds',
+  },
+  {
+    id: 'std-ttft-p90',
+    key: 'ttftP90AvgTimes',
+    group: 'stress',
+    label: 'TTFT P90 × avg',
+    hint: 'If P90 first-token time is more than this times the average, replies are jumpy.',
+    min: 1,
+    max: 10,
+    step: 0.5,
+    display: 'raw',
+  },
+  {
+    id: 'std-tpot-avg',
+    key: 'tpotAvgOkMs',
+    group: 'stress',
+    label: 'TPOT avg (ms)',
+    hint: 'Milliseconds per output token after the first token. How fast it types. Stress test with stream on.',
+    min: 1,
+    max: 5000,
+    display: 'raw',
+  },
+  {
+    id: 'std-tpot-p90',
+    key: 'tpotP90OkMs',
+    group: 'stress',
+    label: 'TPOT P90 (ms)',
+    hint: '90th percentile of time per output token. Stress test with stream on.',
+    min: 1,
+    max: 5000,
+    display: 'raw',
+  },
+  {
+    id: 'std-long-input',
+    key: 'longInputTokens',
+    group: 'stress',
+    label: 'Long input tokens',
+    hint: 'Prompt tokens at or above this use the long TTFT ruler. Comes from stress usage, not a tokenizer audit.',
+    min: 1,
+    max: MAX_TOKENS_CAP,
+    display: 'raw',
+  },
+  {
+    id: 'std-cache',
+    key: 'cacheHitOk',
+    group: 'cache',
+    label: 'Cache hit (%)',
+    hint: 'Share of cache probe rounds that returned cached_tokens. Below this is Slow.',
+    min: 0,
+    max: 100,
+    display: 'percent',
+  },
+  {
+    id: 'std-ttl',
+    key: 'ttlWaitSeconds',
+    group: 'cache',
+    label: 'TTL wait (s)',
+    hint: 'Wait this long after the first cache request before judging TTL. Waiting less than this is Cannot compare.',
+    min: 0,
+    max: 600,
+    display: 'raw',
+  },
+]
+
+export function standardEditorValue(
+  standard: SupplierStandard,
+  field: StandardEditorField
+): number {
+  const raw = standard[field.key]
+  if (field.display === 'percent') return Math.round(raw * 100)
+  if (field.display === 'seconds') return raw / 1000
+  return raw
+}
+
+export function applyStandardEditorValue(
+  standard: SupplierStandard,
+  field: StandardEditorField,
+  display: number
+): SupplierStandard {
+  let stored = display
+  if (field.display === 'percent') stored = display / 100
+  if (field.display === 'seconds') stored = display * 1000
+  return sanitizeStandard({ ...standard, [field.key]: stored })
+}
+
 export type Assessment = {
   rows: MetricRow[]
   overall: Verdict
@@ -234,6 +366,25 @@ function sampleOr(value: string, fallback = NO_SAMPLE): string {
   return value || fallback
 }
 
+function latencyRow(input: {
+  id: string
+  label: string
+  ms: number
+  threshold: string
+  thresholdValues: Record<string, string | number>
+  verdict: Verdict
+  sampled: boolean
+}): MetricRow {
+  return {
+    id: input.id,
+    label: input.label,
+    measured: input.sampled ? formatMs(input.ms) : NO_SAMPLE,
+    threshold: input.threshold,
+    thresholdValues: input.thresholdValues,
+    verdict: input.sampled ? input.verdict : 'na',
+  }
+}
+
 function ttftBand(ms: number, longInput: boolean, standard: SupplierStandard): Verdict {
   if (!(ms > 0)) return 'na'
   const limit = longInput ? standard.ttftLongOkMs : standard.ttftShortOkMs
@@ -313,130 +464,77 @@ export function assessStress(
     },
   ]
 
-  if (metrics.ttft_avg_ms > 0) {
-    let p90Verdict = ttftBand(metrics.ttft_p90_ms, longInput, standard)
-    if (
-      metrics.ttft_avg_ms > 0 &&
-      metrics.ttft_p90_ms > metrics.ttft_avg_ms * standard.ttftP90AvgTimes
-    ) {
-      p90Verdict = 'slow'
-    }
-    rows.push(
-      {
-        id: 'ttft_avg',
-        label: 'TTFT avg',
-        measured: formatMs(metrics.ttft_avg_ms),
-        threshold: ttftThreshold,
-        thresholdValues: ttftValues,
-        verdict: ttftBand(metrics.ttft_avg_ms, longInput, standard),
-      },
-      {
-        id: 'ttft_p50',
-        label: 'TTFT P50',
-        measured: formatMs(metrics.ttft_p50_ms),
-        threshold: ttftThreshold,
-        thresholdValues: ttftValues,
-        verdict: ttftBand(metrics.ttft_p50_ms, longInput, standard),
-      },
-      {
-        id: 'ttft_p90',
-        label: 'TTFT P90',
-        measured: formatMs(metrics.ttft_p90_ms),
-        threshold: TTFT_P90,
-        thresholdValues: {
-          seconds: ttftLimit / 1000,
-          times: standard.ttftP90AvgTimes,
-        },
-        verdict: p90Verdict,
-      }
-    )
-  } else {
-    rows.push(
-      {
-        id: 'ttft_avg',
-        label: 'TTFT avg',
-        measured: NO_SAMPLE,
-        threshold: ttftThreshold,
-        thresholdValues: ttftValues,
-        verdict: 'na',
-      },
-      {
-        id: 'ttft_p50',
-        label: 'TTFT P50',
-        measured: NO_SAMPLE,
-        threshold: ttftThreshold,
-        thresholdValues: ttftValues,
-        verdict: 'na',
-      },
-      {
-        id: 'ttft_p90',
-        label: 'TTFT P90',
-        measured: NO_SAMPLE,
-        threshold: TTFT_P90,
-        thresholdValues: {
-          seconds: ttftLimit / 1000,
-          times: standard.ttftP90AvgTimes,
-        },
-        verdict: 'na',
-      }
-    )
+  const ttftSampled = metrics.ttft_avg_ms > 0
+  let p90Verdict = ttftBand(metrics.ttft_p90_ms, longInput, standard)
+  if (
+    ttftSampled &&
+    metrics.ttft_p90_ms > metrics.ttft_avg_ms * standard.ttftP90AvgTimes
+  ) {
+    p90Verdict = 'slow'
   }
+  rows.push(
+    latencyRow({
+      id: 'ttft_avg',
+      label: 'TTFT avg',
+      ms: metrics.ttft_avg_ms,
+      threshold: ttftThreshold,
+      thresholdValues: ttftValues,
+      verdict: ttftBand(metrics.ttft_avg_ms, longInput, standard),
+      sampled: ttftSampled,
+    }),
+    latencyRow({
+      id: 'ttft_p50',
+      label: 'TTFT P50',
+      ms: metrics.ttft_p50_ms,
+      threshold: ttftThreshold,
+      thresholdValues: ttftValues,
+      verdict: ttftBand(metrics.ttft_p50_ms, longInput, standard),
+      sampled: ttftSampled,
+    }),
+    latencyRow({
+      id: 'ttft_p90',
+      label: 'TTFT P90',
+      ms: metrics.ttft_p90_ms,
+      threshold: TTFT_P90,
+      thresholdValues: {
+        seconds: ttftLimit / 1000,
+        times: standard.ttftP90AvgTimes,
+      },
+      verdict: p90Verdict,
+      sampled: ttftSampled,
+    })
+  )
 
-  if (metrics.tpot_avg_ms > 0) {
-    rows.push(
-      {
-        id: 'tpot_avg',
-        label: 'TPOT avg',
-        measured: formatMs(metrics.tpot_avg_ms),
-        threshold: TPOT_RULE,
-        thresholdValues: { ms: standard.tpotAvgOkMs },
-        verdict: tpotAvgBand(metrics.tpot_avg_ms, standard),
-      },
-      {
-        id: 'tpot_p50',
-        label: 'TPOT P50',
-        measured: formatMs(metrics.tpot_p50_ms),
-        threshold: TPOT_RULE,
-        thresholdValues: { ms: standard.tpotAvgOkMs },
-        verdict: tpotAvgBand(metrics.tpot_p50_ms, standard),
-      },
-      {
-        id: 'tpot_p90',
-        label: 'TPOT P90',
-        measured: formatMs(metrics.tpot_p90_ms),
-        threshold: TPOT_RULE,
-        thresholdValues: { ms: standard.tpotP90OkMs },
-        verdict: tpotP90Band(metrics.tpot_p90_ms, standard),
-      }
-    )
-  } else {
-    rows.push(
-      {
-        id: 'tpot_avg',
-        label: 'TPOT avg',
-        measured: NO_SAMPLE,
-        threshold: TPOT_RULE,
-        thresholdValues: { ms: standard.tpotAvgOkMs },
-        verdict: 'na',
-      },
-      {
-        id: 'tpot_p50',
-        label: 'TPOT P50',
-        measured: NO_SAMPLE,
-        threshold: TPOT_RULE,
-        thresholdValues: { ms: standard.tpotAvgOkMs },
-        verdict: 'na',
-      },
-      {
-        id: 'tpot_p90',
-        label: 'TPOT P90',
-        measured: NO_SAMPLE,
-        threshold: TPOT_RULE,
-        thresholdValues: { ms: standard.tpotP90OkMs },
-        verdict: 'na',
-      }
-    )
-  }
+  const tpotSampled = metrics.tpot_avg_ms > 0
+  rows.push(
+    latencyRow({
+      id: 'tpot_avg',
+      label: 'TPOT avg',
+      ms: metrics.tpot_avg_ms,
+      threshold: TPOT_RULE,
+      thresholdValues: { ms: standard.tpotAvgOkMs },
+      verdict: tpotAvgBand(metrics.tpot_avg_ms, standard),
+      sampled: tpotSampled,
+    }),
+    latencyRow({
+      id: 'tpot_p50',
+      label: 'TPOT P50',
+      ms: metrics.tpot_p50_ms,
+      threshold: TPOT_RULE,
+      thresholdValues: { ms: standard.tpotAvgOkMs },
+      verdict: tpotAvgBand(metrics.tpot_p50_ms, standard),
+      sampled: tpotSampled,
+    }),
+    latencyRow({
+      id: 'tpot_p90',
+      label: 'TPOT P90',
+      ms: metrics.tpot_p90_ms,
+      threshold: TPOT_RULE,
+      thresholdValues: { ms: standard.tpotP90OkMs },
+      verdict: tpotP90Band(metrics.tpot_p90_ms, standard),
+      sampled: tpotSampled,
+    })
+  )
 
   rows.push(
     {

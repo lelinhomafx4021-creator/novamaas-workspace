@@ -658,6 +658,14 @@ func TestCacheHitRateDoesNotFailOnLowHit(t *testing.T) {
 	require.NotNil(t, cacheMetrics)
 	assert.True(t, cacheMetrics.HasCachedTokens)
 	assert.InDelta(t, 0.2, cacheMetrics.AvgHitRate, 0.001)
+	var hitMessage string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID == CheckCacheHitRate {
+			hitMessage = event.Message
+		}
+	}
+	assert.NotContains(t, hitMessage, "不正常")
+	assert.NotContains(t, hitMessage, "偏弱")
 }
 
 func TestBasicSkipsDependentsWhenConnectivityFails(t *testing.T) {
@@ -694,43 +702,6 @@ func TestBasicSkipsDependentsWhenConnectivityFails(t *testing.T) {
 	assert.Equal(t, "skip", statusByCheck[CheckUsage])
 	assert.Equal(t, "skip", statusByCheck[CheckRequestID])
 	assert.Equal(t, "skip", statusByCheck[CheckSampling])
-}
-
-func TestCacheHitRatePassesWhenSlightlyBelowEighty(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1,\"cached_tokens\":12}}\n\n")
-		_, _ = io.WriteString(w, "data: [DONE]\n\n")
-	}))
-	defer server.Close()
-
-	var events []Event
-	err := Run(context.Background(), server.Client(), RunRequest{
-		BaseURL: server.URL,
-		APIKey:  "any",
-		Model:   "demo",
-		Modules: []string{ModuleCache},
-		Cache:   CacheConfig{Prompt: "cache-corpus", WaitSeconds: 0, MaxTokens: 8, Rounds: 1},
-	}, func(event Event) {
-		events = append(events, event)
-	})
-	require.NoError(t, err)
-
-	statusByCheck := map[string]string{}
-	var hitMessage string
-	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
-		if event.Type == "check" && event.CheckID == CheckCacheHitRate {
-			hitMessage = event.Message
-		}
-	}
-	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
-	assert.NotContains(t, hitMessage, "不正常")
-	assert.NotContains(t, hitMessage, "偏弱")
 }
 
 func TestStreamChatReadsVendorCacheAliases(t *testing.T) {

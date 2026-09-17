@@ -105,6 +105,7 @@ export type CheckResult = {
   title: string
   status: CheckStatus
   message?: string
+  hintKey?: string
 }
 
 export type TargetForm = {

@@ -143,16 +143,75 @@ export const DEFAULT_CACHE_FORM: CacheForm = {
 }
 
 export const BASIC_CHECKS: CheckResult[] = [
-  { id: 'connectivity', title: 'Connectivity', status: 'idle' },
-  { id: 'stream_format', title: 'Stream format', status: 'idle' },
-  { id: 'usage', title: 'Usage fields', status: 'idle' },
-  { id: 'request_id', title: 'Request id', status: 'idle' },
-  { id: 'sampling', title: 'Sampling parameters', status: 'idle' },
-  { id: 'auth_error', title: 'Auth error', status: 'idle' },
-  { id: 'bad_request', title: 'Bad request', status: 'idle' },
-  { id: 'json_mode', title: 'JSON mode', status: 'idle' },
-  { id: 'tool_call', title: 'Tool call', status: 'idle' },
-  { id: 'thinking', title: 'Thinking mode', status: 'idle' },
+  {
+    id: 'connectivity',
+    title: 'Connectivity',
+    status: 'idle',
+    hintKey:
+      'First chat request. Pass means HTTP 200 with text, thinking, or a tool call.',
+  },
+  {
+    id: 'stream_format',
+    title: 'Stream format',
+    status: 'idle',
+    hintKey:
+      'Streaming frames are valid. Missing finish_reason is skipped, not failed.',
+  },
+  {
+    id: 'usage',
+    title: 'Usage fields',
+    status: 'idle',
+    hintKey:
+      'Response includes prompt_tokens and completion_tokens. Needed for billing, not intelligence.',
+  },
+  {
+    id: 'request_id',
+    title: 'Request id',
+    status: 'idle',
+    hintKey:
+      'Response body or common headers include a request id, for troubleshooting.',
+  },
+  {
+    id: 'sampling',
+    title: 'Sampling parameters',
+    status: 'idle',
+    hintKey:
+      'Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.',
+  },
+  {
+    id: 'auth_error',
+    title: 'Auth error',
+    status: 'idle',
+    hintKey: 'A bad key should return 401 or 403. Other codes are skipped.',
+  },
+  {
+    id: 'bad_request',
+    title: 'Bad request',
+    status: 'idle',
+    hintKey:
+      'A request missing required fields should return 4xx. Other codes are skipped.',
+  },
+  {
+    id: 'json_mode',
+    title: 'JSON mode',
+    status: 'idle',
+    hintKey:
+      'Asks the vendor to return JSON. No JSON mode is skipped, not failed.',
+  },
+  {
+    id: 'tool_call',
+    title: 'Tool call',
+    status: 'idle',
+    hintKey:
+      'Asks the vendor to call a tool. No tools API is skipped, not failed.',
+  },
+  {
+    id: 'thinking',
+    title: 'Thinking mode',
+    status: 'idle',
+    hintKey:
+      'Asks the vendor for thinking / reasoning. No thinking API is skipped, not failed.',
+  },
 ]
 
 export const SHALLOW_BASIC_IDS = [
@@ -172,45 +231,42 @@ export const PROTOCOL_BASIC_IDS = [
 ] as const
 
 export const CACHE_CHECKS: CheckResult[] = [
-  { id: 'cache_warm', title: 'Cache warm', status: 'idle' },
-  { id: 'cache_probe', title: 'Cache probe', status: 'idle' },
-  { id: 'cache_tokens', title: 'Cached tokens', status: 'idle' },
-  { id: 'cache_hit_rate', title: 'Cache hit rate', status: 'idle' },
-  { id: 'cache_ttl', title: 'Cache TTL', status: 'idle' },
+  {
+    id: 'cache_warm',
+    title: 'Cache warm',
+    status: 'idle',
+    hintKey:
+      'First request with the same corpus prefix, to fill the vendor cache.',
+  },
+  {
+    id: 'cache_probe',
+    title: 'Cache probe',
+    status: 'idle',
+    hintKey:
+      'Later rounds reuse that prefix plus a follow-up, to see if cache hits.',
+  },
+  {
+    id: 'cache_tokens',
+    title: 'Cached tokens',
+    status: 'idle',
+    hintKey:
+      'Whether usage.cached_tokens is present. Missing field is skipped, not failed.',
+  },
+  {
+    id: 'cache_hit_rate',
+    title: 'Cache hit rate',
+    status: 'idle',
+    hintKey:
+      'Hits divided by probe rounds. Judged by the Cache hit (%) ruler above.',
+  },
+  {
+    id: 'cache_ttl',
+    title: 'Cache TTL',
+    status: 'idle',
+    hintKey:
+      'Hit rate after waiting. Wait less than TTL wait (s) and this cannot be compared.',
+  },
 ]
-
-export const CHECK_HINTS: Record<string, string> = {
-  connectivity:
-    'First chat request. Pass means HTTP 200 with text, thinking, or a tool call.',
-  stream_format:
-    'Streaming frames are valid. Missing finish_reason is skipped, not failed.',
-  usage:
-    'Response includes prompt_tokens and completion_tokens. Needed for billing, not intelligence.',
-  request_id:
-    'Response body or common headers include a request id, for troubleshooting.',
-  sampling:
-    'Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.',
-  auth_error:
-    'A bad key should return 401 or 403. Other codes are skipped.',
-  bad_request:
-    'A request missing required fields should return 4xx. Other codes are skipped.',
-  json_mode:
-    'Asks the vendor to return JSON. No JSON mode is skipped, not failed.',
-  tool_call:
-    'Asks the vendor to call a tool. No tools API is skipped, not failed.',
-  thinking:
-    'Asks the vendor for thinking / reasoning. No thinking API is skipped, not failed.',
-  cache_warm:
-    'First request with the same corpus prefix, to fill the vendor cache.',
-  cache_probe:
-    'Later rounds reuse that prefix plus a follow-up, to see if cache hits.',
-  cache_tokens:
-    'Whether usage.cached_tokens is present. Missing field is skipped, not failed.',
-  cache_hit_rate:
-    'Hits divided by probe rounds. Judged by the Cache hit (%) ruler above.',
-  cache_ttl:
-    'Hit rate after waiting. Wait less than TTL wait (s) and this cannot be compared.',
-}
 
 export const MAX_CONCURRENCY = 1000
 export const MAX_ROUNDS = 10000

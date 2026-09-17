@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'vitest'
 
 import {
+  applyStandardEditorValue,
   assessCache,
   assessmentGroup,
   assessStress,
@@ -26,6 +27,8 @@ import {
   matchingStandardId,
   overallLabel,
   sanitizeStandard,
+  STANDARD_EDITOR_FIELDS,
+  standardEditorValue,
 } from './baselines'
 import { CORPORA, estimateTokens } from './constants'
 import type { CacheMetrics, StressMetrics } from './types'
@@ -140,6 +143,26 @@ describe('supplier-test verdicts', () => {
     expect(
       matchingStandardId(sanitizeStandard(getStandard('default')))
     ).toBe('default')
+  })
+
+  test('editor percent and seconds round-trip on the standard form', () => {
+    const errorField = STANDARD_EDITOR_FIELDS.find((item) => item.key === 'errorSlow')
+    const ttftField = STANDARD_EDITOR_FIELDS.find(
+      (item) => item.key === 'ttftShortOkMs'
+    )
+    if (!errorField || !ttftField) {
+      throw new Error('standard editor fields missing')
+    }
+    const withError = applyStandardEditorValue(
+      getStandard('default'),
+      errorField,
+      7
+    )
+    expect(withError.errorSlow).toBeCloseTo(0.07)
+    expect(standardEditorValue(withError, errorField)).toBe(7)
+    const withTtft = applyStandardEditorValue(withError, ttftField, 4.5)
+    expect(withTtft.ttftShortOkMs).toBe(4500)
+    expect(standardEditorValue(withTtft, ttftField)).toBe(4.5)
   })
 
   test('splits stress rows into shallow connectivity and deep performance', () => {

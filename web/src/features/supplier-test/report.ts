@@ -200,6 +200,7 @@ function escapeHtml(value: string): string {
 function verdictHtmlColor(verdict: Assessment['overall']): string {
   if (verdict === 'ok') return '#15803d'
   if (verdict === 'slow') return '#a16207'
+  if (verdict === 'abnormal') return '#dc2626'
   return '#6b7280'
 }
 

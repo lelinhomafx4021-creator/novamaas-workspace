@@ -77,12 +77,12 @@ describe('supplier-test verdicts', () => {
     expect(overallLabel(assessment.overall)).toBe('Overall: normal')
   })
 
-  test('marks only clearly slow runs as slow, never abnormal', () => {
+  test('marks slow latency runs as slow', () => {
     const assessment = assessStress(
       stress({
-        error_rate: 0.2,
-        succeeded: 8,
-        failed: 2,
+        error_rate: 0,
+        succeeded: 10,
+        failed: 0,
         ttft_avg_ms: 12000,
         ttft_p50_ms: 11000,
         ttft_p90_ms: 18000,
@@ -94,6 +94,24 @@ describe('supplier-test verdicts', () => {
     expect(assessment.overall).toBe('slow')
     expect(overallLabel(assessment.overall)).toBe('Overall: slow')
     expect(assessment.rows.some((row) => row.verdict === 'slow')).toBe(true)
+  })
+
+  test('marks high error rate runs as abnormal and gates perf assessment', () => {
+    const assessment = assessStress(
+      stress({
+        error_rate: 0.95,
+        succeeded: 10,
+        failed: 190,
+        total: 200,
+      })
+    )
+    expect(assessment.overall).toBe('abnormal')
+    expect(overallLabel(assessment.overall)).toBe('Overall: abnormal')
+    expect(assessment.rows.find((row) => row.id === 'error_rate')?.verdict).toBe('abnormal')
+    expect(assessment.rows.find((row) => row.id === 'success')?.verdict).toBe('abnormal')
+    // Deep performance should be 'na' (cannot compare) when shallow failed with abnormal error rate
+    const perf = assessmentGroup(assessment, 'perf')
+    expect(perf.overall).toBe('na')
   })
 
   test('treats a 60% cache hit as normal', () => {
@@ -114,9 +132,9 @@ describe('supplier-test verdicts', () => {
 
   test('switching to the tight standard can mark the same run slow', () => {
     const metrics = stress({
-      error_rate: 0.08,
-      succeeded: 92,
-      failed: 8,
+      error_rate: 0.02,
+      succeeded: 98,
+      failed: 2,
       total: 100,
       ttft_avg_ms: 4500,
       ttft_p50_ms: 4200,
@@ -181,7 +199,7 @@ describe('supplier-test verdicts', () => {
     )
   })
 
-  test('a 20% cache hit is slow on the default ruler, not a failed check', () => {
+  test('a 20% cache hit is abnormal on the default ruler, not a failed check', () => {
     const assessment = assessCache({
       warm_prompt_tokens: 3000,
       avg_hit_rate: 0.2,
@@ -192,8 +210,8 @@ describe('supplier-test verdicts', () => {
       rounds: 1,
       has_cached_tokens: true,
     })
-    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('slow')
-    expect(assessment.overall).toBe('slow')
+    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('abnormal')
+    expect(assessment.overall).toBe('abnormal')
   })
 
   test('built-in corpora show a token estimate', () => {

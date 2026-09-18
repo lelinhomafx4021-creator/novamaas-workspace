@@ -1411,6 +1411,7 @@ function statusLabel(status: CheckStatus): string {
 function verdictClass(verdict: Verdict): string {
   if (verdict === 'ok') return 'text-success font-medium'
   if (verdict === 'slow') return 'text-warning font-medium'
+  if (verdict === 'abnormal') return 'text-destructive font-medium'
   return 'text-muted-foreground'
 }
 

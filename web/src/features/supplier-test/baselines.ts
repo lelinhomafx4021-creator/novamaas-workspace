@@ -20,11 +20,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { MAX_TOKENS_CAP } from './constants'
 import type { CacheMetrics, StressMetrics } from './types'
 
-export type Verdict = 'ok' | 'slow' | 'na'
+export type Verdict = 'ok' | 'slow' | 'abnormal' | 'na'
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
   ok: 'Normal',
   slow: 'Slow',
+  abnormal: 'Abnormal',
   na: 'Cannot compare',
 }
 
@@ -295,14 +296,15 @@ const TTFT_RULE = 'Normal ≤ {{seconds}}s; slower above that'
 const TTFT_P90 =
   'Normal ≤ {{seconds}}s and ≤ avg × {{times}}; slower above that'
 const TPOT_RULE = 'Normal ≤ {{ms}}ms; slower above that'
-const HIT_RATE = 'Normal ≥ {{percent}}%; slower below that'
+const HIT_RATE = 'Normal ≥ {{percent}}%; abnormal below that'
 const TTL_RULE = 'Wait ≥ {{seconds}}s and hit rate still ≥ {{percent}}%'
 const RATE_ESTIMATE = 'Short-run estimate, not a vendor limit'
-const ERROR_RATE = 'Normal < {{percent}}%; slower at that or above'
+const ERROR_RATE = 'Normal < {{percent}}%; abnormal at that or above'
 const SUCCESS_RULE = 'Most requests succeed'
 const TOKEN_RULE = 'Used as the long-input TTFT cutoff; not a tokenizer audit'
 
 export function worstVerdict(verdicts: Verdict[]): Verdict {
+  if (verdicts.includes('abnormal')) return 'abnormal'
   if (verdicts.includes('slow')) return 'slow'
   if (verdicts.includes('ok')) return 'ok'
   return 'na'
@@ -315,7 +317,15 @@ export function assessmentGroup(
   const rows = assessment.rows.filter(
     (row) => (row.group ?? 'perf') === group
   )
-  return { rows, overall: worstVerdict(rows.map((row) => row.verdict)) }
+  let overall = worstVerdict(rows.map((row) => row.verdict))
+  if (group === 'perf') {
+    const shallowRows = assessment.rows.filter((r) => r.group === 'shallow')
+    const shallowVerdict = worstVerdict(shallowRows.map((r) => r.verdict))
+    if (shallowVerdict === 'abnormal') {
+      overall = overall === 'abnormal' ? 'abnormal' : 'na'
+    }
+  }
+  return { rows, overall }
 }
 
 export function displayMeasured(
@@ -341,6 +351,7 @@ export function displayThreshold(
 export function overallLabel(verdict: Verdict): string {
   if (verdict === 'ok') return 'Overall: normal'
   if (verdict === 'slow') return 'Overall: slow'
+  if (verdict === 'abnormal') return 'Overall: abnormal'
   return 'Overall: cannot compare'
 }
 
@@ -407,7 +418,7 @@ function tpotP90Band(ms: number, standard: SupplierStandard): Verdict {
 function hitBand(rate: number, standard: SupplierStandard): Verdict {
   if (!(rate >= 0)) return 'na'
   if (rate >= standard.cacheHitOk) return 'ok'
-  return 'slow'
+  return 'abnormal'
 }
 
 function percentValue(rate: number): number {
@@ -429,8 +440,11 @@ export function assessStress(
   const ttftValues = { seconds: ttftLimit / 1000 }
 
   let errorVerdict: Verdict = 'ok'
-  if (metrics.error_rate >= standard.errorSlow) {
-    errorVerdict = 'slow'
+  if (
+    metrics.error_rate >= standard.errorSlow ||
+    (metrics.total > 0 && metrics.succeeded === 0)
+  ) {
+    errorVerdict = 'abnormal'
   }
 
   const rows: MetricRow[] = [

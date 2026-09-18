@@ -5,6 +5,7 @@ import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/relay"
+	moonshotfacade "github.com/QuantumNous/new-api/relay/facade/moonshot"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/gin-gonic/gin"
@@ -56,6 +57,33 @@ func SetRelayRouter(router *gin.Engine) {
 	{
 		geminiCompatibleRouter.GET("", func(c *gin.Context) {
 			controller.ListModels(c, constant.ChannelTypeOpenAI)
+		})
+	}
+
+	moonshotModelsRouter := router.Group("/moonshot/v1/models")
+	moonshotModelsRouter.Use(moonshotfacade.Middleware())
+	moonshotModelsRouter.Use(middleware.RouteTag("relay"))
+	moonshotModelsRouter.Use(middleware.TokenAuth())
+	{
+		moonshotModelsRouter.GET("", controller.ListMoonshotModels)
+	}
+
+	moonshotRelayRouter := router.Group("/moonshot")
+	moonshotRelayRouter.Use(moonshotfacade.Middleware())
+	moonshotRelayRouter.Use(middleware.RouteTag("relay"))
+	moonshotRelayRouter.Use(middleware.SystemPerformanceCheck())
+	moonshotRelayRouter.Use(middleware.TokenAuth())
+	moonshotRelayRouter.Use(middleware.ModelRequestRateLimit())
+	moonshotRelayRouter.Use(middleware.Distribute())
+	{
+		moonshotRelayRouter.POST("/v1/chat/completions", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatOpenAI)
+		})
+		moonshotRelayRouter.POST("/v1/responses", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatOpenAIResponses)
+		})
+		moonshotRelayRouter.POST("/anthropic/v1/messages", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatClaude)
 		})
 	}
 

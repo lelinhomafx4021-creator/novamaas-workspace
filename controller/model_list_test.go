@@ -392,6 +392,50 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 	}, payload.Data[0].SupportedEndpointTypes)
 }
 
+func TestListMoonshotModelsFiltersAliasesAndOmitsUnverifiedMetadata(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.Channel{
+		Id:     801,
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "openai-key",
+		Status: common.ChannelStatusEnabled,
+		Name:   "openai-upstream",
+		Group:  "default",
+		Models: "kimi-k3,gpt-5",
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "kimi-k3", ChannelId: 801, Enabled: true},
+		{Group: "default", Model: "gpt-5", ChannelId: 801, Enabled: true},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/moonshot/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+
+	ListMoonshotModels(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	assert.Equal(t, "list", payload["object"])
+	assert.NotContains(t, payload, "success")
+	models, ok := payload["data"].([]any)
+	require.True(t, ok)
+	require.Len(t, models, 1)
+	item, ok := models[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "kimi-k3", item["id"])
+	assert.Equal(t, "model", item["object"])
+	assert.Equal(t, "openai", item["owned_by"])
+	assert.NotContains(t, item, "created")
+	assert.NotContains(t, item, "context_length")
+	assert.NotContains(t, item, "supports_image_in")
+	assert.NotContains(t, item, "supports_video_in")
+	assert.NotContains(t, item, "supports_reasoning")
+}
+
 func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	withSelfUseModeDisabled(t)
 	withTieredBillingConfig(t, map[string]string{

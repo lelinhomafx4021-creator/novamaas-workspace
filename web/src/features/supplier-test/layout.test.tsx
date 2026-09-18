@@ -67,6 +67,12 @@ test('target sits above tests, modules are tabbed, and judgment starts collapsed
   const target = screen.getByText('Target')
   const tests = screen.getByText('Tests')
   const judgment = screen.getByText('Judgment standard')
+  expect(screen.getByText('Vendor')).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      'Using generic OpenAI-compatible checks. Missing vendor fields are skipped.'
+    )
+  ).toBeInTheDocument()
   expect(target.compareDocumentPosition(tests)).toBe(
     Node.DOCUMENT_POSITION_FOLLOWING
   )

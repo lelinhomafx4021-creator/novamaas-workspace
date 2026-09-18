@@ -24,16 +24,17 @@ type streamOptions struct {
 }
 
 type chatRequest struct {
-	Model          string           `json:"model"`
-	Messages       []chatMessage    `json:"messages,omitempty"`
-	Stream         bool             `json:"stream"`
-	MaxTokens      *int             `json:"max_tokens,omitempty"`
-	Temperature    *float64         `json:"temperature,omitempty"`
-	TopP           *float64         `json:"top_p,omitempty"`
-	StreamOptions  *streamOptions   `json:"stream_options,omitempty"`
-	Tools          []map[string]any `json:"tools,omitempty"`
-	ResponseFormat map[string]any   `json:"response_format,omitempty"`
-	Thinking       map[string]any   `json:"thinking,omitempty"`
+	Model           string           `json:"model"`
+	Messages        []chatMessage    `json:"messages,omitempty"`
+	Stream          bool             `json:"stream"`
+	MaxTokens       *int             `json:"max_tokens,omitempty"`
+	Temperature     *float64         `json:"temperature,omitempty"`
+	TopP            *float64         `json:"top_p,omitempty"`
+	StreamOptions   *streamOptions   `json:"stream_options,omitempty"`
+	Tools           []map[string]any `json:"tools,omitempty"`
+	ResponseFormat  map[string]any   `json:"response_format,omitempty"`
+	Thinking        map[string]any   `json:"thinking,omitempty"`
+	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 }
 
 type usageFields struct {
@@ -48,8 +49,9 @@ type usageFields struct {
 }
 
 type streamChunk struct {
-	ID    string `json:"id"`
-	Error *struct {
+	ID        string `json:"id"`
+	RequestID string `json:"request_id"`
+	Error     *struct {
 		Message string `json:"message"`
 		Type    string `json:"type"`
 		Code    any    `json:"code"`
@@ -164,7 +166,7 @@ func joinOpenAIPath(raw, leaf string) (string, error) {
 	switch {
 	case strings.HasSuffix(path, "/"+leaf):
 		parsed.Path = path
-	case strings.HasSuffix(path, "/v1"):
+	case strings.HasSuffix(path, "/v1"), strings.HasSuffix(path, "/v4"):
 		parsed.Path = path + "/" + leaf
 	default:
 		parsed.Path = path + "/v1/" + leaf
@@ -354,6 +356,9 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 	}
 	if chunk.ID != "" && result.ID == "" {
 		result.ID = chunk.ID
+	}
+	if result.ID == "" && chunk.RequestID != "" {
+		result.ID = chunk.RequestID
 	}
 	if chunk.Error != nil && chunk.Error.Message != "" && result.ErrorMessage == "" {
 		result.ErrorMessage = chunk.Error.Message

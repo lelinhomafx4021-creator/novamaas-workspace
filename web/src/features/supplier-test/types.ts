@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { VendorId } from './vendors'
 
 export type SupplierTestModule = 'basic' | 'stress' | 'cache'
 
@@ -73,6 +74,7 @@ export type SupplierTestRunRequest = {
   base_url: string
   api_key: string
   model: string
+  vendor?: VendorId
   modules: SupplierTestModule[]
   basic: {
     prompt: string
@@ -112,6 +114,7 @@ export type TargetForm = {
   baseUrl: string
   apiKey: string
   model: string
+  vendor: VendorId
 }
 
 export type StressForm = {

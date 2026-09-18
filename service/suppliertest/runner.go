@@ -18,6 +18,7 @@ type RunRequest struct {
 	BaseURL string       `json:"base_url"`
 	APIKey  string       `json:"api_key"`
 	Model   string       `json:"model"`
+	Vendor  string       `json:"vendor,omitempty"`
 	Modules []string     `json:"modules"`
 	Basic   BasicConfig  `json:"basic"`
 	Cache   CacheConfig  `json:"cache"`
@@ -192,6 +193,11 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.Cache.Stream == nil {
 		req.Cache.Stream = ptrBool(true)
 	}
+	vendor, err := ResolveVendor(req.Vendor)
+	if err != nil {
+		return err
+	}
+	req.Vendor = vendor
 	return nil
 }
 
@@ -296,6 +302,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 			counts[status]++
 		}
 	}
+	profile := profileFor(req.Vendor)
 	stream := boolVal(req.Basic.Stream, true)
 	chat := applyStream(chatRequest{
 		Model:       req.Model,
@@ -362,7 +369,12 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 				if connected.HasUsage {
 					emitCheck(CheckUsage, "pass", fmt.Sprintf("prompt=%d，completion=%d", connected.PromptTokens, connected.CompletionTokens))
 				} else {
-					emitCheck(CheckUsage, "skip", "供应商没返回 usage，已跳过")
+					status, message := checkStatus(
+						profile.requireUsage,
+						"供应商没返回 usage，已跳过",
+						vendorTitle(profile.id)+" 文档要求返回 usage，这次没有",
+					)
+					emitCheck(CheckUsage, status, message)
 				}
 			}
 			if wanted[CheckRequestID] {
@@ -409,7 +421,12 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		} else if looksLikeJSON(jsonResult.Content) {
 			emitCheck(CheckJSONMode, "pass", "返回内容可以解析成 JSON")
 		} else {
-			emitCheck(CheckJSONMode, "skip", "接口成功了，但正文不是 JSON")
+			status, message := checkStatus(
+				profile.requireJSON,
+				"接口成功了，但正文不是 JSON",
+				vendorTitle(profile.id)+" 接受了 JSON 模式，但正文不是 JSON",
+			)
+			emitCheck(CheckJSONMode, status, message)
 		}
 	}
 
@@ -439,22 +456,36 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		} else if toolResult.ToolName != "" {
 			emitCheck(CheckToolCall, "pass", "调用了工具 "+toolResult.ToolName)
 		} else {
-			emitCheck(CheckToolCall, "skip", "这次响应里没有 tool_calls")
+			status, message := checkStatus(
+				profile.requireTools,
+				"这次响应里没有 tool_calls",
+				vendorTitle(profile.id)+" 接受了 tools，但响应里没有 tool_calls",
+			)
+			emitCheck(CheckToolCall, status, message)
 		}
 	}
 
 	if wanted[CheckThinking] {
 		emitCheck(CheckThinking, "running", "")
-		thinkReq := chat
-		thinkReq.Messages = []chatMessage{{Role: "user", Content: "What is 17 times 19? Think step by step."}}
-		thinkReq.Thinking = map[string]any{"type": "enabled"}
+		mustThink := thinkingRequired(profile.id, req.Model)
+		thinkReq := applyThinking(chat, profile.id, req.Model)
 		thinking := streamChat(ctx, httpClient, endpoint, req.APIKey, thinkReq, 60*time.Second, nil)
 		if thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "" {
-			emitCheck(CheckThinking, "skip", "供应商不接受 thinking 参数："+firstNonEmpty(thinking.ErrorMessage, fmt.Sprintf("HTTP %d", thinking.StatusCode)))
+			status, message := checkStatus(
+				mustThink,
+				"供应商不接受 thinking 参数："+firstNonEmpty(thinking.ErrorMessage, fmt.Sprintf("HTTP %d", thinking.StatusCode)),
+				vendorTitle(profile.id)+" 该模型应按文档返回思考内容，请求失败："+firstNonEmpty(thinking.ErrorMessage, fmt.Sprintf("HTTP %d", thinking.StatusCode)),
+			)
+			emitCheck(CheckThinking, status, message)
 		} else if thinking.Reasoning != "" {
 			emitCheck(CheckThinking, "pass", "返回了 reasoning 内容")
 		} else {
-			emitCheck(CheckThinking, "skip", "这次没有 reasoning 字段")
+			status, message := checkStatus(
+				mustThink,
+				"这次没有 reasoning 字段",
+				vendorTitle(profile.id)+" 该模型应按文档返回 reasoning_content，这次没有",
+			)
+			emitCheck(CheckThinking, status, message)
 		}
 	}
 
@@ -484,10 +515,14 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		}
 	}
 
+	summary := fmt.Sprintf("基础检查结束：通过 %d，跳过 %d，失败 %d。跳过通常表示供应商没提供这个能力或字段，不是失败。", counts["pass"], counts["skip"], counts["fail"])
+	if profile.id != VendorGeneric {
+		summary = fmt.Sprintf("按 %s 字段规则检查。通过 %d，跳过 %d，失败 %d。", vendorTitle(profile.id), counts["pass"], counts["skip"], counts["fail"])
+	}
 	emit(Event{
 		Type:    "summary",
 		Module:  ModuleBasic,
-		Summary: fmt.Sprintf("基础检查结束：通过 %d，跳过 %d，失败 %d。跳过通常表示供应商没提供这个能力或字段，不是失败。", counts["pass"], counts["skip"], counts["fail"]),
+		Summary: summary,
 	})
 }
 
@@ -495,6 +530,7 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	emitCheck := func(id, title, status, message string) {
 		emit(Event{Type: "check", Module: ModuleCache, CheckID: id, Title: title, Status: status, Message: message})
 	}
+	profile := profileFor(req.Vendor)
 	stream := boolVal(req.Cache.Stream, true)
 	prefix := strings.TrimSpace(req.Cache.Prompt)
 	if prefix == "" {
@@ -508,7 +544,7 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	emitCheck(CheckCacheWarm, "Cache warm", "running", "")
 	warmReq := applyStream(chatRequest{
 		Model:     req.Model,
-		Messages:  []chatMessage{{Role: "user", Content: prefix}},
+		Messages:  cacheMessages(profile, prefix, followUp, true),
 		MaxTokens: ptrInt(req.Cache.MaxTokens),
 	}, stream)
 	warm := streamChat(ctx, httpClient, endpoint, req.APIKey, warmReq, 180*time.Second, nil)
@@ -539,12 +575,8 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	}
 	emitCheck(CheckCacheProbe, "Cache probe", "running", "")
 	probeReq := applyStream(chatRequest{
-		Model: req.Model,
-		Messages: []chatMessage{
-			{Role: "user", Content: prefix},
-			{Role: "assistant", Content: "ok"},
-			{Role: "user", Content: followUp},
-		},
+		Model:     req.Model,
+		Messages:  cacheMessages(profile, prefix, followUp, false),
 		MaxTokens: ptrInt(req.Cache.MaxTokens),
 	}, stream)
 
@@ -608,7 +640,12 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	emitCheck(CheckCacheProbe, "Cache probe", "pass", fmt.Sprintf("探测 %d 轮完成。%s", rounds, strings.Join(probeDetails, "，")))
 
 	if !sawCached {
-		emitCheck(CheckCacheTokens, "Cached tokens", "skip", "供应商没返回 cached_tokens，无法确认真实命中")
+		status, message := checkStatus(
+			profile.requireCacheField,
+			"供应商没返回 cached_tokens，无法确认真实命中",
+			vendorTitle(profile.id)+" 文档要求返回 cached_tokens，这次没有",
+		)
+		emitCheck(CheckCacheTokens, "Cached tokens", status, message)
 		emitCheck(CheckCacheHitRate, "Cache hit rate", "skip", "没有 cached_tokens，算不出命中率")
 		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "没有 cached_tokens，不能判定缓存存活")
 		emitCache(0, 0)

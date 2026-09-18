@@ -106,6 +106,7 @@ import {
   thisPlatformBaseURL,
 } from './constants'
 import { useSupplierTestRun } from './hooks/use-supplier-test-run'
+import { vendorHintKey, VENDOR_OPTIONS, type VendorId } from './vendors'
 import {
   buildHtmlReport,
   buildMarkdownReport,
@@ -172,6 +173,7 @@ export function SupplierTest() {
     baseUrl: '',
     apiKey: '',
     model: '',
+    vendor: 'generic',
   })
   const [models, setModels] = useState<string[]>([])
   const [basic, setBasic] = useState<BasicForm>(DEFAULT_BASIC_FORM)
@@ -252,6 +254,7 @@ export function SupplierTest() {
       base_url: target.baseUrl.trim(),
       api_key: target.apiKey,
       model: target.model.trim(),
+      vendor: target.vendor,
       modules: [module],
       basic: {
         prompt: basic.prompt,
@@ -447,7 +450,7 @@ export function SupplierTest() {
           <TitledCard
             title={t('Target')}
             description={t(
-              'Paste an upstream Base URL, or use this platform with a token from Keys. Fetching /v1/models is optional.'
+              'Fill Base URL, key, and model yourself. Pick GLM or Kimi to apply that vendor field rules.'
             )}
             icon={<ClipboardCheck />}
             action={
@@ -493,7 +496,20 @@ export function SupplierTest() {
               </div>
             }
           >
-            <div className='grid gap-3 md:grid-cols-3'>
+            <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
+              <FieldSelect
+                label={t('Vendor')}
+                value={target.vendor}
+                disabled={busy}
+                items={VENDOR_OPTIONS.map((item) => ({
+                  value: item.id,
+                  label: t(item.labelKey),
+                }))}
+                onChange={(value) => {
+                  const vendor = value as VendorId
+                  setTarget((current) => ({ ...current, vendor }))
+                }}
+              />
               <div className='space-y-2'>
                 <Label htmlFor='supplier-base-url'>{t('Base URL')}</Label>
                 <Input
@@ -546,6 +562,9 @@ export function SupplierTest() {
                 </datalist>
               </div>
             </div>
+            <p className='text-muted-foreground mt-3 text-sm'>
+              {t(vendorHintKey(target.vendor))}
+            </p>
           </TitledCard>
 
           <Tabs

@@ -38,6 +38,14 @@ export const STATIC_I18N_KEYS = [
 
   // Supplier test checks
   'Supplier Test',
+  'Vendor',
+  'Generic OpenAI-compatible',
+  'GLM',
+  'Kimi',
+  'Using GLM fields: system-prefix cache, reasoning_content, cached_tokens.',
+  'Using Kimi fields: cached_tokens, reasoning_content. kimi-k3 does not send thinking.',
+  'Using generic OpenAI-compatible checks. Missing vendor fields are skipped.',
+  'Fill Base URL, key, and model yourself. Pick GLM or Kimi to apply that vendor field rules.',
   'Use this platform',
   'Filled this platform Base URL. Paste a token from Keys, then fetch models.',
   'Paste an upstream Base URL, or use this platform with a token from Keys. Fetching /v1/models is optional.',

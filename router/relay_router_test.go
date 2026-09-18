@@ -37,11 +37,12 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 	SetRelayRouter(engine)
 
 	tests := []struct {
-		name           string
-		path           string
-		headerName     string
-		expectedObject string
-		expectedField  string
+		name            string
+		path            string
+		headerName      string
+		expectedObject  string
+		expectedField   string
+		unexpectedField string
 	}{
 		{
 			name:           "OpenAI bearer token",
@@ -60,6 +61,14 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 			name:          "Gemini API key query",
 			path:          "/v1/models?key=modelstestkey",
 			expectedField: "models",
+		},
+		{
+			name:            "Moonshot compatibility bearer token",
+			path:            "/moonshot/v1/models",
+			headerName:      "Authorization",
+			expectedObject:  "list",
+			expectedField:   "data",
+			unexpectedField: "success",
 		},
 	}
 
@@ -85,7 +94,31 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 			if test.expectedObject != "" {
 				assert.Equal(t, test.expectedObject, payload["object"])
 			}
+			if test.unexpectedField != "" {
+				assert.NotContains(t, payload, test.unexpectedField)
+			}
 		})
+	}
+}
+
+func TestMoonshotCompatibilityRoutesAreRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	SetRelayRouter(engine)
+
+	routes := make(map[string]struct{})
+	for _, route := range engine.Routes() {
+		routes[route.Method+" "+route.Path] = struct{}{}
+	}
+
+	expectedRoutes := []string{
+		"GET /moonshot/v1/models",
+		"POST /moonshot/v1/chat/completions",
+		"POST /moonshot/v1/responses",
+		"POST /moonshot/anthropic/v1/messages",
+	}
+	for _, route := range expectedRoutes {
+		assert.Contains(t, routes, route)
 	}
 }
 

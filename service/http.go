@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	moonshotfacade "github.com/QuantumNous/new-api/relay/facade/moonshot"
 
 	"github.com/gin-gonic/gin"
 )
@@ -44,6 +45,12 @@ func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	if c.Writer == nil {
 		return
+	}
+
+	if transformed, err := moonshotfacade.TransformJSON(c, data); err != nil {
+		logger.LogError(c, fmt.Sprintf("failed to transform Moonshot-compatible response: %s", err.Error()))
+	} else {
+		data = transformed
 	}
 
 	body := io.NopCloser(bytes.NewBuffer(data))

@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/minimax"
 	"github.com/QuantumNous/new-api/relay/channel/moonshot"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	moonshotfacade "github.com/QuantumNous/new-api/relay/facade/moonshot"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -206,7 +207,7 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	}, nil
 }
 
-func ListModels(c *gin.Context, modelType int) {
+func availableOpenAIModels(c *gin.Context) ([]dto.OpenAIModels, error) {
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
 		userId := c.GetInt("id")
@@ -221,11 +222,7 @@ func ListModels(c *gin.Context, modelType int) {
 	userModelNames := make([]string, 0)
 	groups, err := getModelListGroups(c)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "get user group failed",
-		})
-		return
+		return nil, err
 	}
 	ownerGroups := groups.ownerGroups
 	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
@@ -260,6 +257,18 @@ func ListModels(c *gin.Context, modelType int) {
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
 		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+	}
+	return userOpenAiModels, nil
+}
+
+func ListModels(c *gin.Context, modelType int) {
+	userOpenAiModels, err := availableOpenAIModels(c)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "get user group failed",
+		})
+		return
 	}
 
 	switch modelType {
@@ -304,6 +313,45 @@ func ListModels(c *gin.Context, modelType int) {
 			"object":  "list",
 		})
 	}
+}
+
+type moonshotCompatibleModel struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+// ListMoonshotModels exposes only configured Kimi/Moonshot aliases. Capability
+// and creation metadata are intentionally omitted because an OpenAI upstream
+// cannot prove the corresponding Moonshot-native values.
+func ListMoonshotModels(c *gin.Context) {
+	models, err := availableOpenAIModels(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": types.OpenAIError{
+				Message: "get user group failed",
+				Type:    "server_error",
+				Code:    "internal_error",
+			},
+		})
+		return
+	}
+
+	moonshotModels := make([]moonshotCompatibleModel, 0, len(models))
+	for _, availableModel := range models {
+		if !moonshotfacade.IsMoonshotModel(availableModel.Id) {
+			continue
+		}
+		moonshotModels = append(moonshotModels, moonshotCompatibleModel{
+			ID:      availableModel.Id,
+			Object:  "model",
+			OwnedBy: availableModel.OwnedBy,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   moonshotModels,
+	})
 }
 
 func ChannelListModels(c *gin.Context) {

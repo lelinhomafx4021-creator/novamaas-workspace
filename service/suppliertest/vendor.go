@@ -68,44 +68,35 @@ func vendorTitle(vendor string) string {
 	}
 }
 
-func thinkingRequired(vendor, model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
+func thinkingRequired(vendor string) bool {
 	switch vendor {
-	case VendorGLM:
-		return strings.Contains(m, "glm-5") ||
-			strings.HasPrefix(m, "glm-4.7") ||
-			strings.HasPrefix(m, "glm-4.6") ||
-			strings.HasPrefix(m, "glm-4.5")
-	case VendorKimi:
-		return strings.HasPrefix(m, "kimi-k3") ||
-			strings.Contains(m, "kimi-k2.7") ||
-			strings.Contains(m, "kimi-k2.6") ||
-			strings.Contains(m, "k2-thinking")
-	case VendorDeepSeek:
-		return strings.Contains(m, "r1") || strings.Contains(m, "reasoner")
+	case VendorGLM, VendorKimi, VendorDeepSeek:
+		return true
 	default:
 		return false
 	}
 }
 
-func applyThinking(req chatRequest, vendor, model string) chatRequest {
-	m := strings.ToLower(strings.TrimSpace(model))
+func applyThinking(req chatRequest, vendor string) chatRequest {
 	req.Messages = []chatMessage{{Role: "user", Content: "What is 17 times 19? Think step by step."}}
-	if vendor == VendorKimi && strings.HasPrefix(m, "kimi-k3") {
+	switch vendor {
+	case VendorDeepSeek:
+		// DeepSeek (如 DeepSeek-V3/V4, R1 等) 原生自带推理，严禁传 thinking 参数 (传了会报 400)
+		req.Thinking = nil
+		return req
+	case VendorKimi:
+		// Kimi 新一代模型 (如 K3, K2 等) 遵循 reasoning_effort 规范
 		req.Thinking = nil
 		req.ReasoningEffort = "low"
 		return req
-	}
-	if vendor == VendorKimi && strings.Contains(m, "kimi-k2.7") {
-		req.Thinking = nil
+	case VendorGLM:
+		// 智谱 GLM 思考协议
+		req.Thinking = map[string]any{"type": "enabled"}
+		return req
+	default:
+		req.Thinking = map[string]any{"type": "enabled"}
 		return req
 	}
-	if vendor == VendorDeepSeek && (strings.Contains(m, "r1") || strings.Contains(m, "reasoner")) {
-		req.Thinking = nil
-		return req
-	}
-	req.Thinking = map[string]any{"type": "enabled"}
-	return req
 }
 
 func cacheMessages(profile vendorProfile, prefix, followUp string, warm bool) []chatMessage {

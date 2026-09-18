@@ -372,6 +372,9 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 					if connected.HasReasoningTokens || connected.ReasoningTokens > 0 {
 						msg += fmt.Sprintf("（reasoning=%d）", connected.ReasoningTokens)
 					}
+					if connected.HasCachedTokens && connected.CachedTokens > 0 {
+						msg += fmt.Sprintf("（cached=%d）", connected.CachedTokens)
+					}
 					emitCheck(CheckUsage, "pass", msg)
 				} else {
 					status, message := checkStatus(
@@ -472,8 +475,8 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 
 	if wanted[CheckThinking] {
 		emitCheck(CheckThinking, "running", "")
-		mustThink := thinkingRequired(profile.id, req.Model)
-		thinkReq := applyThinking(chat, profile.id, req.Model)
+		mustThink := thinkingRequired(profile.id)
+		thinkReq := applyThinking(chat, profile.id)
 		thinking := streamChat(ctx, httpClient, endpoint, req.APIKey, thinkReq, 60*time.Second, nil)
 		if (thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "") && thinkReq.Thinking != nil {
 			fallbackReq := chat
@@ -616,17 +619,24 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 			probeDetails = append(probeDetails, fmt.Sprintf("第%d轮失败：%s", i+1, firstNonEmpty(probe.ErrorMessage, fmt.Sprintf("HTTP %d", probe.StatusCode))))
 			continue
 		}
-		lastPrompt = probe.PromptTokens
+		effectivePrompt := probe.PromptTokens
+		if probe.HasCachedTokens && probe.CachedTokens > 0 && effectivePrompt < probe.CachedTokens {
+			effectivePrompt = probe.PromptTokens + probe.CachedTokens
+		}
+		lastPrompt = effectivePrompt
 		lastCached = probe.CachedTokens
 		if probe.HasCachedTokens {
 			sawCached = true
 		}
-		if probe.HasCachedTokens && probe.PromptTokens > 0 {
-			rate := float64(probe.CachedTokens) / float64(probe.PromptTokens)
+		if probe.HasCachedTokens && effectivePrompt > 0 {
+			rate := float64(probe.CachedTokens) / float64(effectivePrompt)
+			if rate > 1.0 {
+				rate = 1.0
+			}
 			hitRates = append(hitRates, rate)
 			probeDetails = append(probeDetails, fmt.Sprintf("第%d轮 %.1f%%", i+1, rate*100))
 		} else {
-			probeDetails = append(probeDetails, fmt.Sprintf("第%d轮 prompt=%d", i+1, probe.PromptTokens))
+			probeDetails = append(probeDetails, fmt.Sprintf("第%d轮 prompt=%d", i+1, effectivePrompt))
 		}
 	}
 

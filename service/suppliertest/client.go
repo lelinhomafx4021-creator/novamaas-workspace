@@ -47,6 +47,9 @@ type chatRequest struct {
 type usageFields struct {
 	PromptTokens         *float64 `json:"prompt_tokens"`
 	CompletionTokens     *float64 `json:"completion_tokens"`
+	TotalTokens          *float64 `json:"total_tokens"`
+	InputTokens          *float64 `json:"input_tokens"`
+	OutputTokens         *float64 `json:"output_tokens"`
 	CachedTokens         *float64 `json:"cached_tokens"`
 	PromptCacheHitTokens *float64 `json:"prompt_cache_hit_tokens"`
 	CacheReadInputTokens *float64 `json:"cache_read_input_tokens"`
@@ -54,6 +57,9 @@ type usageFields struct {
 	PromptTokensDetails  *struct {
 		CachedTokens *float64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	InputTokensDetails *struct {
+		CachedTokens *float64 `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
 	CompletionTokensDetails *struct {
 		ReasoningTokens *float64 `json:"reasoning_tokens"`
 	} `json:"completion_tokens_details"`
@@ -69,7 +75,8 @@ type streamChunk struct {
 	} `json:"error"`
 	Usage   *usageFields `json:"usage"`
 	Choices []struct {
-		FinishReason string `json:"finish_reason"`
+		FinishReason string       `json:"finish_reason"`
+		Usage        *usageFields `json:"usage"`
 		Delta        struct {
 			Content          string `json:"content"`
 			Reasoning        string `json:"reasoning"`
@@ -396,6 +403,11 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 		result.ErrorMessage = chunk.Error.Message
 	}
 	applyUsage(chunk.Usage, result)
+	for _, choice := range chunk.Choices {
+		if choice.Usage != nil {
+			applyUsage(choice.Usage, result)
+		}
+	}
 	delta := StreamDelta{}
 	for _, choice := range chunk.Choices {
 		if choice.FinishReason != "" {
@@ -469,33 +481,82 @@ func applyUsage(usage *usageFields, result *StreamResult) {
 		return
 	}
 	result.HasUsage = true
-	if usage.PromptTokens != nil {
-		result.PromptTokens = int(*usage.PromptTokens)
+	prompt := 0
+	if usage.PromptTokens != nil && *usage.PromptTokens > 0 {
+		prompt = int(*usage.PromptTokens)
+	} else if usage.InputTokens != nil && *usage.InputTokens > 0 {
+		prompt = int(*usage.InputTokens)
 	}
-	if usage.CompletionTokens != nil {
+	if prompt > 0 {
+		result.PromptTokens = prompt
+	}
+
+	if usage.CompletionTokens != nil && *usage.CompletionTokens > 0 {
 		result.CompletionTokens = int(*usage.CompletionTokens)
+	} else if usage.OutputTokens != nil && *usage.OutputTokens > 0 {
+		result.CompletionTokens = int(*usage.OutputTokens)
 	}
-	cached := usage.CachedTokens
-	if cached == nil && usage.PromptTokensDetails != nil {
-		cached = usage.PromptTokensDetails.CachedTokens
+
+	// 缓存 Token 提取：多路探测，优先取 > 0 的有效值，防止空值或 0 覆盖真实命中数
+	cachedCandidates := []*float64{}
+	if usage.CachedTokens != nil {
+		cachedCandidates = append(cachedCandidates, usage.CachedTokens)
 	}
-	if cached == nil {
-		cached = usage.PromptCacheHitTokens
+	if usage.PromptTokensDetails != nil && usage.PromptTokensDetails.CachedTokens != nil {
+		cachedCandidates = append(cachedCandidates, usage.PromptTokensDetails.CachedTokens)
 	}
-	if cached == nil {
-		cached = usage.CacheReadInputTokens
+	if usage.InputTokensDetails != nil && usage.InputTokensDetails.CachedTokens != nil {
+		cachedCandidates = append(cachedCandidates, usage.InputTokensDetails.CachedTokens)
 	}
-	if cached != nil {
-		result.CachedTokens = int(*cached)
-		result.HasCachedTokens = true
+	if usage.PromptCacheHitTokens != nil {
+		cachedCandidates = append(cachedCandidates, usage.PromptCacheHitTokens)
 	}
-	reasoning := usage.ReasoningTokens
-	if reasoning == nil && usage.CompletionTokensDetails != nil {
-		reasoning = usage.CompletionTokensDetails.ReasoningTokens
+	if usage.CacheReadInputTokens != nil {
+		cachedCandidates = append(cachedCandidates, usage.CacheReadInputTokens)
 	}
-	if reasoning != nil {
-		result.ReasoningTokens = int(*reasoning)
-		result.HasReasoningTokens = true
+
+	foundPositive := false
+	for _, cand := range cachedCandidates {
+		if cand != nil && *cand > 0 {
+			result.CachedTokens = int(*cand)
+			result.HasCachedTokens = true
+			foundPositive = true
+			break
+		}
+	}
+	if !foundPositive && !result.HasCachedTokens && len(cachedCandidates) > 0 {
+		for _, cand := range cachedCandidates {
+			if cand != nil {
+				result.CachedTokens = int(*cand)
+				result.HasCachedTokens = true
+				break
+			}
+		}
+	}
+
+	// 推理 Token 提取：多路探测
+	reasoningCandidates := []*float64{}
+	if usage.ReasoningTokens != nil {
+		reasoningCandidates = append(reasoningCandidates, usage.ReasoningTokens)
+	}
+	if usage.CompletionTokensDetails != nil && usage.CompletionTokensDetails.ReasoningTokens != nil {
+		reasoningCandidates = append(reasoningCandidates, usage.CompletionTokensDetails.ReasoningTokens)
+	}
+	for _, cand := range reasoningCandidates {
+		if cand != nil && *cand > 0 {
+			result.ReasoningTokens = int(*cand)
+			result.HasReasoningTokens = true
+			break
+		}
+	}
+	if !result.HasReasoningTokens && len(reasoningCandidates) > 0 {
+		for _, cand := range reasoningCandidates {
+			if cand != nil {
+				result.ReasoningTokens = int(*cand)
+				result.HasReasoningTokens = true
+				break
+			}
+		}
 	}
 }
 

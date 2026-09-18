@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,25 +37,26 @@ func TestResolveVendor(t *testing.T) {
 
 func TestThinkingRequired(t *testing.T) {
 	t.Parallel()
-	assert.True(t, thinkingRequired(VendorGLM, "glm-5.3"))
-	assert.False(t, thinkingRequired(VendorGLM, "glm-4-flash"))
-	assert.True(t, thinkingRequired(VendorKimi, "kimi-k3"))
-	assert.True(t, thinkingRequired(VendorDeepSeek, "deepseek-reasoner"))
-	assert.False(t, thinkingRequired(VendorDeepSeek, "deepseek-chat"))
-	assert.False(t, thinkingRequired(VendorGeneric, "glm-5.3"))
+	assert.True(t, thinkingRequired(VendorGLM))
+	assert.True(t, thinkingRequired(VendorKimi))
+	assert.True(t, thinkingRequired(VendorDeepSeek))
+	assert.False(t, thinkingRequired(VendorGeneric))
 }
 
-func TestApplyThinkingKimiK3OmitsThinkingObject(t *testing.T) {
+func TestApplyThinkingVendorBased(t *testing.T) {
 	t.Parallel()
-	got := applyThinking(chatRequest{Model: "kimi-k3"}, VendorKimi, "kimi-k3")
+	// Kimi 不论具体模型名 (如 kimik3, kimi-latest 等)，均遵循 reasoning_effort
+	got := applyThinking(chatRequest{Model: "kimik3"}, VendorKimi)
 	assert.Nil(t, got.Thinking)
 	assert.Equal(t, "low", got.ReasoningEffort)
 
-	got = applyThinking(chatRequest{Model: "glm-5.3"}, VendorGLM, "glm-5.3")
+	// GLM 不论模型名 (如 glm5.3 等)，传 thinking enabled
+	got = applyThinking(chatRequest{Model: "glm5.3"}, VendorGLM)
 	require.NotNil(t, got.Thinking)
 	assert.Equal(t, "enabled", got.Thinking["type"])
 
-	got = applyThinking(chatRequest{Model: "deepseek-reasoner"}, VendorDeepSeek, "deepseek-reasoner")
+	// DeepSeek 不论模型名 (如 deepseekv4, deepseek-chat 等)，原生思考不外发 thinking 字段
+	got = applyThinking(chatRequest{Model: "deepseekv4"}, VendorDeepSeek)
 	assert.Nil(t, got.Thinking)
 }
 
@@ -254,4 +256,54 @@ func TestStreamOptionsFallbackWhenRejected(t *testing.T) {
 		}
 	}
 	assert.Equal(t, "pass", connStatus)
+}
+
+func TestApplyUsageCachedTokensExtraction(t *testing.T) {
+	t.Parallel()
+
+	// 1. DeepSeek 风格：prompt_tokens_details.cached_tokens 虽为 0，但 prompt_cache_hit_tokens 为 2500，应正确提取 2500
+	var res StreamResult
+	zero := 0.0
+	deepseekHit := 2500.0
+	promptTokens := 3000.0
+	applyUsage(&usageFields{
+		PromptTokens:         &promptTokens,
+		PromptCacheHitTokens: &deepseekHit,
+		PromptTokensDetails: &struct {
+			CachedTokens *float64 `json:"cached_tokens"`
+		}{
+			CachedTokens: &zero,
+		},
+	}, &res)
+	assert.True(t, res.HasCachedTokens)
+	assert.Equal(t, 2500, res.CachedTokens)
+	assert.Equal(t, 3000, res.PromptTokens)
+
+	// 2. 后续 Chunk 发送 cached_tokens=0，不应覆盖已捕获的有效值 2500
+	applyUsage(&usageFields{
+		CachedTokens: &zero,
+	}, &res)
+	assert.True(t, res.HasCachedTokens)
+	assert.Equal(t, 2500, res.CachedTokens)
+
+	// 3. Moonshot / Kimi 风格：流式 choices[0].usage
+	var moonshotRes StreamResult
+	moonshotChunk := []byte(`{"choices":[{"delta":{"content":"ok"},"usage":{"prompt_tokens":1200,"cached_tokens":1024}}]}`)
+	applyChunk(moonshotChunk, time.Now(), &moonshotRes, nil)
+	assert.True(t, moonshotRes.HasCachedTokens)
+	assert.Equal(t, 1024, moonshotRes.CachedTokens)
+	assert.Equal(t, 1200, moonshotRes.PromptTokens)
+
+	// 4. InputTokensDetails 风格
+	var inputDetailsRes StreamResult
+	inputDetailsHit := 888.0
+	applyUsage(&usageFields{
+		InputTokensDetails: &struct {
+			CachedTokens *float64 `json:"cached_tokens"`
+		}{
+			CachedTokens: &inputDetailsHit,
+		},
+	}, &inputDetailsRes)
+	assert.True(t, inputDetailsRes.HasCachedTokens)
+	assert.Equal(t, 888, inputDetailsRes.CachedTokens)
 }

@@ -59,12 +59,13 @@ flowchart LR
 | 语料 | `corpora/`，名称后的 token 数为估算 |
 | SSE 入口 | `controller/supplier_probe.go` → `POST /api/supplier-test/runs` |
 | 真正发请求 | `service/suppliertest/runner.go` |
+| 厂商请求/解析适配 | `vendor.go`、`client.go`，说明见 [SUPPLIER_TEST_VENDORS.zh_CN.md](./SUPPLIER_TEST_VENDORS.zh_CN.md) |
 | 导出报告 | `report.ts`，按三层排 |
 
 ## 和指标说明对齐的约定
 
 - 空温度、`top_p` 不发送。
-- 缺字段、厂商没做的协议 → **跳过**，不当失败。
+- 缺字段、厂商没做的协议：默认 **跳过**。下拉选了 GLM / Kimi / DeepSeek 后，文档要求有的字段没有则失败。请求键名与响应别名见 [SUPPLIER_TEST_VENDORS.zh_CN.md](./SUPPLIER_TEST_VENDORS.zh_CN.md)。
 - 连通失败后，流式 / usage / request id / 采样改为跳过（无法对照），不再记成失败。
 - 基础验收里，只有勾了流式的连通性才展示模型正文。
 - 缓存预热发送选中语料原文，不填充到 N token。

@@ -100,8 +100,10 @@ NovaMaaS 将围绕供应聚合、商业运营和算力资源三个方向持续�
 
 CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充、内部重构、依赖升级、临时排障，以及未合并或已被替代的方案不进入本表，除非它们同时改变上述核心运行时边界。
 
+<!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#28](https://github.com/yeruyi1024/novamaas-workspace/pull/28) | 2026-09-18 | `feat` | 模型协议 / Moonshot 兼容 | 新增同域名 `/moonshot` Chat Completions、Responses、Anthropic Messages 与模型列表入口，复用 OpenAI 上游并输出 Kimi 兼容结构；无法真实复现的 Kimi 专属语义明确拒绝。 | NovaMaaS 下游专属；上游当前没有以 OpenAI 渠道为数据源、按独立路径输出 Kimi 格式并拒绝伪造专属能力的等价实现；状态：长期维护。 |
 | [#26](https://github.com/yeruyi1024/novamaas-workspace/pull/26) | 2026-09-11 | `feat` | 视频任务 / 请求审计 | 为 DoubaoVideo、火山原生和阿里百炼分别归档客户端原始请求与实际上游请求，并在管理员日志详情中对照展示；Base64 暂存场景记录转换后的地址。 | NovaMaaS 下游专属；上游当前没有视频任务双请求快照、暂存后正文审计与管理员对照查看的等价实现。 |
 | [#25](https://github.com/yeruyi1024/novamaas-workspace/pull/25) | 2026-09-10 | `feat` | 用户 / 登录认证 | 为用户增加可维护且全局唯一的手机号，并支持手机号密码登录与认证版本失效；同步管理界面与登录文案。 | NovaMaaS 下游专属；上游当前没有等价的手机号身份字段、唯一性保护及密码登录组合能力。 |
 | [#23](https://github.com/yeruyi1024/novamaas-workspace/pull/23) | 2026-09-10 | `feat` | 对象存储 / 火山方舟视频 | 将 Base64 暂存接入 DoubaoVideo，并把火山原生与 DoubaoVideo 的暂存范围从图片扩展到 MP4、WebM、MOV 视频输入；保留签名 URL、重试复用、任务清理和请求审计边界。 | NovaMaaS 下游专属；上游当前没有等价的 DoubaoVideo Base64 暂存及双渠道视频 Data URI 对象存储转换能力。 |
@@ -115,6 +117,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | [#11](https://github.com/yeruyi1024/novamaas-workspace/pull/11) | 2026-09-06 | `fix` | 阿里百炼 | 兼容 Wan3 任务结果中的整数、小数和数字字符串时长，恢复异步任务状态更新并增加适配器回归测试。 | 对齐上游 [#6166](https://github.com/QuantumNous/new-api/issues/6166) / [#6174](https://github.com/QuantumNous/new-api/pull/6174)，并增加非法值和溢出保护。 |
 | [#8](https://github.com/yeruyi1024/novamaas-workspace/pull/8) | 2026-09-06 | `feat` | 火山方舟 | 为 Volc Native 增加仅改写顶层 `model` 的模型映射，平台侧继续使用公开别名完成权限、计费和日志。 | #1 的下游增强；上游 [#6653](https://github.com/QuantumNous/new-api/pull/6653) 尚未覆盖该映射能力。 |
 | [#1](https://github.com/yeruyi1024/novamaas-workspace/pull/1) | 2026-09-05 | `feat/fix` | 火山方舟 | 选择性引入 Volc Native 渠道，并补齐任务凭据延续、取消状态、响应关闭、路由隔离、权限约束和多语言支持。 | 来源为仍未合并的上游 [#6653](https://github.com/QuantumNous/new-api/pull/6653) / [#4705](https://github.com/QuantumNous/new-api/issues/4705)，NovaMaaS 追加安全与兼容加固。 |
+<!-- novamaas-pr-ledger:end -->
 
 维护方式：台账由作者和评审按长期运行时差异标准人工维护，不作为 PR 或 CI 的合并门禁。记录使用真实 PR 链接，不再维护容易过期的审核状态；上游同步类 PR 仍需更新 [UPSTREAM.md](UPSTREAM.md)。
 

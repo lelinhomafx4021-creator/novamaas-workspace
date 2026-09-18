@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,8 +58,8 @@ func TestCacheMessagesSystemPrefix(t *testing.T) {
 	assert.Equal(t, "long-prefix", warm[0].Content)
 
 	generic := cacheMessages(profileFor(VendorGeneric), "long-prefix", "pong", true)
-	require.Len(t, generic, 1)
-	assert.Equal(t, "user", generic[0].Role)
+	require.Len(t, generic, 2)
+	assert.Equal(t, "system", generic[0].Role)
 }
 
 func TestJoinOpenAIPathV4(t *testing.T) {
@@ -158,4 +159,90 @@ func TestGLMCacheUsesSystemPrefix(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, body, `"role":"system"`)
 	assert.Contains(t, body, "glm-prefix")
+}
+
+func TestThinkingFallbackWhenRejected(t *testing.T) {
+	t.Parallel()
+
+	var attempts []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		attempts = append(attempts, string(body))
+		if strings.Contains(string(body), `"thinking"`) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"message":"Unrecognized request argument: thinking"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"step 1\",\"content\":\"323\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":15,\"completion_tokens\":10,\"completion_tokens_details\":{\"reasoning_tokens\":8}}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "key",
+		Model:   "custom-relay-model",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{CheckThinking}},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	require.Len(t, attempts, 2)
+	assert.Contains(t, attempts[0], `"thinking"`)
+	assert.NotContains(t, attempts[1], `"thinking"`)
+
+	var thinkingStatus, thinkingMsg string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID == CheckThinking {
+			thinkingStatus = event.Status
+			thinkingMsg = event.Message
+		}
+	}
+	assert.Equal(t, "pass", thinkingStatus)
+	assert.Contains(t, thinkingMsg, "reasoning")
+}
+
+func TestStreamOptionsFallbackWhenRejected(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		if strings.Contains(string(body), `"stream_options"`) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"message":"Unrecognized request argument: stream_options"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "key",
+		Model:   "strict-proxy-model",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{CheckConnectivity}},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, calls, 2)
+
+	var connStatus string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID == CheckConnectivity {
+			connStatus = event.Status
+		}
+	}
+	assert.Equal(t, "pass", connStatus)
 }

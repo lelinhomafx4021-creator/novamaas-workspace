@@ -47,7 +47,10 @@ func profileFor(vendor string) vendorProfile {
 			requireTools:      true,
 		}
 	default:
-		return vendorProfile{id: VendorGeneric}
+		return vendorProfile{
+			id:              VendorGeneric,
+			cachePrefixRole: "system",
+		}
 	}
 }
 

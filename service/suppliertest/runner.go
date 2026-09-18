@@ -248,6 +248,7 @@ func Run(ctx context.Context, httpClient *http.Client, req RunRequest, emit Emit
 	if err != nil {
 		return err
 	}
+	ctx = withStreamOptionsTracker(ctx)
 	client := NewHTTPClient(httpClient)
 	var emitMu sync.Mutex
 	safeEmit := func(event Event) {
@@ -367,7 +368,11 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 			}
 			if wanted[CheckUsage] {
 				if connected.HasUsage {
-					emitCheck(CheckUsage, "pass", fmt.Sprintf("prompt=%d，completion=%d", connected.PromptTokens, connected.CompletionTokens))
+					msg := fmt.Sprintf("prompt=%d，completion=%d", connected.PromptTokens, connected.CompletionTokens)
+					if connected.HasReasoningTokens || connected.ReasoningTokens > 0 {
+						msg += fmt.Sprintf("（reasoning=%d）", connected.ReasoningTokens)
+					}
+					emitCheck(CheckUsage, "pass", msg)
 				} else {
 					status, message := checkStatus(
 						profile.requireUsage,
@@ -470,6 +475,12 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		mustThink := thinkingRequired(profile.id, req.Model)
 		thinkReq := applyThinking(chat, profile.id, req.Model)
 		thinking := streamChat(ctx, httpClient, endpoint, req.APIKey, thinkReq, 60*time.Second, nil)
+		if (thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "") && thinkReq.Thinking != nil {
+			fallbackReq := chat
+			fallbackReq.Messages = []chatMessage{{Role: "user", Content: "What is 17 times 19? Think step by step."}}
+			fallbackReq.Thinking = nil
+			thinking = streamChat(ctx, httpClient, endpoint, req.APIKey, fallbackReq, 60*time.Second, nil)
+		}
 		if thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "" {
 			status, message := checkStatus(
 				mustThink,
@@ -477,8 +488,14 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 				vendorTitle(profile.id)+" 该模型应按文档返回思考内容，请求失败："+firstNonEmpty(thinking.ErrorMessage, fmt.Sprintf("HTTP %d", thinking.StatusCode)),
 			)
 			emitCheck(CheckThinking, status, message)
-		} else if thinking.Reasoning != "" {
-			emitCheck(CheckThinking, "pass", "返回了 reasoning 内容")
+		} else if thinking.Reasoning != "" || thinking.ReasoningTokens > 0 {
+			msg := "返回了 reasoning 内容"
+			if thinking.Reasoning == "" && thinking.ReasoningTokens > 0 {
+				msg = fmt.Sprintf("返回了 reasoning_tokens=%d", thinking.ReasoningTokens)
+			} else if thinking.ReasoningTokens > 0 {
+				msg = fmt.Sprintf("返回了 reasoning 内容（reasoning_tokens=%d）", thinking.ReasoningTokens)
+			}
+			emitCheck(CheckThinking, "pass", msg)
 		} else {
 			status, message := checkStatus(
 				mustThink,

@@ -9,10 +9,17 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 )
+
+type streamOptionsKey struct{}
+
+func withStreamOptionsTracker(ctx context.Context) context.Context {
+	return context.WithValue(ctx, streamOptionsKey{}, &atomic.Bool{})
+}
 
 type chatMessage struct {
 	Role    string `json:"role"`
@@ -43,9 +50,13 @@ type usageFields struct {
 	CachedTokens         *float64 `json:"cached_tokens"`
 	PromptCacheHitTokens *float64 `json:"prompt_cache_hit_tokens"`
 	CacheReadInputTokens *float64 `json:"cache_read_input_tokens"`
+	ReasoningTokens      *float64 `json:"reasoning_tokens"`
 	PromptTokensDetails  *struct {
 		CachedTokens *float64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	CompletionTokensDetails *struct {
+		ReasoningTokens *float64 `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
 }
 
 type streamChunk struct {
@@ -90,24 +101,26 @@ type StreamDelta struct {
 }
 
 type StreamResult struct {
-	StatusCode       int
-	Header           http.Header
-	ID               string
-	Content          string
-	Reasoning        string
-	FinishReason     string
-	ToolName         string
-	ToolArgs         string
-	PromptTokens     int
-	CompletionTokens int
-	CachedTokens     int
-	HasUsage         bool
-	HasCachedTokens  bool
-	TTFT             time.Duration
-	TPOT             time.Duration
-	Elapsed          time.Duration
-	ErrorMessage     string
-	SSE              bool
+	StatusCode         int
+	Header             http.Header
+	ID                 string
+	Content            string
+	Reasoning          string
+	FinishReason       string
+	ToolName           string
+	ToolArgs           string
+	PromptTokens       int
+	CompletionTokens   int
+	CachedTokens       int
+	ReasoningTokens    int
+	HasUsage           bool
+	HasCachedTokens    bool
+	HasReasoningTokens bool
+	TTFT               time.Duration
+	TPOT               time.Duration
+	Elapsed            time.Duration
+	ErrorMessage       string
+	SSE                bool
 }
 
 func NewHTTPClient(base *http.Client) *http.Client {
@@ -271,6 +284,11 @@ func streamChat(
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	tracker, _ := ctx.Value(streamOptionsKey{}).(*atomic.Bool)
+	if tracker != nil && tracker.Load() {
+		req.StreamOptions = nil
+	}
+
 	body, err := common.Marshal(req)
 	if err != nil {
 		return StreamResult{ErrorMessage: err.Error()}
@@ -303,6 +321,20 @@ func streamChat(
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
 		result.ErrorMessage = extractAPIError(raw, resp.Status)
+		if req.StreamOptions != nil && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) {
+			errMsg := strings.ToLower(result.ErrorMessage)
+			if !strings.Contains(errMsg, "thinking") && !strings.Contains(errMsg, "model") && !strings.Contains(errMsg, "messages") {
+				noOptReq := req
+				noOptReq.StreamOptions = nil
+				retryResult := streamChat(ctx, httpClient, endpoint, apiKey, noOptReq, timeout, onDelta)
+				if retryResult.StatusCode == http.StatusOK && retryResult.ErrorMessage == "" {
+					if tracker != nil {
+						tracker.Store(true)
+					}
+					return retryResult
+				}
+			}
+		}
 		return result
 	}
 
@@ -421,6 +453,9 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 	if tokens <= 0 && result.Content != "" {
 		tokens = max(1, len([]rune(result.Content))/2)
 	}
+	if tokens <= 0 && result.Reasoning != "" {
+		tokens = max(1, len([]rune(result.Reasoning))/2)
+	}
 	if tokens > 1 && result.TTFT > 0 {
 		remain := time.Since(started) - result.TTFT
 		if remain > 0 {
@@ -453,6 +488,14 @@ func applyUsage(usage *usageFields, result *StreamResult) {
 	if cached != nil {
 		result.CachedTokens = int(*cached)
 		result.HasCachedTokens = true
+	}
+	reasoning := usage.ReasoningTokens
+	if reasoning == nil && usage.CompletionTokensDetails != nil {
+		reasoning = usage.CompletionTokensDetails.ReasoningTokens
+	}
+	if reasoning != nil {
+		result.ReasoningTokens = int(*reasoning)
+		result.HasReasoningTokens = true
 	}
 }
 

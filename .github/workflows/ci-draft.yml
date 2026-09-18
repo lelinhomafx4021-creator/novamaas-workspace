@@ -5,7 +5,7 @@ name: CI draft
 
 on:
   push:
-    branches: [main, feat/supplier-test, feat/supplier-test-vendor-profile]
+    branches: [main, feat/supplier-test-vendor-profile]
   pull_request:
   workflow_dispatch:
 

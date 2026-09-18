@@ -450,7 +450,7 @@ export function SupplierTest() {
           <TitledCard
             title={t('Target')}
             description={t(
-              'Fill Base URL, key, and model yourself. Pick GLM or Kimi to apply that vendor field rules.'
+              'Fill Base URL, key, and model yourself. Pick GLM, Kimi, or DeepSeek to apply that vendor field rules.'
             )}
             icon={<ClipboardCheck />}
             action={

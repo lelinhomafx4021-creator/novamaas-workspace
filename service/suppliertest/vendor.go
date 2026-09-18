@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	VendorGeneric = "generic"
-	VendorGLM     = "glm"
-	VendorKimi    = "kimi"
+	VendorGeneric  = "generic"
+	VendorGLM      = "glm"
+	VendorKimi     = "kimi"
+	VendorDeepSeek = "deepseek"
 
 	DefaultCacheWarmUser = "请用一个词回复：ping"
 )
@@ -28,7 +29,7 @@ func ResolveVendor(requested string) (string, error) {
 		return VendorGeneric, nil
 	}
 	switch requested {
-	case VendorGeneric, VendorGLM, VendorKimi:
+	case VendorGeneric, VendorGLM, VendorKimi, VendorDeepSeek:
 		return requested, nil
 	default:
 		return "", fmt.Errorf("unknown vendor %q", requested)
@@ -37,7 +38,7 @@ func ResolveVendor(requested string) (string, error) {
 
 func profileFor(vendor string) vendorProfile {
 	switch vendor {
-	case VendorGLM, VendorKimi:
+	case VendorGLM, VendorKimi, VendorDeepSeek:
 		return vendorProfile{
 			id:                vendor,
 			cachePrefixRole:   "system",
@@ -60,6 +61,8 @@ func vendorTitle(vendor string) string {
 		return "GLM"
 	case VendorKimi:
 		return "Kimi"
+	case VendorDeepSeek:
+		return "DeepSeek"
 	default:
 		return "供应商"
 	}
@@ -78,6 +81,8 @@ func thinkingRequired(vendor, model string) bool {
 			strings.Contains(m, "kimi-k2.7") ||
 			strings.Contains(m, "kimi-k2.6") ||
 			strings.Contains(m, "k2-thinking")
+	case VendorDeepSeek:
+		return strings.Contains(m, "r1") || strings.Contains(m, "reasoner")
 	default:
 		return false
 	}
@@ -92,6 +97,10 @@ func applyThinking(req chatRequest, vendor, model string) chatRequest {
 		return req
 	}
 	if vendor == VendorKimi && strings.Contains(m, "kimi-k2.7") {
+		req.Thinking = nil
+		return req
+	}
+	if vendor == VendorDeepSeek && (strings.Contains(m, "r1") || strings.Contains(m, "reasoner")) {
 		req.Thinking = nil
 		return req
 	}

@@ -17,12 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-export type VendorId = 'generic' | 'glm' | 'kimi'
+export type VendorId = 'generic' | 'glm' | 'kimi' | 'deepseek'
 
 export const VENDOR_OPTIONS: Array<{ id: VendorId; labelKey: string }> = [
   { id: 'generic', labelKey: 'Generic OpenAI-compatible' },
   { id: 'glm', labelKey: 'GLM' },
   { id: 'kimi', labelKey: 'Kimi' },
+  { id: 'deepseek', labelKey: 'DeepSeek' },
 ]
 
 export function vendorHintKey(selected: VendorId): string {
@@ -31,6 +32,9 @@ export function vendorHintKey(selected: VendorId): string {
   }
   if (selected === 'kimi') {
     return 'Using Kimi fields: cached_tokens, reasoning_content. kimi-k3 does not send thinking.'
+  }
+  if (selected === 'deepseek') {
+    return 'Using DeepSeek fields: prompt_cache_hit_tokens, reasoning_content. R1 does not send thinking.'
   }
   return 'Using generic OpenAI-compatible checks. Missing vendor fields are skipped.'
 }

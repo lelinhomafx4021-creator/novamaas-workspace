@@ -26,6 +26,10 @@ func TestResolveVendor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, VendorKimi, got)
 
+	got, err = ResolveVendor("deepseek")
+	require.NoError(t, err)
+	assert.Equal(t, VendorDeepSeek, got)
+
 	_, err = ResolveVendor("claude")
 	require.Error(t, err)
 }
@@ -35,6 +39,8 @@ func TestThinkingRequired(t *testing.T) {
 	assert.True(t, thinkingRequired(VendorGLM, "glm-5.3"))
 	assert.False(t, thinkingRequired(VendorGLM, "glm-4-flash"))
 	assert.True(t, thinkingRequired(VendorKimi, "kimi-k3"))
+	assert.True(t, thinkingRequired(VendorDeepSeek, "deepseek-reasoner"))
+	assert.False(t, thinkingRequired(VendorDeepSeek, "deepseek-chat"))
 	assert.False(t, thinkingRequired(VendorGeneric, "glm-5.3"))
 }
 
@@ -47,6 +53,9 @@ func TestApplyThinkingKimiK3OmitsThinkingObject(t *testing.T) {
 	got = applyThinking(chatRequest{Model: "glm-5.3"}, VendorGLM, "glm-5.3")
 	require.NotNil(t, got.Thinking)
 	assert.Equal(t, "enabled", got.Thinking["type"])
+
+	got = applyThinking(chatRequest{Model: "deepseek-reasoner"}, VendorDeepSeek, "deepseek-reasoner")
+	assert.Nil(t, got.Thinking)
 }
 
 func TestCacheMessagesSystemPrefix(t *testing.T) {

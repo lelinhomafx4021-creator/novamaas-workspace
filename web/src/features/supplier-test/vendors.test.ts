@@ -23,5 +23,6 @@ import { vendorHintKey } from './vendors'
 test('hint follows the vendor the tester picked', () => {
   expect(vendorHintKey('glm')).toContain('GLM fields')
   expect(vendorHintKey('kimi')).toContain('Kimi fields')
+  expect(vendorHintKey('deepseek')).toContain('DeepSeek fields')
   expect(vendorHintKey('generic')).toContain('generic OpenAI-compatible')
 })

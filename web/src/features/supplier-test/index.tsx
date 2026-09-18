@@ -111,6 +111,7 @@ import {
   buildHtmlReport,
   buildMarkdownReport,
   downloadFile,
+  exportPdfReport,
   stampFileName,
   type ReportInput,
 } from './report'
@@ -418,16 +419,12 @@ export function SupplierTest() {
           variant='outline'
           disabled={busy || !hasReport}
           onClick={() => {
-            downloadFile(
-              `supplier-test-${stampFileName()}.md`,
-              buildMarkdownReport(reportInput()),
-              'text/markdown'
-            )
-            toast.success(t('Markdown report exported'))
+            exportPdfReport(reportInput())
+            toast.success(t('PDF report ready'))
           }}
         >
           <Download />
-          {t('Export Markdown')}
+          {t('Export PDF')}
         </Button>
         <Button
           variant='outline'

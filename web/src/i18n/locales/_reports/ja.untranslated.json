@@ -55,6 +55,7 @@
   "This run will send {{count}} streaming requests. That can consume a large amount of upstream quota.": "This run will send {{count}} streaming requests. That can consume a large amount of upstream quota.",
   "Tokens / sec": "Tokens / sec",
   "Tool call": "Tool call",
+  "TPOT P90 (ms)": "TPOT P90 (ms)",
   "TTFT avg": "TTFT avg",
   "Usage fields": "Usage fields",
   "Wait seconds": "Wait seconds",

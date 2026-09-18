@@ -58,6 +58,37 @@ export function downloadFile(filename: string, content: string, mime: string) {
   URL.revokeObjectURL(href)
 }
 
+export function exportPdfReport(input: ReportInput) {
+  const html = buildHtmlReport(input)
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '0'
+  iframe.style.bottom = '0'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = '0'
+  iframe.title = 'supplier-test-report-print'
+  document.body.appendChild(iframe)
+
+  const doc = iframe.contentWindow?.document
+  if (!doc) {
+    document.body.removeChild(iframe)
+    return
+  }
+
+  doc.open()
+  doc.write(html)
+  doc.close()
+
+  iframe.contentWindow?.focus()
+  setTimeout(() => {
+    iframe.contentWindow?.print()
+    setTimeout(() => {
+      document.body.removeChild(iframe)
+    }, 1000)
+  }, 250)
+}
+
 function translate(
   t: ReportInput['t'],
   key: string,
@@ -230,13 +261,25 @@ export function buildHtmlReport(input: ReportInput): string {
 <html lang="zh">
 <head>
 <meta charset="utf-8"/>
-<title>${escapeHtml(t('Supplier Test Report'))}</title>
+<title>${escapeHtml(t('Supplier Test Report'))}-${stampFileName()}</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:960px;margin:32px auto;padding:0 16px;color:#111;line-height:1.5}
-table{border-collapse:collapse;width:100%;margin:12px 0 24px}
+@page {
+  size: A4;
+  margin: 15mm;
+}
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:960px;margin:24px auto;padding:0 16px;color:#111;line-height:1.6}
+h1{font-size:22px;border-bottom:2px solid #2563eb;padding-bottom:8px;margin-bottom:12px;color:#1e293b}
+h2{font-size:16px;color:#334155;border-left:4px solid #3b82f6;padding-left:8px;margin-top:24px;margin-bottom:8px}
+table{border-collapse:collapse;width:100%;margin:12px 0 20px;font-size:13px}
 th,td{border:1px solid #d1d5db;padding:8px 10px;text-align:left;vertical-align:top}
-th{background:#f3f4f6}
-.muted{color:#6b7280}
+th{background:#f3f4f6;font-weight:600}
+.muted{color:#6b7280;font-size:13px}
 </style>
 </head>
 <body>

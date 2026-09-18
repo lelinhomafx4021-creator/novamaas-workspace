@@ -11,7 +11,7 @@
 #
 # Optional Variable:
 #   DEPLOY_PATH   server directory with docker-compose.yml (default /opt/novamaas)
-name: CD Alibaba ACR
+name: CD Alibaba ACR (with CI Gates)
 
 on:
   push:
@@ -37,8 +37,51 @@ env:
   ACR_REPOSITORY: novamaas
 
 jobs:
+  backend-checks:
+    name: Go checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            relaykit/go.sum
+      - name: Prepare embed path
+        run: |
+          mkdir -p web/dist
+          touch web/dist/index.html
+      - name: Vet and test
+        run: |
+          go vet ./service/suppliertest ./controller ./model
+          go test ./service/suppliertest ./controller ./model -count=1
+
+  frontend-checks:
+    name: Frontend checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.0'
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bunx oxlint -c .oxlintrc.json src/features/supplier-test
+      - run: bun run test -- --pool=threads src/features/supplier-test/baselines.test.ts src/features/supplier-test/vendors.test.ts src/features/supplier-test/layout.test.tsx
+
   publish:
     name: Build and push ACR
+    needs: [backend-checks, frontend-checks]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:

@@ -274,20 +274,27 @@ type sourceUsage struct {
 }
 
 type sourceInputTokenDetails struct {
-	CachedTokens     int `json:"cached_tokens"`
-	CacheWriteTokens int `json:"cache_write_tokens"`
+	CachedTokens         *int `json:"cached_tokens"`
+	CachedCreationTokens *int `json:"cached_creation_tokens"`
+	CacheWriteTokens     *int `json:"cache_write_tokens"`
 }
 
 type sourceOutputTokenDetails struct {
-	ReasoningTokens int `json:"reasoning_tokens"`
-	ThinkingTokens  int `json:"thinking_tokens"`
+	ReasoningTokens *int `json:"reasoning_tokens"`
+	ThinkingTokens  *int `json:"thinking_tokens"`
+}
+
+type cacheTokenDetails struct {
+	CachedTokens     *int `json:"cached_tokens,omitempty"`
+	CacheWriteTokens *int `json:"cache_write_tokens,omitempty"`
 }
 
 type chatUsage struct {
-	PromptTokens     int  `json:"prompt_tokens"`
-	CompletionTokens int  `json:"completion_tokens"`
-	TotalTokens      int  `json:"total_tokens"`
-	CachedTokens     *int `json:"cached_tokens,omitempty"`
+	PromptTokens        int                `json:"prompt_tokens"`
+	CompletionTokens    int                `json:"completion_tokens"`
+	TotalTokens         int                `json:"total_tokens"`
+	CachedTokens        *int               `json:"cached_tokens,omitempty"`
+	PromptTokensDetails *cacheTokenDetails `json:"prompt_tokens_details,omitempty"`
 }
 
 type chatMessage struct {
@@ -426,22 +433,38 @@ func chatUsageFromRaw(raw json.RawMessage) (*chatUsage, error) {
 	}
 	cachedTokens := source.CachedTokens
 	if cachedTokens == nil && source.PromptTokensDetails != nil {
-		cached := source.PromptTokensDetails.CachedTokens
-		cachedTokens = &cached
+		cachedTokens = source.PromptTokensDetails.CachedTokens
+	}
+	var promptTokensDetails *cacheTokenDetails
+	if source.PromptTokensDetails != nil {
+		cacheWriteTokens := source.PromptTokensDetails.CacheWriteTokens
+		if cacheWriteTokens == nil {
+			cacheWriteTokens = source.PromptTokensDetails.CachedCreationTokens
+		}
+		if source.PromptTokensDetails.CachedTokens != nil || cacheWriteTokens != nil {
+			promptTokensDetails = &cacheTokenDetails{
+				CachedTokens:     source.PromptTokensDetails.CachedTokens,
+				CacheWriteTokens: cacheWriteTokens,
+			}
+		}
+	}
+	if promptTokensDetails == nil && cachedTokens != nil {
+		promptTokensDetails = &cacheTokenDetails{CachedTokens: cachedTokens}
 	}
 	return &chatUsage{
 		PromptTokens: source.PromptTokens, CompletionTokens: source.CompletionTokens,
 		TotalTokens: source.TotalTokens, CachedTokens: cachedTokens,
+		PromptTokensDetails: promptTokensDetails,
 	}, nil
 }
 
 type responsesInputTokenDetails struct {
-	CachedTokens     int `json:"cached_tokens"`
-	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
+	CachedTokens     *int `json:"cached_tokens,omitempty"`
+	CacheWriteTokens *int `json:"cache_write_tokens,omitempty"`
 }
 
 type responsesOutputTokenDetails struct {
-	ReasoningTokens int `json:"reasoning_tokens"`
+	ReasoningTokens *int `json:"reasoning_tokens,omitempty"`
 }
 
 type responsesUsage struct {
@@ -510,8 +533,14 @@ func responsesUsageFromRaw(raw json.RawMessage) (*responsesUsage, error) {
 	}
 	var responseInputDetails *responsesInputTokenDetails
 	if inputDetails != nil {
-		responseInputDetails = &responsesInputTokenDetails{
-			CachedTokens: inputDetails.CachedTokens, CacheWriteTokens: inputDetails.CacheWriteTokens,
+		cacheWriteTokens := inputDetails.CacheWriteTokens
+		if cacheWriteTokens == nil {
+			cacheWriteTokens = inputDetails.CachedCreationTokens
+		}
+		if inputDetails.CachedTokens != nil || cacheWriteTokens != nil {
+			responseInputDetails = &responsesInputTokenDetails{
+				CachedTokens: inputDetails.CachedTokens, CacheWriteTokens: cacheWriteTokens,
+			}
 		}
 	}
 	outputDetails := source.OutputTokensDetails
@@ -520,7 +549,13 @@ func responsesUsageFromRaw(raw json.RawMessage) (*responsesUsage, error) {
 	}
 	var responseOutputDetails *responsesOutputTokenDetails
 	if outputDetails != nil {
-		responseOutputDetails = &responsesOutputTokenDetails{ReasoningTokens: outputDetails.ReasoningTokens}
+		reasoningTokens := outputDetails.ReasoningTokens
+		if reasoningTokens == nil {
+			reasoningTokens = outputDetails.ThinkingTokens
+		}
+		if reasoningTokens != nil {
+			responseOutputDetails = &responsesOutputTokenDetails{ReasoningTokens: reasoningTokens}
+		}
 	}
 	return &responsesUsage{
 		InputTokens: inputTokens, InputTokensDetails: responseInputDetails,
@@ -548,6 +583,36 @@ func transformMessages(c *gin.Context, data []byte) ([]byte, error) {
 		delete(usage, "billing_usage")
 		delete(usage, "usage_semantic")
 		delete(usage, "usage_source")
+		if _, exists := usage["cache_creation"]; !exists {
+			var (
+				cache5m    int
+				cache1h    int
+				hasCache5m bool
+				hasCache1h bool
+			)
+			if rawCache5m, ok := usage["claude_cache_creation_5_m_tokens"]; ok {
+				if err := common.Unmarshal(rawCache5m, &cache5m); err != nil {
+					return nil, err
+				}
+				hasCache5m = true
+			}
+			if rawCache1h, ok := usage["claude_cache_creation_1_h_tokens"]; ok {
+				if err := common.Unmarshal(rawCache1h, &cache1h); err != nil {
+					return nil, err
+				}
+				hasCache1h = true
+			}
+			if hasCache5m || hasCache1h {
+				cacheCreation := make(map[string]int, 2)
+				if hasCache5m {
+					cacheCreation["ephemeral_5m_input_tokens"] = cache5m
+				}
+				if hasCache1h {
+					cacheCreation["ephemeral_1h_input_tokens"] = cache1h
+				}
+				usage["cache_creation"], _ = common.Marshal(cacheCreation)
+			}
+		}
 		delete(usage, "claude_cache_creation_5_m_tokens")
 		delete(usage, "claude_cache_creation_1_h_tokens")
 		if rawOutputDetails, ok := usage["output_tokens_details"]; ok && string(rawOutputDetails) != "null" {
@@ -556,12 +621,16 @@ func transformMessages(c *gin.Context, data []byte) ([]byte, error) {
 				return nil, err
 			}
 			thinkingTokens := source.ThinkingTokens
-			if thinkingTokens == 0 {
+			if thinkingTokens == nil {
 				thinkingTokens = source.ReasoningTokens
 			}
-			usage["output_tokens_details"], _ = common.Marshal(struct {
-				ThinkingTokens int `json:"thinking_tokens"`
-			}{ThinkingTokens: thinkingTokens})
+			if thinkingTokens == nil {
+				delete(usage, "output_tokens_details")
+			} else {
+				usage["output_tokens_details"], _ = common.Marshal(struct {
+					ThinkingTokens *int `json:"thinking_tokens"`
+				}{ThinkingTokens: thinkingTokens})
+			}
 		}
 		var err error
 		payload["usage"], err = common.Marshal(usage)

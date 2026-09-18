@@ -155,7 +155,7 @@ func TestTransformChatUsesKimiResponseShape(t *testing.T) {
 		"id":"chatcmpl-upstream","object":"chat.completion","created":123,"model":"gpt-5",
 		"system_fingerprint":"fp_upstream",
 		"choices":[{"index":0,"message":{"role":"assistant","content":"answer","reasoning":"thought","refusal":null},"finish_reason":"stop","logprobs":{"content":[]}}],
-		"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":2},"billing_usage":{"amount":1}}
+		"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":4,"cache_write_tokens":2},"completion_tokens_details":{"reasoning_tokens":2},"billing_usage":{"amount":1}}
 	}`)
 
 	output, err := TransformJSON(c, input)
@@ -168,10 +168,13 @@ func TestTransformChatUsesKimiResponseShape(t *testing.T) {
 
 	usage, ok := payload["usage"].(map[string]any)
 	require.True(t, ok)
-	assert.Len(t, usage, 4)
+	assert.Len(t, usage, 5)
 	assert.EqualValues(t, 4, usage["cached_tokens"])
-	assert.NotContains(t, usage, "prompt_tokens_details")
 	assert.NotContains(t, usage, "billing_usage")
+	promptDetails, ok := usage["prompt_tokens_details"].(map[string]any)
+	require.True(t, ok)
+	assert.EqualValues(t, 4, promptDetails["cached_tokens"])
+	assert.EqualValues(t, 2, promptDetails["cache_write_tokens"])
 
 	choices, ok := payload["choices"].([]any)
 	require.True(t, ok)
@@ -184,6 +187,27 @@ func TestTransformChatUsesKimiResponseShape(t *testing.T) {
 	assert.Equal(t, "thought", message["reasoning_content"])
 	assert.NotContains(t, message, "reasoning")
 	assert.NotContains(t, message, "refusal")
+}
+
+func TestTransformChatBuildsDetailsWithoutInventingCacheWrites(t *testing.T) {
+	c := newFacadeTestContext(ProtocolChat, "kimi-k3")
+	input := []byte(`{
+		"id":"chatcmpl-upstream","object":"chat.completion","created":123,"model":"gpt-5",
+		"choices":[],
+		"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"cached_tokens":0}
+	}`)
+
+	output, err := TransformJSON(c, input)
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, common.Unmarshal(output, &payload))
+	usage, ok := payload["usage"].(map[string]any)
+	require.True(t, ok)
+	promptDetails, ok := usage["prompt_tokens_details"].(map[string]any)
+	require.True(t, ok)
+	assert.EqualValues(t, 0, promptDetails["cached_tokens"])
+	assert.NotContains(t, promptDetails, "cache_write_tokens")
 }
 
 func TestTransformResponsesNormalizesNestedStreamResponse(t *testing.T) {
@@ -217,7 +241,7 @@ func TestTransformMessagesUsesKimiCompatibleUsage(t *testing.T) {
 	input := `{
 		"type":"message_start",
 		"message":{"id":"msg_upstream","type":"message","role":"assistant","model":"gpt-5","content":[],
-		"usage":{"input_tokens":12,"output_tokens":4,"cache_read_input_tokens":3,"cache_creation_input_tokens":1,"output_tokens_details":{"thinking_tokens":2},"billing_usage":{"amount":1}}}
+		"usage":{"input_tokens":12,"output_tokens":4,"cache_read_input_tokens":3,"cache_creation_input_tokens":1,"claude_cache_creation_5_m_tokens":1,"claude_cache_creation_1_h_tokens":0,"output_tokens_details":{"thinking_tokens":2},"billing_usage":{"amount":1}}}
 	}`
 
 	output, err := TransformStreamData(c, input)
@@ -230,8 +254,14 @@ func TestTransformMessagesUsesKimiCompatibleUsage(t *testing.T) {
 	assert.Equal(t, "kimi-k3", message["model"])
 	usage, ok := message["usage"].(map[string]any)
 	require.True(t, ok)
-	assert.Len(t, usage, 5)
+	assert.Len(t, usage, 6)
 	assert.NotContains(t, usage, "billing_usage")
+	assert.NotContains(t, usage, "claude_cache_creation_5_m_tokens")
+	assert.NotContains(t, usage, "claude_cache_creation_1_h_tokens")
+	cacheCreation, ok := usage["cache_creation"].(map[string]any)
+	require.True(t, ok)
+	assert.EqualValues(t, 1, cacheCreation["ephemeral_5m_input_tokens"])
+	assert.EqualValues(t, 0, cacheCreation["ephemeral_1h_input_tokens"])
 	outputDetails, ok := usage["output_tokens_details"].(map[string]any)
 	require.True(t, ok)
 	assert.EqualValues(t, 2, outputDetails["thinking_tokens"])

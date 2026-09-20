@@ -103,6 +103,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#31](https://github.com/yeruyi1024/novamaas-workspace/pull/31) | 2026-09-20 | `feat` | 计费 / 财务核算 | 新增渠道级上游成本折扣、不可变成本快照与追加式调整、历史回填重算、财务核算权限，以及日志、首页和账单中的营业额、成本与利润视图；未配置成本折扣时按成本等于营业额处理。 | NovaMaaS 下游专属；上游当前没有将渠道成本配置、历史成本证据、权限隔离和利润报表组合起来，同时保持客户售价与钱包扣费不变的等价实现。 |
 | [#30](https://github.com/yeruyi1024/novamaas-workspace/pull/30) | 2026-09-18 | `fix` | 模型协议 / Moonshot 兼容 | 补齐 Kimi Chat `prompt_tokens_details`、Responses 缓存与推理明细，以及 Messages `cache_creation` 分档字段；区分缺失值与显式零值，不生成未知用量。 | #28 的下游兼容性补充；上游当前没有跨 OpenAI、Responses 与 Anthropic Messages 输出 Kimi 用量结构的等价实现；状态：长期维护。 |
 | [#28](https://github.com/yeruyi1024/novamaas-workspace/pull/28) | 2026-09-18 | `feat` | 模型协议 / Moonshot 兼容 | 新增同域名 `/moonshot` Chat Completions、Responses、Anthropic Messages 与模型列表入口，复用 OpenAI 上游并输出 Kimi 兼容结构；无法真实复现的 Kimi 专属语义明确拒绝。 | NovaMaaS 下游专属；上游当前没有以 OpenAI 渠道为数据源、按独立路径输出 Kimi 格式并拒绝伪造专属能力的等价实现；状态：长期维护。 |
 | [#26](https://github.com/yeruyi1024/novamaas-workspace/pull/26) | 2026-09-11 | `feat` | 视频任务 / 请求审计 | 为 DoubaoVideo、火山原生和阿里百炼分别归档客户端原始请求与实际上游请求，并在管理员日志详情中对照展示；Base64 暂存场景记录转换后的地址。 | NovaMaaS 下游专属；上游当前没有视频任务双请求快照、暂存后正文审计与管理员对照查看的等价实现。 |

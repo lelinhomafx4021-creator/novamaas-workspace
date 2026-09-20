@@ -44,6 +44,10 @@ type BillingMonthPreview struct {
 var ErrBillingHistoricalDataUnreconciled = errors.New("historical usage exists without formal billing entries; reconcile history before issuing a statement")
 
 func GetBillingMonthPreview(ctx context.Context, userID int, month string, storageProfileID int) (*BillingMonthPreview, error) {
+	return GetBillingMonthPreviewWithAccounting(ctx, userID, month, storageProfileID, false)
+}
+
+func GetBillingMonthPreviewWithAccounting(ctx context.Context, userID int, month string, storageProfileID int, includeAccounting bool) (*BillingMonthPreview, error) {
 	start, end, err := model.BillingMonthBounds(month)
 	if err != nil || start < 0 || start > common.GetTimestamp() {
 		return nil, errors.New("invalid billing month")
@@ -148,6 +152,18 @@ func GetBillingMonthPreview(ctx context.Context, userID int, month string, stora
 		readiness.Status = "blocked"
 	}
 	result.Readiness = readiness
+	if includeAccounting {
+		if result.Reference != nil && result.Reference.BillingSnapshot != nil {
+			if err := EnrichBillingSnapshotAccounting(result.Reference.BillingSnapshot, userID); err != nil {
+				return nil, err
+			}
+		}
+		if result.Formal != nil {
+			if err := EnrichBillingSnapshotAccounting(result.Formal, userID); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return result, nil
 }
 

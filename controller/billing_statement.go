@@ -73,7 +73,8 @@ func BillingDay(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := service.GetBillingDayContext(c.Request.Context(), id, c.Query("date"))
+	includeAccounting := canViewFinancialAccounting(c)
+	data, err := service.GetBillingDayContextWithAccounting(c.Request.Context(), id, c.Query("date"), includeAccounting)
 	if err != nil {
 		billingError(c, err)
 		return
@@ -135,7 +136,8 @@ func BillingMonthPreview(c *gin.Context) {
 		return
 	}
 	profileID, _ := strconv.Atoi(c.Query("storage_profile_id"))
-	data, err := service.GetBillingMonthPreview(c.Request.Context(), id, c.Query("month"), profileID)
+	includeAccounting := canViewFinancialAccounting(c)
+	data, err := service.GetBillingMonthPreviewWithAccounting(c.Request.Context(), id, c.Query("month"), profileID, includeAccounting)
 	if err != nil {
 		billingError(c, err)
 		return
@@ -269,7 +271,20 @@ func GetBillingStatement(c *gin.Context) {
 	}
 	customer := identities[statement.UserID]
 	customer.ID = statement.UserID // retain ownership even if a user was deleted
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"statement": statement, "customer": customer, "events": eventViews, "artifacts": artifacts, "detail_count": detailCount, "source_warning": warning}})
+	data := gin.H{"statement": statement, "customer": customer, "events": eventViews, "artifacts": artifacts, "detail_count": detailCount, "source_warning": warning}
+	if canViewFinancialAccounting(c) {
+		var accountingSnapshot service.BillingSnapshot
+		if err := common.UnmarshalJsonStr(statement.Snapshot, &accountingSnapshot); err != nil {
+			billingError(c, err)
+			return
+		}
+		if err := service.EnrichBillingSnapshotAccounting(&accountingSnapshot, statement.UserID); err != nil {
+			billingError(c, err)
+			return
+		}
+		data["accounting_snapshot"] = &accountingSnapshot
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
 func ActOnBillingStatement(c *gin.Context) {
 	statement, ok := authorizedBillingStatement(c)

@@ -24,10 +24,18 @@ import { useTranslation } from 'react-i18next'
 
 import { StaggerContainer, StaggerItem } from '@/components/page-transition'
 import { Button } from '@/components/ui/button'
-import { getUserQuotaDates } from '@/features/dashboard/api'
+import {
+  getFinancialAccountingSummary,
+  getUserQuotaDates,
+} from '@/features/dashboard/api'
 import { useSummaryCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
 import type { QuotaDataItem } from '@/features/dashboard/types'
 import { useStatus } from '@/hooks/use-status'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
 import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { computeTimeRange } from '@/lib/time'
@@ -35,6 +43,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { StatCard } from '../ui/stat-card'
+import { FinancialAccountingMetrics } from './financial-accounting-metrics'
 
 const SUMMARY_SPARKLINE_BUCKETS = 12
 
@@ -140,6 +149,11 @@ export function SummaryCards() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const { status, loading } = useStatus()
+  const canViewFinancialAccounting = hasPermission(
+    user,
+    ADMIN_PERMISSION_RESOURCES.FINANCIAL_ACCOUNTING,
+    ADMIN_PERMISSION_ACTIONS.VIEW
+  )
 
   const summaryTimeRange = useMemo(() => computeTimeRange(1), [])
   const remainQuota = Number(user?.quota ?? 0)
@@ -163,12 +177,21 @@ export function SummaryCards() {
     staleTime: 60 * 1000,
   })
 
-  const summaryValues = useMemo(() => {
-    return {
-      usedDisplay: formatQuota(usedQuota),
-      requestCountDisplay: formatNumber(requestCount),
-    }
-  }, [requestCount, usedQuota])
+  const financialAccountingQuery = useQuery({
+    queryKey: ['financial-accounting', 'overview'],
+    queryFn: getFinancialAccountingSummary,
+    enabled: canViewFinancialAccounting,
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
+  })
+  const financialAccountingSummary = financialAccountingQuery.data?.success
+    ? financialAccountingQuery.data.data
+    : null
+
+  const summaryValues = {
+    usedDisplay: formatQuota(usedQuota),
+    requestCountDisplay: formatNumber(requestCount),
+  }
 
   const currencyEnabledFromStore = isCurrencyDisplayEnabled()
   const statusCurrencyFlag =
@@ -306,42 +329,48 @@ export function SummaryCards() {
               {formatQuota(remainQuota)}
             </div>
 
-            <div className='grid grid-cols-2 gap-2'>
-              <div className='bg-background/60 rounded-lg px-2.5 py-2'>
-                <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
-                  <Flame className='size-3 shrink-0' aria-hidden='true' />
-                  <span className='truncate'>{t('Last 24h usage')}</span>
+            {canViewFinancialAccounting ? (
+              <FinancialAccountingMetrics
+                overview={financialAccountingSummary}
+              />
+            ) : (
+              <div className='grid grid-cols-2 gap-2'>
+                <div className='bg-background/60 rounded-lg px-2.5 py-2'>
+                  <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
+                    <Flame className='size-3 shrink-0' aria-hidden='true' />
+                    <span className='truncate'>{t('Last 24h usage')}</span>
+                  </div>
+                  <div className='text-foreground mt-1.5 truncate text-xs font-semibold tabular-nums'>
+                    {formatQuota(recentUsage)}
+                  </div>
                 </div>
-                <div className='text-foreground mt-1.5 truncate text-xs font-semibold tabular-nums'>
-                  {formatQuota(recentUsage)}
+                <div className='bg-background/60 rounded-lg px-2.5 py-2'>
+                  <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
+                    {runwayDays !== null && runwayDays < 3 ? (
+                      <TrendingDown
+                        className='size-3 shrink-0'
+                        aria-hidden='true'
+                      />
+                    ) : (
+                      <ShieldCheck
+                        className='size-3 shrink-0'
+                        aria-hidden='true'
+                      />
+                    )}
+                    <span className='truncate'>{t('Runway')}</span>
+                  </div>
+                  <div
+                    className={cn(
+                      'mt-1.5 truncate text-xs font-semibold tabular-nums',
+                      healthLevel === 'critical' && 'text-destructive',
+                      healthLevel === 'caution' && 'text-warning'
+                    )}
+                  >
+                    {runwayDisplay}
+                  </div>
                 </div>
               </div>
-              <div className='bg-background/60 rounded-lg px-2.5 py-2'>
-                <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
-                  {runwayDays !== null && runwayDays < 3 ? (
-                    <TrendingDown
-                      className='size-3 shrink-0'
-                      aria-hidden='true'
-                    />
-                  ) : (
-                    <ShieldCheck
-                      className='size-3 shrink-0'
-                      aria-hidden='true'
-                    />
-                  )}
-                  <span className='truncate'>{t('Runway')}</span>
-                </div>
-                <div
-                  className={cn(
-                    'mt-1.5 truncate text-xs font-semibold tabular-nums',
-                    healthLevel === 'critical' && 'text-destructive',
-                    healthLevel === 'caution' && 'text-warning'
-                  )}
-                >
-                  {runwayDisplay}
-                </div>
-              </div>
-            </div>
+            )}
           </div>
 
           <Button className='justify-between' render={<Link to='/wallet' />}>

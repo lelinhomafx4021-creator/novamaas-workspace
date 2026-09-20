@@ -50,6 +50,10 @@ type Channel struct {
 	ParamOverride     *string `json:"param_override" gorm:"type:text"`
 	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
 	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	// CostDiscount is an accounting-only multiplier applied to the upstream
+	// cost basis. It never participates in the customer-facing quota charge.
+	// A string keeps the configured decimal exact across JSON and SQL drivers.
+	CostDiscount string `json:"cost_discount" gorm:"type:varchar(16)"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -539,7 +543,7 @@ func (channel *Channel) Insert() error {
 	return err
 }
 
-func (channel *Channel) Update() error {
+func (channel *Channel) update(clearCostDiscount bool) error {
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -579,13 +583,32 @@ func (channel *Channel) Update() error {
 		}
 	}
 	var err error
-	err = DB.Model(channel).Updates(channel).Error
+	if clearCostDiscount {
+		err = DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(channel).Updates(channel).Error; err != nil {
+				return err
+			}
+			return tx.Model(channel).Update("cost_discount", channel.CostDiscount).Error
+		})
+	} else {
+		err = DB.Model(channel).Updates(channel).Error
+	}
 	if err != nil {
 		return err
 	}
 	DB.Model(channel).First(channel, "id = ?", channel.Id)
 	err = channel.UpdateAbilities(nil)
 	return err
+}
+
+func (channel *Channel) Update() error {
+	return channel.update(false)
+}
+
+// UpdateClearingCostDiscount persists the empty cost discount that GORM's
+// struct update would otherwise omit.
+func (channel *Channel) UpdateClearingCostDiscount() error {
+	return channel.update(true)
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {

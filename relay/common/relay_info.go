@@ -66,6 +66,7 @@ type ChannelMeta struct {
 	ApiKey               string
 	Organization         string
 	ChannelCreateTime    int64
+	CostDiscount         string
 	ParamOverride        map[string]interface{}
 	HeadersOverride      map[string]interface{}
 	ChannelSetting       dto.ChannelSettings
@@ -201,6 +202,7 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		ApiKey:               common.GetContextKeyString(c, constant.ContextKeyChannelKey),
 		Organization:         c.GetString("channel_organization"),
 		ChannelCreateTime:    c.GetInt64("channel_create_time"),
+		CostDiscount:         common.GetContextKeyString(c, constant.ContextKeyChannelCostDiscount),
 		ParamOverride:        paramOverride,
 		HeadersOverride:      headerOverride,
 		UpstreamModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),

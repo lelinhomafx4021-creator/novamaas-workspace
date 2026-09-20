@@ -39,6 +39,8 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 	task.Quota = 0
 	task.TokenId = 0
 	task.BillingChannelId = 0
+	task.BillingGroupRatio = 0
+	task.BillingCostDiscount = ""
 	if !shouldBill {
 		return false, nil
 	}
@@ -51,9 +53,15 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 	if relayInfo.BillingSource == BillingSourceSubscription {
 		return false, errors.New("legacy Midjourney billing does not support subscriptions")
 	}
+	costDiscount, err := model.NormalizeCostDiscount(relayInfo.CostDiscount)
+	if err != nil {
+		return false, err
+	}
 
 	task.Quota = quota
 	task.BillingChannelId = task.ChannelId
+	task.BillingGroupRatio = relayInfo.PriceData.GroupRatioInfo.GroupRatio
+	task.BillingCostDiscount = costDiscount
 	if relayInfo.ChannelMeta != nil && relayInfo.ChannelId > 0 {
 		task.BillingChannelId = relayInfo.ChannelId
 	}
@@ -122,6 +130,13 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	billingChannelId := task.GetBillingChannelId()
 	model.UpdateUserUsedQuota(task.UserId, -quota)
 	model.UpdateChannelUsedQuota(billingChannelId, -quota)
+	other := map[string]interface{}{
+		"task_id": task.MjId,
+		"reason":  reason,
+	}
+	if task.BillingGroupRatio > 0 {
+		other["group_ratio"] = task.BillingGroupRatio
+	}
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
 		LogType:   model.LogTypeRefund,
@@ -130,10 +145,13 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 		ModelName: CovertMjpActionToModelName(task.Action),
 		Quota:     quota,
 		TokenId:   task.TokenId,
-		Other: map[string]interface{}{
-			"task_id": task.MjId,
-			"reason":  reason,
-		},
+		Other:     other,
+		CostAccounting: buildSaleCostAccountingInput(
+			model.LogTypeRefund,
+			quota,
+			task.BillingGroupRatio,
+			task.BillingCostDiscount,
+		),
 	})
 
 	task.Quota = 0

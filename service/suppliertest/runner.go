@@ -523,19 +523,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 
 	if wanted[CheckKimiKVV] {
 		emitCheck(CheckKimiKVV, "running", "")
-		kvvReq := chat
-		kvvReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVPrompt}}
-		kvvReq.Tools = kimiKVVTools()
-		if profile.id == VendorKimi {
-			kvvReq.ReasoningEffort = "low"
-		}
-		kvvRes := streamChat(ctx, httpClient, endpoint, req.APIKey, kvvReq, 60*time.Second, nil)
-		if (kvvRes.StatusCode != http.StatusOK || kvvRes.ErrorMessage != "") && kvvReq.ReasoningEffort != "" {
-			fallbackReq := kvvReq
-			fallbackReq.ReasoningEffort = ""
-			kvvRes = streamChat(ctx, httpClient, endpoint, req.APIKey, fallbackReq, 60*time.Second, nil)
-		}
-		status, message := validateKimiKVVResult(kvvRes)
+		status, message := runStrictKimiKVV(ctx, httpClient, endpoint, req.APIKey, chat, profile.id)
 		if profile.id != VendorKimi && status != "pass" {
 			status = "skip"
 			message = "非 Kimi 供应商未通过 KVV 严格认证（已跳过）：" + message
@@ -578,6 +566,72 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		Module:  ModuleBasic,
 		Summary: summary,
 	})
+}
+
+func runStrictKimiKVV(
+	ctx context.Context,
+	httpClient *http.Client,
+	endpoint string,
+	apiKey string,
+	baseChat chatRequest,
+	vendor string,
+) (string, string) {
+	// 阶段 1：正向复合 Schema 严格校验
+	flightReq := baseChat
+	flightReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVFlightPrompt}}
+	flightReq.Tools = kimiKVVTools()
+	if vendor == VendorKimi {
+		flightReq.ReasoningEffort = "low"
+	}
+	flightRes := streamChat(ctx, httpClient, endpoint, apiKey, flightReq, 60*time.Second, nil)
+	if (flightRes.StatusCode != http.StatusOK || flightRes.ErrorMessage != "") && flightReq.ReasoningEffort != "" {
+		fallbackReq := flightReq
+		fallbackReq.ReasoningEffort = ""
+		flightRes = streamChat(ctx, httpClient, endpoint, apiKey, fallbackReq, 60*time.Second, nil)
+	}
+	if status, msg := validateKimiKVVFlightResult(flightRes); status != "pass" {
+		return status, msg
+	}
+
+	// 阶段 2：负向对抗拒调校验 (防工具滥用与强调工具幻觉)
+	negReq := baseChat
+	negReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVNegativePrompt}}
+	negReq.Tools = kimiKVVTools()
+	if flightRes.Reasoning != "" && vendor == VendorKimi {
+		negReq.ReasoningEffort = "low"
+	}
+	negRes := streamChat(ctx, httpClient, endpoint, apiKey, negReq, 60*time.Second, nil)
+	if (negRes.StatusCode != http.StatusOK || negRes.ErrorMessage != "") && negReq.ReasoningEffort != "" {
+		fallbackReq := negReq
+		fallbackReq.ReasoningEffort = ""
+		negRes = streamChat(ctx, httpClient, endpoint, apiKey, fallbackReq, 60*time.Second, nil)
+	}
+	if status, msg := validateKimiKVVNegativeResult(negRes); status != "pass" {
+		return status, msg
+	}
+
+	// 阶段 3：多工具歧义消解与精准路由校验
+	hotelReq := baseChat
+	hotelReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVHotelPrompt}}
+	hotelReq.Tools = kimiKVVTools()
+	if flightRes.Reasoning != "" && vendor == VendorKimi {
+		hotelReq.ReasoningEffort = "low"
+	}
+	hotelRes := streamChat(ctx, httpClient, endpoint, apiKey, hotelReq, 60*time.Second, nil)
+	if (hotelRes.StatusCode != http.StatusOK || hotelRes.ErrorMessage != "") && hotelReq.ReasoningEffort != "" {
+		fallbackReq := hotelReq
+		fallbackReq.ReasoningEffort = ""
+		hotelRes = streamChat(ctx, httpClient, endpoint, apiKey, fallbackReq, 60*time.Second, nil)
+	}
+	if status, msg := validateKimiKVVHotelResult(hotelRes); status != "pass" {
+		return status, msg
+	}
+
+	fullMsg := "KVV 严苛认证全部通过：① 正向复合 Schema 100% 合规；② 负向拒调工具 0 幻觉；③ 多工具歧义路由精准命中 book_hotel；各阶段 finish_reason 均合规"
+	if flightRes.Reasoning != "" || flightRes.ReasoningTokens > 0 {
+		fullMsg += "，包含 Moonshot 流式思维链"
+	}
+	return "pass", fullMsg
 }
 
 func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req RunRequest, emit Emitter) {

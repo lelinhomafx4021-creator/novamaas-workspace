@@ -35,7 +35,6 @@ import type {
   StressMetrics,
 } from './types'
 
-export { isInformationalRow }
 
 export type StressConfig = {
   concurrency: number

@@ -18,12 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { assessCache, assessStress, getStandard } from './baselines'
+import {
+  assessCache,
+  assessStress,
+  getStandard,
+  isInformationalRow,
+} from './baselines'
 import {
   buildHtmlReport,
   buildMarkdownReport,
   formatTokenCompact,
-  isInformationalRow,
   type ReportInput,
 } from './report'
 import type { CacheMetrics, CheckResult, StressMetrics } from './types'

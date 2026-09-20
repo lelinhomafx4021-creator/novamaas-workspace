@@ -42,6 +42,21 @@ export type MetricRow = {
   group?: MetricGroup
 }
 
+export const INFORMATIONAL_ROW_IDS = new Set([
+  'duration',
+  'tokens',
+  'tps',
+  'rpm',
+  'tpm',
+  'cache_mode',
+  'hit_frequency',
+  'hit_depth',
+])
+
+export function isInformationalRow(row: MetricRow): boolean {
+  return INFORMATIONAL_ROW_IDS.has(row.id)
+}
+
 export type SupplierStandard = {
   id: string
   labelKey: string

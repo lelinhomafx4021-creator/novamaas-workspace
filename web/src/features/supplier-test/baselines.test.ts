@@ -24,6 +24,7 @@ import {
   assessmentGroup,
   assessStress,
   getStandard,
+  isInformationalRow,
   matchingStandardId,
   overallLabel,
   sanitizeStandard,
@@ -244,6 +245,22 @@ describe('supplier-test verdicts', () => {
     expect(depthRow).toBeDefined()
     expect(depthRow?.measured).toBe('95.0%')
     expect(depthRow?.verdict).toBe('na')
+  })
+
+  test('filters informational rows so SLA benchmark tables have zero Cannot compare verdicts', () => {
+    const stressAss = assessStress(stress({}))
+    const benchmarkRows = stressAss.rows.filter((row) => !isInformationalRow(row))
+    expect(benchmarkRows.every((row) => row.verdict !== 'na')).toBe(true)
+    expect(benchmarkRows.map((r) => r.id)).toEqual([
+      'error_rate',
+      'success',
+      'ttft_avg',
+      'ttft_p50',
+      'ttft_p90',
+      'tpot_avg',
+      'tpot_p50',
+      'tpot_p90',
+    ])
   })
 
   test('built-in corpora show a token estimate', () => {

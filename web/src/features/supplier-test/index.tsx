@@ -68,12 +68,12 @@ import { fetchSupplierModels } from './api'
 import {
   applyStandardEditorValue,
   assessCache,
-  assessmentGroup,
   assessStress,
   DEFAULT_STANDARD,
   displayMeasured,
   displayThreshold,
   getStandard,
+  isInformationalRow,
   matchingStandardId,
   overallLabel,
   sanitizeStandard,
@@ -388,6 +388,16 @@ export function SupplierTest() {
     cacheAssessment,
     errorMessage: run.errorMessage,
     statusLabel,
+    stressConfig: {
+      concurrency: stress.concurrency,
+      rounds: stress.rounds,
+      stream: stress.stream,
+      breakCache: stress.breakCache,
+      maxTokens: stress.maxTokens,
+      corpus: stress.corpus,
+    },
+    stressMetrics: run.metrics,
+    cacheMetrics: run.cacheMetrics,
     t: (key, options) => t(key, options),
   })
 
@@ -840,7 +850,7 @@ export function SupplierTest() {
             </div>
             {cacheAssessment && cacheAssessment.rows.length > 0 ? (
               <AssessmentTable
-                title={t('Deep · performance')}
+                title={t('Prompt cache assessment')}
                 assessment={cacheAssessment}
               />
             ) : null}
@@ -1002,16 +1012,10 @@ export function SupplierTest() {
               </p>
             ) : null}
             {stressAssessment ? (
-              <>
-                <AssessmentTable
-                  title={t('Shallow · connectivity')}
-                  assessment={assessmentGroup(stressAssessment, 'shallow')}
-                />
-                <AssessmentTable
-                  title={t('Deep · performance')}
-                  assessment={assessmentGroup(stressAssessment, 'perf')}
-                />
-              </>
+              <AssessmentTable
+                title={t('Stress test assessment')}
+                assessment={stressAssessment}
+              />
             ) : null}
               </TabsContent>
             </TitledCard>
@@ -1442,7 +1446,8 @@ function verdictClass(verdict: Verdict): string {
 
 function AssessmentTable(props: { assessment: Assessment; title?: string }) {
   const { t } = useTranslation()
-  if (props.assessment.rows.length === 0) return null
+  const rows = props.assessment.rows.filter((row) => !isInformationalRow(row))
+  if (rows.length === 0) return null
   return (
     <div className='mt-4 space-y-2 overflow-x-auto'>
       {props.title ? (
@@ -1461,7 +1466,7 @@ function AssessmentTable(props: { assessment: Assessment; title?: string }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {props.assessment.rows.map((row) => (
+          {rows.map((row) => (
             <TableRow key={row.id}>
               <TableCell className='whitespace-nowrap'>{t(row.label)}</TableCell>
               <TableCell className='font-medium whitespace-nowrap'>

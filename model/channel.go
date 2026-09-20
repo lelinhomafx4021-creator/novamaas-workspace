@@ -991,6 +991,30 @@ func (channel *Channel) ValidateSettings() error {
 	if err := channelParams.ValidateHTTPTransport(); err != nil {
 		return err
 	}
+	if err := channelParams.ValidateMoonshotFacadeMode(); err != nil {
+		return err
+	}
+	if channelParams.IsMoonshotKimiPassthrough() {
+		if channel.Type != constant.ChannelTypeOpenAI {
+			return fmt.Errorf("kimi passthrough is only supported by OpenAI channels")
+		}
+		if channelParams.ForceFormat || channelParams.ThinkingToContent ||
+			channelParams.SystemPromptOverride || strings.TrimSpace(channelParams.SystemPrompt) != "" {
+			return fmt.Errorf("kimi passthrough cannot be combined with request or response rewriting settings")
+		}
+		if channel.ParamOverride != nil {
+			value := strings.TrimSpace(*channel.ParamOverride)
+			if value != "" && value != "{}" && value != "null" {
+				return fmt.Errorf("kimi passthrough cannot be combined with parameter overrides")
+			}
+		}
+		if channel.StatusCodeMapping != nil {
+			value := strings.TrimSpace(*channel.StatusCodeMapping)
+			if value != "" && value != "{}" && value != "null" {
+				return fmt.Errorf("kimi passthrough cannot be combined with status code mapping")
+			}
+		}
+	}
 	channelOtherSettings := &dto.ChannelOtherSettings{}
 	if channel.OtherSettings != "" {
 		err := common.UnmarshalJsonStr(channel.OtherSettings, channelOtherSettings)

@@ -41,6 +41,66 @@ func TestChannelValidateSettingsRejectsInvalidHTTPTransport(t *testing.T) {
 	}
 }
 
+func TestChannelValidateSettingsKimiPassthroughContract(t *testing.T) {
+	nonEmpty := `{"temperature":1}`
+	tests := []struct {
+		name          string
+		channelType   int
+		setting       dto.ChannelSettings
+		paramOverride *string
+		wantErr       string
+	}{
+		{
+			name:        "OpenAI channel accepts passthrough",
+			channelType: constant.ChannelTypeOpenAI,
+			setting:     dto.ChannelSettings{MoonshotFacadeMode: dto.MoonshotFacadeModeKimiPassthrough},
+		},
+		{
+			name:        "unknown mode rejected",
+			channelType: constant.ChannelTypeOpenAI,
+			setting:     dto.ChannelSettings{MoonshotFacadeMode: "native"},
+			wantErr:     "moonshot_facade_mode",
+		},
+		{
+			name:        "non OpenAI channel rejected",
+			channelType: constant.ChannelTypeAnthropic,
+			setting:     dto.ChannelSettings{MoonshotFacadeMode: dto.MoonshotFacadeModeKimiPassthrough},
+			wantErr:     "only supported by OpenAI channels",
+		},
+		{
+			name:        "response rewriting rejected",
+			channelType: constant.ChannelTypeOpenAI,
+			setting: dto.ChannelSettings{
+				MoonshotFacadeMode: dto.MoonshotFacadeModeKimiPassthrough,
+				ForceFormat:        true,
+			},
+			wantErr: "request or response rewriting",
+		},
+		{
+			name:          "parameter overrides rejected",
+			channelType:   constant.ChannelTypeOpenAI,
+			setting:       dto.ChannelSettings{MoonshotFacadeMode: dto.MoonshotFacadeModeKimiPassthrough},
+			paramOverride: &nonEmpty,
+			wantErr:       "parameter overrides",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channel := &Channel{Type: tt.channelType, ParamOverride: tt.paramOverride}
+			channel.SetSetting(tt.setting)
+
+			err := channel.ValidateSettings()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestChannelValidateSettingsRejectsInvalidVideoContentDeliveryMode(t *testing.T) {
 	channel := &Channel{Type: constant.ChannelTypeDoubaoVideo}
 	channel.SetOtherSettings(dto.ChannelOtherSettings{

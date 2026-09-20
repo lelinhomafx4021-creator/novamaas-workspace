@@ -71,8 +71,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 	adaptor.Init(info)
 
-	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled && !moonshotfacade.Enabled(c)
-	passThroughChannel := info.ChannelSetting.PassThroughBodyEnabled && !moonshotfacade.Enabled(c)
+	moonshotEnabled := moonshotfacade.Enabled(c)
+	kimiPassthrough := moonshotfacade.KimiPassthroughEnabled(c)
+	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled && !moonshotEnabled
+	passThroughChannel := (info.ChannelSetting.PassThroughBodyEnabled && !moonshotEnabled) || kimiPassthrough
 	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
 		!passThroughGlobal &&
 		!passThroughChannel &&
@@ -106,7 +108,24 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				logger.LogDebug(c, "requestBody: %s", debugBytes)
 			}
 		}
-		requestBody = common.NewReplayableBodyReader(storage)
+		if kimiPassthrough && info.IsModelMapped {
+			rawBody, err := storage.Bytes()
+			if err != nil {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
+			mappedBody, err := helper.ApplyModelMappingToJSONBody(info, rawBody)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
+			}
+			body, closer, err := relaycommon.NewOutboundJSONBody(mappedBody)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			defer closer.Close()
+			requestBody = body
+		} else {
+			requestBody = common.NewReplayableBodyReader(storage)
+		}
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIRequest(c, info, request)
 		if err != nil {
@@ -155,6 +174,9 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
+	if kimiPassthrough {
+		statusCodeMappingStr = ""
+	}
 
 	if resp != nil {
 		httpResp = resp.(*http.Response)

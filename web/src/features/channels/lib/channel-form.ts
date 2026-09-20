@@ -78,6 +78,16 @@ function isOptionalProxyURL(value: string | undefined): boolean {
 export const HTTP_PROTOCOL_AUTO = 'auto'
 export const HTTP_PROTOCOL_HTTP1 = 'http1'
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
+export const MOONSHOT_FACADE_MODE_EMULATE = 'emulate'
+export const MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH = 'kimi_passthrough'
+
+export function normalizeMoonshotFacadeMode(
+  value: string | undefined | null
+): 'emulate' | 'kimi_passthrough' {
+  return value === MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH
+    ? MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH
+    : MOONSHOT_FACADE_MODE_EMULATE
+}
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -274,6 +284,7 @@ export const channelFormSchema = z
     http_protocol: z.enum(['auto', 'http1']).optional(),
     http2_connection_shards: z.number().int().optional(),
     pass_through_body_enabled: z.boolean().optional(),
+    moonshot_facade_mode: z.enum(['emulate', 'kimi_passthrough']).optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
     // Type-specific settings (stored in settings JSON)
@@ -450,6 +461,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
   pass_through_body_enabled: false,
+  moonshot_facade_mode: MOONSHOT_FACADE_MODE_EMULATE,
   system_prompt: '',
   system_prompt_override: false,
   // Type-specific settings
@@ -493,6 +505,9 @@ export function transformChannelToFormDefaults(
     http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
     http2_connection_shards: 1,
     pass_through_body_enabled: false,
+    moonshot_facade_mode: MOONSHOT_FACADE_MODE_EMULATE as
+      | 'emulate'
+      | 'kimi_passthrough',
     system_prompt: '',
     system_prompt_override: false,
   }
@@ -511,6 +526,9 @@ export function transformChannelToFormDefaults(
         http_protocol: protocol,
         http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
+        moonshot_facade_mode: normalizeMoonshotFacadeMode(
+          parsed.moonshot_facade_mode
+        ),
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
       }
@@ -656,6 +674,10 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     settingObj.http_protocol = HTTP_PROTOCOL_HTTP1
   } else if (shards > 1) {
     settingObj.http2_connection_shards = shards
+  }
+
+  if (formData.moonshot_facade_mode === MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH) {
+    settingObj.moonshot_facade_mode = MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH
   }
 
   return JSON.stringify(settingObj)

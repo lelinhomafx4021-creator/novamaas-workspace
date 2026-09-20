@@ -11,6 +11,8 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type Protocol string
@@ -100,10 +102,21 @@ func IsMoonshotModel(model string) bool {
 	return strings.HasPrefix(model, "kimi-") || strings.HasPrefix(model, "moonshot-")
 }
 
+// KimiPassthroughEnabled reports whether the selected OpenAI channel should
+// preserve Kimi-specific Chat Completions fields on the Moonshot facade.
+// Other Moonshot protocols continue to use compatibility emulation.
+func KimiPassthroughEnabled(c *gin.Context) bool {
+	if !Enabled(c) || ActiveProtocol(c) != ProtocolChat {
+		return false
+	}
+	setting, ok := common.GetContextKeyType[dto.ChannelSettings](c, constant.ContextKeyChannelSetting)
+	return ok && setting.IsMoonshotKimiPassthrough()
+}
+
 // NormalizeRequest removes supported facade-only markers before the request is
 // sent to an OpenAI-compatible upstream and rejects Kimi-only behavior that the
 // upstream cannot reproduce faithfully.
-func NormalizeRequest(relayFormat types.RelayFormat, request dto.Request) error {
+func NormalizeRequest(c *gin.Context, relayFormat types.RelayFormat, request dto.Request) error {
 	if request == nil {
 		return nil
 	}
@@ -118,6 +131,9 @@ func NormalizeRequest(relayFormat types.RelayFormat, request dto.Request) error 
 	}
 	if !IsMoonshotModel(modelName) {
 		return fmt.Errorf("model %q is not available through the Moonshot compatibility endpoint", modelName)
+	}
+	if KimiPassthroughEnabled(c) {
+		return nil
 	}
 
 	switch relayFormat {
@@ -210,6 +226,9 @@ func TransformJSON(c *gin.Context, data []byte) ([]byte, error) {
 	if !Enabled(c) || len(data) == 0 {
 		return data, nil
 	}
+	if KimiPassthroughEnabled(c) {
+		return restorePublicModel(c, data)
+	}
 
 	switch ActiveProtocol(c) {
 	case ProtocolChat:
@@ -226,6 +245,13 @@ func TransformJSON(c *gin.Context, data []byte) ([]byte, error) {
 func TransformStreamData(c *gin.Context, data string) (string, error) {
 	if !Enabled(c) || data == "" || data == "[DONE]" {
 		return data, nil
+	}
+	if KimiPassthroughEnabled(c) {
+		transformed, err := restorePublicModel(c, common.StringToByteSlice(data))
+		if err != nil {
+			return "", err
+		}
+		return string(transformed), nil
 	}
 
 	var (
@@ -246,6 +272,22 @@ func TransformStreamData(c *gin.Context, data string) (string, error) {
 		return "", err
 	}
 	return string(transformed), nil
+}
+
+func restorePublicModel(c *gin.Context, data []byte) ([]byte, error) {
+	modelMapped, ok := common.GetContextKeyType[bool](c, constant.ContextKeyChannelModelMapped)
+	if !ok || !modelMapped {
+		return data, nil
+	}
+	originalModel := strings.TrimSpace(common.GetContextKeyString(c, constant.ContextKeyOriginalModel))
+	if originalModel == "" || !gjson.GetBytes(data, "model").Exists() {
+		return data, nil
+	}
+	restored, err := sjson.SetBytes(data, "model", originalModel)
+	if err != nil {
+		return nil, fmt.Errorf("restore public model: %w", err)
+	}
+	return restored, nil
 }
 
 type sourceEnvelope struct {

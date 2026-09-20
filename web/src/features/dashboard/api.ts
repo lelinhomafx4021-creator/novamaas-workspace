@@ -51,6 +51,31 @@ export async function getUserQuotaDates(
   return res.data
 }
 
+export interface FinancialAccountingPeriodSummary {
+  start_timestamp: number
+  end_timestamp: number
+  revenue_quota: number
+  cost_quota: number
+  profit_quota: number | null
+  usage_records: number
+  cost_records: number
+  missing_cost_records: number
+  accounting_complete: boolean
+}
+
+export interface FinancialAccountingOverview {
+  today: FinancialAccountingPeriodSummary
+  yesterday: FinancialAccountingPeriodSummary
+}
+
+export async function getFinancialAccountingSummary() {
+  const res = await api.get<{
+    success: boolean
+    data: FinancialAccountingOverview
+  }>('/api/financial-accounting/summary')
+  return res.data
+}
+
 // ----------------------------------------------------------------------------
 // System Monitoring
 // ----------------------------------------------------------------------------

@@ -354,6 +354,7 @@ type RecordConsumeLogParams struct {
 	IsStream         bool                   `json:"is_stream"`
 	Group            string                 `json:"group"`
 	Other            map[string]interface{} `json:"other"`
+	CostAccounting   *CostAccountingInput   `json:"-"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -402,9 +403,10 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	err := createLog(log)
-	if err != nil {
+	if err := createLog(log); err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	} else if err := RecordCostAccountingSnapshot(log, params.CostAccounting); err != nil {
+		logger.LogError(c, "failed to record cost accounting snapshot: "+err.Error())
 	}
 	if common.DataExportEnabled {
 		LogQuotaData(QuotaDataLogParams{
@@ -423,16 +425,17 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 }
 
 type RecordTaskBillingLogParams struct {
-	UserId    int
-	LogType   int
-	Content   string
-	ChannelId int
-	ModelName string
-	Quota     int
-	TokenId   int
-	Group     string
-	Other     map[string]interface{}
-	NodeName  string // 任务发起节点；为空时回退当前节点
+	UserId         int
+	LogType        int
+	Content        string
+	ChannelId      int
+	ModelName      string
+	Quota          int
+	TokenId        int
+	Group          string
+	Other          map[string]interface{}
+	NodeName       string // 任务发起节点；为空时回退当前节点
+	CostAccounting *CostAccountingInput
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -461,9 +464,10 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		Group:     params.Group,
 		Other:     common.MapToJsonStr(params.Other),
 	}
-	err := createLog(log)
-	if err != nil {
+	if err := createLog(log); err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
+	} else if err := RecordCostAccountingSnapshot(log, params.CostAccounting); err != nil {
+		common.SysLog("failed to record task cost accounting snapshot: " + err.Error())
 	}
 	if params.LogType == LogTypeConsume && common.DataExportEnabled {
 		nodeName := params.NodeName
@@ -632,93 +636,120 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	return logs, total, err
 }
 
-type Stat struct {
-	Quota int `json:"quota"`
-	Rpm   int `json:"rpm"`
-	Tpm   int `json:"tpm"`
+type LogStatistics struct {
+	Quota        int64 `json:"quota"`
+	RefundQuota  int64 `json:"refund_quota"`
+	RevenueQuota int64 `json:"revenue_quota"`
+	Records      int64 `json:"records"`
+	Rpm          int   `json:"rpm"`
+	Tpm          int   `json:"tpm"`
 }
 
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
-	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
+func applyLogStatisticsFilter(tx *gorm.DB, filter CostAccountingFilter) (*gorm.DB, error) {
+	if filter.StartTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", filter.StartTimestamp)
+	}
+	if filter.EndTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", filter.EndTimestamp)
+	}
+	if filter.UserID != 0 {
+		tx = tx.Where("user_id = ?", filter.UserID)
+	}
+	var err error
+	if tx, err = applyExplicitLogTextFilter(tx, "username", filter.Username); err != nil {
+		return nil, err
+	}
+	if filter.TokenName != "" {
+		tx = tx.Where("token_name = ?", filter.TokenName)
+	}
+	if tx, err = applyExplicitLogTextFilter(tx, "model_name", filter.ModelName); err != nil {
+		return nil, err
+	}
+	if filter.ChannelID != 0 {
+		tx = tx.Where("channel_id = ?", filter.ChannelID)
+	}
+	if len(filter.channelIDs) > 0 {
+		tx = tx.Where("channel_id IN ?", filter.channelIDs)
+	}
+	if filter.Group != "" {
+		tx = tx.Where(logGroupCol+" = ?", filter.Group)
+	}
+	if filter.LogType != LogTypeUnknown {
+		tx = tx.Where("type = ?", filter.LogType)
+	}
+	if filter.RequestID != "" {
+		tx = tx.Where("request_id = ?", filter.RequestID)
+	}
+	if filter.UpstreamRequestID != "" {
+		tx = tx.Where("upstream_request_id = ?", filter.UpstreamRequestID)
+	}
+	return tx, nil
+}
 
-	// 为rpm和tpm创建单独的查询
-	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm")
-
-	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
-		return stat, err
+func sumLogFinancialStatistics(filter CostAccountingFilter) (LogStatistics, error) {
+	var statistics LogStatistics
+	totalsQuery, err := applyLogStatisticsFilter(LOG_DB.Table("logs"), filter)
+	if err != nil {
+		return statistics, err
 	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "username", username); err != nil {
-		return stat, err
-	}
-	if tokenName != "" {
-		tx = tx.Where("token_name = ?", tokenName)
-		rpmTpmQuery = rpmTpmQuery.Where("token_name = ?", tokenName)
-	}
-	if startTimestamp != 0 {
-		tx = tx.Where("created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("created_at <= ?", endTimestamp)
-	}
-	if tx, err = applyExplicitLogTextFilter(tx, "model_name", modelName); err != nil {
-		return stat, err
-	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "model_name", modelName); err != nil {
-		return stat, err
-	}
-	if channel != 0 {
-		tx = tx.Where("channel_id = ?", channel)
-		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)
-	}
-	if group != "" {
-		tx = tx.Where(logGroupCol+" = ?", group)
-		rpmTpmQuery = rpmTpmQuery.Where(logGroupCol+" = ?", group)
-	}
-
-	tx = tx.Where("type = ?", LogTypeConsume)
-	rpmTpmQuery = rpmTpmQuery.Where("type = ?", LogTypeConsume)
-
-	// 只统计最近60秒的rpm和tpm
-	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix())
-
-	// 执行查询
-	if err := tx.Scan(&stat).Error; err != nil {
+	if err := totalsQuery.Select(`
+		COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS quota,
+		COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS refund_quota,
+		COALESCE(SUM(CASE WHEN type IN (?, ?) THEN 1 ELSE 0 END), 0) AS records`,
+		LogTypeConsume, LogTypeRefund, LogTypeConsume, LogTypeRefund,
+	).Scan(&statistics).Error; err != nil {
 		common.SysError("failed to query log stat: " + err.Error())
-		return stat, errors.New("查询统计数据失败")
+		return statistics, errors.New("查询统计数据失败")
 	}
-	var rateStat struct {
+	statistics.RevenueQuota = statistics.Quota - statistics.RefundQuota
+	return statistics, nil
+}
+
+func SumLogStatistics(filter CostAccountingFilter) (LogStatistics, error) {
+	statistics, err := sumLogFinancialStatistics(filter)
+	if err != nil {
+		return statistics, err
+	}
+
+	rateQuery, err := applyLogStatisticsFilter(LOG_DB.Table("logs"), filter)
+	if err != nil {
+		return statistics, err
+	}
+	rateQuery = rateQuery.
+		Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm").
+		Where("type = ?", LogTypeConsume).
+		Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix())
+	var rateStatistics struct {
 		Rpm int
 		Tpm int
 	}
-	if err := rpmTpmQuery.Scan(&rateStat).Error; err != nil {
+	if err := rateQuery.Scan(&rateStatistics).Error; err != nil {
 		common.SysError("failed to query rpm/tpm stat: " + err.Error())
-		return stat, errors.New("查询统计数据失败")
+		return statistics, errors.New("查询统计数据失败")
 	}
-	stat.Rpm = rateStat.Rpm
-	stat.Tpm = rateStat.Tpm
-
-	return stat, nil
+	statistics.Rpm = rateStatistics.Rpm
+	statistics.Tpm = rateStatistics.Tpm
+	return statistics, nil
 }
 
-func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {
-	tx := LOG_DB.Table("logs").Select("COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0)")
-	if username != "" {
-		tx = tx.Where("username = ?", username)
+func sumLogAccountingBuckets(filter CostAccountingFilter, bucketSeconds, offsetSeconds int64) ([]CostAccountingBucket, error) {
+	if bucketSeconds <= 0 {
+		return nil, errors.New("invalid accounting bucket size")
 	}
-	if tokenName != "" {
-		tx = tx.Where("token_name = ?", tokenName)
+	bucketExpr := "CAST((created_at + ?) / ? AS BIGINT) * ? - ?"
+	if common.UsingLogDatabase(common.DatabaseTypeMySQL) {
+		bucketExpr = "((created_at + ?) DIV ?) * ? - ?"
 	}
-	if startTimestamp != 0 {
-		tx = tx.Where("created_at >= ?", startTimestamp)
+	query, err := applyLogStatisticsFilter(LOG_DB.Table("logs"), filter)
+	if err != nil {
+		return nil, err
 	}
-	if endTimestamp != 0 {
-		tx = tx.Where("created_at <= ?", endTimestamp)
-	}
-	if modelName != "" {
-		tx = tx.Where("model_name = ?", modelName)
-	}
-	tx.Where("type = ?", LogTypeConsume).Scan(&token)
-	return token
+	buckets := make([]CostAccountingBucket, 0)
+	err = query.Select(bucketExpr+` AS bucket,
+			COALESCE(SUM(CASE WHEN type = ? THEN quota WHEN type = ? THEN -quota ELSE 0 END), 0) AS revenue_quota,
+			COUNT(*) AS records`, offsetSeconds, bucketSeconds, bucketSeconds, offsetSeconds, LogTypeConsume, LogTypeRefund).
+		Group("bucket").Order("bucket asc").Scan(&buckets).Error
+	return buckets, err
 }
 
 func CountOldLog(ctx context.Context, targetTimestamp int64) (int64, error) {

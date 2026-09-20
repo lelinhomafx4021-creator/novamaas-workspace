@@ -185,6 +185,17 @@ func TestBillingRoundingDifferencePreservesExactTotal(t *testing.T) {
 	assert.Equal(t, "0.000001", difference)
 }
 
+func TestAttachBillingAccountingDerivesProfitFromNetRevenue(t *testing.T) {
+	row := BillingRow{ChargeQuota: 1000, RefundQuota: 200}
+	currency := BillingCurrency{Code: "USD", Symbol: "$", Rate: "1", QuotaPerUnit: "100"}
+
+	require.NoError(t, attachBillingAccounting(&row, 600, currency))
+	assert.Equal(t, int64(600), row.CostQuota)
+	assert.Equal(t, int64(200), row.ProfitQuota)
+	assert.Equal(t, "6.000000", row.Cost)
+	assert.Equal(t, "2.000000", row.Profit)
+}
+
 func TestBillingArchiveRejectsMissingFirstHourInsteadOfOmittingItsEntries(t *testing.T) {
 	truncate(t)
 	seedUser(t, 91, 1000000)

@@ -29,6 +29,8 @@ export interface BillingRow {
   charge: string
   refund: string
   amount: string
+  cost?: string
+  profit?: string
   count: number
 }
 export interface BillingCurrency {
@@ -134,6 +136,7 @@ export interface StatementDetail {
   source_warning?: 'historical_data_unreconciled' | ''
   detail_count?: number
   statement: BillingStatement
+  accounting_snapshot?: BillingSnapshot
   events: {
     id: number
     actor_id: number

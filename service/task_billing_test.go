@@ -44,6 +44,7 @@ func TestMain(m *testing.M) {
 
 	if err := db.AutoMigrate(
 		&model.BillingAccount{}, &model.BillingAccountEvent{}, &model.BillingOperation{}, &model.BillingEntry{}, &model.BillingHour{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}, &model.BillingHistoryImport{},
+		&model.CostAccountingSnapshot{}, &model.CostAccountingAdjustment{},
 		&model.Task{},
 		&model.TaskRequestBody{},
 		&model.User{},
@@ -69,7 +70,7 @@ func TestMain(m *testing.M) {
 func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
-		for _, table := range []string{"billing_accounts", "billing_account_events", "billing_operations", "billing_entries", "billing_hours", "billing_statements", "billing_statement_events", "billing_artifacts", "billing_history_imports"} {
+		for _, table := range []string{"billing_accounts", "billing_account_events", "billing_operations", "billing_entries", "billing_hours", "billing_statements", "billing_statement_events", "billing_artifacts", "billing_history_imports", "cost_accounting_adjustments", "cost_accounting_snapshots"} {
 			model.DB.Exec("DELETE FROM " + table)
 		}
 		model.DB.Exec("DELETE FROM tasks")
@@ -475,8 +476,12 @@ func TestMidjourneyRefundRestoresEveryAccountingElementOnBillingChannel(t *testi
 		TokenKey:   "sk-midjourney",
 		UserQuota:  initialUserQuota,
 		UsingGroup: "default",
+		PriceData: types.PriceData{
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 2},
+		},
 		ChannelMeta: &relaycommon.ChannelMeta{
-			ChannelId: billingChannelID,
+			ChannelId:    billingChannelID,
+			CostDiscount: "0.8",
 		},
 	}
 	task := &model.Midjourney{
@@ -504,6 +509,8 @@ func TestMidjourneyRefundRestoresEveryAccountingElementOnBillingChannel(t *testi
 	assert.Equal(t, chargedQuota, persisted.Quota)
 	assert.Equal(t, tokenID, persisted.TokenId)
 	assert.Equal(t, billingChannelID, persisted.BillingChannelId)
+	assert.Equal(t, 2.0, persisted.BillingGroupRatio)
+	assert.Equal(t, "0.800000", persisted.BillingCostDiscount)
 
 	seedChargedAccounting(t, userID, billingChannelID, tokenID, chargedQuota, 1)
 
@@ -527,6 +534,11 @@ func TestMidjourneyRefundRestoresEveryAccountingElementOnBillingChannel(t *testi
 	assert.Equal(t, chargedQuota, log.Quota)
 	assert.Equal(t, tokenID, log.TokenId)
 	assert.Equal(t, billingChannelID, log.ChannelId)
+	totals, err := model.SumCostAccounting(model.CostAccountingFilter{ChannelID: billingChannelID})
+	require.NoError(t, err)
+	assert.Equal(t, int64(-chargedQuota), totals.RevenueQuota)
+	assert.Equal(t, int64(-1200), totals.CostQuota)
+	assert.Equal(t, int64(-1800), totals.ProfitQuota)
 
 	assert.True(t, RefundMidjourneyQuota(ctx, task, "duplicate poll"))
 	assert.Equal(t, int64(1), countLogs(t))

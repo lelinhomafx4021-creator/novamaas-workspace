@@ -345,6 +345,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.remark?.trim() ||
     values.priority ||
     values.weight ||
+    values.cost_discount?.trim() ||
     values.proxy?.trim() ||
     values.system_prompt?.trim() ||
     values.force_format ||
@@ -626,6 +627,11 @@ export function ChannelMutateDrawer({
     currentUser,
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+  )
+  const canViewFinancialAccounting = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.FINANCIAL_ACCOUNTING,
+    ADMIN_PERMISSION_ACTIONS.VIEW
   )
   const canRevealChannelKey = currentUser?.role === ROLE.SUPER_ADMIN
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
@@ -3713,6 +3719,34 @@ export function ChannelMutateDrawer({
                                 )}
                               />
                             </div>
+
+                            {canViewFinancialAccounting && (
+                              <FormField
+                                control={form.control}
+                                name='cost_discount'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Upstream cost discount')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        inputMode='decimal'
+                                        placeholder={t(
+                                          'Leave empty for zero-profit accounting'
+                                        )}
+                                        disabled={sensitiveLocked}
+                                        {...field}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.COST_DISCOUNT)}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            )}
 
                             <FormField
                               control={form.control}

@@ -21,6 +21,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { useAuthStore } from '@/stores/auth-store'
+
 import { getBillingUsageDetails } from '../api'
 import { BillingRows } from '../components/billing-rows'
 import { UsageDetailsDialog } from '../components/usage-details-dialog'
@@ -44,7 +46,10 @@ const empty = {
 }
 
 describe('Consumption drill-down', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAuthStore.getState().auth.setUser(null)
+  })
   test('only populated hours are actionable; future hours do not display zero charges', async () => {
     const onSelect = vi.fn()
     render(
@@ -77,6 +82,45 @@ describe('Consumption drill-down', () => {
     expect(onSelect).toHaveBeenCalledWith(
       expect.objectContaining({ label: '09:00', count: 1 })
     )
+  })
+  test('shows accounting-only cost and profit columns for an authorized user', () => {
+    useAuthStore.getState().auth.setUser({
+      id: 2,
+      username: 'finance-reviewer',
+      role: 10,
+      permissions: {
+        admin_permissions: {
+          financial_accounting: { view: true },
+        },
+      },
+    })
+
+    render(
+      <BillingRows
+        rows={[
+          {
+            ...empty,
+            cost: '0.250000',
+            profit: '0.750000',
+          },
+        ]}
+        total={{
+          ...empty,
+          cost: '0.250000',
+          profit: '0.750000',
+        }}
+        symbol='$'
+      />
+    )
+
+    expect(
+      screen.getByRole('columnheader', { name: /Cost amount/ })
+    ).toBeVisible()
+    expect(
+      screen.getByRole('columnheader', { name: /Profit amount/ })
+    ).toBeVisible()
+    expect(screen.getAllByText('$ 0.250000')).toHaveLength(2)
+    expect(screen.getAllByText('$ 0.750000')).toHaveLength(2)
   })
   test('next page uses the selected account and hour; a failed page offers retry without stale rows', async () => {
     const longModel = 'example-model-'.repeat(30)

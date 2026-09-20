@@ -96,56 +96,65 @@ func GetLogByKey(c *gin.Context) {
 }
 
 func GetLogsStat(c *gin.Context) {
-	logType, _ := strconv.Atoi(c.Query("type"))
-	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
-	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
-	tokenName := c.Query("token_name")
-	username := c.Query("username")
-	modelName := c.Query("model_name")
-	channel, _ := strconv.Atoi(c.Query("channel"))
-	group := c.Query("group")
-	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	filter := costAccountingFilterFromQuery(c)
+	stat, err := model.SumLogStatistics(filter)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	//tokenNum := model.SumUsedToken(logType, startTimestamp, endTimestamp, modelName, username, "")
+	data := gin.H{
+		"quota": stat.Quota,
+		"rpm":   stat.Rpm,
+		"tpm":   stat.Tpm,
+	}
+	if canViewFinancialAccounting(c) {
+		accounting, accountingErr := model.SumCostAccounting(filter)
+		if accountingErr != nil {
+			common.ApiError(c, accountingErr)
+			return
+		}
+		accounting = model.ReconcileCostAccountingTotals(stat, accounting)
+		data["revenue_quota"] = accounting.RevenueQuota
+		data["cost_quota"] = accounting.CostQuota
+		data["profit_quota"] = accounting.ProfitQuota
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data": gin.H{
-			"quota": stat.Quota,
-			"rpm":   stat.Rpm,
-			"tpm":   stat.Tpm,
-		},
+		"data":    data,
 	})
 	return
 }
 
 func GetLogsSelfStat(c *gin.Context) {
-	username := c.GetString("username")
-	logType, _ := strconv.Atoi(c.Query("type"))
-	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
-	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
-	tokenName := c.Query("token_name")
-	modelName := c.Query("model_name")
-	channel, _ := strconv.Atoi(c.Query("channel"))
-	group := c.Query("group")
-	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	filter := costAccountingFilterFromQuery(c)
+	filter.UserID = c.GetInt("id")
+	filter.Username = ""
+	statistics, err := model.SumLogStatistics(filter)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	//tokenNum := model.SumUsedToken(logType, startTimestamp, endTimestamp, modelName, username, tokenName)
+	data := gin.H{
+		"quota": statistics.Quota,
+		"rpm":   statistics.Rpm,
+		"tpm":   statistics.Tpm,
+	}
+	if canViewFinancialAccounting(c) {
+		accounting, accountingErr := model.SumCostAccounting(filter)
+		if accountingErr != nil {
+			common.ApiError(c, accountingErr)
+			return
+		}
+		accounting = model.ReconcileCostAccountingTotals(statistics, accounting)
+		data["revenue_quota"] = accounting.RevenueQuota
+		data["cost_quota"] = accounting.CostQuota
+		data["profit_quota"] = accounting.ProfitQuota
+	}
 	c.JSON(200, gin.H{
 		"success": true,
 		"message": "",
-		"data": gin.H{
-			"quota": quotaNum.Quota,
-			"rpm":   quotaNum.Rpm,
-			"tpm":   quotaNum.Tpm,
-			//"token": tokenNum,
-		},
+		"data":    data,
 	})
 	return
 }

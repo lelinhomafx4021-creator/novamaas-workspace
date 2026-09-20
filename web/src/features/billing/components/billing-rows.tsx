@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { CircleHelp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -29,6 +30,17 @@ import {
   TableRow,
   TableFooter,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import { useAuthStore } from '@/stores/auth-store'
 
 import type { BillingRow } from '../types'
 
@@ -40,6 +52,18 @@ export function BillingRows(props: {
   onSelectRow?: (row: BillingRow) => void
 }) {
   const { t } = useTranslation()
+  const user = useAuthStore((state) => state.auth.user)
+  const showFinancialAccounting =
+    hasPermission(
+      user,
+      ADMIN_PERMISSION_RESOURCES.FINANCIAL_ACCOUNTING,
+      ADMIN_PERMISSION_ACTIONS.VIEW
+    ) &&
+    (props.total.cost !== undefined ||
+      props.rows.some((row) => row.cost !== undefined))
+  const financialColumnTip = t(
+    'This column is only visible to users with financial accounting access'
+  )
   return (
     <Table>
       <TableHeader>
@@ -48,6 +72,32 @@ export function BillingRows(props: {
           <TableHead className='text-right'>{t('Consumption')}</TableHead>
           <TableHead className='text-right'>{t('Refund')}</TableHead>
           <TableHead className='text-right'>{t('Net amount')}</TableHead>
+          {showFinancialAccounting ? (
+            <>
+              <TableHead className='text-right text-amber-600 dark:text-amber-400'>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<span className='inline-flex items-center gap-1' />}
+                  >
+                    {t('Cost amount')}
+                    <CircleHelp className='size-3.5' aria-hidden='true' />
+                  </TooltipTrigger>
+                  <TooltipContent>{financialColumnTip}</TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className='text-right text-emerald-600 dark:text-emerald-400'>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<span className='inline-flex items-center gap-1' />}
+                  >
+                    {t('Profit amount')}
+                    <CircleHelp className='size-3.5' aria-hidden='true' />
+                  </TooltipTrigger>
+                  <TooltipContent>{financialColumnTip}</TooltipContent>
+                </Tooltip>
+              </TableHead>
+            </>
+          ) : null}
           <TableHead className='text-right'>{t('Records')}</TableHead>
         </TableRow>
       </TableHeader>
@@ -77,7 +127,7 @@ export function BillingRows(props: {
             </TableCell>
             {row.state === 'future' || row.state === 'outside_period' ? (
               <TableCell
-                colSpan={4}
+                colSpan={showFinancialAccounting ? 6 : 4}
                 className='text-muted-foreground text-right'
               >
                 —{' '}
@@ -96,6 +146,16 @@ export function BillingRows(props: {
                 <TableCell className='text-right font-medium tabular-nums'>
                   {props.symbol} {row.amount}
                 </TableCell>
+                {showFinancialAccounting ? (
+                  <>
+                    <TableCell className='bg-amber-500/5 text-right text-amber-700 tabular-nums dark:text-amber-300'>
+                      {row.cost ? `${props.symbol} ${row.cost}` : '—'}
+                    </TableCell>
+                    <TableCell className='bg-emerald-500/5 text-right font-medium text-emerald-700 tabular-nums dark:text-emerald-300'>
+                      {row.profit ? `${props.symbol} ${row.profit}` : '—'}
+                    </TableCell>
+                  </>
+                ) : null}
                 <TableCell className='text-right tabular-nums'>
                   {row.count}
                 </TableCell>
@@ -116,6 +176,18 @@ export function BillingRows(props: {
           <TableCell className='text-right tabular-nums'>
             {props.symbol} {props.total.amount}
           </TableCell>
+          {showFinancialAccounting ? (
+            <>
+              <TableCell className='bg-amber-500/10 text-right text-amber-700 tabular-nums dark:text-amber-300'>
+                {props.total.cost ? `${props.symbol} ${props.total.cost}` : '—'}
+              </TableCell>
+              <TableCell className='bg-emerald-500/10 text-right font-medium text-emerald-700 tabular-nums dark:text-emerald-300'>
+                {props.total.profit
+                  ? `${props.symbol} ${props.total.profit}`
+                  : '—'}
+              </TableCell>
+            </>
+          ) : null}
           <TableCell className='text-right tabular-nums'>
             {props.total.count}
           </TableCell>
@@ -129,7 +201,7 @@ export function BillingRows(props: {
               <TableCell className='text-right tabular-nums'>
                 {props.symbol} {props.roundingDifference}
               </TableCell>
-              <TableCell />
+              <TableCell colSpan={showFinancialAccounting ? 3 : 1} />
             </TableRow>
           )}
       </TableFooter>

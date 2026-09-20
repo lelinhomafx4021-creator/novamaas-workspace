@@ -530,6 +530,11 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 			kvvReq.ReasoningEffort = "low"
 		}
 		kvvRes := streamChat(ctx, httpClient, endpoint, req.APIKey, kvvReq, 60*time.Second, nil)
+		if (kvvRes.StatusCode != http.StatusOK || kvvRes.ErrorMessage != "") && kvvReq.ReasoningEffort != "" {
+			fallbackReq := kvvReq
+			fallbackReq.ReasoningEffort = ""
+			kvvRes = streamChat(ctx, httpClient, endpoint, req.APIKey, fallbackReq, 60*time.Second, nil)
+		}
 		status, message := validateKimiKVVResult(kvvRes)
 		if profile.id != VendorKimi && status != "pass" {
 			status = "skip"

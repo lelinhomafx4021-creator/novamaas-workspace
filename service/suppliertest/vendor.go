@@ -229,6 +229,13 @@ func validateKimiKVVResult(res StreamResult) (string, string) {
 	}
 
 	detailMsg := "KVV 认证通过：ToolCall 触发匹配 (query_flight)，Schema 参数 100% 校验合格 (origin, destination, date, passengers=2)"
+	if res.FinishReason != "" {
+		if res.FinishReason == "tool_calls" {
+			detailMsg += "，finish_reason=tool_calls 合规"
+		} else {
+			detailMsg += fmt.Sprintf("，finish_reason=%s", res.FinishReason)
+		}
+	}
 	if res.Reasoning != "" || res.ReasoningTokens > 0 {
 		detailMsg += "，包含 Moonshot 流式思维链"
 	}

@@ -252,8 +252,11 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		if len(request.Usage) == 0 {
 			request.Usage = json.RawMessage(`{"include":true}`)
 		}
-		// 适配 OpenRouter 的 thinking 后缀
-		if !model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) &&
+		// 适配 OpenRouter 的 thinking 后缀。公开模型名或映射后的真实模型名
+		// 只要有一个被标记为保留，就不能把 kimi-k2-thinking 等真实 ID 当成别名裁剪。
+		preserveThinkingSuffix := model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) ||
+			model_setting.ShouldPreserveThinkingSuffix(info.UpstreamModelName)
+		if !preserveThinkingSuffix &&
 			strings.HasSuffix(info.UpstreamModelName, "-thinking") {
 			info.UpstreamModelName = strings.TrimSuffix(info.UpstreamModelName, "-thinking")
 			request.Model = info.UpstreamModelName

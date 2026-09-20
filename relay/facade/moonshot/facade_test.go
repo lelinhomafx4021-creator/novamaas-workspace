@@ -72,7 +72,7 @@ func TestNormalizeChatRequestRemovesFacadeOnlyFields(t *testing.T) {
 		}},
 	}
 
-	require.NoError(t, NormalizeRequest(types.RelayFormatOpenAI, request))
+	require.NoError(t, NormalizeRequest(nil, types.RelayFormatOpenAI, request))
 	assert.Equal(t, "high", request.ReasoningEffort)
 	assert.Nil(t, request.Messages[0].Partial)
 	assert.Nil(t, request.Messages[0].ReasoningContent)
@@ -132,7 +132,7 @@ func TestNormalizeChatRequestRejectsUnreproducibleKimiInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := NormalizeRequest(types.RelayFormatOpenAI, tt.request)
+			err := NormalizeRequest(nil, types.RelayFormatOpenAI, tt.request)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.message)
 		})
@@ -145,8 +145,71 @@ func TestNormalizeResponsesRequestMapsKimiMaxEffort(t *testing.T) {
 		Reasoning: &dto.Reasoning{Effort: "max"},
 	}
 
-	require.NoError(t, NormalizeRequest(types.RelayFormatOpenAIResponses, request))
+	require.NoError(t, NormalizeRequest(nil, types.RelayFormatOpenAIResponses, request))
 	assert.Equal(t, "high", request.Reasoning.Effort)
+}
+
+func TestKimiPassthroughPreservesChatRequestAndResponse(t *testing.T) {
+	c := newFacadeTestContext(ProtocolChat, "kimi-k3")
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MoonshotFacadeMode: dto.MoonshotFacadeModeKimiPassthrough,
+	})
+	common.SetContextKey(c, constant.ContextKeyChannelModelMapped, true)
+	partial := true
+	reasoning := "preserved reasoning"
+	request := &dto.GeneralOpenAIRequest{
+		Model:           "kimi-k3",
+		ReasoningEffort: "max",
+		THINKING:        []byte(`{"type":"enabled"}`),
+		Messages: []dto.Message{{
+			Role:             "assistant",
+			Content:          "prefix",
+			Tools:            []byte(`[{"type":"function"}]`),
+			Partial:          &partial,
+			ReasoningContent: &reasoning,
+		}},
+	}
+
+	require.NoError(t, NormalizeRequest(c, types.RelayFormatOpenAI, request))
+	assert.Equal(t, "max", request.ReasoningEffort)
+	assert.JSONEq(t, `{"type":"enabled"}`, string(request.THINKING))
+	assert.JSONEq(t, `[{"type":"function"}]`, string(request.Messages[0].Tools))
+	assert.Equal(t, &partial, request.Messages[0].Partial)
+	assert.Equal(t, &reasoning, request.Messages[0].ReasoningContent)
+
+	input := []byte(`{"id":"chatcmpl-upstream","model":"upstream-kimi-k3","choices":[],"usage":{"prompt_tokens":0},"kimi_extension":{"cache_write_tokens":9}}`)
+	output, err := TransformJSON(c, input)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"id":"chatcmpl-upstream","model":"kimi-k3","choices":[],"usage":{"prompt_tokens":0},"kimi_extension":{"cache_write_tokens":9}}`, string(output))
+
+	streamOutput, err := TransformStreamData(c, string(input))
+	require.NoError(t, err)
+	assert.JSONEq(t, string(output), streamOutput)
+}
+
+func TestKimiPassthroughStillRejectsNonMoonshotModel(t *testing.T) {
+	c := newFacadeTestContext(ProtocolChat, "gpt-5")
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MoonshotFacadeMode: dto.MoonshotFacadeModeKimiPassthrough,
+	})
+
+	err := NormalizeRequest(c, types.RelayFormatOpenAI, &dto.GeneralOpenAIRequest{Model: "gpt-5"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not available")
+}
+
+func TestKimiPassthroughLeavesUnmappedResponseBytesUntouched(t *testing.T) {
+	c := newFacadeTestContext(ProtocolChat, "kimi-k3")
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MoonshotFacadeMode: dto.MoonshotFacadeModeKimiPassthrough,
+	})
+	input := []byte(`{"model":"kimi-k3-upstream","usage":{"prompt_tokens":1.0},"vendor_field":true}`)
+
+	output, err := TransformJSON(c, input)
+
+	require.NoError(t, err)
+	assert.Equal(t, input, output)
 }
 
 func TestTransformChatUsesKimiResponseShape(t *testing.T) {

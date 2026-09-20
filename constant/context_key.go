@@ -34,6 +34,7 @@ const (
 	ContextKeyChannelOrganization      ContextKey = "channel_organization"
 	ContextKeyChannelAutoBan           ContextKey = "auto_ban"
 	ContextKeyChannelModelMapping      ContextKey = "model_mapping"
+	ContextKeyChannelModelMapped       ContextKey = "channel_model_mapped"
 	ContextKeyChannelStatusCodeMapping ContextKey = "status_code_mapping"
 	ContextKeyChannelCostDiscount      ContextKey = "channel_cost_discount"
 	ContextKeyChannelIsMultiKey        ContextKey = "channel_is_multi_key"

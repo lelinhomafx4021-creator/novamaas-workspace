@@ -15,6 +15,7 @@ type ChannelSettings struct {
 	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`
 	Proxy                  string `json:"proxy"`
 	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
+	MoonshotFacadeMode     string `json:"moonshot_facade_mode,omitempty"`
 	SystemPrompt           string `json:"system_prompt,omitempty"`
 	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
 	// HTTPProtocol controls outbound HTTP version negotiation for this channel.
@@ -29,7 +30,26 @@ const (
 	HTTPProtocolAuto         = "auto"
 	HTTPProtocolHTTP1        = "http1"
 	MaxHTTP2ConnectionShards = 8
+
+	MoonshotFacadeModeEmulate         = "emulate"
+	MoonshotFacadeModeKimiPassthrough = "kimi_passthrough"
 )
+
+func (s *ChannelSettings) IsMoonshotKimiPassthrough() bool {
+	return s != nil && s.MoonshotFacadeMode == MoonshotFacadeModeKimiPassthrough
+}
+
+func (s *ChannelSettings) ValidateMoonshotFacadeMode() error {
+	if s == nil {
+		return nil
+	}
+	switch s.MoonshotFacadeMode {
+	case "", MoonshotFacadeModeEmulate, MoonshotFacadeModeKimiPassthrough:
+		return nil
+	default:
+		return fmt.Errorf("invalid moonshot_facade_mode: %s", s.MoonshotFacadeMode)
+	}
+}
 
 // ValidateHTTPTransport validates save-time HTTP transport channel settings.
 func (s *ChannelSettings) ValidateHTTPTransport() error {

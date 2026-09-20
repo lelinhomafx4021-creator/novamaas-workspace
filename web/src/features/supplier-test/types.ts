@@ -43,6 +43,8 @@ export type StressMetrics = {
   tpm: number
 }
 
+export type CacheMode = 'static' | 'cumulative'
+
 export type CacheMetrics = {
   warm_prompt_tokens: number
   avg_hit_rate: number
@@ -52,6 +54,9 @@ export type CacheMetrics = {
   wait_seconds: number
   rounds: number
   has_cached_tokens: boolean
+  hit_count?: number
+  avg_depth_rate?: number
+  mode?: CacheMode
 }
 
 export type SupplierTestEvent = {
@@ -91,6 +96,7 @@ export type SupplierTestRunRequest = {
     max_tokens: number
     rounds: number
     stream: boolean
+    mode?: CacheMode
   }
   stress: {
     concurrency: number
@@ -143,4 +149,5 @@ export type CacheForm = {
   maxTokens: number
   rounds: number
   stream: boolean
+  mode: CacheMode
 }

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { BasicForm, CacheForm, CheckResult, StressForm } from './types'
+import type { BasicForm, CacheForm, CacheMode, CheckResult, StressForm } from './types'
 import longText from './corpora/long.txt?raw'
 import mediumText from './corpora/medium.txt?raw'
 import minQpsText from './corpora/min-qps.txt?raw'
@@ -132,6 +132,27 @@ export const DEFAULT_BASIC_FORM: BasicForm = {
 export const DEFAULT_CACHE_FOLLOW_UP =
   '根据前面的内容，只用一个词回复：pong'
 
+export const DEFAULT_CACHE_MODE: CacheMode = 'static'
+
+export const CACHE_MODES: Array<{
+  value: CacheMode
+  labelKey: string
+  hintKey: string
+}> = [
+  {
+    value: 'static',
+    labelKey: 'Static prefix',
+    hintKey:
+      'Repeatedly sends identical prompt prefix to test gateway routing consistency',
+  },
+  {
+    value: 'cumulative',
+    labelKey: 'Cumulative chat',
+    hintKey:
+      'Accumulates multi-turn conversation rounds to test real-world dialogue cache efficiency',
+  },
+]
+
 export const DEFAULT_CACHE_FORM: CacheForm = {
   corpus: '3k',
   prompt: '',
@@ -140,6 +161,7 @@ export const DEFAULT_CACHE_FORM: CacheForm = {
   maxTokens: 16,
   rounds: 5,
   stream: true,
+  mode: DEFAULT_CACHE_MODE,
 }
 
 export const BASIC_CHECKS: CheckResult[] = [

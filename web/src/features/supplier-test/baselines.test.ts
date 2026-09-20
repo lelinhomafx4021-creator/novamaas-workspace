@@ -214,6 +214,38 @@ describe('supplier-test verdicts', () => {
     expect(assessment.overall).toBe('abnormal')
   })
 
+  test('assessCache includes informational rows for mode, hit frequency, and hit depth', () => {
+    const assessment = assessCache({
+      warm_prompt_tokens: 3000,
+      avg_hit_rate: 0.8,
+      min_hit_rate: 0.75,
+      last_cached_tokens: 2400,
+      last_prompt_tokens: 3000,
+      wait_seconds: 30,
+      rounds: 5,
+      has_cached_tokens: true,
+      hit_count: 4,
+      avg_depth_rate: 0.95,
+      mode: 'cumulative',
+    })
+    expect(assessment.overall).toBe('ok')
+    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('ok')
+    const modeRow = assessment.rows.find((row) => row.id === 'cache_mode')
+    expect(modeRow).toBeDefined()
+    expect(modeRow?.measured).toBe('Cumulative chat')
+    expect(modeRow?.verdict).toBe('na')
+
+    const freqRow = assessment.rows.find((row) => row.id === 'hit_frequency')
+    expect(freqRow).toBeDefined()
+    expect(freqRow?.measured).toBe('4/5 (80.0%)')
+    expect(freqRow?.verdict).toBe('na')
+
+    const depthRow = assessment.rows.find((row) => row.id === 'hit_depth')
+    expect(depthRow).toBeDefined()
+    expect(depthRow?.measured).toBe('95.0%')
+    expect(depthRow?.verdict).toBe('na')
+  })
+
   test('built-in corpora show a token estimate', () => {
     for (const item of CORPORA) {
       if (item.id === 'custom') {

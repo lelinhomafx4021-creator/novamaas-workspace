@@ -25,6 +25,9 @@ const (
 	DefaultBasicPrompt   = "请用一句话介绍你自己。"
 	DefaultCachePrefix   = "这是一段用于提示缓存的稳定前缀。请记住这段文字，后续问题会基于它。"
 	DefaultCacheFollowUp = "根据前面的内容，只用一个词回复：pong"
+
+	CacheModeStatic     = "static"
+	CacheModeCumulative = "cumulative"
 )
 
 var allBasicChecks = []string{

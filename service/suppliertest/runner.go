@@ -41,6 +41,7 @@ type CacheConfig struct {
 	MaxTokens   int    `json:"max_tokens"`
 	Rounds      int    `json:"rounds"`
 	Stream      *bool  `json:"stream"`
+	Mode        string `json:"mode"`
 }
 
 type StressConfig struct {
@@ -98,6 +99,9 @@ type CacheMetrics struct {
 	WaitSeconds      int     `json:"wait_seconds"`
 	Rounds           int     `json:"rounds"`
 	HasCachedTokens  bool    `json:"has_cached_tokens"`
+	HitCount         int     `json:"hit_count"`
+	AvgDepthRate     float64 `json:"avg_depth_rate"`
+	Mode             string  `json:"mode,omitempty"`
 }
 
 type Emitter func(Event)
@@ -192,6 +196,14 @@ func NormalizeRunRequest(req *RunRequest) error {
 	}
 	if req.Cache.Stream == nil {
 		req.Cache.Stream = ptrBool(true)
+	}
+	cacheMode := strings.ToLower(strings.TrimSpace(req.Cache.Mode))
+	if cacheMode == "" || cacheMode == CacheModeStatic {
+		req.Cache.Mode = CacheModeStatic
+	} else if cacheMode == CacheModeCumulative {
+		req.Cache.Mode = CacheModeCumulative
+	} else {
+		return fmt.Errorf("invalid cache mode %q", req.Cache.Mode)
 	}
 	vendor, err := ResolveVendor(req.Vendor)
 	if err != nil {
@@ -594,14 +606,17 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		rounds = 1
 	}
 	emitCheck(CheckCacheProbe, "Cache probe", "running", "")
+	probeMessages := cacheMessages(profile, prefix, followUp, false)
 	probeReq := applyStream(chatRequest{
 		Model:     req.Model,
-		Messages:  cacheMessages(profile, prefix, followUp, false),
+		Messages:  probeMessages,
 		MaxTokens: ptrInt(req.Cache.MaxTokens),
 	}, stream)
 
 	var (
 		hitRates     []float64
+		depthRates   []float64
+		hitCount     int
 		lastCached   int
 		lastPrompt   int
 		sawCached    bool
@@ -612,6 +627,9 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		if ctx.Err() != nil {
 			emitCheck(CheckCacheProbe, "Cache probe", "skip", "探测时被取消")
 			return
+		}
+		if req.Cache.Mode == CacheModeCumulative {
+			probeReq.Messages = probeMessages
 		}
 		probe := streamChat(ctx, httpClient, endpoint, req.APIKey, probeReq, 180*time.Second, nil)
 		if probe.StatusCode != http.StatusOK || probe.ErrorMessage != "" {
@@ -634,13 +652,28 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 				rate = 1.0
 			}
 			hitRates = append(hitRates, rate)
+			if probe.CachedTokens > 0 {
+				hitCount++
+				depthRates = append(depthRates, rate)
+			}
 			probeDetails = append(probeDetails, fmt.Sprintf("第%d轮 %.1f%%", i+1, rate*100))
 		} else {
 			probeDetails = append(probeDetails, fmt.Sprintf("第%d轮 prompt=%d", i+1, effectivePrompt))
 		}
+
+		if req.Cache.Mode == CacheModeCumulative {
+			replyText := strings.TrimSpace(probe.Content)
+			if replyText == "" {
+				replyText = "ok"
+			}
+			probeMessages = append(probeMessages,
+				chatMessage{Role: "assistant", Content: replyText},
+				chatMessage{Role: "user", Content: followUp},
+			)
+		}
 	}
 
-	emitCache := func(avgHit, minHit float64) {
+	emitCache := func(avgHit, minHit float64, hits int, avgDepth float64) {
 		emit(Event{
 			Type:   "metrics",
 			Module: ModuleCache,
@@ -653,6 +686,9 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 				WaitSeconds:      req.Cache.WaitSeconds,
 				Rounds:           rounds,
 				HasCachedTokens:  sawCached,
+				HitCount:         hits,
+				AvgDepthRate:     avgDepth,
+				Mode:             req.Cache.Mode,
 			},
 		})
 	}
@@ -660,7 +696,7 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	if failedRound == rounds {
 		emitCheck(CheckCacheProbe, "Cache probe", "fail", strings.Join(probeDetails, "；"))
 		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "探测全部失败，不能判定缓存存活")
-		emitCache(0, 0)
+		emitCache(0, 0, 0, 0)
 		emit(Event{Type: "summary", Module: ModuleCache, Summary: fmt.Sprintf("缓存测试失败：探测 %d 轮全部失败。", rounds)})
 		return
 	}
@@ -675,7 +711,7 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emitCheck(CheckCacheTokens, "Cached tokens", status, message)
 		emitCheck(CheckCacheHitRate, "Cache hit rate", "skip", "没有 cached_tokens，算不出命中率")
 		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "没有 cached_tokens，不能判定缓存存活")
-		emitCache(0, 0)
+		emitCache(0, 0, 0, 0)
 		emit(Event{
 			Type:    "summary",
 			Module:  ModuleCache,
@@ -687,7 +723,7 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 	if len(hitRates) == 0 {
 		emitCheck(CheckCacheHitRate, "Cache hit rate", "skip", "prompt_tokens 缺失，算不出命中率")
 		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "没有命中率，不能判定缓存存活")
-		emitCache(0, 0)
+		emitCache(0, 0, 0, 0)
 		emit(Event{Type: "summary", Module: ModuleCache, Summary: fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。有 cached_tokens=%d，但没有 prompt_tokens。", rounds, lastCached)})
 		return
 	}
@@ -698,17 +734,43 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 			minHit = rate
 		}
 	}
-	emitCheck(CheckCacheHitRate, "Cache hit rate", "pass", fmt.Sprintf("平均命中率 %.1f%%，最低 %.1f%%（%d 轮，最后一轮 %d/%d）。是否达标看页面尺子。", avgHit*100, minHit*100, len(hitRates), lastCached, lastPrompt))
+	var avgDepth float64
+	var minDepth float64
+	if len(depthRates) > 0 {
+		avgDepth = average(depthRates)
+		minDepth = depthRates[0]
+		for _, rate := range depthRates[1:] {
+			if rate < minDepth {
+				minDepth = rate
+			}
+		}
+	}
+
+	modeLabel := "固定前缀"
+	if req.Cache.Mode == CacheModeCumulative {
+		modeLabel = "多轮累加"
+	}
+
+	var hitMsg string
+	if hitCount > 0 {
+		hitMsg = fmt.Sprintf("[%s] 命中频次 %d/%d 轮 (%.1f%%)，有效命中深度均值 %.1f%%（最低 %.1f%%，最后一轮 %d/%d）。是否达标看页面尺子。",
+			modeLabel, hitCount, len(hitRates), float64(hitCount)/float64(len(hitRates))*100,
+			avgDepth*100, minDepth*100, lastCached, lastPrompt)
+	} else {
+		hitMsg = fmt.Sprintf("[%s] 命中频次 0/%d 轮 (0.0%%)（最后一轮 %d/%d）。是否达标看页面尺子。",
+			modeLabel, len(hitRates), lastCached, lastPrompt)
+	}
+	emitCheck(CheckCacheHitRate, "Cache hit rate", "pass", hitMsg)
 	if req.Cache.WaitSeconds <= 0 {
 		emitCheck(CheckCacheTTL, "Cache TTL", "skip", fmt.Sprintf("等待 %ds，TTL 是否达标看页面尺子。", req.Cache.WaitSeconds))
 	} else {
 		emitCheck(CheckCacheTTL, "Cache TTL", "pass", fmt.Sprintf("等待 %ds 后平均命中率 %.1f%%。是否达标看页面尺子。", req.Cache.WaitSeconds, avgHit*100))
 	}
-	emitCache(avgHit, minHit)
+	emitCache(avgHit, minHit, hitCount, avgDepth)
 	emit(Event{
 		Type:    "summary",
 		Module:  ModuleCache,
-		Summary: fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。平均命中率 %.1f%%，最低 %.1f%%。", rounds, avgHit*100, minHit*100),
+		Summary: fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。[%s] 命中频次 %d/%d 轮 (%.1f%%)，平均命中率 %.1f%%。", rounds, modeLabel, hitCount, len(hitRates), float64(hitCount)/float64(len(hitRates))*100, avgHit*100),
 	})
 }
 

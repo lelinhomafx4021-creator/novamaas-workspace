@@ -658,5 +658,34 @@ export function assessCache(
     },
     ttlRow,
   ]
+  if (metrics.mode) {
+    rows.push({
+      id: 'cache_mode',
+      label: 'Cache mode',
+      measured:
+        metrics.mode === 'cumulative' ? 'Cumulative chat' : 'Static prefix',
+      threshold: 'Informational only',
+      verdict: 'na',
+    })
+  }
+  if (metrics.hit_count !== undefined && metrics.rounds > 0) {
+    const freqRate = metrics.rounds > 0 ? metrics.hit_count / metrics.rounds : 0
+    rows.push({
+      id: 'hit_frequency',
+      label: 'Hit frequency',
+      measured: `${metrics.hit_count}/${metrics.rounds} (${formatPercent(freqRate)})`,
+      threshold: 'Informational only',
+      verdict: 'na',
+    })
+  }
+  if (metrics.avg_depth_rate !== undefined && (metrics.hit_count ?? 0) > 0) {
+    rows.push({
+      id: 'hit_depth',
+      label: 'Hit depth',
+      measured: formatPercent(metrics.avg_depth_rate),
+      threshold: 'Informational only',
+      verdict: 'na',
+    })
+  }
   return { rows, overall: worstVerdict(rows.map((row) => row.verdict)) }
 }

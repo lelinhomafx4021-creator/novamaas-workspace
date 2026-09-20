@@ -86,6 +86,7 @@ import {
   type Verdict,
 } from './baselines'
 import {
+  CACHE_MODES,
   CACHE_ROUND_PRESETS,
   CACHE_WAIT_PRESETS,
   CORPORA,
@@ -118,6 +119,7 @@ import {
 import type {
   BasicForm,
   CacheForm,
+  CacheMode,
   CheckResult,
   CheckStatus,
   StressForm,
@@ -272,6 +274,7 @@ export function SupplierTest() {
         max_tokens: cache.maxTokens,
         rounds: cache.rounds,
         stream: cache.stream,
+        mode: cache.mode,
       },
       stress: {
         concurrency: stress.concurrency,
@@ -718,6 +721,28 @@ export function SupplierTest() {
                 'Corpus is the input prefix, sent as-is. Max tokens only caps the reply. The first request warms cache; later rounds check the hit.'
               )}
             </p>
+            <div className='grid gap-4 md:grid-cols-2'>
+              <FieldSelect
+                label={t('Cache mode')}
+                value={cache.mode}
+                disabled={busy}
+                items={CACHE_MODES.map((m) => ({
+                  value: m.value,
+                  label: t(m.labelKey),
+                }))}
+                onChange={(value) =>
+                  setCache((current) => ({
+                    ...current,
+                    mode: value as CacheMode,
+                  }))
+                }
+              />
+              <div className='flex items-end text-sm text-muted-foreground pb-2'>
+                {t(
+                  CACHE_MODES.find((m) => m.value === cache.mode)?.hintKey || ''
+                )}
+              </div>
+            </div>
             <div className='grid gap-4 md:grid-cols-4'>
               <NumberField
                 id='cache-wait'

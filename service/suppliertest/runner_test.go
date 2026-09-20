@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -728,4 +729,73 @@ func TestLooksLikeJSON(t *testing.T) {
 	assert.True(t, looksLikeJSON(`{"ping":"pong"}`))
 	assert.False(t, looksLikeJSON("not json"))
 	assert.False(t, looksLikeJSON(""))
+}
+
+func TestCacheCumulativeModeAccumulatesMessages(t *testing.T) {
+	t.Parallel()
+
+	var recordedBodies []chatRequest
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		body, _ := io.ReadAll(r.Body)
+		_ = common.Unmarshal(body, &req)
+		mu.Lock()
+		recordedBodies = append(recordedBodies, req)
+		callIdx := len(recordedBodies)
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		reply := fmt.Sprintf("reply-%d", callIdx)
+		_, _ = io.WriteString(w, fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"content\":%q},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1,\"cached_tokens\":16}}\n\n", reply))
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleCache},
+		Cache: CacheConfig{
+			Prompt:      "cache-corpus",
+			FollowUp:    "user-question",
+			WaitSeconds: 0,
+			MaxTokens:   8,
+			Rounds:      2,
+			Mode:        CacheModeCumulative,
+		},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, 3, len(recordedBodies))
+
+	// Warm-up call (system + user)
+	assert.Equal(t, 2, len(recordedBodies[0].Messages))
+
+	// Probe Round 1 (system + user)
+	assert.Equal(t, 2, len(recordedBodies[1].Messages))
+
+	// Probe Round 2 (system + user + assistant + user) -> accumulated!
+	assert.Equal(t, 4, len(recordedBodies[2].Messages))
+	assert.Equal(t, "assistant", recordedBodies[2].Messages[2].Role)
+	assert.Equal(t, "reply-2", recordedBodies[2].Messages[2].Content)
+	assert.Equal(t, "user", recordedBodies[2].Messages[3].Role)
+	assert.Equal(t, "user-question", recordedBodies[2].Messages[3].Content)
+
+	var cacheMetrics *CacheMetrics
+	for _, event := range events {
+		if event.Type == "metrics" && event.Cache != nil {
+			cacheMetrics = event.Cache
+		}
+	}
+	require.NotNil(t, cacheMetrics)
+	assert.Equal(t, CacheModeCumulative, cacheMetrics.Mode)
+	assert.Equal(t, 2, cacheMetrics.HitCount)
+	assert.InDelta(t, 0.8, cacheMetrics.AvgDepthRate, 0.001)
 }

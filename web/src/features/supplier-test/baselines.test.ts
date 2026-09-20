@@ -247,6 +247,25 @@ describe('supplier-test verdicts', () => {
     expect(depthRow?.verdict).toBe('na')
   })
 
+  test('omits TTL row when wait_seconds is 0 or less than standard threshold', () => {
+    const assessment = assessCache({
+      warm_prompt_tokens: 3000,
+      avg_hit_rate: 0.95,
+      min_hit_rate: 0.9,
+      last_cached_tokens: 2850,
+      last_prompt_tokens: 3000,
+      wait_seconds: 0,
+      rounds: 10,
+      has_cached_tokens: true,
+      hit_count: 10,
+      avg_depth_rate: 0.95,
+      mode: 'static',
+    })
+    expect(assessment.overall).toBe('ok')
+    expect(assessment.rows.find((row) => row.id === 'ttl')).toBeUndefined()
+    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('ok')
+  })
+
   test('filters informational rows so SLA benchmark tables have zero Cannot compare verdicts', () => {
     const stressAss = assessStress(stress({}))
     const benchmarkRows = stressAss.rows.filter((row) => !isInformationalRow(row))

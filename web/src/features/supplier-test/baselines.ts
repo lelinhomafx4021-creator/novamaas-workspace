@@ -616,52 +616,34 @@ export function assessCache(
     return { rows: [], overall: 'na' }
   }
   if (!metrics.has_cached_tokens) {
+    const rows: MetricRow[] = [
+      {
+        id: 'hit',
+        label: 'Cache hit rate',
+        measured: 'No cached_tokens field',
+        threshold: HIT_RATE,
+        thresholdValues: hitValues,
+        verdict: 'na',
+      },
+    ]
+    if (metrics.wait_seconds >= standard.ttlWaitSeconds) {
+      rows.push({
+        id: 'ttl',
+        label: 'Cache TTL',
+        measured: 'Cannot compare',
+        threshold: TTL_RULE,
+        thresholdValues: ttlValues,
+        verdict: 'na',
+      })
+    }
     return {
-      rows: [
-        {
-          id: 'hit',
-          label: 'Cache hit rate',
-          measured: 'No cached_tokens field',
-          threshold: HIT_RATE,
-          thresholdValues: hitValues,
-          verdict: 'na',
-        },
-        {
-          id: 'ttl',
-          label: 'Cache TTL',
-          measured: 'Cannot compare',
-          threshold: TTL_RULE,
-          thresholdValues: ttlValues,
-          verdict: 'na',
-        },
-      ],
+      rows,
       overall: 'na',
     }
   }
 
   const hitVerdict = hitBand(metrics.avg_hit_rate, standard)
   const hitText = formatPercent(metrics.avg_hit_rate)
-  let ttlRow: MetricRow = {
-    id: 'ttl',
-    label: 'Cache TTL',
-    measured: 'Waited {{seconds}}s (need ≥ {{need}}s)',
-    measuredValues: {
-      seconds: metrics.wait_seconds,
-      need: standard.ttlWaitSeconds,
-    },
-    threshold: TTL_RULE,
-    thresholdValues: ttlValues,
-    verdict: 'na',
-  }
-  if (metrics.wait_seconds >= standard.ttlWaitSeconds) {
-    ttlRow = {
-      ...ttlRow,
-      measured: 'Waited {{seconds}}s, hit {{rate}}',
-      measuredValues: { seconds: metrics.wait_seconds, rate: hitText },
-      verdict: hitVerdict,
-    }
-  }
-
   const rows: MetricRow[] = [
     {
       id: 'hit',
@@ -671,8 +653,18 @@ export function assessCache(
       thresholdValues: hitValues,
       verdict: hitVerdict,
     },
-    ttlRow,
   ]
+  if (metrics.wait_seconds >= standard.ttlWaitSeconds) {
+    rows.push({
+      id: 'ttl',
+      label: 'Cache TTL',
+      measured: 'Waited {{seconds}}s, hit {{rate}}',
+      measuredValues: { seconds: metrics.wait_seconds, rate: hitText },
+      threshold: TTL_RULE,
+      thresholdValues: ttlValues,
+      verdict: hitVerdict,
+    })
+  }
   if (metrics.mode) {
     rows.push({
       id: 'cache_mode',

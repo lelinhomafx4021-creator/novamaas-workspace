@@ -9,7 +9,7 @@
 | 当前代码 | 已有能力或事实 | 本功能的处理方式 |
 | --- | --- | --- |
 | [model/log.go](../../model/log.go) 的 `RecordConsumeLog` | 消费日志保存额度、账户、模型等；`LogConsumeEnabled` 可关闭；创建失败只记录错误 | 改为持续记录、持久重试、永久保留；仍不作为唯一账单来源 |
-| [model/log.go](../../model/log.go) 的 `SumUsedQuota` | 实际只汇总消费类型，未净减退款；`DeleteOldLogBatch` 可删除历史 | 不直接复用为正式账单总额查询 |
+| [model/log.go](../../model/log.go) 的 `SumLogStatistics` | 用于实时日志统计，历史日志仍可被 `DeleteOldLogBatch` 删除 | 不直接复用为正式账单总额查询 |
 | [model/usedata.go](../../model/usedata.go) | 小时统计先存进程内存再周期落库，受数据导出开关影响，未区分钱包和订阅 | 可供旧数据参考，不能用作正式对账事实 |
 | [model/main.go](../../model/main.go) | 主数据库与 `LOG_DB` 可以分离；日志数据库支持 ClickHouse | 新账务表位于主库，不要求跨库事务/跨库联表 |
 | [service/billing_session.go](../../service/billing_session.go) | 统一预扣、结算和退款；现有幂等主要依赖进程内状态；差额为零时提前返回 | 接入持久结算操作；差额为零也必须登记最终消费 |

@@ -61,6 +61,29 @@ func TestChannelHasSensitiveChanges(t *testing.T) {
 		assert.True(t, channelHasSensitiveChanges(&updated, origin, map[string]any{"header_override": newHeaderOverride}))
 	})
 
+	t.Run("cost discount is sensitive and compares normalized decimals", func(t *testing.T) {
+		originWithDiscount := *origin
+		originWithDiscount.CostDiscount = "0.8"
+		unchanged := PatchChannel{Channel: originWithDiscount}
+		unchanged.CostDiscount = "0.800000"
+		assert.False(t, channelHasSensitiveChanges(&unchanged, &originWithDiscount, map[string]any{
+			"cost_discount": unchanged.CostDiscount,
+		}))
+
+		changed := PatchChannel{Channel: originWithDiscount}
+		changed.CostDiscount = "0.700000"
+		assert.True(t, channelHasSensitiveChanges(&changed, &originWithDiscount, map[string]any{
+			"cost_discount": changed.CostDiscount,
+		}))
+
+		unconfigured := *origin
+		unconfigured.CostDiscount = ""
+		unchangedUnconfigured := PatchChannel{Channel: unconfigured}
+		assert.False(t, channelHasSensitiveChanges(&unchangedUnconfigured, &unconfigured, map[string]any{
+			"cost_discount": "",
+		}))
+	})
+
 	t.Run("omitted sensitive fields do not use zero values", func(t *testing.T) {
 		updated := PatchChannel{}
 		updated.Id = origin.Id

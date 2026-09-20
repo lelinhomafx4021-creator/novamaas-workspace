@@ -21,8 +21,14 @@ import { getRouteApi } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
 import { formatLogQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getLogStats, getUserLogStats } from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
@@ -52,6 +58,12 @@ export function CommonLogsStats() {
   const { isAdminView: isAdmin } = useLogsViewScope()
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
+  const user = useAuthStore((state) => state.auth.user)
+  const canViewFinancialAccounting = hasPermission(
+    user,
+    ADMIN_PERMISSION_RESOURCES.FINANCIAL_ACCOUNTING,
+    ADMIN_PERMISSION_ACTIONS.VIEW
+  )
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['usage-logs-stats', isAdmin, searchParams],
@@ -102,6 +114,35 @@ export function CommonLogsStats() {
         value={stats?.tpm || 0}
         accent='bg-slate-400/70'
       />
+      {canViewFinancialAccounting ? (
+        <>
+          <StatBadge
+            label={t('Turnover')}
+            value={
+              sensitiveVisible
+                ? formatLogQuota(stats?.revenue_quota || 0)
+                : '••••'
+            }
+            accent='bg-violet-500/70'
+          />
+          <StatBadge
+            label={t('Cost amount')}
+            value={
+              sensitiveVisible ? formatLogQuota(stats?.cost_quota || 0) : '••••'
+            }
+            accent='bg-amber-500/70'
+          />
+          <StatBadge
+            label={t('Profit amount')}
+            value={
+              sensitiveVisible
+                ? formatLogQuota(stats?.profit_quota || 0)
+                : '••••'
+            }
+            accent='bg-emerald-500/70'
+          />
+        </>
+      ) : null}
     </div>
   )
 }

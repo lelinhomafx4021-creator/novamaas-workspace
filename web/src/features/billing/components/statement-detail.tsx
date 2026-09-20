@@ -101,6 +101,7 @@ function StatementContent(props: {
   const [part, setPart] = useState(1)
   const statement = props.detail.statement
   const snapshot = JSON.parse(statement.snapshot) as BillingSnapshot
+  const accountingSnapshot = props.detail.accounting_snapshot ?? snapshot
   const customerName =
     snapshot.username || props.detail.customer?.username || t('Unknown')
   const customerLabel = `${customerName} (#${statement.user_id})`
@@ -167,8 +168,8 @@ function StatementContent(props: {
         </p>
       )}
       <BillingRows
-        rows={snapshot.days}
-        total={snapshot.total}
+        rows={accountingSnapshot.days}
+        total={accountingSnapshot.total}
         symbol={snapshot.currency.symbol}
         roundingDifference={snapshot.rounding_difference}
       />

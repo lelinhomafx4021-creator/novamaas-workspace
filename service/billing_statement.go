@@ -29,6 +29,10 @@ type BillingRow struct {
 	Count       int64  `json:"count"`
 	ChargeQuota int64  `json:"charge_quota"`
 	RefundQuota int64  `json:"refund_quota"`
+	Cost        string `json:"cost,omitempty"`
+	Profit      string `json:"profit,omitempty"`
+	CostQuota   int64  `json:"cost_quota,omitempty"`
+	ProfitQuota int64  `json:"profit_quota,omitempty"`
 	State       string `json:"state,omitempty"`
 }
 type BillingSnapshot struct {
@@ -102,6 +106,22 @@ func billingRow(label string, charge, refund, count int64, currency BillingCurre
 	return BillingRow{Label: label, Charge: chargeAmount.StringFixed(6), Refund: refundAmount.StringFixed(6), Amount: chargeAmount.Sub(refundAmount).StringFixed(6), Count: count, ChargeQuota: charge, RefundQuota: refund}, nil
 }
 
+func attachBillingAccounting(row *BillingRow, costQuota int64, currency BillingCurrency) error {
+	rate, err := decimal.NewFromString(currency.Rate)
+	if err != nil {
+		return err
+	}
+	unit, err := decimal.NewFromString(currency.QuotaPerUnit)
+	if err != nil || !unit.IsPositive() {
+		return errors.New("invalid billing currency divisor")
+	}
+	row.CostQuota = costQuota
+	row.ProfitQuota = row.ChargeQuota - row.RefundQuota - costQuota
+	row.Cost = decimal.NewFromInt(costQuota).Mul(rate).Div(unit).StringFixed(6)
+	row.Profit = decimal.NewFromInt(row.ProfitQuota).Mul(rate).Div(unit).StringFixed(6)
+	return nil
+}
+
 // The displayed total is rounded once from integer quota, not summed from
 // already rounded rows. Surface the difference so readers can reconcile both.
 func billingRoundingDifference(rows []BillingRow, total BillingRow) (string, error) {
@@ -124,6 +144,10 @@ func GetBillingDay(userID int, day string) (*BillingDayView, error) {
 }
 
 func GetBillingDayContext(ctx context.Context, userID int, day string) (*BillingDayView, error) {
+	return GetBillingDayContextWithAccounting(ctx, userID, day, false)
+}
+
+func GetBillingDayContextWithAccounting(ctx context.Context, userID int, day string, includeAccounting bool) (*BillingDayView, error) {
 	if day == "" {
 		day = time.Now().In(billingLocation).Format("2006-01-02")
 	}
@@ -177,7 +201,70 @@ func GetBillingDayContext(ctx context.Context, userID int, day string) (*Billing
 		return nil, err
 	}
 	view.RoundingDifference, err = billingRoundingDifference(view.Hours, view.Total)
+	if err != nil || !includeAccounting {
+		return &view, err
+	}
+	accountingFilter := model.CostAccountingFilter{
+		StartTimestamp: start.Unix(),
+		EndTimestamp:   start.AddDate(0, 0, 1).Unix() - 1,
+		UserID:         userID,
+	}
+	buckets, err := model.SumCostAccountingBuckets(accountingFilter, 3600, 8*3600)
+	if err != nil {
+		return nil, err
+	}
+	byAccountingHour := make(map[int64]model.CostAccountingBucket, len(buckets))
+	for _, bucket := range buckets {
+		byAccountingHour[bucket.Bucket] = bucket
+	}
+	for hour := range view.Hours {
+		bucket := byAccountingHour[start.Add(time.Duration(hour)*time.Hour).Unix()]
+		if err := attachBillingAccounting(&view.Hours[hour], bucket.CostQuota, currency); err != nil {
+			return nil, err
+		}
+	}
+	totals, err := model.SumCostAccounting(accountingFilter)
+	if err != nil {
+		return nil, err
+	}
+	if err := attachBillingAccounting(&view.Total, totals.CostQuota, currency); err != nil {
+		return nil, err
+	}
 	return &view, err
+}
+
+func EnrichBillingSnapshotAccounting(snapshot *BillingSnapshot, userID int) error {
+	if snapshot == nil || userID <= 0 {
+		return nil
+	}
+	start, end, err := model.BillingMonthBounds(snapshot.Month)
+	if err != nil {
+		return err
+	}
+	filter := model.CostAccountingFilter{StartTimestamp: start, EndTimestamp: end - 1, UserID: userID}
+	buckets, err := model.SumCostAccountingBuckets(filter, 86400, 8*3600)
+	if err != nil {
+		return err
+	}
+	byDay := make(map[int64]model.CostAccountingBucket, len(buckets))
+	for _, bucket := range buckets {
+		byDay[bucket.Bucket] = bucket
+	}
+	for i := range snapshot.Days {
+		day, parseErr := time.ParseInLocation("2006-01-02", snapshot.Days[i].Label, billingLocation)
+		if parseErr != nil {
+			return parseErr
+		}
+		bucket := byDay[day.Unix()]
+		if err := attachBillingAccounting(&snapshot.Days[i], bucket.CostQuota, snapshot.Currency); err != nil {
+			return err
+		}
+	}
+	totals, err := model.SumCostAccounting(filter)
+	if err != nil {
+		return err
+	}
+	return attachBillingAccounting(&snapshot.Total, totals.CostQuota, snapshot.Currency)
 }
 
 func BuildBillingSnapshot(account *model.BillingAccount, month string, hours []model.BillingHour) (*BillingSnapshot, error) {

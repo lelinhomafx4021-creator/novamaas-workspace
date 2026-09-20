@@ -429,6 +429,8 @@ export const FIELD_DESCRIPTIONS = {
   STATUS_CODE_MAPPING: 'Map response status codes (JSON format)',
   TAG: 'Group channels by tag for batch operations',
   REMARK: 'Internal notes (not shown to users)',
+  COST_DISCOUNT:
+    'Accounting-only upstream cost multiplier. Leave empty to treat cost as turnover and profit as zero.',
   SETTING: 'Channel-specific settings (JSON format)',
   PARAM_OVERRIDE: 'Override request parameters (JSON format)',
   HEADER_OVERRIDE: 'Override request headers (JSON format)',

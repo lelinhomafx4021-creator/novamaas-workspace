@@ -306,9 +306,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
-
 	err := DB.AutoMigrate(
 		&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{},
+		&CostAccountingSnapshot{}, &CostAccountingAdjustment{},
 		&BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{},
 		&Channel{},
 		&Token{},
@@ -375,7 +375,10 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
-	if err := DB.AutoMigrate(&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{}); err != nil {
+	if err := DB.AutoMigrate(&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{}, &CostAccountingSnapshot{}, &CostAccountingAdjustment{}); err != nil {
+		return err
+	}
+	if err := ensureChannelCostDiscountColumn(DB); err != nil {
 		return err
 	}
 
@@ -465,6 +468,22 @@ func migrateDBFast() error {
 		}
 	}
 	common.SysLog("database migrated")
+	return nil
+}
+
+// ensureChannelCostDiscountColumn upgrades channel tables created before cost
+// accounting was introduced. Keeping this explicit avoids serving channel
+// queries against a partially upgraded schema during rolling upgrades.
+func ensureChannelCostDiscountColumn(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable(&Channel{}) {
+		return nil
+	}
+	if db.Migrator().HasColumn(&Channel{}, "CostDiscount") {
+		return nil
+	}
+	if err := db.Migrator().AddColumn(&Channel{}, "CostDiscount"); err != nil {
+		return fmt.Errorf("failed to add channels.cost_discount: %w", err)
+	}
 	return nil
 }
 

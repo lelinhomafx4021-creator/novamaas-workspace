@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	// Import oauth package to register providers via init()
 	_ "github.com/QuantumNous/new-api/oauth"
@@ -86,6 +87,17 @@ func SetApiRouter(router *gin.Engine) {
 			billingAdmin.POST("/history-imports", controller.ConfirmBillingHistoryImport)
 			billingAdmin.GET("/history-imports/:import_id/source", controller.DownloadBillingHistorySource)
 			billingAdmin.POST("/statements", middleware.CriticalRateLimit(), controller.CreateBillingStatement)
+		}
+		financialAccountingRoute := apiRouter.Group(
+			"/financial-accounting",
+			middleware.UserAuth(),
+			middleware.RequirePermission(authz.FinancialAccountingView),
+			middleware.DisableCache(),
+		)
+		{
+			financialAccountingRoute.GET("/summary", controller.GetCostAccountingSummary)
+			financialAccountingRoute.POST("/backfill", middleware.RootAuth(), controller.BackfillCostAccounting)
+			financialAccountingRoute.POST("/reprice", middleware.RootAuth(), controller.RepriceCostAccounting)
 		}
 		userRoute := apiRouter.Group("/user")
 		{

@@ -71,6 +71,13 @@ func clearChannelInfo(channel *model.Channel) {
 	}
 }
 
+func clearChannelFinancialInfo(channel *model.Channel, allowed bool) {
+	if channel == nil || allowed {
+		return
+	}
+	channel.CostDiscount = ""
+}
+
 func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	if statusFilter == common.ChannelStatusEnabled {
 		return query.Where("status = ?", common.ChannelStatusEnabled)
@@ -165,8 +172,10 @@ func GetAllChannels(c *gin.Context) {
 		}
 	}
 
+	canViewAccounting := canViewFinancialAccounting(c)
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
+		clearChannelFinancialInfo(datum, canViewAccounting)
 	}
 
 	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
@@ -378,8 +387,10 @@ func SearchChannels(c *gin.Context) {
 
 	pagedData := channelData[startIdx:endIdx]
 
+	canViewAccounting := canViewFinancialAccounting(c)
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
+		clearChannelFinancialInfo(datum, canViewAccounting)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -407,6 +418,7 @@ func GetChannel(c *gin.Context) {
 	}
 	if channel != nil {
 		clearChannelInfo(channel)
+		clearChannelFinancialInfo(channel, canViewFinancialAccounting(c))
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -480,6 +492,11 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
 	}
+	normalizedCostDiscount, err := model.NormalizeCostDiscount(channel.CostDiscount)
+	if err != nil {
+		return err
+	}
+	channel.CostDiscount = normalizedCostDiscount
 
 	if channel.Type == constant.ChannelTypeNewAPI && strings.TrimSpace(channel.GetBaseURL()) == "" {
 		return fmt.Errorf("New API channel base URL cannot be empty")
@@ -982,7 +999,12 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	originProxy := originChannel.GetSetting().Proxy
+	originCostDiscount, _ := model.NormalizeCostDiscount(originChannel.CostDiscount)
 	proxyChanged := false
+	_, costDiscountProvided := requestData["cost_discount"]
+	if !costDiscountProvided {
+		channel.CostDiscount = originCostDiscount
+	}
 	if _, settingProvided := requestData["setting"]; settingProvided {
 		newProxy, _ := service.NormalizeProxyURL(channel.GetSetting().Proxy)
 		normalizedOriginProxy, originProxyErr := service.NormalizeProxyURL(originProxy)
@@ -1083,7 +1105,11 @@ func UpdateChannel(c *gin.Context) {
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
 	}
-	err = channel.Update()
+	if costDiscountProvided && channel.CostDiscount == "" {
+		err = channel.UpdateClearingCostDiscount()
+	} else {
+		err = channel.Update()
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -1109,6 +1135,9 @@ func UpdateChannel(c *gin.Context) {
 	if channel.Key != "" && channel.Key != originChannel.Key {
 		changedFields = append(changedFields, "key")
 	}
+	if channel.CostDiscount != originCostDiscount {
+		changedFields = append(changedFields, "cost_discount")
+	}
 	recordManageAudit(c, "channel.update", map[string]interface{}{
 		"id":             channel.Id,
 		"name":           channel.Name,
@@ -1116,6 +1145,7 @@ func UpdateChannel(c *gin.Context) {
 	})
 	channel.Key = ""
 	clearChannelInfo(&channel.Channel)
+	clearChannelFinancialInfo(&channel.Channel, canViewFinancialAccounting(c))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

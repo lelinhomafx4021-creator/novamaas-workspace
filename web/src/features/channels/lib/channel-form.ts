@@ -157,6 +157,10 @@ function isOptionalStatusCodeMapping(value: string | undefined): boolean {
   }
 }
 
+function isCostDiscount(value: string): boolean {
+  return /^(?:0(?:\.\d{1,6})?|1(?:\.0{1,6})?)$/.test(value.trim())
+}
+
 function isCodexCredential(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -231,6 +235,12 @@ export const channelFormSchema = z
       .string()
       .max(255, 'Remark must be less than 255 characters')
       .optional(),
+    cost_discount: z
+      .string()
+      .refine(
+        (value) => value.trim() === '' || isCostDiscount(value),
+        'Cost discount must be between 0 and 1 with up to 6 decimal places'
+      ),
     setting: z
       .string()
       .optional()
@@ -423,6 +433,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   status_code_mapping: '',
   tag: '',
   remark: '',
+  cost_discount: '',
   setting: '',
   param_override: '',
   header_override: '',
@@ -586,6 +597,7 @@ export function transformChannelToFormDefaults(
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
     remark: channel.remark || '',
+    cost_discount: channel.cost_discount || '',
     setting: channel.setting || '',
     param_override: channel.param_override || '',
     header_override: channel.header_override || '',
@@ -854,6 +866,10 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     other: formData.other || '',
   }
 
+  if (formData.cost_discount?.trim()) {
+    channel.cost_discount = formData.cost_discount.trim()
+  }
+
   // Clean up empty strings to null for optional fields
   Object.keys(channel).forEach((key) => {
     if (channel[key as keyof typeof channel] === '') {
@@ -876,7 +892,8 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
  */
 export function transformFormDataToUpdatePayload(
   formData: ChannelFormValues,
-  channelId: number
+  channelId: number,
+  includeCostDiscount = false
 ): Partial<Channel> {
   const payload: Partial<Channel> = {
     id: channelId,
@@ -901,6 +918,10 @@ export function transformFormDataToUpdatePayload(
     other: formData.other || '',
   }
 
+  if (includeCostDiscount) {
+    payload.cost_discount = formData.cost_discount?.trim() || ''
+  }
+
   // Only include key if it was changed (not empty)
   if (formData.key && formData.key.trim()) {
     payload.key = formData.key
@@ -908,6 +929,7 @@ export function transformFormDataToUpdatePayload(
 
   // Clean up empty strings to null for optional fields
   Object.keys(payload).forEach((key) => {
+    if (key === 'cost_discount') return
     if (payload[key as keyof typeof payload] === '') {
       ;(payload as Record<string, unknown>)[key] = null
     }

@@ -88,13 +88,21 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const canEditCostDiscount =
+    canEditSensitive &&
+    hasPermission(
+      currentUser,
+      ADMIN_PERMISSION_RESOURCES.FINANCIAL_ACCOUNTING,
+      ADMIN_PERMISSION_ACTIONS.VIEW
+    )
 
   return useMutation({
     mutationFn: async (data: ChannelFormValues): Promise<string> => {
       if (props.isEditing && props.currentRow) {
         const payload = transformFormDataToUpdatePayload(
           data,
-          props.currentRow.id
+          props.currentRow.id,
+          canEditCostDiscount
         )
         if (!data.key?.trim()) {
           delete payload.key

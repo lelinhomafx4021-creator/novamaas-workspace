@@ -521,6 +521,23 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		}
 	}
 
+	if wanted[CheckKimiKVV] {
+		emitCheck(CheckKimiKVV, "running", "")
+		kvvReq := chat
+		kvvReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVPrompt}}
+		kvvReq.Tools = kimiKVVTools()
+		if profile.id == VendorKimi {
+			kvvReq.ReasoningEffort = "low"
+		}
+		kvvRes := streamChat(ctx, httpClient, endpoint, req.APIKey, kvvReq, 60*time.Second, nil)
+		status, message := validateKimiKVVResult(kvvRes)
+		if profile.id != VendorKimi && status != "pass" {
+			status = "skip"
+			message = "非 Kimi 供应商未通过 KVV 严格认证（已跳过）：" + message
+		}
+		emitCheck(CheckKimiKVV, status, message)
+	}
+
 	if wanted[CheckAuthError] {
 		emitCheck(CheckAuthError, "running", "")
 		unauthorized := streamChat(ctx, httpClient, endpoint, "invalid-supplier-test-key", applyStream(chatRequest{

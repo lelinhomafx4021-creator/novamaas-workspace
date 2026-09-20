@@ -14,6 +14,7 @@ const (
 	CheckBadRequest   = "bad_request"
 	CheckRequestID    = "request_id"
 	CheckThinking     = "thinking"
+	CheckKimiKVV      = "kimi_kvv"
 	CheckStream       = "stream_format"
 	CheckCacheWarm    = "cache_warm"
 	CheckCacheProbe   = "cache_probe"
@@ -39,6 +40,7 @@ var allBasicChecks = []string{
 	CheckJSONMode,
 	CheckToolCall,
 	CheckThinking,
+	CheckKimiKVV,
 	CheckAuthError,
 	CheckBadRequest,
 }
@@ -52,6 +54,7 @@ var basicCheckTitles = map[string]string{
 	CheckJSONMode:     "JSON mode",
 	CheckToolCall:     "Tool call",
 	CheckThinking:     "Thinking mode",
+	CheckKimiKVV:      "Kimi KVV",
 	CheckAuthError:    "Auth error",
 	CheckBadRequest:   "Bad request",
 }

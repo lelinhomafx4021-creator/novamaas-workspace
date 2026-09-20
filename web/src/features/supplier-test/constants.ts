@@ -234,6 +234,13 @@ export const BASIC_CHECKS: CheckResult[] = [
     hintKey:
       'Asks the vendor for thinking / reasoning. No thinking API is skipped, not failed.',
   },
+  {
+    id: 'kimi_kvv',
+    title: 'Kimi KVV',
+    status: 'idle',
+    hintKey:
+      'Moonshot KVV official conformance: tests tool trigger similarity, schema accuracy, and stream spec.',
+  },
 ]
 
 export const SHALLOW_BASIC_IDS = [
@@ -250,6 +257,7 @@ export const PROTOCOL_BASIC_IDS = [
   'json_mode',
   'tool_call',
   'thinking',
+  'kimi_kvv',
 ] as const
 
 export const CACHE_CHECKS: CheckResult[] = [

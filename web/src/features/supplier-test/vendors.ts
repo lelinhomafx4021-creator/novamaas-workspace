@@ -31,7 +31,7 @@ export function vendorHintKey(selected: VendorId): string {
     return 'Using GLM fields: system-prefix cache, reasoning_content, cached_tokens.'
   }
   if (selected === 'kimi') {
-    return 'Using Kimi fields: cached_tokens, reasoning_content. kimi-k3 does not send thinking.'
+    return 'Using Kimi fields: cached_tokens, reasoning_content, Kimi KVV conformance. kimi-k3 uses reasoning_effort.'
   }
   if (selected === 'deepseek') {
     return 'Using DeepSeek fields: prompt_cache_hit_tokens, reasoning_content. R1 does not send thinking.'

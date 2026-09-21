@@ -59,7 +59,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
-import { querySupplierVideoTask } from '../api'
+import { querySupplierVideoTask, type QueryVideoTaskResult } from '../api'
 import {
   DEFAULT_VIDEO_PROMPT,
   ENDPOINT_PATH_PRESETS,
@@ -98,6 +98,7 @@ export function VideoPanel(props: {
   onSendRawJson?: (rawJson: string) => void
   onModelChange?: (model: string) => void
   onRunCheck?: (checkId?: string) => void
+  onManualQueryResult?: (res: QueryVideoTaskResult) => void
 }) {
   const { t } = useTranslation()
   const firstFileInputRef = useRef<HTMLInputElement>(null)
@@ -107,6 +108,13 @@ export function VideoPanel(props: {
   const [manualPollJson, setManualPollJson] = useState<string>('')
   const [isManualQuerying, setIsManualQuerying] = useState(false)
   const [copiedTab, setCopiedTab] = useState<string | null>(null)
+
+  const busy = props.busy
+  useEffect(() => {
+    if (busy) {
+      setManualPollJson('')
+    }
+  }, [busy])
 
   // Real-time request JSON preview based on current form
   const previewPayload = buildVideoRequestPayload(
@@ -270,6 +278,7 @@ export function VideoPanel(props: {
       if (!res.success) {
         toast.error(res.message || t('Failed to query task'))
       } else if (res.status) {
+        props.onManualQueryResult?.(res)
         toast.success(t('Task status: {{status}}', { status: res.status }))
       } else if (res.message) {
         toast.error(res.message)

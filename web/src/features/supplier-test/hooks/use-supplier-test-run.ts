@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 import { getFreshAuthHeaders } from '@/lib/api'
 
 import { API_ENDPOINTS, BASIC_CHECKS, CACHE_CHECKS, VIDEO_CHECKS } from '../constants'
+import type { QueryVideoTaskResult } from '../api'
 import type {
   CacheMetrics,
   CheckResult,
@@ -194,7 +195,19 @@ export function useSupplierTestRun() {
           return
         }
         if (parsed.video) {
-          setVideoMetrics(parsed.video)
+          setVideoMetrics((prev) => {
+            if (!prev) return parsed.video ?? null
+            return {
+              ...prev,
+              ...parsed.video,
+              raw_request_json:
+                parsed.video?.raw_request_json || prev.raw_request_json,
+              raw_submit_response_json:
+                parsed.video?.raw_submit_response_json ||
+                prev.raw_submit_response_json,
+              endpoint_url: parsed.video?.endpoint_url || prev.endpoint_url,
+            }
+          })
         }
         if (parsed.type === 'error') {
           handleError(parsed.message || t('Failed to start test'))
@@ -232,6 +245,26 @@ export function useSupplierTestRun() {
           return
         }
         if (parsed.type === 'progress') {
+          if (parsed.check_id) {
+            const applyCheck = (current: CheckResult[]) =>
+              current.map((check) =>
+                check.id === parsed.check_id
+                  ? {
+                      ...check,
+                      title: parsed.title || check.title,
+                      status: parsed.status ?? check.status,
+                      message: parsed.message,
+                    }
+                  : check
+              )
+            if (parsed.module === 'video') {
+              setVideoChecks(applyCheck)
+            } else if (parsed.module === 'cache') {
+              setCacheChecks(applyCheck)
+            } else if (parsed.module !== 'stress') {
+              setBasicChecks(applyCheck)
+            }
+          }
           setProgress({
             completed: parsed.completed ?? 0,
             total: parsed.total ?? 0,
@@ -294,6 +327,73 @@ export function useSupplierTestRun() {
     [t]
   )
 
+  const updateVideoMetricsWithQueryResult = useCallback(
+    (result: QueryVideoTaskResult) => {
+      setVideoMetrics((prev) => ({
+        ...prev,
+        task_id: result.task_id || prev?.task_id || '',
+        status: result.status || prev?.status || '',
+        elapsed_ms: prev?.elapsed_ms ?? 0,
+        video_url: result.video_url || prev?.video_url,
+        fail_reason: result.fail_reason || prev?.fail_reason,
+        raw_poll_response_json:
+          result.raw_response || prev?.raw_poll_response_json,
+      }))
+      if (result.status) {
+        const normalized = result.status.toLowerCase()
+        const isSuccess = normalized === 'succeeded' || normalized === 'success'
+        const isFailed = [
+          'failed',
+          'failure',
+          'cancelled',
+          'expired',
+        ].includes(normalized)
+
+        let pollStatus: CheckResult['status'] = 'running'
+        let pollMessage = t('Current status: {{status}}', { status: result.status })
+        if (isSuccess) {
+          pollStatus = 'pass'
+          pollMessage = t('Manual query: task completed')
+        } else if (isFailed) {
+          pollStatus = 'fail'
+          pollMessage = result.fail_reason || t('Task failed')
+        }
+
+        setVideoChecks((current) =>
+          current.map((check) => {
+            if (check.id === 'video_poll') {
+              return {
+                ...check,
+                status: pollStatus,
+                message: pollMessage,
+              }
+            }
+            if (check.id === 'video_result') {
+              if (isSuccess) {
+                return {
+                  ...check,
+                  status: result.video_url ? 'pass' : 'fail',
+                  message: result.video_url
+                    ? t('Successfully fetched video playback URL')
+                    : t('Task succeeded but no video URL returned'),
+                }
+              }
+              if (isFailed) {
+                return {
+                  ...check,
+                  status: 'fail',
+                  message: result.fail_reason || t('Task failed'),
+                }
+              }
+            }
+            return check
+          })
+        )
+      }
+    },
+    [t]
+  )
+
   return {
     runningModule,
     basicChecks,
@@ -309,5 +409,6 @@ export function useSupplierTestRun() {
     errorMessage,
     start,
     stop,
+    updateVideoMetricsWithQueryResult,
   }
 }

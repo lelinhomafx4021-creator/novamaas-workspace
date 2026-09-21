@@ -733,6 +733,7 @@ export function SupplierTest() {
                 onRunCheck={(checkId) => {
                   startModule('video', checkId ? [checkId] : undefined)
                 }}
+                onManualQueryResult={run.updateVideoMetricsWithQueryResult}
                 onExportPdf={() => {
                   exportVideoPdfReport(videoReportInput())
                   toast.success(t('Video PDF report ready'))

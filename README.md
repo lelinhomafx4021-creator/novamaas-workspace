@@ -103,6 +103,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#34](https://github.com/yeruyi1024/novamaas-workspace/pull/34) | 2026-09-21 | `fix` | 计费 / 财务核算 | 按来源日志识别异步任务实时快照与历史回填快照，阻止重复成本凭证；汇总和明细以最早的不可变快照为准，历史更正继续使用追加式调整。 | #31 的 NovaMaaS 下游正确性修复；上游当前没有等价的渠道成本快照与历史回填核算能力。 |
 | [#33](https://github.com/yeruyi1024/novamaas-workspace/pull/33) | 2026-09-21 | `feat` | 用户 / 微信小程序 | 新增独立 Taro 微信小程序客户端、小程序专属外部身份与可轮换移动会话，复用现有权限和计费规则；AppSecret、OpenID 与 session_key 不进入客户端，公开状态仅暴露登录就绪状态。 | NovaMaaS 下游专属；上游当前没有等价的微信小程序身份、移动会话与完整客户端组合实现。 |
 | [#32](https://github.com/yeruyi1024/novamaas-workspace/pull/32) | 2026-09-20 | `feat` | 模型协议 / Kimi KVV | 为 OpenAI 渠道的 `/moonshot/v1/chat/completions` 增加 Kimi 兼容透传模式，保留上游 Kimi 请求与 JSON/SSE 扩展字段、原始 usage 和模型映射语义，不向普通 OpenAI 上游伪造 KVV 能力。 | #28 Moonshot 兼容入口的 NovaMaaS 下游扩展；上游当前没有等价的 OpenAI 渠道 Kimi 透传模式。 |
 | [#31](https://github.com/yeruyi1024/novamaas-workspace/pull/31) | 2026-09-20 | `feat` | 计费 / 财务核算 | 新增渠道级上游成本折扣、不可变成本快照与追加式调整、历史回填重算、财务核算权限，以及日志、首页和账单中的营业额、成本与利润视图；未配置成本折扣时按成本等于营业额处理。 | NovaMaaS 下游专属；上游当前没有将渠道成本配置、历史成本证据、权限隔离和利润报表组合起来，同时保持客户售价与钱包扣费不变的等价实现。 |

@@ -650,7 +650,7 @@ func runStrictKimiKVV(
 ) (string, string) {
 	// 阶段 1：正向复合 Schema 严格校验
 	flightReq := baseChat
-	flightReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVFlightPrompt}}
+	flightReq.Messages = kimiKVVMessages(kimiKVVFlightPrompt)
 	flightReq.Tools = kimiKVVTools()
 	if vendor == VendorKimi {
 		flightReq.ReasoningEffort = "low"
@@ -667,7 +667,7 @@ func runStrictKimiKVV(
 
 	// 阶段 2：负向对抗拒调校验 (防工具滥用与强调工具幻觉)
 	negReq := baseChat
-	negReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVNegativePrompt}}
+	negReq.Messages = kimiKVVMessages(kimiKVVNegativePrompt)
 	negReq.Tools = kimiKVVTools()
 	if flightRes.Reasoning != "" && vendor == VendorKimi {
 		negReq.ReasoningEffort = "low"
@@ -684,7 +684,7 @@ func runStrictKimiKVV(
 
 	// 阶段 3：多工具歧义消解与精准路由校验
 	hotelReq := baseChat
-	hotelReq.Messages = []chatMessage{{Role: "user", Content: kimiKVVHotelPrompt}}
+	hotelReq.Messages = kimiKVVMessages(kimiKVVHotelPrompt)
 	hotelReq.Tools = kimiKVVTools()
 	if flightRes.Reasoning != "" && vendor == VendorKimi {
 		hotelReq.ReasoningEffort = "low"
@@ -699,7 +699,7 @@ func runStrictKimiKVV(
 		return status, msg
 	}
 
-	fullMsg := "KVV 严苛认证全部通过 (4/4)：① 正向复合 Schema 100% 合规 (5必填项/整型/枚举/正则)；② 负向拒调工具 0 幻觉 (finish_reason=stop)；③ 多工具歧义路由精准命中 book_hotel；④ 原厂协议合规"
+	fullMsg := "KVV 严苛认证全部通过 (4/4)：① ~3000 Token 企业上下文正向复合 Schema 100% 合规 (5必填项/整型/枚举/正则)；② 5工具长上下文负向拒调工具 0 幻觉 (finish_reason=stop)；③ 5大候选工具多工具歧义路由精准命中 book_hotel；④ 原厂协议合规"
 	if flightRes.Reasoning != "" || flightRes.ReasoningTokens > 0 {
 		if flightRes.ReasoningTokens > 0 {
 			fullMsg += fmt.Sprintf("，捕获 Moonshot 原生流式思维链 (%d tokens)", flightRes.ReasoningTokens)

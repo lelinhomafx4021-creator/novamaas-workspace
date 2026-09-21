@@ -209,20 +209,20 @@ func TestKimiKVVCheckAgainstFakeUpstream(t *testing.T) {
 		str := string(body)
 
 		w.Header().Set("Content-Type", "text/event-stream")
-		if strings.Contains(str, "query_flight") && strings.Contains(str, "Beijing") {
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-1","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"query_flight","arguments":"{\"origin\":\"Beijing\",\"destination\":\"Shanghai\",\"date\":\"2026-10-01\",\"passengers\":2,\"seat_class\":\"business\"}"}}],"reasoning_content":"searching flight"}}],"usage":{"prompt_tokens":10,"completion_tokens":20}}`+"\n\n")
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
-			_, _ = io.WriteString(w, "data: [DONE]\n\n")
-			return
-		}
 		if strings.Contains(str, "capital of France") {
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-2","choices":[{"index":0,"delta":{"content":"Paris"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`+"\n\n")
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			return
 		}
-		if strings.Contains(str, "book_hotel") || strings.Contains(str, "deluxe hotel") {
+		if strings.Contains(str, "book_hotel") && strings.Contains(str, "deluxe hotel") {
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-3","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_2","type":"function","function":{"name":"book_hotel","arguments":"{\"city\":\"Shanghai\",\"nights\":3,\"room_type\":\"deluxe\"}"}}]}}],"usage":{"prompt_tokens":10,"completion_tokens":15}}`+"\n\n")
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			return
+		}
+		if strings.Contains(str, "query_flight") && strings.Contains(str, "Beijing") {
+			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-1","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"query_flight","arguments":"{\"origin\":\"Beijing\",\"destination\":\"Shanghai\",\"date\":\"2026-10-01\",\"passengers\":2,\"seat_class\":\"business\"}"}}],"reasoning_content":"searching flight"}}],"usage":{"prompt_tokens":10,"completion_tokens":20}}`+"\n\n")
+			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			return
 		}

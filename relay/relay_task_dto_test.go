@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -23,6 +24,12 @@ func TestTaskModel2DtoReportsRequestBodyWithoutIncludingItInListPayload(t *testi
 		Properties: model.Properties{
 			Input:       "legacy-input",
 			RequestBody: json.RawMessage(`{"prompt":"private prompt"}`),
+			RequestMetrics: &hosttypes.TaskRequestMetrics{
+				RequestBodyBytes:            128,
+				UpstreamRequestMilliseconds: 240,
+				TotalMilliseconds:           260,
+				Attempts:                    1,
+			},
 		},
 	}
 
@@ -33,6 +40,9 @@ func TestTaskModel2DtoReportsRequestBodyWithoutIncludingItInListPayload(t *testi
 	require.True(t, ok)
 	assert.Empty(t, properties.RequestBody)
 	assert.Equal(t, "legacy-input", properties.Input)
+	require.NotNil(t, result.RequestMetrics)
+	assert.Equal(t, int64(128), result.RequestMetrics.RequestBodyBytes)
+	assert.Equal(t, int64(240), result.RequestMetrics.UpstreamRequestMilliseconds)
 }
 
 func TestVideoFetchByIDAllowsAdministratorTaskLogLookup(t *testing.T) {

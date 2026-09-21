@@ -27,6 +27,7 @@ import (
 	storageService "github.com/QuantumNous/new-api/service/storage"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -427,6 +428,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 				other["temporary_media_converted_count"] = count
 			}
 		}
+		if requestMetrics, ok := common.GetContextKeyType[hosttypes.TaskRequestMetrics](c, constant.ContextKeyTaskRequestMetrics); ok && requestMetrics.HasData() {
+			other["request_metrics"] = requestMetrics
+		}
 		adminInfo := make(map[string]interface{})
 		adminInfo["use_channel"] = c.GetStringSlice("use_channel")
 		isMultiKey := common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey)
@@ -593,6 +597,10 @@ func RelayTask(c *gin.Context) {
 			}
 			break
 		}
+		if relayInfo.TaskRelayInfo != nil {
+			relayInfo.RequestMetrics.RequestBodyBytes, _ = common.GetContextKeyType[int64](c, constant.ContextKeyRequestBodyBytes)
+			relayInfo.RequestMetrics.BodyReadMilliseconds, _ = common.GetContextKeyType[int64](c, constant.ContextKeyRequestBodyReadMilliseconds)
+		}
 		requestBodyToStore, bodyErr = captureVideoTaskRequestBody(channel.Type, bodyStorage)
 		if bodyErr != nil {
 			statusCode := http.StatusBadRequest
@@ -609,6 +617,14 @@ func RelayTask(c *gin.Context) {
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		if relayInfo.TaskRelayInfo != nil {
+			requestReceivedAt := common.GetContextKeyTime(c, constant.ContextKeyRequestReceivedTime)
+			if requestReceivedAt.IsZero() {
+				requestReceivedAt = relayInfo.StartTime
+			}
+			relayInfo.RequestMetrics.TotalMilliseconds = time.Since(requestReceivedAt).Milliseconds()
+			common.SetContextKey(c, constant.ContextKeyTaskRequestMetrics, relayInfo.RequestMetrics)
+		}
 		if relayInfo.PublicTaskID != "" {
 			common.SetContextKey(c, constant.ContextKeyVideoTaskPublicID, relayInfo.PublicTaskID)
 		}

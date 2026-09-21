@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	hosttypes "github.com/QuantumNous/new-api/types"
 )
 
 type TaskStatus string
@@ -80,17 +81,19 @@ func (t *Task) GetData(v any) error {
 }
 
 type Properties struct {
-	Input             string          `json:"input"`
-	UpstreamModelName string          `json:"upstream_model_name,omitempty"`
-	OriginModelName   string          `json:"origin_model_name,omitempty"`
-	RequestBody       json.RawMessage `json:"-"`
+	Input             string                        `json:"input"`
+	UpstreamModelName string                        `json:"upstream_model_name,omitempty"`
+	OriginModelName   string                        `json:"origin_model_name,omitempty"`
+	RequestBody       json.RawMessage               `json:"-"`
+	RequestMetrics    *hosttypes.TaskRequestMetrics `json:"-"`
 }
 
 type propertiesStorage struct {
-	Input             string          `json:"input"`
-	UpstreamModelName string          `json:"upstream_model_name,omitempty"`
-	OriginModelName   string          `json:"origin_model_name,omitempty"`
-	RequestBody       json.RawMessage `json:"request_body,omitempty"`
+	Input             string                        `json:"input"`
+	UpstreamModelName string                        `json:"upstream_model_name,omitempty"`
+	OriginModelName   string                        `json:"origin_model_name,omitempty"`
+	RequestBody       json.RawMessage               `json:"request_body,omitempty"`
+	RequestMetrics    *hosttypes.TaskRequestMetrics `json:"request_metrics,omitempty"`
 }
 
 func (m *Properties) Scan(val interface{}) error {
@@ -108,12 +111,13 @@ func (m *Properties) Scan(val interface{}) error {
 		UpstreamModelName: stored.UpstreamModelName,
 		OriginModelName:   stored.OriginModelName,
 		RequestBody:       stored.RequestBody,
+		RequestMetrics:    stored.RequestMetrics,
 	}
 	return nil
 }
 
 func (m Properties) Value() (driver.Value, error) {
-	if m.Input == "" && m.UpstreamModelName == "" && m.OriginModelName == "" && len(m.RequestBody) == 0 {
+	if m.Input == "" && m.UpstreamModelName == "" && m.OriginModelName == "" && len(m.RequestBody) == 0 && m.RequestMetrics == nil {
 		return nil, nil
 	}
 	return common.Marshal(propertiesStorage{
@@ -121,6 +125,7 @@ func (m Properties) Value() (driver.Value, error) {
 		UpstreamModelName: m.UpstreamModelName,
 		OriginModelName:   m.OriginModelName,
 		RequestBody:       m.RequestBody,
+		RequestMetrics:    m.RequestMetrics,
 	})
 }
 
@@ -215,6 +220,10 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		if relayInfo.OriginModelName != "" {
 			properties.OriginModelName = relayInfo.OriginModelName
 		}
+	}
+	if relayInfo != nil && relayInfo.TaskRelayInfo != nil && relayInfo.RequestMetrics.HasData() {
+		metrics := relayInfo.RequestMetrics
+		properties.RequestMetrics = &metrics
 	}
 
 	// 使用预生成的公开 ID（如果有），否则新生成

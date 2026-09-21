@@ -99,6 +99,7 @@ import type {
   SearchChannelsResponse,
 } from '../../types'
 import { useChannels } from '../channels-provider'
+import { ChannelNetworkTestPanel } from './channel-network-test-panel'
 
 type ChannelTestDialogProps = {
   open: boolean
@@ -993,6 +994,7 @@ function ChannelTestDialogContent({
         }
       >
         <div className='max-h-[78vh] space-y-4 overflow-y-auto py-4 pr-1'>
+          <ChannelNetworkTestPanel channelId={currentRow.id} />
           <div className='grid gap-4 md:grid-cols-2'>
             <div className='grid gap-2'>
               <Label htmlFor='endpoint-type'>{t('Endpoint Type')}</Label>

@@ -219,12 +219,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			}
 		} else {
 			var convertedCount int
-			data, convertedCount, err = storageService.MaterializeVideoTaskBase64(
-				c.Request.Context(),
+			data, convertedCount, err = taskcommon.MaterializeVideoTaskBase64(
+				c,
 				data,
-				info.UserId,
-				info.RequestId,
-				info.PublicTaskID,
+				info,
 				policyKey,
 				storageService.Base64StagingSourceDoubaoVideo,
 			)

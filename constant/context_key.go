@@ -7,8 +7,11 @@ const (
 	ContextKeyPromptTokens    ContextKey = "prompt_tokens"
 	ContextKeyEstimatedTokens ContextKey = "estimated_tokens"
 
-	ContextKeyOriginalModel    ContextKey = "original_model"
-	ContextKeyRequestStartTime ContextKey = "request_start_time"
+	ContextKeyOriginalModel               ContextKey = "original_model"
+	ContextKeyRequestStartTime            ContextKey = "request_start_time"
+	ContextKeyRequestReceivedTime         ContextKey = "request_received_time"
+	ContextKeyRequestBodyReadMilliseconds ContextKey = "request_body_read_ms"
+	ContextKeyRequestBodyBytes            ContextKey = "request_body_bytes"
 
 	/* token related keys */
 	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"
@@ -72,6 +75,8 @@ const (
 	ContextKeyVideoTaskPublicID            ContextKey = "video_task_public_id"
 	ContextKeyTemporaryMediaConverted      ContextKey = "temporary_media_converted"
 	ContextKeyTemporaryMediaConvertedCount ContextKey = "temporary_media_converted_count"
+	ContextKeyTemporaryMediaMilliseconds   ContextKey = "temporary_media_ms"
+	ContextKeyTaskRequestMetrics           ContextKey = "task_request_metrics"
 
 	// ContextKeyAdminRejectReason stores an admin-only reject/block reason extracted from upstream responses.
 	// It is not returned to end users, but can be persisted into consume/error logs for debugging.

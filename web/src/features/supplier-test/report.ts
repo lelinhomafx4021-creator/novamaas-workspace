@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 import {
   displayMeasured,
   displayThreshold,
@@ -26,7 +25,6 @@ import {
   VERDICT_LABEL,
   type Assessment,
 } from './baselines'
-
 import { PROTOCOL_BASIC_IDS, SHALLOW_BASIC_IDS } from './constants'
 import type {
   CacheMetrics,
@@ -34,7 +32,6 @@ import type {
   CheckStatus,
   StressMetrics,
 } from './types'
-
 
 export type StressConfig = {
   concurrency: number
@@ -120,7 +117,9 @@ function translate(
 }
 
 export function formatTokenCompact(tokens: number | undefined): string {
-  if (tokens === undefined || !Number.isFinite(tokens) || tokens <= 0) return '0'
+  if (tokens === undefined || !Number.isFinite(tokens) || tokens <= 0) {
+    return '0'
+  }
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
   return String(tokens)
@@ -138,7 +137,9 @@ function checkLines(
 }
 
 function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
-  const benchmarkRows = assessment.rows.filter((row) => !isInformationalRow(row))
+  const benchmarkRows = assessment.rows.filter(
+    (row) => !isInformationalRow(row)
+  )
   if (benchmarkRows.length === 0) return []
   const lines = [
     `| ${t('Metric')} | ${t('Measured')} | ${t('Threshold')} | ${t('Verdict')} |`,
@@ -153,8 +154,7 @@ function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
 }
 
 export function buildMarkdownReport(input: ReportInput): string {
-  const t: ReportInput['t'] = (key, options) =>
-    translate(input.t, key, options)
+  const t: ReportInput['t'] = (key, options) => translate(input.t, key, options)
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
   )
@@ -235,7 +235,11 @@ export function buildMarkdownReport(input: ReportInput): string {
       )
     }
     if (input.cacheChecks.length > 0) {
-      lines.push(`### 3.1 ${t('Cache probe details')}`, ...checkLines(input.cacheChecks, input, t), '')
+      lines.push(
+        `### 3.1 ${t('Cache probe details')}`,
+        ...checkLines(input.cacheChecks, input, t),
+        ''
+      )
     }
     if (input.cacheMetrics) {
       const cm = input.cacheMetrics
@@ -321,7 +325,9 @@ function htmlBenchmarkTable(
   assessment: Assessment,
   t: ReportInput['t']
 ): string {
-  const benchmarkRows = assessment.rows.filter((row) => !isInformationalRow(row))
+  const benchmarkRows = assessment.rows.filter(
+    (row) => !isInformationalRow(row)
+  )
   if (benchmarkRows.length === 0) return ''
   const body = benchmarkRows
     .map((row) => {
@@ -341,8 +347,7 @@ function htmlBenchmarkTable(
 }
 
 export function buildHtmlReport(input: ReportInput): string {
-  const t: ReportInput['t'] = (key, options) =>
-    translate(input.t, key, options)
+  const t: ReportInput['t'] = (key, options) => translate(input.t, key, options)
 
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
@@ -439,9 +444,7 @@ ${summaryHtml}
           ? `${cm.hit_count}/${cm.rounds} (${formatPercent(cm.rounds > 0 ? (cm.hit_count ?? 0) / cm.rounds : 0)})`
           : '-'
       const depthText =
-        cm.avg_depth_rate !== undefined
-          ? formatPercent(cm.avg_depth_rate)
-          : '-'
+        cm.avg_depth_rate !== undefined ? formatPercent(cm.avg_depth_rate) : '-'
       configBar = `<div class="config-bar">
 <div class="config-item">${escapeHtml(t('Cache mode'))}：<span>${escapeHtml(modeLabel)}</span></div>
 <div class="config-item">${escapeHtml(t('Probe rounds'))}：<span>${cm.rounds}</span></div>
@@ -803,4 +806,394 @@ ${input.errorMessage ? `<div class="section page-break-avoid"><h2>${escapeHtml(t
 </body>
 </html>
 `
+}
+
+export type VideoReportInput = {
+  baseUrl: string
+  model: string
+  endpointUrl?: string
+  taskId?: string
+  status?: string
+  elapsedMs: number
+  failReason?: string
+  videoUrl?: string
+  videoConfig: {
+    prompt: string
+    hasImage: boolean
+    uploadMode: string
+    imageUrl?: string
+    role?: string
+    hasLastFrame: boolean
+    lastFrameMode?: string
+    lastFrameUrl?: string
+    resolution?: string
+    ratio?: string
+    duration?: number
+    watermark?: boolean
+    seed?: string
+    generateAudio?: boolean
+    returnLastFrame?: boolean
+    customJson?: string
+    customPath?: string
+  }
+  videoChecks: CheckResult[]
+  t: (key: string, options?: Record<string, string | number>) => string
+}
+
+export function buildVideoMarkdownReport(input: VideoReportInput): string {
+  const t = (key: string, options?: Record<string, string | number>) =>
+    translate(input.t, key, options)
+
+  const lines = [
+    `# ${t('Doubao Video Generation Test Report')}`,
+    '',
+    `- ${t('Time')}: ${new Date().toLocaleString()}`,
+    `- ${t('Base URL')}: ${input.baseUrl || '-'}`,
+    `- ${t('Endpoint URL')}: POST ${input.endpointUrl || '-'}`,
+    `- ${t('Model')}: ${input.model || '-'}`,
+    `- ${t('Task ID')}: ${input.taskId || '-'}`,
+    `- ${t('Status')}: ${input.status || t('Unknown')}`,
+    `- ${t('Duration')}: ${(input.elapsedMs / 1000).toFixed(1)}s`,
+    '',
+    `## 1. ${t('Video Generation Parameters')}`,
+    `### 1.1 ${t('Prompt')}`,
+    input.videoConfig.prompt || '-',
+    '',
+  ]
+
+  if (input.videoConfig.hasImage) {
+    const roleText =
+      input.videoConfig.role === 'first_frame'
+        ? t('First Frame')
+        : t('Reference Image')
+    const srcText =
+      input.videoConfig.uploadMode === 'url'
+        ? input.videoConfig.imageUrl || '-'
+        : t('Local File (Base64)')
+    lines.push(`- ${t('Image Input')}: ${roleText} (${srcText})`)
+  } else {
+    lines.push(`- ${t('Input Mode')}: ${t('Text-to-Video')}`)
+  }
+
+  if (input.videoConfig.hasLastFrame) {
+    const endSrc =
+      input.videoConfig.lastFrameMode === 'url'
+        ? input.videoConfig.lastFrameUrl || '-'
+        : t('Local File (Base64)')
+    lines.push(`- ${t('End Frame')}: ${endSrc}`)
+  }
+
+  if (input.videoConfig.resolution) {
+    lines.push(
+      `- ${t('Resolution (resolution)')}: ${input.videoConfig.resolution}`
+    )
+  }
+  if (input.videoConfig.ratio) {
+    lines.push(`- ${t('Aspect Ratio (ratio)')}: ${input.videoConfig.ratio}`)
+  }
+  if (input.videoConfig.duration) {
+    lines.push(
+      `- ${t('Duration (duration, sec)')}: ${input.videoConfig.duration}s`
+    )
+  }
+  if (input.videoConfig.watermark !== undefined) {
+    const wmText = input.videoConfig.watermark ? t('Enabled') : t('Disabled')
+    lines.push(`- ${t('Watermark (watermark)')}: ${wmText}`)
+  }
+  if (input.videoConfig.seed) {
+    lines.push(`- ${t('Seed (seed)')}: ${input.videoConfig.seed}`)
+  }
+  if (input.videoConfig.generateAudio !== undefined) {
+    const gaText = input.videoConfig.generateAudio
+      ? t('Enabled')
+      : t('Disabled')
+    lines.push(`- ${t('Generate Audio (generate_audio)')}: ${gaText}`)
+  }
+  if (input.videoConfig.returnLastFrame !== undefined) {
+    const rlfText = input.videoConfig.returnLastFrame
+      ? t('Enabled')
+      : t('Disabled')
+    lines.push(`- ${t('Return Last Frame (return_last_frame)')}: ${rlfText}`)
+  }
+  if (input.videoConfig.customJson) {
+    lines.push(
+      `- ${t('Custom Extra Parameters')}: \`${input.videoConfig.customJson}\``
+    )
+  }
+
+  lines.push('', `## 2. ${t('Execution Pipeline')}`)
+  for (const check of input.videoChecks) {
+    const detail = check.message ? ` — ${check.message}` : ''
+    lines.push(`- ${t(check.title)}: ${t(check.status)}${detail}`)
+  }
+
+  lines.push('', `## 3. ${t('Output Result')}`)
+  if (input.videoUrl) {
+    lines.push(
+      `- ${t('Generated Video Output')}: [${t('Open URL in new tab')}](${input.videoUrl})`
+    )
+  } else if (input.failReason) {
+    lines.push(`- ${t('Generation Failed')}: ${input.failReason}`)
+  } else {
+    lines.push(`- ${t('No output available')}`)
+  }
+
+  return `${lines.join('\n')}\n`
+}
+
+export function buildVideoHtmlReport(input: VideoReportInput): string {
+  const t = (key: string, options?: Record<string, string | number>) =>
+    translate(input.t, key, options)
+  const statusStr = (input.status || '').toLowerCase()
+  const isSucceeded = statusStr === 'succeeded' || statusStr === 'success'
+  const isFailed = statusStr === 'failed' || statusStr === 'failure'
+
+  let statusColor = '#2563eb'
+  let statusBg = '#eff6ff'
+  let statusBorder = '#bfdbfe'
+  if (isSucceeded) {
+    statusColor = '#15803d'
+    statusBg = '#f0fdf4'
+    statusBorder = '#bbf7d0'
+  } else if (isFailed) {
+    statusColor = '#dc2626'
+    statusBg = '#fef2f2'
+    statusBorder = '#fecaca'
+  }
+
+  const checksHtml = input.videoChecks
+    .map((check) => {
+      let statusCls = 'check-status-fail'
+      if (check.status === 'pass') {
+        statusCls = 'check-status-pass'
+      } else if (check.status === 'skip') {
+        statusCls = 'check-status-skip'
+      }
+      return `<div class="check-item"><span class="${statusCls}">●</span><span class="check-title">${escapeHtml(t(check.title))}：</span><span class="check-status-text">${escapeHtml(t(check.status))}</span>${check.message ? `<span class="check-msg">${escapeHtml(check.message)}</span>` : ''}</div>`
+    })
+    .join('')
+
+  const params: string[] = []
+  if (input.videoConfig.hasImage) {
+    const roleText =
+      input.videoConfig.role === 'first_frame'
+        ? t('First Frame')
+        : t('Reference Image')
+    const srcText =
+      input.videoConfig.uploadMode === 'url'
+        ? input.videoConfig.imageUrl || '-'
+        : t('Local File (Base64)')
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Image Input'))}：</span><span class="meta-value">${escapeHtml(roleText)} (${escapeHtml(srcText)})</span></div>`
+    )
+  } else {
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Input Mode'))}：</span><span class="meta-value">${escapeHtml(t('Text-to-Video'))}</span></div>`
+    )
+  }
+  if (input.videoConfig.hasLastFrame) {
+    const endSrc =
+      input.videoConfig.lastFrameMode === 'url'
+        ? input.videoConfig.lastFrameUrl || '-'
+        : t('Local File (Base64)')
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('End Frame'))}：</span><span class="meta-value">${escapeHtml(endSrc)}</span></div>`
+    )
+  }
+  if (input.videoConfig.resolution) {
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Resolution (resolution)'))}：</span><span class="meta-value">${escapeHtml(input.videoConfig.resolution)}</span></div>`
+    )
+  }
+  if (input.videoConfig.ratio) {
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Aspect Ratio (ratio)'))}：</span><span class="meta-value">${escapeHtml(input.videoConfig.ratio)}</span></div>`
+    )
+  }
+  if (input.videoConfig.duration) {
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Duration (duration, sec)'))}：</span><span class="meta-value">${input.videoConfig.duration}s</span></div>`
+    )
+  }
+  if (input.videoConfig.watermark !== undefined) {
+    const wm = input.videoConfig.watermark ? t('Enabled') : t('Disabled')
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Watermark (watermark)'))}：</span><span class="meta-value">${escapeHtml(wm)}</span></div>`
+    )
+  }
+  if (input.videoConfig.seed) {
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Seed (seed)'))}：</span><span class="meta-value">${escapeHtml(input.videoConfig.seed)}</span></div>`
+    )
+  }
+  if (input.videoConfig.generateAudio !== undefined) {
+    const ga = input.videoConfig.generateAudio ? t('Enabled') : t('Disabled')
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Generate Audio (generate_audio)'))}：</span><span class="meta-value">${escapeHtml(ga)}</span></div>`
+    )
+  }
+  if (input.videoConfig.returnLastFrame !== undefined) {
+    const rlf = input.videoConfig.returnLastFrame ? t('Enabled') : t('Disabled')
+    params.push(
+      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Return Last Frame (return_last_frame)'))}：</span><span class="meta-value">${escapeHtml(rlf)}</span></div>`
+    )
+  }
+  if (input.videoConfig.customJson) {
+    params.push(
+      `<div class="meta-item" style="grid-column: span 2;"><span class="meta-label">${escapeHtml(t('Custom Extra Parameters'))}：</span><span class="meta-value font-mono">${escapeHtml(input.videoConfig.customJson)}</span></div>`
+    )
+  }
+
+  let outputSectionHtml = `<p style="color:#64748b">${escapeHtml(t('No output available'))}</p>`
+  if (input.videoUrl) {
+    outputSectionHtml = `
+    <div class="output-box">
+      <div class="output-title">✓ ${escapeHtml(t('Generated Video Output'))}</div>
+      <div class="output-url"><a href="${escapeHtml(input.videoUrl)}" target="_blank" rel="noreferrer">${escapeHtml(input.videoUrl)}</a></div>
+    </div>`
+  } else if (input.failReason) {
+    outputSectionHtml = `
+    <div class="error-box">
+      <div class="error-title">✕ ${escapeHtml(t('Generation Failed'))}</div>
+      <div class="error-msg">${escapeHtml(input.failReason)}</div>
+    </div>`
+  }
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<title>${escapeHtml(t('Doubao Video Generation Test Report'))}-${stampFileName()}</title>
+<style>
+@page { size: A4; margin: 0; }
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 12mm 16mm !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page-break-avoid { break-inside: avoid; page-break-inside: avoid; }
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  color: #1e293b;
+  line-height: 1.5;
+  background: #fff;
+  margin: 0 auto;
+  padding: 12mm 16mm;
+  max-width: 960px;
+  font-size: 11.5px;
+}
+.report-header { border-bottom: 2px solid #7c3aed; padding-bottom: 8px; margin-bottom: 12px; }
+.report-title-row { display: flex; justify-content: space-between; align-items: flex-end; }
+.report-title { font-size: 19px; font-weight: 700; color: #0f172a; margin: 0; }
+.report-subtitle { font-size: 11px; color: #64748b; margin-top: 2px; }
+.report-badge-top { display: inline-flex; align-items: center; background: ${statusBg}; border: 1px solid ${statusBorder}; color: ${statusColor}; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; }
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+.meta-item { display: flex; align-items: baseline; font-size: 11px; }
+.meta-label { color: #64748b; white-space: nowrap; flex-shrink: 0; }
+.meta-value { color: #0f172a; font-weight: 500; word-break: break-all; }
+.section { margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; background: #fff; }
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; }
+.section-title { font-size: 13px; font-weight: 700; color: #0f172a; }
+.prompt-box { font-size: 11px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; color: #334155; margin-bottom: 8px; }
+.check-item { display: flex; align-items: baseline; gap: 6px; font-size: 11px; padding: 3px 0; border-bottom: 1px dashed #f1f5f9; }
+.check-item:last-child { border-bottom: none; }
+.check-status-pass { color: #16a34a; font-size: 9px; flex-shrink: 0; }
+.check-status-fail { color: #dc2626; font-size: 9px; flex-shrink: 0; }
+.check-status-skip { color: #94a3b8; font-size: 9px; flex-shrink: 0; }
+.check-title { font-weight: 600; color: #1e293b; flex-shrink: 0; }
+.check-status-text { font-weight: 600; text-transform: uppercase; font-size: 10.5px; }
+.check-msg { color: #64748b; font-size: 10.5px; word-break: break-all; }
+.output-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 14px; margin-top: 8px; }
+.output-title { font-weight: 600; color: #15803d; font-size: 12px; margin-bottom: 4px; }
+.output-url { font-family: monospace; font-size: 11px; word-break: break-all; color: #166534; }
+.output-url a { color: #166534; text-decoration: underline; }
+.error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 14px; margin-top: 8px; }
+.error-title { font-weight: 600; color: #b91c1c; font-size: 12px; margin-bottom: 4px; }
+.error-msg { font-size: 11px; color: #991b1b; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<div class="report-header">
+  <div class="report-title-row">
+    <div>
+      <h1 class="report-title">${escapeHtml(t('Doubao Video Generation Test Report'))}</h1>
+      <div class="report-subtitle">Volcano Ark Seedance Video Model Verification</div>
+    </div>
+    <div class="report-badge-top">${escapeHtml(input.status || t('Unknown'))}</div>
+  </div>
+</div>
+
+<div class="meta-grid">
+  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Model'))}：</span><span class="meta-value">${escapeHtml(input.model || '-')}</span></div>
+  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Base URL'))}：</span><span class="meta-value">${escapeHtml(input.baseUrl || '-')}</span></div>
+  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Endpoint URL'))}：</span><span class="meta-value">POST ${escapeHtml(input.endpointUrl || '-')}</span></div>
+  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Task ID'))}：</span><span class="meta-value">${escapeHtml(input.taskId || '-')}</span></div>
+  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Duration'))}：</span><span class="meta-value">${(input.elapsedMs / 1000).toFixed(1)} s</span></div>
+  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Time'))}：</span><span class="meta-value">${escapeHtml(new Date().toLocaleString())}</span></div>
+</div>
+
+<div class="section page-break-avoid">
+  <div class="section-header">
+    <div class="section-title">一、${escapeHtml(t('Video Generation Parameters'))}</div>
+  </div>
+  <div class="prompt-box"><strong>${escapeHtml(t('Prompt'))}：</strong>${escapeHtml(input.videoConfig.prompt || '-')}</div>
+  <div class="meta-grid" style="margin-bottom:0; background:#fff; border:none; padding:0;">
+    ${params.join('')}
+  </div>
+</div>
+
+<div class="section page-break-avoid">
+  <div class="section-header">
+    <div class="section-title">二、${escapeHtml(t('Execution Pipeline'))}</div>
+  </div>
+  <div class="checks-list">
+    ${checksHtml}
+  </div>
+</div>
+
+<div class="section page-break-avoid">
+  <div class="section-header">
+    <div class="section-title">三、${escapeHtml(t('Output Result'))}</div>
+  </div>
+  ${outputSectionHtml}
+</div>
+
+</body>
+</html>`
+}
+
+export function exportVideoPdfReport(input: VideoReportInput) {
+  const html = buildVideoHtmlReport(input)
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '0'
+  iframe.style.bottom = '0'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = '0'
+  iframe.title = 'doubao-video-report-print'
+  document.body.appendChild(iframe)
+
+  const doc = iframe.contentWindow?.document
+  if (!doc) {
+    document.body.removeChild(iframe)
+    return
+  }
+
+  doc.open()
+  doc.write(html)
+  doc.close()
+
+  iframe.contentWindow?.focus()
+  setTimeout(() => {
+    iframe.contentWindow?.print()
+    setTimeout(() => {
+      document.body.removeChild(iframe)
+    }, 1000)
+  }, 250)
 }

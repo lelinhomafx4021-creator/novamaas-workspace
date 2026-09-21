@@ -27,8 +27,11 @@ import {
 import {
   buildHtmlReport,
   buildMarkdownReport,
+  buildVideoHtmlReport,
+  buildVideoMarkdownReport,
   formatTokenCompact,
   type ReportInput,
+  type VideoReportInput,
 } from './report'
 import type { CacheMetrics, CheckResult, StressMetrics } from './types'
 
@@ -101,6 +104,38 @@ function makeTestInput(): ReportInput {
   }
 }
 
+function makeVideoTestInput(): VideoReportInput {
+  return {
+    baseUrl: 'https://ark.cn-beijing.volces.com',
+    model: 'doubao-seedance-1-0-pro',
+    endpointUrl:
+      'https://ark.cn-beijing.volces.com/api/v3/content/generation/tasks',
+    taskId: 'cgt-20260921-test-12345',
+    status: 'succeeded',
+    elapsedMs: 25300,
+    videoUrl: 'https://tos.volces.com/test-video.mp4',
+    videoConfig: {
+      prompt: 'A futuristic city with flying cars at sunset',
+      hasImage: true,
+      uploadMode: 'url',
+      imageUrl: 'https://example.com/first-frame.png',
+      role: 'first_frame',
+      hasLastFrame: false,
+      resolution: '720p',
+      ratio: '16:9',
+      duration: 5,
+      watermark: false,
+      generateAudio: true,
+      returnLastFrame: false,
+    },
+    videoChecks: [
+      { id: 'create_task', title: 'Task creation', status: 'pass' },
+      { id: 'poll_task', title: 'Task execution polling', status: 'pass' },
+    ],
+    t: (key) => key,
+  }
+}
+
 describe('supplier-test report', () => {
   test('formatTokenCompact formats large and small numbers', () => {
     expect(formatTokenCompact(0)).toBe('0')
@@ -165,5 +200,46 @@ describe('supplier-test report', () => {
     // Informational rows (throughput, duration, tokens) are in summary bullets, not benchmark table
     expect(md).not.toContain('| Throughput |')
     expect(md).not.toContain('| Total duration |')
+  })
+
+  test('buildVideoMarkdownReport generates dedicated Doubao video report decoupled from text metrics', () => {
+    const videoInput = makeVideoTestInput()
+    const md = buildVideoMarkdownReport(videoInput)
+
+    expect(md).toContain('# Doubao Video Generation Test Report')
+    expect(md).toContain('## 1. Video Generation Parameters')
+    expect(md).toContain('A futuristic city with flying cars at sunset')
+    expect(md).toContain('720p')
+    expect(md).toContain('16:9')
+    expect(md).toContain('cgt-20260921-test-12345')
+    expect(md).toContain('https://tos.volces.com/test-video.mp4')
+    expect(md).toContain('## 2. Execution Pipeline')
+    expect(md).toContain('## 3. Output Result')
+
+    // Zero contamination from text model tests
+    expect(md).not.toContain('Concurrency and stress test')
+    expect(md).not.toContain('Prompt cache test')
+    expect(md).not.toContain('TTFT')
+    expect(md).not.toContain('TPOT')
+  })
+
+  test('buildVideoHtmlReport generates print-ready Doubao video report without text model sections', () => {
+    const videoInput = makeVideoTestInput()
+    const html = buildVideoHtmlReport(videoInput)
+
+    expect(html).toContain('Doubao Video Generation Test Report')
+    expect(html).toContain('Volcano Ark Seedance Video Model Verification')
+    expect(html).toContain('cgt-20260921-test-12345')
+    expect(html).toContain('https://tos.volces.com/test-video.mp4')
+    expect(html).toContain('@page { size: A4; margin: 0; }')
+
+    // Confirms text model report does not leak into video report
+    expect(html).not.toContain('Stress test assessment')
+    expect(html).not.toContain('Prompt cache assessment')
+
+    // And text model report does not contain video fields
+    const textHtml = buildHtmlReport(makeTestInput())
+    expect(textHtml).not.toContain('Doubao Video Generation Test Report')
+    expect(textHtml).not.toContain('Video Generation Parameters')
   })
 })

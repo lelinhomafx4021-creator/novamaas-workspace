@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Clock,
+  Download,
   ExternalLink,
   Film,
   Image as ImageIcon,
@@ -71,6 +72,7 @@ export function VideoPanel(props: {
   videoChecks: CheckResult[]
   videoMetrics: VideoMetrics | null
   onVideoChange: Dispatch<SetStateAction<VideoForm>>
+  onExportPdf?: () => void
 }) {
   const { t } = useTranslation()
   const firstFileInputRef = useRef<HTMLInputElement>(null)
@@ -135,9 +137,15 @@ export function VideoPanel(props: {
 
   const statusVariant = (status?: string) => {
     const s = (status || '').toLowerCase()
-    if (s === 'succeeded' || s === 'success') return 'default'
-    if (s === 'failed' || s === 'failure') return 'destructive'
-    if (s === 'running' || s === 'queued' || s === 'processing') return 'secondary'
+    if (s === 'succeeded' || s === 'success') {
+      return 'default'
+    }
+    if (s === 'failed' || s === 'failure') {
+      return 'destructive'
+    }
+    if (s === 'running' || s === 'queued' || s === 'processing') {
+      return 'secondary'
+    }
     return 'outline'
   }
 
@@ -165,7 +173,10 @@ export function VideoPanel(props: {
             size='xs'
             disabled={props.busy}
             onClick={() =>
-              props.onVideoChange((cur) => ({ ...cur, prompt: DEFAULT_VIDEO_PROMPT }))
+              props.onVideoChange((cur) => ({
+                ...cur,
+                prompt: DEFAULT_VIDEO_PROMPT,
+              }))
             }
             className='h-6 text-xs'
           >
@@ -177,7 +188,9 @@ export function VideoPanel(props: {
           rows={3}
           value={props.video.prompt}
           disabled={props.busy}
-          placeholder={t('Describe the video scene, camera motion, light, style...')}
+          placeholder={t(
+            'Describe the video scene, camera motion, light, style...'
+          )}
           onChange={(event) =>
             props.onVideoChange((current) => ({
               ...current,
@@ -191,12 +204,12 @@ export function VideoPanel(props: {
       <Card>
         <CardHeader className='pb-3'>
           <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-1.5 font-medium text-sm'>
+            <div className='flex items-center gap-1.5 text-sm font-medium'>
               <Network className='size-4' />
               <span>{t('Endpoint Path & Route Compatibility')}</span>
             </div>
             {props.video.customPath.trim() ? (
-              <Badge variant='secondary' className='text-xs font-mono'>
+              <Badge variant='secondary' className='font-mono text-xs'>
                 {props.video.customPath}
               </Badge>
             ) : (
@@ -222,7 +235,10 @@ export function VideoPanel(props: {
                 </SelectTrigger>
                 <SelectContent>
                   {ENDPOINT_PATH_PRESETS.map((preset) => (
-                    <SelectItem key={preset.value || 'auto'} value={preset.value}>
+                    <SelectItem
+                      key={preset.value || 'auto'}
+                      value={preset.value}
+                    >
                       {preset.label}
                     </SelectItem>
                   ))}
@@ -236,7 +252,10 @@ export function VideoPanel(props: {
                 value={props.video.customPath}
                 disabled={props.busy}
                 onChange={(e) =>
-                  props.onVideoChange((c) => ({ ...c, customPath: e.target.value }))
+                  props.onVideoChange((c) => ({
+                    ...c,
+                    customPath: e.target.value,
+                  }))
                 }
                 className='font-mono text-xs'
               />
@@ -260,7 +279,10 @@ export function VideoPanel(props: {
                 checked={props.video.hasImage}
                 disabled={props.busy}
                 onCheckedChange={(checked) =>
-                  props.onVideoChange((cur) => ({ ...cur, hasImage: Boolean(checked) }))
+                  props.onVideoChange((cur) => ({
+                    ...cur,
+                    hasImage: Boolean(checked),
+                  }))
                 }
               />
               <Label
@@ -287,7 +309,9 @@ export function VideoPanel(props: {
                   value={props.video.role}
                   disabled={props.busy}
                   onValueChange={(val) => {
-                    if (val) props.onVideoChange((cur) => ({ ...cur, role: val }))
+                    if (val) {
+                      props.onVideoChange((cur) => ({ ...cur, role: val }))
+                    }
                   }}
                 >
                   <SelectTrigger className='w-full'>
@@ -355,8 +379,12 @@ export function VideoPanel(props: {
                       }}
                     />
                     <div className='text-muted-foreground text-xs'>
-                      <p className='font-medium text-foreground'>{t('Image Preview')}</p>
-                      <p className='truncate max-w-sm'>{props.video.imageUrl}</p>
+                      <p className='text-foreground font-medium'>
+                        {t('Image Preview')}
+                      </p>
+                      <p className='max-w-sm truncate'>
+                        {props.video.imageUrl}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -390,13 +418,17 @@ export function VideoPanel(props: {
                     onClick={() => setShowBase64Textarea(!showBase64Textarea)}
                     className='text-xs'
                   >
-                    {showBase64Textarea ? t('Hide Data URI') : t('Paste Data URI directly')}
+                    {showBase64Textarea
+                      ? t('Hide Data URI')
+                      : t('Paste Data URI directly')}
                   </Button>
                 </div>
 
                 {showBase64Textarea && (
                   <div className='space-y-1'>
-                    <Label className='text-xs'>{t('Manual Base64 Data URI')}</Label>
+                    <Label className='text-xs'>
+                      {t('Manual Base64 Data URI')}
+                    </Label>
                     <Textarea
                       rows={2}
                       placeholder='data:image/png;base64,...'
@@ -414,14 +446,16 @@ export function VideoPanel(props: {
                 )}
 
                 {props.video.base64Data ? (
-                  <div className='flex items-center gap-3 rounded-lg border p-2 bg-muted/20'>
+                  <div className='bg-muted/20 flex items-center gap-3 rounded-lg border p-2'>
                     <img
                       src={props.video.base64Data}
                       alt='base64 preview'
                       className='h-20 w-20 rounded border object-cover'
                     />
-                    <div className='text-muted-foreground text-xs space-y-1'>
-                      <p className='font-medium text-foreground'>{t('Base64 Image Loaded')}</p>
+                    <div className='text-muted-foreground space-y-1 text-xs'>
+                      <p className='text-foreground font-medium'>
+                        {t('Base64 Image Loaded')}
+                      </p>
                       <p>
                         {t('Length: {{length}} chars', {
                           length: props.video.base64Data.length,
@@ -430,9 +464,12 @@ export function VideoPanel(props: {
                       <Button
                         variant='ghost'
                         size='xs'
-                        className='h-5 px-1.5 text-xs text-destructive hover:text-destructive'
+                        className='text-destructive hover:text-destructive h-5 px-1.5 text-xs'
                         onClick={() =>
-                          props.onVideoChange((cur) => ({ ...cur, base64Data: '' }))
+                          props.onVideoChange((cur) => ({
+                            ...cur,
+                            base64Data: '',
+                          }))
                         }
                       >
                         {t('Clear')}
@@ -523,8 +560,12 @@ export function VideoPanel(props: {
                       }}
                     />
                     <div className='text-muted-foreground text-xs'>
-                      <p className='font-medium text-foreground'>{t('End Frame Preview')}</p>
-                      <p className='truncate max-w-sm'>{props.video.lastFrameUrl}</p>
+                      <p className='text-foreground font-medium'>
+                        {t('End Frame Preview')}
+                      </p>
+                      <p className='max-w-sm truncate'>
+                        {props.video.lastFrameUrl}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -551,20 +592,25 @@ export function VideoPanel(props: {
                   {t('Choose End Frame File')}
                 </Button>
                 {props.video.lastFrameBase64 ? (
-                  <div className='flex items-center gap-3 rounded-lg border p-2 bg-muted/20'>
+                  <div className='bg-muted/20 flex items-center gap-3 rounded-lg border p-2'>
                     <img
                       src={props.video.lastFrameBase64}
                       alt='end frame preview'
                       className='h-20 w-20 rounded border object-cover'
                     />
-                    <div className='text-muted-foreground text-xs space-y-1'>
-                      <p className='font-medium text-foreground'>{t('End Frame Loaded')}</p>
+                    <div className='text-muted-foreground space-y-1 text-xs'>
+                      <p className='text-foreground font-medium'>
+                        {t('End Frame Loaded')}
+                      </p>
                       <Button
                         variant='ghost'
                         size='xs'
-                        className='h-5 px-1.5 text-xs text-destructive hover:text-destructive'
+                        className='text-destructive hover:text-destructive h-5 px-1.5 text-xs'
                         onClick={() =>
-                          props.onVideoChange((cur) => ({ ...cur, lastFrameBase64: '' }))
+                          props.onVideoChange((cur) => ({
+                            ...cur,
+                            lastFrameBase64: '',
+                          }))
                         }
                       >
                         {t('Clear')}
@@ -589,7 +635,7 @@ export function VideoPanel(props: {
         <CardContent className='space-y-4 pt-1'>
           <div className='grid gap-4 sm:grid-cols-2 md:grid-cols-3'>
             {/* Resolution */}
-            <div className='rounded-lg border p-3 space-y-2'>
+            <div className='space-y-2 rounded-lg border p-3'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-res'
@@ -602,7 +648,10 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-res' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-res'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Resolution (resolution)')}
                 </Label>
               </div>
@@ -611,7 +660,9 @@ export function VideoPanel(props: {
                   value={props.video.resolution}
                   disabled={props.busy}
                   onValueChange={(val) => {
-                    if (val) props.onVideoChange((c) => ({ ...c, resolution: val }))
+                    if (val) {
+                      props.onVideoChange((c) => ({ ...c, resolution: val }))
+                    }
                   }}
                 >
                   <SelectTrigger className='h-8 text-xs'>
@@ -629,7 +680,7 @@ export function VideoPanel(props: {
             </div>
 
             {/* Ratio */}
-            <div className='rounded-lg border p-3 space-y-2'>
+            <div className='space-y-2 rounded-lg border p-3'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-ratio'
@@ -642,7 +693,10 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-ratio' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-ratio'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Aspect Ratio (ratio)')}
                 </Label>
               </div>
@@ -669,7 +723,7 @@ export function VideoPanel(props: {
             </div>
 
             {/* Duration */}
-            <div className='rounded-lg border p-3 space-y-2'>
+            <div className='space-y-2 rounded-lg border p-3'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-duration'
@@ -682,7 +736,10 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-duration' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-duration'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Duration (duration, sec)')}
                 </Label>
               </div>
@@ -702,13 +759,15 @@ export function VideoPanel(props: {
                     }
                     className='h-8 text-xs'
                   />
-                  <span className='text-muted-foreground text-xs'>{t('sec')}</span>
+                  <span className='text-muted-foreground text-xs'>
+                    {t('sec')}
+                  </span>
                 </div>
               )}
             </div>
 
             {/* Watermark */}
-            <div className='rounded-lg border p-3 space-y-2'>
+            <div className='space-y-2 rounded-lg border p-3'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-watermark'
@@ -721,20 +780,26 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-watermark' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-watermark'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Watermark (watermark)')}
                 </Label>
               </div>
               {props.video.hasWatermark && (
                 <div className='flex items-center justify-between pt-1'>
-                  <span className='text-xs text-muted-foreground'>
+                  <span className='text-muted-foreground text-xs'>
                     {props.video.watermark ? t('Enabled') : t('Disabled')}
                   </span>
                   <Switch
                     checked={props.video.watermark}
                     disabled={props.busy}
                     onCheckedChange={(checked) =>
-                      props.onVideoChange((c) => ({ ...c, watermark: Boolean(checked) }))
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        watermark: Boolean(checked),
+                      }))
                     }
                   />
                 </div>
@@ -742,7 +807,7 @@ export function VideoPanel(props: {
             </div>
 
             {/* Seed */}
-            <div className='rounded-lg border p-3 space-y-2'>
+            <div className='space-y-2 rounded-lg border p-3'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-seed'
@@ -755,7 +820,10 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-seed' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-seed'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Seed (seed)')}
                 </Label>
               </div>
@@ -774,7 +842,7 @@ export function VideoPanel(props: {
             </div>
 
             {/* Generate Audio */}
-            <div className='rounded-lg border p-3 space-y-2'>
+            <div className='space-y-2 rounded-lg border p-3'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-audio'
@@ -787,13 +855,16 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-audio' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-audio'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Generate Audio (generate_audio)')}
                 </Label>
               </div>
               {props.video.hasGenerateAudio && (
                 <div className='flex items-center justify-between pt-1'>
-                  <span className='text-xs text-muted-foreground'>
+                  <span className='text-muted-foreground text-xs'>
                     {props.video.generateAudio ? t('Enabled') : t('Disabled')}
                   </span>
                   <Switch
@@ -811,7 +882,7 @@ export function VideoPanel(props: {
             </div>
 
             {/* Return Last Frame */}
-            <div className='rounded-lg border p-3 space-y-2'>
+            <div className='space-y-2 rounded-lg border p-3'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-ret-last'
@@ -824,13 +895,16 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-ret-last' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-ret-last'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Return Last Frame (return_last_frame)')}
                 </Label>
               </div>
               {props.video.hasReturnLastFrame && (
                 <div className='flex items-center justify-between pt-1'>
-                  <span className='text-xs text-muted-foreground'>
+                  <span className='text-muted-foreground text-xs'>
                     {props.video.returnLastFrame ? t('Enabled') : t('Disabled')}
                   </span>
                   <Switch
@@ -848,7 +922,7 @@ export function VideoPanel(props: {
             </div>
 
             {/* Custom Extra JSON */}
-            <div className='rounded-lg border p-3 space-y-2 sm:col-span-2 md:col-span-2'>
+            <div className='space-y-2 rounded-lg border p-3 sm:col-span-2 md:col-span-2'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
                   id='opt-custom-json'
@@ -861,7 +935,10 @@ export function VideoPanel(props: {
                     }))
                   }
                 />
-                <Label htmlFor='opt-custom-json' className='cursor-pointer text-xs font-medium'>
+                <Label
+                  htmlFor='opt-custom-json'
+                  className='cursor-pointer text-xs font-medium'
+                >
                   {t('Custom Extra Parameters (Merged into top-level JSON)')}
                 </Label>
               </div>
@@ -872,7 +949,10 @@ export function VideoPanel(props: {
                   value={props.video.customJson}
                   disabled={props.busy}
                   onChange={(e) =>
-                    props.onVideoChange((c) => ({ ...c, customJson: e.target.value }))
+                    props.onVideoChange((c) => ({
+                      ...c,
+                      customJson: e.target.value,
+                    }))
                   }
                   className='font-mono text-xs'
                 />
@@ -888,7 +968,7 @@ export function VideoPanel(props: {
           <CardHeader className='pb-3'>
             <div className='flex flex-wrap items-center justify-between gap-2'>
               <div className='flex items-center gap-2'>
-                <Video className='size-5 text-primary' />
+                <Video className='text-primary size-5' />
                 <CardTitle className='text-sm font-semibold'>
                   {t('Execution Status & Output')}
                 </CardTitle>
@@ -903,18 +983,31 @@ export function VideoPanel(props: {
                     {(props.videoMetrics.elapsed_ms / 1000).toFixed(1)}s
                   </Badge>
                 )}
+                {props.onExportPdf && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    className='h-7 gap-1 text-xs'
+                    onClick={props.onExportPdf}
+                  >
+                    <Download className='size-3' />
+                    {t('Export Video PDF')}
+                  </Button>
+                )}
                 <RawJsonDialog videoMetrics={props.videoMetrics} />
               </div>
             </div>
           </CardHeader>
           <CardContent className='space-y-4'>
             {props.videoMetrics.endpoint_url && (
-              <p className='text-xs text-muted-foreground font-mono break-all'>
-                {t('Endpoint URL')}: <span className='text-foreground font-semibold'>POST</span> {props.videoMetrics.endpoint_url}
+              <p className='text-muted-foreground font-mono text-xs break-all'>
+                {t('Endpoint URL')}:{' '}
+                <span className='text-foreground font-semibold'>POST</span>{' '}
+                {props.videoMetrics.endpoint_url}
               </p>
             )}
             {props.videoMetrics.task_id && (
-              <p className='text-xs text-muted-foreground font-mono'>
+              <p className='text-muted-foreground font-mono text-xs'>
                 {t('Task ID')}: {props.videoMetrics.task_id}
               </p>
             )}
@@ -929,22 +1022,22 @@ export function VideoPanel(props: {
             )}
 
             {props.videoMetrics.video_url && (
-              <div className='space-y-3 rounded-xl border bg-background/80 p-4 shadow-sm'>
+              <div className='bg-background/80 space-y-3 rounded-xl border p-4 shadow-sm'>
                 <div className='flex items-center justify-between'>
-                  <p className='text-sm font-medium text-foreground'>
+                  <p className='text-foreground text-sm font-medium'>
                     {t('Generated Video Output')}
                   </p>
                   <a
                     href={props.videoMetrics.video_url}
                     target='_blank'
                     rel='noreferrer'
-                    className='text-xs text-primary hover:underline flex items-center gap-1'
+                    className='text-primary flex items-center gap-1 text-xs hover:underline'
                   >
                     {t('Open URL in new tab')}
                     <ExternalLink className='size-3' />
                   </a>
                 </div>
-                <div className='overflow-hidden rounded-lg bg-black flex justify-center'>
+                <div className='flex justify-center overflow-hidden rounded-lg bg-black'>
                   <video
                     src={props.videoMetrics.video_url}
                     controls

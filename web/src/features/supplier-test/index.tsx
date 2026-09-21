@@ -17,13 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation } from '@tanstack/react-query'
-import {
-  ClipboardCheck,
-  Copy,
-  Download,
-  Loader2,
-  Square,
-} from 'lucide-react'
+import { ClipboardCheck, Copy, Download, Loader2, Square } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -44,6 +38,12 @@ import {
   sanitizeStandard,
   type SupplierStandard,
 } from './baselines'
+import { BasicPanel } from './components/basic-panel'
+import { CachePanel } from './components/cache-panel'
+import { JudgmentStandardCard } from './components/judgment-standard-card'
+import { StressPanel } from './components/stress-panel'
+import { TargetCard } from './components/target-card'
+import { VideoPanel } from './components/video-panel'
 import {
   DEFAULT_BASIC_FORM,
   DEFAULT_CACHE_FORM,
@@ -59,14 +59,19 @@ import {
   SHALLOW_BASIC_IDS,
   thisPlatformBaseURL,
 } from './constants'
+import { statusLabel } from './formatters'
 import { useSupplierTestRun } from './hooks/use-supplier-test-run'
 import {
   buildHtmlReport,
   buildMarkdownReport,
+  buildVideoHtmlReport,
+  buildVideoMarkdownReport,
   downloadFile,
   exportPdfReport,
+  exportVideoPdfReport,
   stampFileName,
   type ReportInput,
+  type VideoReportInput,
 } from './report'
 import type {
   BasicForm,
@@ -77,13 +82,6 @@ import type {
   TargetForm,
   VideoForm,
 } from './types'
-import { BasicPanel } from './components/basic-panel'
-import { CachePanel } from './components/cache-panel'
-import { statusLabel } from './formatters'
-import { JudgmentStandardCard } from './components/judgment-standard-card'
-import { StressPanel } from './components/stress-panel'
-import { TargetCard } from './components/target-card'
-import { VideoPanel } from './components/video-panel'
 
 export { AssessmentTable } from './components/assessment-table'
 export { BasicPanel } from './components/basic-panel'
@@ -97,9 +95,8 @@ export { VideoPanel } from './components/video-panel'
 
 function axiosErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object' && 'response' in error) {
-    const message = (
-      error as { response?: { data?: { message?: string } } }
-    ).response?.data?.message
+    const message = (error as { response?: { data?: { message?: string } } })
+      .response?.data?.message
     if (message) return message
   }
   if (error instanceof Error && error.message) return error.message
@@ -165,13 +162,19 @@ export function SupplierTest() {
   }, [run.runningModule])
 
   const busy = run.runningModule !== null
-  const hasReport =
-    Boolean(run.summaries.basic || run.summaries.cache || run.summaries.stress) ||
+  const isVideoTab = moduleTab === 'video'
+  const hasTextReport =
+    Boolean(
+      run.summaries.basic || run.summaries.cache || run.summaries.stress
+    ) ||
     (run.basicChecks ?? []).some((check) => check.status !== 'idle') ||
     (run.cacheChecks ?? []).some((check) => check.status !== 'idle') ||
-    (run.videoChecks ?? []).some((check) => check.status !== 'idle') ||
     run.metrics !== null ||
+    run.cacheMetrics !== null
+  const hasVideoReport =
+    (run.videoChecks ?? []).some((check) => check.status !== 'idle') ||
     run.videoMetrics !== null
+  const hasReport = isVideoTab ? hasVideoReport : hasTextReport
 
   const progressValue =
     run.progress.total > 0
@@ -224,7 +227,10 @@ export function SupplierTest() {
       resolvedChecks =
         target.vendor === 'kimi'
           ? [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS]
-          : [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS.filter((id) => id !== 'kimi_kvv')]
+          : [
+              ...SHALLOW_BASIC_IDS,
+              ...PROTOCOL_BASIC_IDS.filter((id) => id !== 'kimi_kvv'),
+            ]
     }
     return {
       base_url: target.baseUrl.trim(),
@@ -262,27 +268,49 @@ export function SupplierTest() {
         ...(video.hasImage
           ? {
               upload_mode: video.uploadMode,
-              ...(video.uploadMode === 'url' ? { image_url: video.imageUrl.trim() } : {}),
-              ...(video.uploadMode === 'base64' ? { base64_data: video.base64Data.trim() } : {}),
+              ...(video.uploadMode === 'url'
+                ? { image_url: video.imageUrl.trim() }
+                : {}),
+              ...(video.uploadMode === 'base64'
+                ? { base64_data: video.base64Data.trim() }
+                : {}),
               role: video.role,
             }
           : {}),
         ...(video.hasLastFrame
           ? {
               last_frame_mode: video.lastFrameMode,
-              ...(video.lastFrameMode === 'url' ? { last_frame_url: video.lastFrameUrl.trim() } : {}),
-              ...(video.lastFrameMode === 'base64' ? { last_frame_base64: video.lastFrameBase64.trim() } : {}),
+              ...(video.lastFrameMode === 'url'
+                ? { last_frame_url: video.lastFrameUrl.trim() }
+                : {}),
+              ...(video.lastFrameMode === 'base64'
+                ? { last_frame_base64: video.lastFrameBase64.trim() }
+                : {}),
             }
           : {}),
-        ...(video.hasResolution && video.resolution ? { resolution: video.resolution } : {}),
+        ...(video.hasResolution && video.resolution
+          ? { resolution: video.resolution }
+          : {}),
         ...(video.hasRatio && video.ratio ? { ratio: video.ratio } : {}),
-        ...(video.hasDuration && video.duration > 0 ? { duration: video.duration } : {}),
+        ...(video.hasDuration && video.duration > 0
+          ? { duration: video.duration }
+          : {}),
         ...(video.hasWatermark ? { watermark: video.watermark } : {}),
-        ...(video.hasSeed && video.seed.trim() !== '' ? { seed: Number.parseInt(video.seed, 10) } : {}),
-        ...(video.hasGenerateAudio ? { generate_audio: video.generateAudio } : {}),
-        ...(video.hasReturnLastFrame ? { return_last_frame: video.returnLastFrame } : {}),
-        ...(video.hasCustomJson && video.customJson.trim() ? { custom_json: video.customJson.trim() } : {}),
-        ...(video.customPath.trim() ? { custom_path: video.customPath.trim() } : {}),
+        ...(video.hasSeed && video.seed.trim() !== ''
+          ? { seed: Number.parseInt(video.seed, 10) }
+          : {}),
+        ...(video.hasGenerateAudio
+          ? { generate_audio: video.generateAudio }
+          : {}),
+        ...(video.hasReturnLastFrame
+          ? { return_last_frame: video.returnLastFrame }
+          : {}),
+        ...(video.hasCustomJson && video.customJson.trim()
+          ? { custom_json: video.customJson.trim() }
+          : {}),
+        ...(video.customPath.trim()
+          ? { custom_path: video.customPath.trim() }
+          : {}),
       },
     }
   }
@@ -353,7 +381,9 @@ export function SupplierTest() {
         stress.rounds < 1 ||
         stress.rounds > MAX_ROUNDS
       ) {
-        toast.error(t('Rounds must be between 1 and {{max}}', { max: MAX_ROUNDS }))
+        toast.error(
+          t('Rounds must be between 1 and {{max}}', { max: MAX_ROUNDS })
+        )
         return
       }
       if (
@@ -388,7 +418,9 @@ export function SupplierTest() {
           return
         }
         if (video.lastFrameMode === 'base64' && !video.lastFrameBase64.trim()) {
-          toast.error(t('Please select an end frame image file or provide Base64 data'))
+          toast.error(
+            t('Please select an end frame image file or provide Base64 data')
+          )
           return
         }
       }
@@ -439,6 +471,40 @@ export function SupplierTest() {
     t: (key, options) => t(key, options),
   })
 
+  const videoReportInput = (): VideoReportInput => ({
+    baseUrl: target.baseUrl.trim(),
+    model: target.model.trim(),
+    endpointUrl: run.videoMetrics?.endpoint_url,
+    taskId: run.videoMetrics?.task_id,
+    status: run.videoMetrics?.status,
+    elapsedMs: run.videoMetrics?.elapsed_ms ?? 0,
+    failReason: run.videoMetrics?.fail_reason,
+    videoUrl: run.videoMetrics?.video_url,
+    videoConfig: {
+      prompt: video.prompt.trim(),
+      hasImage: video.hasImage,
+      uploadMode: video.uploadMode,
+      imageUrl: video.imageUrl.trim(),
+      role: video.role,
+      hasLastFrame: video.hasLastFrame,
+      lastFrameMode: video.lastFrameMode,
+      lastFrameUrl: video.lastFrameUrl.trim(),
+      resolution: video.hasResolution ? video.resolution : undefined,
+      ratio: video.hasRatio ? video.ratio : undefined,
+      duration: video.hasDuration ? video.duration : undefined,
+      watermark: video.hasWatermark ? video.watermark : undefined,
+      seed: video.hasSeed ? video.seed.trim() : undefined,
+      generateAudio: video.hasGenerateAudio ? video.generateAudio : undefined,
+      returnLastFrame: video.hasReturnLastFrame
+        ? video.returnLastFrame
+        : undefined,
+      customJson: video.hasCustomJson ? video.customJson.trim() : undefined,
+      customPath: video.customPath.trim() || undefined,
+    },
+    videoChecks: run.videoChecks,
+    t: (key, options) => t(key, options),
+  })
+
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Supplier Test')}</SectionPageLayout.Title>
@@ -454,43 +520,64 @@ export function SupplierTest() {
           disabled={busy || !hasReport}
           onClick={async () => {
             try {
-              await navigator.clipboard.writeText(
-                buildMarkdownReport(reportInput())
-              )
-              toast.success(t('Report copied to clipboard'))
+              if (isVideoTab) {
+                await navigator.clipboard.writeText(
+                  buildVideoMarkdownReport(videoReportInput())
+                )
+                toast.success(t('Video report copied to clipboard'))
+              } else {
+                await navigator.clipboard.writeText(
+                  buildMarkdownReport(reportInput())
+                )
+                toast.success(t('Report copied to clipboard'))
+              }
             } catch {
               toast.error(t('Failed to copy report'))
             }
           }}
         >
           <Copy />
-          {t('Copy report')}
+          {isVideoTab ? t('Copy Video Report') : t('Copy report')}
         </Button>
         <Button
           variant='outline'
           disabled={busy || !hasReport}
           onClick={() => {
-            exportPdfReport(reportInput())
-            toast.success(t('PDF report ready'))
+            if (isVideoTab) {
+              exportVideoPdfReport(videoReportInput())
+              toast.success(t('Video PDF report ready'))
+            } else {
+              exportPdfReport(reportInput())
+              toast.success(t('PDF report ready'))
+            }
           }}
         >
           <Download />
-          {t('Export PDF')}
+          {isVideoTab ? t('Export Video PDF') : t('Export PDF')}
         </Button>
         <Button
           variant='outline'
           disabled={busy || !hasReport}
           onClick={() => {
-            downloadFile(
-              `supplier-test-${stampFileName()}.html`,
-              buildHtmlReport(reportInput()),
-              'text/html'
-            )
-            toast.success(t('HTML report exported'))
+            if (isVideoTab) {
+              downloadFile(
+                `doubao-video-test-${stampFileName()}.html`,
+                buildVideoHtmlReport(videoReportInput()),
+                'text/html'
+              )
+              toast.success(t('Video HTML report exported'))
+            } else {
+              downloadFile(
+                `supplier-test-${stampFileName()}.html`,
+                buildHtmlReport(reportInput()),
+                'text/html'
+              )
+              toast.success(t('HTML report exported'))
+            }
           }}
         >
           <Download />
-          {t('Export HTML')}
+          {isVideoTab ? t('Export Video HTML') : t('Export HTML')}
         </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
@@ -547,10 +634,7 @@ export function SupplierTest() {
               )}
               icon={<ClipboardCheck />}
               action={
-                <Button
-                  onClick={() => startModule(moduleTab)}
-                  disabled={busy}
-                >
+                <Button onClick={() => startModule(moduleTab)} disabled={busy}>
                   {run.runningModule === moduleTab ? (
                     <Loader2 className='animate-spin' />
                   ) : null}
@@ -558,7 +642,7 @@ export function SupplierTest() {
                 </Button>
               }
             >
-              <TabsList className='mb-4 grid h-auto w-full grid-cols-2 sm:grid-cols-4 sm:w-fit'>
+              <TabsList className='mb-4 grid h-auto w-full grid-cols-2 sm:w-fit sm:grid-cols-4'>
                 <TabsTrigger value='basic'>{t('Basic acceptance')}</TabsTrigger>
                 <TabsTrigger value='cache'>{t('Cache test')}</TabsTrigger>
                 <TabsTrigger value='stress'>{t('Stress test')}</TabsTrigger>
@@ -603,6 +687,10 @@ export function SupplierTest() {
                 videoChecks={run.videoChecks}
                 videoMetrics={run.videoMetrics}
                 onVideoChange={setVideo}
+                onExportPdf={() => {
+                  exportVideoPdfReport(videoReportInput())
+                  toast.success(t('Video PDF report ready'))
+                }}
               />
             </TitledCard>
           </Tabs>

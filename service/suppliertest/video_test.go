@@ -420,3 +420,123 @@ func TestRunVideo_RawPayload(t *testing.T) {
 	assert.Contains(t, lastVideoEvent.Video.RawRequestJSON, "custom_param")
 }
 
+func TestRunVideo_SingleCheckSubmit(t *testing.T) {
+	submitCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			submitCalled = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"id":"cgt-single-submit-id","status":"queued"}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	req := RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Model:   "doubao-seedance-1-0-pro",
+		Modules: []string{ModuleVideo},
+		Video: VideoConfig{
+			Prompt: "single submit prompt",
+			Checks: []string{CheckVideoSubmit},
+		},
+	}
+
+	var events []Event
+	emit := func(e Event) {
+		events = append(events, e)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := Run(ctx, server.Client(), req, emit)
+	require.NoError(t, err)
+	assert.True(t, submitCalled)
+
+	var submitEvent *Event
+	var pollEvent *Event
+	for i := range events {
+		if events[i].CheckID == CheckVideoSubmit && events[i].Status == "pass" {
+			submitEvent = &events[i]
+		}
+		if events[i].CheckID == CheckVideoPoll {
+			pollEvent = &events[i]
+		}
+	}
+	require.NotNil(t, submitEvent)
+	assert.Equal(t, "cgt-single-submit-id", submitEvent.Video.TaskID)
+	assert.Nil(t, pollEvent, "when only running submit check, poll should not be executed")
+}
+
+func TestRunVideo_SingleCheckPoll(t *testing.T) {
+	pollCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "cgt-existing-id") {
+			pollCalled = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"id":"cgt-existing-id","status":"succeeded","content":{"video_url":"https://tos.volces.com/poll-only.mp4"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	// 1. Missing TaskID should fail gracefully
+	missingReq := RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Model:   "doubao-seedance-1-0-pro",
+		Modules: []string{ModuleVideo},
+		Video: VideoConfig{
+			Checks: []string{CheckVideoPoll},
+		},
+	}
+	var missingEvents []Event
+	err := Run(context.Background(), server.Client(), missingReq, func(e Event) {
+		missingEvents = append(missingEvents, e)
+	})
+	require.NoError(t, err)
+	var failPollEvent *Event
+	for i := range missingEvents {
+		if missingEvents[i].CheckID == CheckVideoPoll && missingEvents[i].Status == "fail" {
+			failPollEvent = &missingEvents[i]
+		}
+	}
+	require.NotNil(t, failPollEvent)
+	assert.Contains(t, failPollEvent.Message, "未提供任务 ID")
+
+	// 2. Providing TaskID succeeds
+	req := RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Model:   "doubao-seedance-1-0-pro",
+		Modules: []string{ModuleVideo},
+		Video: VideoConfig{
+			TaskID: "cgt-existing-id",
+			Checks: []string{CheckVideoPoll, CheckVideoResult},
+		},
+	}
+	var events []Event
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = Run(ctx, server.Client(), req, func(e Event) {
+		events = append(events, e)
+	})
+	require.NoError(t, err)
+	assert.True(t, pollCalled)
+
+	var passPollEvent *Event
+	for i := range events {
+		if events[i].CheckID == CheckVideoPoll && events[i].Status == "pass" {
+			passPollEvent = &events[i]
+		}
+	}
+	require.NotNil(t, passPollEvent)
+	assert.Equal(t, "https://tos.volces.com/poll-only.mp4", passPollEvent.Video.VideoURL)
+}
+
+

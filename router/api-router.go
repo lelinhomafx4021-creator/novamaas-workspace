@@ -287,6 +287,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			supplierTestRoute.POST("/models", controller.ListSupplierTestModels)
 			supplierTestRoute.POST("/runs", controller.RunSupplierTest)
+			supplierTestRoute.POST("/video/query", controller.QuerySupplierTestVideoTask)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())

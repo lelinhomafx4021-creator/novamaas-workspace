@@ -33,3 +33,27 @@ export async function fetchSupplierModels(payload: {
   }
   return (res.data?.data ?? []) as string[]
 }
+
+export type QueryVideoTaskResult = {
+  success: boolean
+  status_code?: number
+  task_id?: string
+  status?: string
+  video_url?: string
+  fail_reason?: string
+  raw_response?: string
+  message?: string
+}
+
+export async function querySupplierVideoTask(payload: {
+  base_url: string
+  api_key: string
+  task_id: string
+  custom_path?: string
+}): Promise<QueryVideoTaskResult> {
+  const res = await api.post(API_ENDPOINTS.VIDEO_QUERY, payload, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
+  return res.data as QueryVideoTaskResult
+}

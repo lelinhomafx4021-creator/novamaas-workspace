@@ -264,6 +264,10 @@ export function SupplierTest() {
         stream: stress.stream,
       },
       video: {
+        ...(checks ? { checks } : {}),
+        ...(video.taskId || run.videoMetrics?.task_id
+          ? { task_id: (video.taskId || run.videoMetrics?.task_id)?.trim() }
+          : {}),
         ...(video.rawPayload && video.rawPayload.trim()
           ? { raw_payload: video.rawPayload.trim() }
           : {}),
@@ -401,7 +405,16 @@ export function SupplierTest() {
       }
     }
     if (module === 'video') {
-      if (video.rawPayload && video.rawPayload.trim()) {
+      const isPollOnly =
+        checks && checks.includes('video_poll') && !checks.includes('video_submit')
+      if (isPollOnly) {
+        const currentTaskId =
+          video.taskId?.trim() || run.videoMetrics?.task_id?.trim()
+        if (!currentTaskId) {
+          toast.error(t('Please submit task first or provide a Task ID'))
+          return
+        }
+      } else if (video.rawPayload && video.rawPayload.trim()) {
         try {
           JSON.parse(video.rawPayload.trim())
         } catch {
@@ -707,11 +720,16 @@ export function SupplierTest() {
                 video={video}
                 busy={busy}
                 model={target.model}
+                baseUrl={target.baseUrl}
+                apiKey={target.apiKey}
                 videoChecks={run.videoChecks}
                 videoMetrics={run.videoMetrics}
                 onVideoChange={setVideo}
                 onModelChange={(m) => setTarget((c) => ({ ...c, model: m }))}
                 onSendRawJson={handleSendRawJson}
+                onRunCheck={(checkId) => {
+                  startModule('video', checkId ? [checkId] : undefined)
+                }}
                 onExportPdf={() => {
                   exportVideoPdfReport(videoReportInput())
                   toast.success(t('Video PDF report ready'))

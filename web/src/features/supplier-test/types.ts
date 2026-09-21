@@ -138,6 +138,8 @@ export type SupplierTestRunRequest = {
     custom_json?: string
     custom_path?: string
     raw_payload?: string
+    task_id?: string
+    checks?: string[]
   }
 }
 
@@ -214,4 +216,5 @@ export type VideoForm = {
   customJson: string
   customPath: string
   rawPayload?: string
+  taskId?: string
 }

@@ -72,8 +72,10 @@ type VideoConfig struct {
 	GenerateAudio   *bool   `json:"generate_audio,omitempty"`
 	ReturnLastFrame *bool   `json:"return_last_frame,omitempty"`
 	CustomJSON      string  `json:"custom_json,omitempty"`
-	CustomPath      string  `json:"custom_path,omitempty"`
-	RawPayload      string  `json:"raw_payload,omitempty"`
+	CustomPath      string   `json:"custom_path,omitempty"`
+	RawPayload      string   `json:"raw_payload,omitempty"`
+	TaskID          string   `json:"task_id,omitempty"`
+	Checks          []string `json:"checks,omitempty"`
 }
 
 type Event struct {
@@ -1106,7 +1108,7 @@ func extractTaskID(raw []byte) string {
 	return ""
 }
 
-func parseVideoTaskState(raw []byte) (status string, videoURL string, failReason string) {
+func ParseVideoTaskState(raw []byte) (status string, videoURL string, failReason string) {
 	for _, path := range []string{"status", "data.status", "data.data.status", "Result.Status"} {
 		if val := gjson.GetBytes(raw, path).String(); strings.TrimSpace(val) != "" {
 			status = strings.TrimSpace(val)
@@ -1156,194 +1158,253 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 	started := time.Now()
 	metrics := &VideoMetrics{}
 
-	emit(Event{
-		Type:    "check",
-		Module:  ModuleVideo,
-		CheckID: CheckVideoSubmit,
-		Status:  "running",
-		Title:   "任务提交",
-		Message: "正在组装请求并向火山方舟提交视频生成任务...",
-		Video:   metrics,
-	})
+	runSubmit := true
+	runPoll := true
+	runResult := true
+	if len(req.Video.Checks) > 0 {
+		runSubmit = false
+		runPoll = false
+		runResult = false
+		for _, c := range req.Video.Checks {
+			switch c {
+			case CheckVideoSubmit:
+				runSubmit = true
+			case CheckVideoPoll:
+				runPoll = true
+			case CheckVideoResult:
+				runResult = true
+			}
+		}
+	}
 
-	var payloadBytes []byte
-	rawPayloadTrimmed := strings.TrimSpace(req.Video.RawPayload)
-	if rawPayloadTrimmed != "" {
-		var rawMap map[string]any
-		if err := common.Unmarshal([]byte(rawPayloadTrimmed), &rawMap); err != nil {
+	var taskID string
+
+	if !runSubmit {
+		taskID = strings.TrimSpace(req.Video.TaskID)
+		if taskID == "" {
 			emit(Event{
 				Type:    "check",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoSubmit,
+				CheckID: CheckVideoPoll,
 				Status:  "fail",
-				Title:   "任务提交",
-				Message: "原生请求 JSON 解析失败: " + err.Error(),
+				Title:   "状态轮询",
+				Message: "未提供任务 ID，无法执行状态查询。请先执行任务提交或输入任务 ID",
 				Video:   metrics,
 			})
 			return
 		}
-		if _, hasModel := rawMap["model"]; !hasModel && strings.TrimSpace(req.Model) != "" {
-			rawMap["model"] = strings.TrimSpace(req.Model)
-		}
-		b, err := common.Marshal(rawMap)
-		if err != nil {
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoSubmit,
-				Status:  "fail",
-				Title:   "任务提交",
-				Message: "序列化原生请求 JSON 失败: " + err.Error(),
-				Video:   metrics,
-			})
-			return
-		}
-		payloadBytes = b
+		metrics.TaskID = taskID
 	} else {
-		contentSlice := []map[string]any{
-			{
-				"type": "text",
-				"text": req.Video.Prompt,
-			},
-		}
+		emit(Event{
+			Type:    "check",
+			Module:  ModuleVideo,
+			CheckID: CheckVideoSubmit,
+			Status:  "running",
+			Title:   "任务提交",
+			Message: "正在组装请求并向火山方舟提交视频生成任务...",
+			Video:   metrics,
+		})
 
-		uploadMode := strings.ToLower(strings.TrimSpace(req.Video.UploadMode))
-		if uploadMode == "url" {
-			rawURL := strings.TrimSpace(req.Video.ImageURL)
-			if rawURL == "" {
+		var payloadBytes []byte
+		rawPayloadTrimmed := strings.TrimSpace(req.Video.RawPayload)
+		if rawPayloadTrimmed != "" {
+			var rawMap map[string]any
+			if err := common.Unmarshal([]byte(rawPayloadTrimmed), &rawMap); err != nil {
 				emit(Event{
 					Type:    "check",
 					Module:  ModuleVideo,
 					CheckID: CheckVideoSubmit,
 					Status:  "fail",
 					Title:   "任务提交",
-					Message: "选择了公网 URL 模式但未提供图片地址",
+					Message: "原生请求 JSON 解析失败: " + err.Error(),
 					Video:   metrics,
 				})
 				return
 			}
-			role := "reference_image"
-			if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
-				role = strings.TrimSpace(*req.Video.Role)
+			if _, hasModel := rawMap["model"]; !hasModel && strings.TrimSpace(req.Model) != "" {
+				rawMap["model"] = strings.TrimSpace(req.Model)
 			}
-			contentSlice = append(contentSlice, map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url": rawURL,
+			b, err := common.Marshal(rawMap)
+			if err != nil {
+				emit(Event{
+					Type:    "check",
+					Module:  ModuleVideo,
+					CheckID: CheckVideoSubmit,
+					Status:  "fail",
+					Title:   "任务提交",
+					Message: "序列化原生请求 JSON 失败: " + err.Error(),
+					Video:   metrics,
+				})
+				return
+			}
+			payloadBytes = b
+		} else {
+			contentSlice := []map[string]any{
+				{
+					"type": "text",
+					"text": req.Video.Prompt,
 				},
-				"role": role,
-			})
-		} else if uploadMode == "base64" {
-			rawB64 := strings.TrimSpace(req.Video.Base64Data)
-			if rawB64 == "" {
-				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoSubmit,
-					Status:  "fail",
-					Title:   "任务提交",
-					Message: "选择了 Base64 模式但未提供数据",
-					Video:   metrics,
-				})
-				return
 			}
-			if !strings.HasPrefix(rawB64, "data:image/") || !strings.Contains(rawB64, ";base64,") {
-				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoSubmit,
-					Status:  "fail",
-					Title:   "任务提交",
-					Message: "Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
-					Video:   metrics,
-				})
-				return
-			}
-			role := "reference_image"
-			if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
-				role = strings.TrimSpace(*req.Video.Role)
-			}
-			contentSlice = append(contentSlice, map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url": rawB64,
-				},
-				"role": role,
-			})
-		}
 
-		lastFrameMode := strings.ToLower(strings.TrimSpace(req.Video.LastFrameMode))
-		if lastFrameMode == "url" {
-			lastURL := strings.TrimSpace(req.Video.LastFrameURL)
-			if lastURL != "" {
-				contentSlice = append(contentSlice, map[string]any{
-					"type": "image_url",
-					"image_url": map[string]any{
-						"url": lastURL,
-					},
-					"role": "last_frame",
-				})
-			}
-		} else if lastFrameMode == "base64" {
-			lastB64 := strings.TrimSpace(req.Video.LastFrameBase64)
-			if lastB64 != "" {
-				if !strings.HasPrefix(lastB64, "data:image/") || !strings.Contains(lastB64, ";base64,") {
+			uploadMode := strings.ToLower(strings.TrimSpace(req.Video.UploadMode))
+			if uploadMode == "url" {
+				rawURL := strings.TrimSpace(req.Video.ImageURL)
+				if rawURL == "" {
 					emit(Event{
 						Type:    "check",
 						Module:  ModuleVideo,
 						CheckID: CheckVideoSubmit,
 						Status:  "fail",
 						Title:   "任务提交",
-						Message: "尾帧 Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+						Message: "选择了公网 URL 模式但未提供图片地址",
 						Video:   metrics,
 					})
 					return
 				}
+				role := "reference_image"
+				if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
+					role = strings.TrimSpace(*req.Video.Role)
+				}
 				contentSlice = append(contentSlice, map[string]any{
 					"type": "image_url",
 					"image_url": map[string]any{
-						"url": lastB64,
+						"url": rawURL,
 					},
-					"role": "last_frame",
+					"role": role,
+				})
+			} else if uploadMode == "base64" {
+				rawB64 := strings.TrimSpace(req.Video.Base64Data)
+				if rawB64 == "" {
+					emit(Event{
+						Type:    "check",
+						Module:  ModuleVideo,
+						CheckID: CheckVideoSubmit,
+						Status:  "fail",
+						Title:   "任务提交",
+						Message: "选择了 Base64 模式但未提供数据",
+						Video:   metrics,
+					})
+					return
+				}
+				if !strings.HasPrefix(rawB64, "data:image/") || !strings.Contains(rawB64, ";base64,") {
+					emit(Event{
+						Type:    "check",
+						Module:  ModuleVideo,
+						CheckID: CheckVideoSubmit,
+						Status:  "fail",
+						Title:   "任务提交",
+						Message: "Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+						Video:   metrics,
+					})
+					return
+				}
+				role := "reference_image"
+				if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
+					role = strings.TrimSpace(*req.Video.Role)
+				}
+				contentSlice = append(contentSlice, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": rawB64,
+					},
+					"role": role,
 				})
 			}
-		}
 
-		payloadMap := map[string]any{
-			"model":   req.Model,
-			"content": contentSlice,
-		}
-		if req.Video.Resolution != nil && strings.TrimSpace(*req.Video.Resolution) != "" {
-			payloadMap["resolution"] = strings.TrimSpace(*req.Video.Resolution)
-		}
-		if req.Video.Ratio != nil && strings.TrimSpace(*req.Video.Ratio) != "" {
-			payloadMap["ratio"] = strings.TrimSpace(*req.Video.Ratio)
-		}
-		if req.Video.Duration != nil && *req.Video.Duration != 0 {
-			payloadMap["duration"] = *req.Video.Duration
-		}
-		if req.Video.Watermark != nil {
-			payloadMap["watermark"] = *req.Video.Watermark
-		}
-		if req.Video.Seed != nil {
-			payloadMap["seed"] = *req.Video.Seed
-		}
-		if req.Video.GenerateAudio != nil {
-			payloadMap["generate_audio"] = *req.Video.GenerateAudio
-		}
-		if req.Video.ReturnLastFrame != nil {
-			payloadMap["return_last_frame"] = *req.Video.ReturnLastFrame
-		}
-		if strings.TrimSpace(req.Video.CustomJSON) != "" {
-			var extra map[string]any
-			if err := common.Unmarshal([]byte(req.Video.CustomJSON), &extra); err == nil {
-				for k, v := range extra {
-					payloadMap[k] = v
+			lastFrameMode := strings.ToLower(strings.TrimSpace(req.Video.LastFrameMode))
+			if lastFrameMode == "url" {
+				lastURL := strings.TrimSpace(req.Video.LastFrameURL)
+				if lastURL != "" {
+					contentSlice = append(contentSlice, map[string]any{
+						"type": "image_url",
+						"image_url": map[string]any{
+							"url": lastURL,
+						},
+						"role": "last_frame",
+					})
+				}
+			} else if lastFrameMode == "base64" {
+				lastB64 := strings.TrimSpace(req.Video.LastFrameBase64)
+				if lastB64 != "" {
+					if !strings.HasPrefix(lastB64, "data:image/") || !strings.Contains(lastB64, ";base64,") {
+						emit(Event{
+							Type:    "check",
+							Module:  ModuleVideo,
+							CheckID: CheckVideoSubmit,
+							Status:  "fail",
+							Title:   "任务提交",
+							Message: "尾帧 Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+							Video:   metrics,
+						})
+						return
+					}
+					contentSlice = append(contentSlice, map[string]any{
+						"type": "image_url",
+						"image_url": map[string]any{
+							"url": lastB64,
+						},
+						"role": "last_frame",
+					})
 				}
 			}
+
+			payloadMap := map[string]any{
+				"model":   req.Model,
+				"content": contentSlice,
+			}
+			if req.Video.Resolution != nil && strings.TrimSpace(*req.Video.Resolution) != "" {
+				payloadMap["resolution"] = strings.TrimSpace(*req.Video.Resolution)
+			}
+			if req.Video.Ratio != nil && strings.TrimSpace(*req.Video.Ratio) != "" {
+				payloadMap["ratio"] = strings.TrimSpace(*req.Video.Ratio)
+			}
+			if req.Video.Duration != nil && *req.Video.Duration != 0 {
+				payloadMap["duration"] = *req.Video.Duration
+			}
+			if req.Video.Watermark != nil {
+				payloadMap["watermark"] = *req.Video.Watermark
+			}
+			if req.Video.Seed != nil {
+				payloadMap["seed"] = *req.Video.Seed
+			}
+			if req.Video.GenerateAudio != nil {
+				payloadMap["generate_audio"] = *req.Video.GenerateAudio
+			}
+			if req.Video.ReturnLastFrame != nil {
+				payloadMap["return_last_frame"] = *req.Video.ReturnLastFrame
+			}
+			if strings.TrimSpace(req.Video.CustomJSON) != "" {
+				var extra map[string]any
+				if err := common.Unmarshal([]byte(req.Video.CustomJSON), &extra); err == nil {
+					for k, v := range extra {
+						payloadMap[k] = v
+					}
+				}
+			}
+
+			b, err := common.Marshal(payloadMap)
+			if err != nil {
+				emit(Event{
+					Type:    "check",
+					Module:  ModuleVideo,
+					CheckID: CheckVideoSubmit,
+					Status:  "fail",
+					Title:   "任务提交",
+					Message: "构建请求 JSON 失败: " + err.Error(),
+					Video:   metrics,
+				})
+				return
+			}
+			payloadBytes = b
 		}
 
-		b, err := common.Marshal(payloadMap)
+		metrics.RawRequestJSON = string(payloadBytes)
+
+		endpoint, _ := VideoTasksURL(req.BaseURL, req.Video.CustomPath)
+		metrics.EndpointURL = endpoint
+
+		status, submitResp, err := CreateVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, payloadBytes)
+		metrics.RawSubmitResponseJSON = string(submitResp)
 		if err != nil {
 			emit(Event{
 				Type:    "check",
@@ -1351,72 +1412,56 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 				CheckID: CheckVideoSubmit,
 				Status:  "fail",
 				Title:   "任务提交",
-				Message: "构建请求 JSON 失败: " + err.Error(),
+				Message: "提交任务网络请求失败: " + err.Error(),
 				Video:   metrics,
 			})
 			return
 		}
-		payloadBytes = b
-	}
 
-	metrics.RawRequestJSON = string(payloadBytes)
+		if status != http.StatusOK && status != http.StatusCreated && status != http.StatusAccepted {
+			errMsg := extractAPIError(submitResp, fmt.Sprintf("HTTP %d", status))
+			emit(Event{
+				Type:    "check",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoSubmit,
+				Status:  "fail",
+				Title:   "任务提交",
+				Message: fmt.Sprintf("上游返回错误 (HTTP %d): %s", status, errMsg),
+				Video:   metrics,
+			})
+			return
+		}
 
-	endpoint, _ := VideoTasksURL(req.BaseURL, req.Video.CustomPath)
-	metrics.EndpointURL = endpoint
+		parsedID := extractTaskID(submitResp)
+		if parsedID == "" {
+			emit(Event{
+				Type:    "check",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoSubmit,
+				Status:  "fail",
+				Title:   "任务提交",
+				Message: "提交成功但响应中未返回有效任务 ID",
+				Video:   metrics,
+			})
+			return
+		}
 
-	status, submitResp, err := CreateVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, payloadBytes)
-	metrics.RawSubmitResponseJSON = string(submitResp)
-	if err != nil {
+		taskID = parsedID
+		metrics.TaskID = taskID
 		emit(Event{
 			Type:    "check",
 			Module:  ModuleVideo,
 			CheckID: CheckVideoSubmit,
-			Status:  "fail",
+			Status:  "pass",
 			Title:   "任务提交",
-			Message: "提交任务网络请求失败: " + err.Error(),
+			Message: fmt.Sprintf("任务提交成功，任务 ID: %s", taskID),
 			Video:   metrics,
 		})
-		return
-	}
 
-	if status != http.StatusOK && status != http.StatusCreated && status != http.StatusAccepted {
-		errMsg := extractAPIError(submitResp, fmt.Sprintf("HTTP %d", status))
-		emit(Event{
-			Type:    "check",
-			Module:  ModuleVideo,
-			CheckID: CheckVideoSubmit,
-			Status:  "fail",
-			Title:   "任务提交",
-			Message: fmt.Sprintf("上游返回错误 (HTTP %d): %s", status, errMsg),
-			Video:   metrics,
-		})
-		return
+		if !runPoll {
+			return
+		}
 	}
-
-	taskID := extractTaskID(submitResp)
-	if taskID == "" {
-		emit(Event{
-			Type:    "check",
-			Module:  ModuleVideo,
-			CheckID: CheckVideoSubmit,
-			Status:  "fail",
-			Title:   "任务提交",
-			Message: "提交成功但响应中未返回有效任务 ID",
-			Video:   metrics,
-		})
-		return
-	}
-
-	metrics.TaskID = taskID
-	emit(Event{
-		Type:    "check",
-		Module:  ModuleVideo,
-		CheckID: CheckVideoSubmit,
-		Status:  "pass",
-		Title:   "任务提交",
-		Message: fmt.Sprintf("任务提交成功，任务 ID: %s", taskID),
-		Video:   metrics,
-	})
 
 	emit(Event{
 		Type:    "check",
@@ -1428,104 +1473,79 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		Video:   metrics,
 	})
 
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	pollTimeout := time.After(300 * time.Second)
+	queryTask := func() (done bool) {
+		pollStatus, pollResp, pollErr := GetVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, taskID)
+		metrics.RawPollResponseJSON = string(pollResp)
+		elapsed := time.Since(started)
+		metrics.ElapsedMS = float64(elapsed.Milliseconds())
 
-	for {
-		select {
-		case <-ctx.Done():
+		if pollErr != nil {
+			emit(Event{
+				Type:    "progress",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "running",
+				Title:   "状态轮询",
+				Message: fmt.Sprintf("轮询异常 (%s)，5 秒后重试...", pollErr.Error()),
+				Video:   metrics,
+			})
+			return false
+		}
+
+		if pollStatus != http.StatusOK {
+			emit(Event{
+				Type:    "progress",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "running",
+				Title:   "状态轮询",
+				Message: fmt.Sprintf("轮询返回 HTTP %d，5 秒后重试...", pollStatus),
+				Video:   metrics,
+			})
+			return false
+		}
+
+		taskState, videoURL, failReason := ParseVideoTaskState(pollResp)
+		metrics.Status = taskState
+		metrics.VideoURL = videoURL
+		metrics.FailReason = failReason
+
+		normalizedState := strings.ToLower(taskState)
+		switch normalizedState {
+		case "queued", "pending":
+			emit(Event{
+				Type:    "progress",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "running",
+				Title:   "状态轮询",
+				Message: fmt.Sprintf("排队中 (queued)，已等待 %.1f 秒...", elapsed.Seconds()),
+				Video:   metrics,
+			})
+			return false
+		case "running", "processing", "in_progress":
+			emit(Event{
+				Type:    "progress",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "running",
+				Title:   "状态轮询",
+				Message: fmt.Sprintf("生成渲染中 (running)，已耗时 %.1f 秒...", elapsed.Seconds()),
+				Video:   metrics,
+			})
+			return false
+		case "succeeded", "success":
 			emit(Event{
 				Type:    "check",
 				Module:  ModuleVideo,
 				CheckID: CheckVideoPoll,
-				Status:  "fail",
+				Status:  "pass",
 				Title:   "状态轮询",
-				Message: "测试已手动取消",
+				Message: fmt.Sprintf("任务生成完成，总耗时 %.1f 秒", elapsed.Seconds()),
 				Video:   metrics,
 			})
-			return
-		case <-pollTimeout:
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
-				Status:  "fail",
-				Title:   "状态轮询",
-				Message: "任务轮询超时（超过 5 分钟），上游未在预期时间内完成",
-				Video:   metrics,
-			})
-			return
-		case <-ticker.C:
-			pollStatus, pollResp, pollErr := GetVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, taskID)
-			metrics.RawPollResponseJSON = string(pollResp)
-			elapsed := time.Since(started)
-			metrics.ElapsedMS = float64(elapsed.Milliseconds())
 
-			if pollErr != nil {
-				emit(Event{
-					Type:    "progress",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "running",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("轮询异常 (%s)，5 秒后重试...", pollErr.Error()),
-					Video:   metrics,
-				})
-				continue
-			}
-
-			if pollStatus != http.StatusOK {
-				emit(Event{
-					Type:    "progress",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "running",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("轮询返回 HTTP %d，5 秒后重试...", pollStatus),
-					Video:   metrics,
-				})
-				continue
-			}
-
-			taskState, videoURL, failReason := parseVideoTaskState(pollResp)
-			metrics.Status = taskState
-			metrics.VideoURL = videoURL
-			metrics.FailReason = failReason
-
-			normalizedState := strings.ToLower(taskState)
-			switch normalizedState {
-			case "queued", "pending":
-				emit(Event{
-					Type:    "progress",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "running",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("排队中 (queued)，已等待 %.1f 秒...", elapsed.Seconds()),
-					Video:   metrics,
-				})
-			case "running", "processing", "in_progress":
-				emit(Event{
-					Type:    "progress",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "running",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("生成渲染中 (running)，已耗时 %.1f 秒...", elapsed.Seconds()),
-					Video:   metrics,
-				})
-			case "succeeded", "success":
-				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "pass",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("任务生成完成，总耗时 %.1f 秒", elapsed.Seconds()),
-					Video:   metrics,
-				})
-
+			if runResult {
 				if videoURL != "" {
 					emit(Event{
 						Type:    "check",
@@ -1547,41 +1567,83 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 						Video:   metrics,
 					})
 				}
-				return
-			case "failed", "failure", "cancelled", "expired":
-				errMsg := failReason
-				if errMsg == "" {
-					errMsg = extractAPIError(pollResp, "任务执行失败")
-				}
-				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "fail",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("任务未成功 (状态: %s): %s", taskState, errMsg),
-					Video:   metrics,
-				})
+			}
+			return true
+		case "failed", "failure", "cancelled", "expired":
+			errMsg := failReason
+			if errMsg == "" {
+				errMsg = extractAPIError(pollResp, "任务执行失败")
+			}
+			emit(Event{
+				Type:    "check",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "fail",
+				Title:   "状态轮询",
+				Message: fmt.Sprintf("任务执行失败 (%s): %s", taskState, errMsg),
+				Video:   metrics,
+			})
+			if runResult {
 				emit(Event{
 					Type:    "check",
 					Module:  ModuleVideo,
 					CheckID: CheckVideoResult,
 					Status:  "fail",
 					Title:   "视频结果",
-					Message: fmt.Sprintf("任务失败: %s", errMsg),
+					Message: "由于任务失败，未能生成视频结果",
 					Video:   metrics,
 				})
+			}
+			return true
+		default:
+			emit(Event{
+				Type:    "progress",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "running",
+				Title:   "状态轮询",
+				Message: fmt.Sprintf("当前状态: %s，已耗时 %.1f 秒...", taskState, elapsed.Seconds()),
+				Video:   metrics,
+			})
+			return false
+		}
+	}
+
+	if queryTask() {
+		return
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	pollTimeout := time.After(1800 * time.Second)
+
+	for {
+		select {
+		case <-ctx.Done():
+			emit(Event{
+				Type:    "check",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "fail",
+				Title:   "状态轮询",
+				Message: "测试已手动取消",
+				Video:   metrics,
+			})
+			return
+		case <-pollTimeout:
+			emit(Event{
+				Type:    "check",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoPoll,
+				Status:  "fail",
+				Title:   "状态轮询",
+				Message: "任务轮询超时（超过 30 分钟），上游未在预期时间内完成",
+				Video:   metrics,
+			})
+			return
+		case <-ticker.C:
+			if queryTask() {
 				return
-			default:
-				emit(Event{
-					Type:    "progress",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "running",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("当前状态: %s，已耗时 %.1f 秒...", taskState, elapsed.Seconds()),
-					Video:   metrics,
-				})
 			}
 		}
 	}

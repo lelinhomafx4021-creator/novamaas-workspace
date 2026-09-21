@@ -17,15 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
-  Clock,
+  Check,
+  Code,
+  Copy,
   Download,
   ExternalLink,
-  Film,
-  Image as ImageIcon,
-  Layers,
-  Network,
+  Play,
+  RefreshCw,
+  Send,
   Upload,
   Video,
+  X,
+  Zap,
 } from 'lucide-react'
 import {
   useRef,
@@ -37,7 +40,6 @@ import {
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -55,9 +57,9 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
+import { querySupplierVideoTask } from '../api'
 import {
   DEFAULT_VIDEO_PROMPT,
-  ENDPOINT_PATH_PRESETS,
   VIDEO_RATIOS,
   VIDEO_RESOLUTIONS,
   VIDEO_ROLES,
@@ -70,27 +72,84 @@ import {
 import { CheckTable } from './check-table'
 import { RawJsonDialog } from './raw-json-dialog'
 
+function taskStatusBadgeVariant(
+  status?: string
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  if (!status) return 'outline'
+  const s = status.toLowerCase()
+  if (s === 'succeeded' || s === 'success') return 'default'
+  if (s === 'failed' || s === 'failure' || s === 'cancelled') return 'destructive'
+  return 'secondary'
+}
+
 export function VideoPanel(props: {
   video: VideoForm
   busy: boolean
   model?: string
+  baseUrl?: string
+  apiKey?: string
   videoChecks: CheckResult[]
   videoMetrics: VideoMetrics | null
   onVideoChange: Dispatch<SetStateAction<VideoForm>>
   onExportPdf?: () => void
   onSendRawJson?: (rawJson: string) => void
   onModelChange?: (model: string) => void
+  onRunCheck?: (checkId?: string) => void
 }) {
   const { t } = useTranslation()
   const firstFileInputRef = useRef<HTMLInputElement>(null)
   const lastFileInputRef = useRef<HTMLInputElement>(null)
-  const [showBase64Textarea, setShowBase64Textarea] = useState(false)
 
+  const [activeJsonTab, setActiveJsonTab] = useState<'request' | 'poll' | 'submit'>('request')
+  const [manualPollJson, setManualPollJson] = useState<string>('')
+  const [isManualQuerying, setIsManualQuerying] = useState(false)
+  const [copiedTab, setCopiedTab] = useState<string | null>(null)
+
+  // Real-time request JSON preview based on current form
   const previewPayload = buildVideoRequestPayload(
     props.model || '',
     props.video
   )
   const previewRequestJson = JSON.stringify(previewPayload, null, 2)
+
+  // Effective latest Task ID
+  const effectiveTaskId = props.video.taskId?.trim() || props.videoMetrics?.task_id?.trim() || ''
+
+  // Latest poll JSON (prioritizes manual query, falls back to metrics stream)
+  const latestPollJson =
+    manualPollJson ||
+    (props.videoMetrics?.raw_poll_response_json
+      ? (() => {
+          try {
+            return JSON.stringify(JSON.parse(props.videoMetrics.raw_poll_response_json), null, 2)
+          } catch {
+            return props.videoMetrics.raw_poll_response_json
+          }
+        })()
+      : '')
+
+  // Submit response JSON
+  const submitResponseJson = props.videoMetrics?.raw_submit_response_json
+    ? (() => {
+        try {
+          return JSON.stringify(JSON.parse(props.videoMetrics.raw_submit_response_json), null, 2)
+        } catch {
+          return props.videoMetrics.raw_submit_response_json
+        }
+      })()
+    : ''
+
+  const handleCopyText = async (text: string, tab: string) => {
+    if (!text.trim()) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedTab(tab)
+      setTimeout(() => setCopiedTab(null), 1800)
+      toast.success(t('Copied to clipboard'))
+    } catch {
+      toast.error(t('Failed to copy'))
+    }
+  }
 
   const handleApplyJsonToForm = (rawJson: string) => {
     const res = parseVideoPayloadToForm(rawJson)
@@ -162,622 +221,441 @@ export function VideoPanel(props: {
     reader.readAsDataURL(file)
   }
 
-  const statusVariant = (status?: string) => {
-    const s = (status || '').toLowerCase()
-    if (s === 'succeeded' || s === 'success') {
-      return 'default'
+  // Active Manual Query
+  const handleManualQuery = async () => {
+    if (!effectiveTaskId) {
+      toast.error(t('Please submit task first or provide a Task ID'))
+      return
     }
-    if (s === 'failed' || s === 'failure') {
-      return 'destructive'
+    if (!props.baseUrl?.trim()) {
+      toast.error(t('Enter a base URL first'))
+      return
     }
-    if (s === 'running' || s === 'queued' || s === 'processing') {
-      return 'secondary'
+    setIsManualQuerying(true)
+    try {
+      const res = await querySupplierVideoTask({
+        base_url: props.baseUrl.trim(),
+        api_key: props.apiKey || '',
+        task_id: effectiveTaskId,
+        custom_path: props.video.customPath,
+      })
+      if (res.raw_response) {
+        try {
+          setManualPollJson(JSON.stringify(JSON.parse(res.raw_response), null, 2))
+        } catch {
+          setManualPollJson(res.raw_response)
+        }
+      } else {
+        setManualPollJson(JSON.stringify(res, null, 2))
+      }
+      setActiveJsonTab('poll')
+      if (res.status) {
+        toast.success(t('Task status: {{status}}', { status: res.status }))
+      } else if (res.message) {
+        toast.error(res.message)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Failed to query task'))
+    } finally {
+      setIsManualQuerying(false)
     }
-    return 'outline'
+  }
+
+  const handleRunSingleCheck = (checkId: string) => {
+    if (checkId === 'video_poll' && !effectiveTaskId) {
+      toast.error(t('Please submit task first or provide a Task ID'))
+      return
+    }
+    props.onRunCheck?.(checkId)
   }
 
   return (
-    <TabsContent value='video' className='space-y-5'>
-      <div className='flex flex-wrap items-center justify-between gap-2'>
-        <p className='text-muted-foreground text-sm'>
-          {t(
-            'Doubao Seedance video generation test. All non-prompt fields are strictly optional: unchecked fields will NOT be sent upstream.'
-          )}
-        </p>
-        <div className='flex items-center gap-2'>
-          <RawJsonDialog
-            videoMetrics={props.videoMetrics}
-            previewRequestJson={previewRequestJson}
-            busy={props.busy}
-            onApplyToForm={handleApplyJsonToForm}
-            onSendRawJson={props.onSendRawJson}
-          />
-        </div>
-      </div>
-
-      {/* Prompt Configuration */}
-      <div className='space-y-2'>
-        <div className='flex items-center justify-between'>
-          <Label htmlFor='video-prompt' className='font-medium'>
-            {t('Prompt (required)')}
-          </Label>
-          <Button
-            variant='ghost'
-            size='xs'
-            disabled={props.busy}
-            onClick={() =>
-              props.onVideoChange((cur) => ({
-                ...cur,
-                prompt: DEFAULT_VIDEO_PROMPT,
-              }))
-            }
-            className='h-6 text-xs'
-          >
-            {t('Use default prompt')}
-          </Button>
-        </div>
-        <Textarea
-          id='video-prompt'
-          rows={3}
-          value={props.video.prompt}
-          disabled={props.busy}
-          placeholder={t(
-            'Describe the video scene, camera motion, light, style...'
-          )}
-          onChange={(event) =>
-            props.onVideoChange((current) => ({
-              ...current,
-              prompt: event.target.value,
-            }))
-          }
-        />
-      </div>
-
-      {/* Endpoint Path & Route Compatibility */}
-      <Card>
-        <CardHeader className='pb-3'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-1.5 text-sm font-medium'>
-              <Network className='size-4' />
-              <span>{t('Endpoint Path & Route Compatibility')}</span>
-            </div>
-            {props.video.customPath.trim() ? (
-              <Badge variant='secondary' className='font-mono text-xs'>
-                {props.video.customPath}
-              </Badge>
-            ) : (
-              <Badge variant='outline' className='text-xs'>
-                {t('Auto Detect / Standard')}
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className='space-y-3 pt-1'>
-          <div className='grid gap-3 sm:grid-cols-2'>
-            <div className='space-y-1.5'>
-              <Label className='text-xs'>{t('Quick Path Preset')}</Label>
-              <Select
-                value={props.video.customPath}
-                disabled={props.busy}
-                onValueChange={(val) => {
-                  props.onVideoChange((c) => ({ ...c, customPath: val || '' }))
-                }}
-              >
-                <SelectTrigger className='w-full text-xs'>
-                  <SelectValue placeholder={t('Select path preset')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {ENDPOINT_PATH_PRESETS.map((preset) => (
-                    <SelectItem
-                      key={preset.value || 'auto'}
-                      value={preset.value}
-                    >
-                      {preset.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className='space-y-1.5'>
-              <Label className='text-xs'>{t('Custom Path String')}</Label>
-              <Input
-                placeholder='/api/v3/contents/generations/tasks'
-                value={props.video.customPath}
-                disabled={props.busy}
-                onChange={(e) =>
+    <TabsContent value='video' className='mt-0 space-y-3'>
+      {/* 2-Column Responsive Layout */}
+      <div className='grid grid-cols-1 items-start gap-4 lg:grid-cols-12'>
+        {/* Left Column: Form & Actions */}
+        <div className='space-y-3 lg:col-span-7'>
+          {/* Prompt Input */}
+          <div className='space-y-1.5'>
+            <div className='flex items-center justify-between'>
+              <Label htmlFor='video-prompt' className='text-xs font-medium'>
+                {t('Generation Prompt')}
+              </Label>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                className='text-muted-foreground h-5 px-1.5 text-xs'
+                onClick={() =>
                   props.onVideoChange((c) => ({
                     ...c,
-                    customPath: e.target.value,
+                    prompt: DEFAULT_VIDEO_PROMPT,
                   }))
                 }
-                className='font-mono text-xs'
-              />
-            </div>
-          </div>
-          <p className='text-muted-foreground text-xs leading-relaxed'>
-            {t(
-              'Supports custom vendor path isolation. You can specify a path override here, or directly fill in a full URL (with /contents/generations/tasks) in Base URL above. Both are automatically normalized and supported.'
-            )}
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Multimodal Input: First Frame / Reference Image */}
-      <Card>
-        <CardHeader className='pb-3'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center space-x-2'>
-              <Checkbox
-                id='toggle-has-image'
-                checked={props.video.hasImage}
-                disabled={props.busy}
-                onCheckedChange={(checked) =>
-                  props.onVideoChange((cur) => ({
-                    ...cur,
-                    hasImage: Boolean(checked),
-                  }))
-                }
-              />
-              <Label
-                htmlFor='toggle-has-image'
-                className='flex cursor-pointer items-center gap-1.5 font-medium'
               >
-                <ImageIcon className='size-4' />
-                {t('Enable Input Image (Image-to-Video)')}
-              </Label>
+                {t('Reset Prompt')}
+              </Button>
             </div>
-            {!props.video.hasImage && (
-              <Badge variant='outline' className='text-xs'>
-                {t('Text-to-Video mode')}
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
-        {props.video.hasImage && (
-          <CardContent className='space-y-4 pt-1'>
-            <div className='grid gap-4 sm:grid-cols-2'>
-              <div className='space-y-1.5'>
-                <Label className='text-xs'>{t('Image Role')}</Label>
-                <Select
-                  value={props.video.role}
-                  disabled={props.busy}
-                  onValueChange={(val) => {
-                    if (val) {
-                      props.onVideoChange((cur) => ({ ...cur, role: val }))
-                    }
-                  }}
-                >
-                  <SelectTrigger className='w-full'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VIDEO_ROLES.map((role) => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className='space-y-1.5'>
-                <Label className='text-xs'>{t('Upload Mode')}</Label>
-                <Tabs
-                  value={props.video.uploadMode}
-                  onValueChange={(val) =>
-                    props.onVideoChange((cur) => ({
-                      ...cur,
-                      uploadMode: val as 'url' | 'base64',
-                    }))
-                  }
-                  className='w-full'
-                >
-                  <TabsList className='grid w-full grid-cols-2'>
-                    <TabsTrigger value='url' className='text-xs'>
-                      {t('Public URL')}
-                    </TabsTrigger>
-                    <TabsTrigger value='base64' className='text-xs'>
-                      {t('Local File (Base64)')}
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-            </div>
-
-            {props.video.uploadMode === 'url' ? (
-              <div className='space-y-2'>
-                <Label htmlFor='video-image-url' className='text-xs'>
-                  {t('Image Public URL')}
-                </Label>
-                <Input
-                  id='video-image-url'
-                  placeholder='https://example.com/image.jpg'
-                  value={props.video.imageUrl}
-                  disabled={props.busy}
-                  onChange={(e) =>
-                    props.onVideoChange((cur) => ({
-                      ...cur,
-                      imageUrl: e.target.value,
-                    }))
-                  }
-                />
-                {props.video.imageUrl.trim() && (
-                  <div className='mt-2 flex items-center gap-3 rounded-lg border p-2'>
-                    <img
-                      src={props.video.imageUrl}
-                      alt='preview'
-                      className='h-20 w-20 rounded border object-cover'
-                      onError={(e) => {
-                        ;(e.target as HTMLElement).style.display = 'none'
-                      }}
-                    />
-                    <div className='text-muted-foreground text-xs'>
-                      <p className='text-foreground font-medium'>
-                        {t('Image Preview')}
-                      </p>
-                      <p className='max-w-sm truncate'>
-                        {props.video.imageUrl}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className='space-y-3'>
-                <div className='flex flex-wrap items-center gap-3'>
-                  <input
-                    ref={firstFileInputRef}
-                    type='file'
-                    accept='image/png,image/jpeg,image/webp,image/jpg'
-                    className='hidden'
-                    onChange={handleFirstFileChange}
-                    disabled={props.busy}
-                  />
-                  <Button
-                    type='button'
-                    variant='secondary'
-                    size='sm'
-                    disabled={props.busy}
-                    onClick={() => firstFileInputRef.current?.click()}
-                    className='gap-1.5'
-                  >
-                    <Upload className='size-4' />
-                    {t('Choose Image File')}
-                  </Button>
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    size='xs'
-                    onClick={() => setShowBase64Textarea(!showBase64Textarea)}
-                    className='text-xs'
-                  >
-                    {showBase64Textarea
-                      ? t('Hide Data URI')
-                      : t('Paste Data URI directly')}
-                  </Button>
-                </div>
-
-                {showBase64Textarea && (
-                  <div className='space-y-1'>
-                    <Label className='text-xs'>
-                      {t('Manual Base64 Data URI')}
-                    </Label>
-                    <Textarea
-                      rows={2}
-                      placeholder='data:image/png;base64,...'
-                      value={props.video.base64Data}
-                      disabled={props.busy}
-                      onChange={(e) =>
-                        props.onVideoChange((cur) => ({
-                          ...cur,
-                          base64Data: e.target.value,
-                        }))
-                      }
-                      className='font-mono text-xs'
-                    />
-                  </div>
-                )}
-
-                {props.video.base64Data ? (
-                  <div className='bg-muted/20 flex items-center gap-3 rounded-lg border p-2'>
-                    <img
-                      src={props.video.base64Data}
-                      alt='base64 preview'
-                      className='h-20 w-20 rounded border object-cover'
-                    />
-                    <div className='text-muted-foreground space-y-1 text-xs'>
-                      <p className='text-foreground font-medium'>
-                        {t('Base64 Image Loaded')}
-                      </p>
-                      <p>
-                        {t('Length: {{length}} chars', {
-                          length: props.video.base64Data.length,
-                        })}
-                      </p>
-                      <Button
-                        variant='ghost'
-                        size='xs'
-                        className='text-destructive hover:text-destructive h-5 px-1.5 text-xs'
-                        onClick={() =>
-                          props.onVideoChange((cur) => ({
-                            ...cur,
-                            base64Data: '',
-                          }))
-                        }
-                      >
-                        {t('Clear')}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </CardContent>
-        )}
-      </Card>
-
-      {/* Optional End Frame (First + Last Frame Mode) */}
-      <Card>
-        <CardHeader className='pb-3'>
-          <div className='flex items-center space-x-2'>
-            <Checkbox
-              id='toggle-has-last-frame'
-              checked={props.video.hasLastFrame}
+            <Textarea
+              id='video-prompt'
+              rows={2}
+              value={props.video.prompt}
               disabled={props.busy}
-              onCheckedChange={(checked) =>
-                props.onVideoChange((cur) => ({
-                  ...cur,
-                  hasLastFrame: Boolean(checked),
+              placeholder={t('Describe video scene, lighting, style...')}
+              onChange={(e) =>
+                props.onVideoChange((c) => ({
+                  ...c,
+                  prompt: e.target.value,
                 }))
               }
+              className='text-xs'
             />
-            <Label
-              htmlFor='toggle-has-last-frame'
-              className='flex cursor-pointer items-center gap-1.5 font-medium'
-            >
-              <Film className='size-4' />
-              {t('Enable End Frame (Start-to-End Frame Mode)')}
-            </Label>
           </div>
-        </CardHeader>
-        {props.video.hasLastFrame && (
-          <CardContent className='space-y-4 pt-1'>
-            <div className='space-y-1.5'>
-              <Label className='text-xs'>{t('End Frame Upload Mode')}</Label>
-              <Tabs
-                value={props.video.lastFrameMode}
-                onValueChange={(val) =>
-                  props.onVideoChange((cur) => ({
-                    ...cur,
-                    lastFrameMode: val as 'url' | 'base64',
-                  }))
-                }
-                className='w-full'
-              >
-                <TabsList className='grid w-full grid-cols-2'>
-                  <TabsTrigger value='url' className='text-xs'>
-                    {t('Public URL')}
-                  </TabsTrigger>
-                  <TabsTrigger value='base64' className='text-xs'>
-                    {t('Local File (Base64)')}
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
 
-            {props.video.lastFrameMode === 'url' ? (
-              <div className='space-y-2'>
-                <Label htmlFor='video-last-frame-url' className='text-xs'>
-                  {t('End Frame Public URL')}
-                </Label>
-                <Input
-                  id='video-last-frame-url'
-                  placeholder='https://example.com/end-frame.jpg'
-                  value={props.video.lastFrameUrl}
+          {/* Compact First Frame / Reference Image Card */}
+          <Card className='p-2.5'>
+            <div className='flex flex-wrap items-center justify-between gap-2'>
+              <div className='flex items-center space-x-2'>
+                <Checkbox
+                  id='toggle-has-image'
+                  checked={props.video.hasImage}
                   disabled={props.busy}
-                  onChange={(e) =>
+                  onCheckedChange={(checked) =>
                     props.onVideoChange((cur) => ({
                       ...cur,
-                      lastFrameUrl: e.target.value,
+                      hasImage: Boolean(checked),
                     }))
                   }
                 />
-                {props.video.lastFrameUrl.trim() && (
-                  <div className='mt-2 flex items-center gap-3 rounded-lg border p-2'>
+                <Label
+                  htmlFor='toggle-has-image'
+                  className='cursor-pointer text-xs font-semibold'
+                >
+                  {t('First Frame / Reference Image')}
+                </Label>
+              </div>
+
+              {props.video.hasImage && (
+                <div className='flex items-center gap-2'>
+                  <Select
+                    value={props.video.uploadMode}
+                    disabled={props.busy}
+                    onValueChange={(val) => {
+                      if (val === 'url' || val === 'base64') {
+                        props.onVideoChange((c) => ({ ...c, uploadMode: val }))
+                      }
+                    }}
+                  >
+                    <SelectTrigger className='h-6 w-24 text-[11px]'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='url'>{t('URL Mode')}</SelectItem>
+                      <SelectItem value='base64'>{t('Base64 Mode')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={props.video.role}
+                    disabled={props.busy}
+                    onValueChange={(val) => {
+                      if (val) {
+                        props.onVideoChange((c) => ({ ...c, role: val }))
+                      }
+                    }}
+                  >
+                    <SelectTrigger className='h-6 w-28 text-[11px]'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VIDEO_ROLES.map((role) => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            {props.video.hasImage && (
+              <div className='mt-2 space-y-1.5 border-t pt-2'>
+                {props.video.uploadMode === 'url' ? (
+                  <Input
+                    placeholder='https://.../sample.jpg'
+                    value={props.video.imageUrl}
+                    disabled={props.busy}
+                    onChange={(e) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        imageUrl: e.target.value,
+                      }))
+                    }
+                    className='h-7 text-xs'
+                  />
+                ) : (
+                  <div className='flex items-center gap-2'>
+                    <input
+                      type='file'
+                      ref={firstFileInputRef}
+                      accept='image/*'
+                      className='hidden'
+                      onChange={handleFirstFileChange}
+                    />
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7 gap-1 text-xs'
+                      onClick={() => firstFileInputRef.current?.click()}
+                    >
+                      <Upload className='size-3' />
+                      {t('Select Local Image')}
+                    </Button>
+                    <span className='text-muted-foreground truncate text-[11px]'>
+                      {props.video.base64Data ? t('Image loaded') : t('No image selected')}
+                    </span>
+                  </div>
+                )}
+
+                {/* Inline Compact Preview */}
+                {(props.video.uploadMode === 'url' ? props.video.imageUrl : props.video.base64Data) && (
+                  <div className='bg-muted/30 flex items-center gap-2 rounded border p-1'>
                     <img
-                      src={props.video.lastFrameUrl}
-                      alt='last frame preview'
-                      className='h-20 w-20 rounded border object-cover'
+                      src={props.video.uploadMode === 'url' ? props.video.imageUrl : props.video.base64Data}
+                      alt='Preview'
+                      className='size-7 rounded object-cover'
                       onError={(e) => {
                         ;(e.target as HTMLElement).style.display = 'none'
                       }}
                     />
-                    <div className='text-muted-foreground text-xs'>
-                      <p className='text-foreground font-medium'>
-                        {t('End Frame Preview')}
-                      </p>
-                      <p className='max-w-sm truncate'>
-                        {props.video.lastFrameUrl}
-                      </p>
-                    </div>
+                    <span className='text-muted-foreground flex-1 truncate font-mono text-[11px]'>
+                      {props.video.uploadMode === 'url' ? props.video.imageUrl : 'data:image/...;base64'}
+                    </span>
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      size='sm'
+                      className='text-muted-foreground hover:text-destructive h-5 w-5 p-0'
+                      onClick={() =>
+                        props.onVideoChange((c) => ({
+                          ...c,
+                          imageUrl: '',
+                          base64Data: '',
+                        }))
+                      }
+                    >
+                      <X className='size-3' />
+                    </Button>
                   </div>
                 )}
               </div>
-            ) : (
-              <div className='space-y-3'>
-                <input
-                  ref={lastFileInputRef}
-                  type='file'
-                  accept='image/png,image/jpeg,image/webp,image/jpg'
-                  className='hidden'
-                  onChange={handleLastFileChange}
-                  disabled={props.busy}
-                />
-                <Button
-                  type='button'
-                  variant='secondary'
-                  size='sm'
-                  disabled={props.busy}
-                  onClick={() => lastFileInputRef.current?.click()}
-                  className='gap-1.5'
-                >
-                  <Upload className='size-4' />
-                  {t('Choose End Frame File')}
-                </Button>
-                {props.video.lastFrameBase64 ? (
-                  <div className='bg-muted/20 flex items-center gap-3 rounded-lg border p-2'>
-                    <img
-                      src={props.video.lastFrameBase64}
-                      alt='end frame preview'
-                      className='h-20 w-20 rounded border object-cover'
-                    />
-                    <div className='text-muted-foreground space-y-1 text-xs'>
-                      <p className='text-foreground font-medium'>
-                        {t('End Frame Loaded')}
-                      </p>
-                      <Button
-                        variant='ghost'
-                        size='xs'
-                        className='text-destructive hover:text-destructive h-5 px-1.5 text-xs'
-                        onClick={() =>
-                          props.onVideoChange((cur) => ({
-                            ...cur,
-                            lastFrameBase64: '',
-                          }))
-                        }
-                      >
-                        {t('Clear')}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
             )}
-          </CardContent>
-        )}
-      </Card>
+          </Card>
 
-      {/* Optional Top-Level Parameters */}
-      <Card>
-        <CardHeader className='pb-2'>
-          <CardTitle className='flex items-center gap-1.5 text-sm font-medium'>
-            <Layers className='size-4' />
-            {t('Optional Parameters (Included ONLY if checked)')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className='space-y-4 pt-1'>
-          <div className='grid gap-4 sm:grid-cols-2 md:grid-cols-3'>
-            {/* Resolution */}
-            <div className='space-y-2 rounded-lg border p-3'>
+          {/* Compact End Frame Card */}
+          <Card className='p-2.5'>
+            <div className='flex flex-wrap items-center justify-between gap-2'>
               <div className='flex items-center space-x-2'>
                 <Checkbox
-                  id='opt-res'
-                  checked={props.video.hasResolution}
+                  id='toggle-has-last-frame'
+                  checked={props.video.hasLastFrame}
                   disabled={props.busy}
                   onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasResolution: Boolean(checked),
+                    props.onVideoChange((cur) => ({
+                      ...cur,
+                      hasLastFrame: Boolean(checked),
                     }))
                   }
                 />
                 <Label
-                  htmlFor='opt-res'
-                  className='cursor-pointer text-xs font-medium'
+                  htmlFor='toggle-has-last-frame'
+                  className='cursor-pointer text-xs font-semibold'
                 >
-                  {t('Resolution (resolution)')}
+                  {t('End Frame (Dual-frame transition)')}
                 </Label>
               </div>
-              {props.video.hasResolution && (
+
+              {props.video.hasLastFrame && (
                 <Select
-                  value={props.video.resolution}
+                  value={props.video.lastFrameMode}
                   disabled={props.busy}
                   onValueChange={(val) => {
-                    if (val) {
-                      props.onVideoChange((c) => ({ ...c, resolution: val }))
+                    if (val === 'url' || val === 'base64') {
+                      props.onVideoChange((c) => ({ ...c, lastFrameMode: val }))
                     }
                   }}
                 >
-                  <SelectTrigger className='h-8 text-xs'>
+                  <SelectTrigger className='h-6 w-24 text-[11px]'>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {VIDEO_RESOLUTIONS.map((r) => (
-                      <SelectItem key={r} value={r} className='text-xs'>
-                        {r}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value='url'>{t('URL Mode')}</SelectItem>
+                    <SelectItem value='base64'>{t('Base64 Mode')}</SelectItem>
                   </SelectContent>
                 </Select>
               )}
             </div>
 
-            {/* Ratio */}
-            <div className='space-y-2 rounded-lg border p-3'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='opt-ratio'
-                  checked={props.video.hasRatio}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasRatio: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='opt-ratio'
-                  className='cursor-pointer text-xs font-medium'
-                >
-                  {t('Aspect Ratio (ratio)')}
-                </Label>
+            {props.video.hasLastFrame && (
+              <div className='mt-2 space-y-1.5 border-t pt-2'>
+                {props.video.lastFrameMode === 'url' ? (
+                  <Input
+                    placeholder='https://.../end-frame.jpg'
+                    value={props.video.lastFrameUrl}
+                    disabled={props.busy}
+                    onChange={(e) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        lastFrameUrl: e.target.value,
+                      }))
+                    }
+                    className='h-7 text-xs'
+                  />
+                ) : (
+                  <div className='flex items-center gap-2'>
+                    <input
+                      type='file'
+                      ref={lastFileInputRef}
+                      accept='image/*'
+                      className='hidden'
+                      onChange={handleLastFileChange}
+                    />
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='h-7 gap-1 text-xs'
+                      onClick={() => lastFileInputRef.current?.click()}
+                    >
+                      <Upload className='size-3' />
+                      {t('Select End Frame')}
+                    </Button>
+                    <span className='text-muted-foreground truncate text-[11px]'>
+                      {props.video.lastFrameBase64 ? t('Image loaded') : t('No image selected')}
+                    </span>
+                  </div>
+                )}
               </div>
-              {props.video.hasRatio && (
-                <Select
-                  value={props.video.ratio}
-                  disabled={props.busy}
-                  onValueChange={(val) => {
-                    if (val) props.onVideoChange((c) => ({ ...c, ratio: val }))
-                  }}
-                >
-                  <SelectTrigger className='h-8 text-xs'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VIDEO_RATIOS.map((r) => (
-                      <SelectItem key={r} value={r} className='text-xs'>
-                        {r}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+            )}
+          </Card>
+
+          {/* Compact Advanced Parameters Grid */}
+          <Card className='p-2.5'>
+            <div className='mb-2 flex items-center justify-between'>
+              <span className='text-xs font-semibold'>
+                {t('Advanced Parameters (Sent only when checked)')}
+              </span>
+              <span className='text-muted-foreground text-[10px]'>
+                {t('Unchecked fields use upstream model defaults')}
+              </span>
             </div>
 
-            {/* Duration */}
-            <div className='space-y-2 rounded-lg border p-3'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='opt-duration'
-                  checked={props.video.hasDuration}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasDuration: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='opt-duration'
-                  className='cursor-pointer text-xs font-medium'
-                >
-                  {t('Duration (duration, sec)')}
-                </Label>
+            <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+              {/* Resolution */}
+              <div className='bg-muted/10 space-y-1 rounded border p-1.5'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-resolution'
+                    checked={props.video.hasResolution}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasResolution: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-resolution' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Resolution')}
+                  </Label>
+                </div>
+                {props.video.hasResolution && (
+                  <Select
+                    value={props.video.resolution}
+                    disabled={props.busy}
+                    onValueChange={(val) => {
+                      if (val) {
+                        props.onVideoChange((c) => ({ ...c, resolution: val }))
+                      }
+                    }}
+                  >
+                    <SelectTrigger className='h-6 text-[11px]'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VIDEO_RESOLUTIONS.map((res) => (
+                        <SelectItem key={res} value={res}>
+                          {res}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
-              {props.video.hasDuration && (
-                <div className='flex items-center gap-2'>
+
+              {/* Ratio */}
+              <div className='bg-muted/10 space-y-1 rounded border p-1.5'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-ratio'
+                    checked={props.video.hasRatio}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasRatio: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-ratio' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Ratio')}
+                  </Label>
+                </div>
+                {props.video.hasRatio && (
+                  <Select
+                    value={props.video.ratio}
+                    disabled={props.busy}
+                    onValueChange={(val) => {
+                      if (val) {
+                        props.onVideoChange((c) => ({ ...c, ratio: val }))
+                      }
+                    }}
+                  >
+                    <SelectTrigger className='h-6 text-[11px]'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VIDEO_RATIOS.map((ratio) => (
+                        <SelectItem key={ratio} value={ratio}>
+                          {ratio}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Duration */}
+              <div className='bg-muted/10 space-y-1 rounded border p-1.5'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-duration'
+                    checked={props.video.hasDuration}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasDuration: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-duration' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Duration (s)')}
+                  </Label>
+                </div>
+                {props.video.hasDuration && (
                   <Input
                     type='number'
                     min={1}
@@ -790,315 +668,458 @@ export function VideoPanel(props: {
                         duration: Number.parseInt(e.target.value, 10) || 5,
                       }))
                     }
-                    className='h-8 text-xs'
+                    className='h-6 text-[11px]'
                   />
-                  <span className='text-muted-foreground text-xs'>
-                    {t('sec')}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Watermark */}
-            <div className='space-y-2 rounded-lg border p-3'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='opt-watermark'
-                  checked={props.video.hasWatermark}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasWatermark: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='opt-watermark'
-                  className='cursor-pointer text-xs font-medium'
-                >
-                  {t('Watermark (watermark)')}
-                </Label>
-              </div>
-              {props.video.hasWatermark && (
-                <div className='flex items-center justify-between pt-1'>
-                  <span className='text-muted-foreground text-xs'>
-                    {props.video.watermark ? t('Enabled') : t('Disabled')}
-                  </span>
-                  <Switch
-                    checked={props.video.watermark}
-                    disabled={props.busy}
-                    onCheckedChange={(checked) =>
-                      props.onVideoChange((c) => ({
-                        ...c,
-                        watermark: Boolean(checked),
-                      }))
-                    }
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Seed */}
-            <div className='space-y-2 rounded-lg border p-3'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='opt-seed'
-                  checked={props.video.hasSeed}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasSeed: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='opt-seed'
-                  className='cursor-pointer text-xs font-medium'
-                >
-                  {t('Seed (seed)')}
-                </Label>
-              </div>
-              {props.video.hasSeed && (
-                <Input
-                  type='number'
-                  placeholder='e.g. 123456'
-                  value={props.video.seed}
-                  disabled={props.busy}
-                  onChange={(e) =>
-                    props.onVideoChange((c) => ({ ...c, seed: e.target.value }))
-                  }
-                  className='h-8 text-xs'
-                />
-              )}
-            </div>
-
-            {/* Generate Audio */}
-            <div className='space-y-2 rounded-lg border p-3'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='opt-audio'
-                  checked={props.video.hasGenerateAudio}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasGenerateAudio: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='opt-audio'
-                  className='cursor-pointer text-xs font-medium'
-                >
-                  {t('Generate Audio (generate_audio)')}
-                </Label>
-              </div>
-              {props.video.hasGenerateAudio && (
-                <div className='flex items-center justify-between pt-1'>
-                  <span className='text-muted-foreground text-xs'>
-                    {props.video.generateAudio ? t('Enabled') : t('Disabled')}
-                  </span>
-                  <Switch
-                    checked={props.video.generateAudio}
-                    disabled={props.busy}
-                    onCheckedChange={(checked) =>
-                      props.onVideoChange((c) => ({
-                        ...c,
-                        generateAudio: Boolean(checked),
-                      }))
-                    }
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Return Last Frame */}
-            <div className='space-y-2 rounded-lg border p-3'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='opt-ret-last'
-                  checked={props.video.hasReturnLastFrame}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasReturnLastFrame: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='opt-ret-last'
-                  className='cursor-pointer text-xs font-medium'
-                >
-                  {t('Return Last Frame (return_last_frame)')}
-                </Label>
-              </div>
-              {props.video.hasReturnLastFrame && (
-                <div className='flex items-center justify-between pt-1'>
-                  <span className='text-muted-foreground text-xs'>
-                    {props.video.returnLastFrame ? t('Enabled') : t('Disabled')}
-                  </span>
-                  <Switch
-                    checked={props.video.returnLastFrame}
-                    disabled={props.busy}
-                    onCheckedChange={(checked) =>
-                      props.onVideoChange((c) => ({
-                        ...c,
-                        returnLastFrame: Boolean(checked),
-                      }))
-                    }
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Custom Extra JSON */}
-            <div className='space-y-2 rounded-lg border p-3 sm:col-span-2 md:col-span-2'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='opt-custom-json'
-                  checked={props.video.hasCustomJson}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      hasCustomJson: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='opt-custom-json'
-                  className='cursor-pointer text-xs font-medium'
-                >
-                  {t('Custom Extra Parameters (Merged into top-level JSON)')}
-                </Label>
-              </div>
-              {props.video.hasCustomJson && (
-                <Textarea
-                  rows={2}
-                  placeholder='{"draft": false, "camera_fixed": true}'
-                  value={props.video.customJson}
-                  disabled={props.busy}
-                  onChange={(e) =>
-                    props.onVideoChange((c) => ({
-                      ...c,
-                      customJson: e.target.value,
-                    }))
-                  }
-                  className='font-mono text-xs'
-                />
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Execution Results / Video Player */}
-      {props.videoMetrics && (
-        <Card className='border-primary/20 bg-primary/5'>
-          <CardHeader className='pb-3'>
-            <div className='flex flex-wrap items-center justify-between gap-2'>
-              <div className='flex items-center gap-2'>
-                <Video className='text-primary size-5' />
-                <CardTitle className='text-sm font-semibold'>
-                  {t('Execution Status & Output')}
-                </CardTitle>
-                <Badge variant={statusVariant(props.videoMetrics.status)}>
-                  {props.videoMetrics.status || t('Unknown')}
-                </Badge>
-              </div>
-              <div className='flex items-center gap-2'>
-                {props.videoMetrics.elapsed_ms > 0 && (
-                  <Badge variant='outline' className='gap-1 text-xs'>
-                    <Clock className='size-3' />
-                    {(props.videoMetrics.elapsed_ms / 1000).toFixed(1)}s
-                  </Badge>
                 )}
-                {props.onExportPdf && (
+              </div>
+
+              {/* Watermark */}
+              <div className='bg-muted/10 space-y-1 rounded border p-1.5'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-watermark'
+                    checked={props.video.hasWatermark}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasWatermark: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-watermark' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Watermark')}
+                  </Label>
+                </div>
+                {props.video.hasWatermark && (
+                  <div className='flex items-center justify-between pt-0.5'>
+                    <span className='text-muted-foreground text-[10px]'>
+                      {props.video.watermark ? t('Enabled') : t('Disabled')}
+                    </span>
+                    <Switch
+                      checked={props.video.watermark}
+                      disabled={props.busy}
+                      onCheckedChange={(checked) =>
+                        props.onVideoChange((c) => ({
+                          ...c,
+                          watermark: Boolean(checked),
+                        }))
+                      }
+                      className='scale-75'
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Seed */}
+              <div className='bg-muted/10 space-y-1 rounded border p-1.5'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-seed'
+                    checked={props.video.hasSeed}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasSeed: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-seed' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Seed')}
+                  </Label>
+                </div>
+                {props.video.hasSeed && (
+                  <Input
+                    placeholder='123456'
+                    value={props.video.seed}
+                    disabled={props.busy}
+                    onChange={(e) =>
+                      props.onVideoChange((c) => ({ ...c, seed: e.target.value }))
+                    }
+                    className='h-6 text-[11px]'
+                  />
+                )}
+              </div>
+
+              {/* Audio Generation */}
+              <div className='bg-muted/10 space-y-1 rounded border p-1.5'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-audio'
+                    checked={props.video.hasGenerateAudio}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasGenerateAudio: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-audio' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Generate Audio')}
+                  </Label>
+                </div>
+                {props.video.hasGenerateAudio && (
+                  <div className='flex items-center justify-between pt-0.5'>
+                    <span className='text-muted-foreground text-[10px]'>
+                      {props.video.generateAudio ? t('Enabled') : t('Disabled')}
+                    </span>
+                    <Switch
+                      checked={props.video.generateAudio}
+                      disabled={props.busy}
+                      onCheckedChange={(checked) =>
+                        props.onVideoChange((c) => ({
+                          ...c,
+                          generateAudio: Boolean(checked),
+                        }))
+                      }
+                      className='scale-75'
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Return Last Frame */}
+              <div className='bg-muted/10 space-y-1 rounded border p-1.5'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-return-last'
+                    checked={props.video.hasReturnLastFrame}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasReturnLastFrame: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-return-last' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Return Last Frame')}
+                  </Label>
+                </div>
+                {props.video.hasReturnLastFrame && (
+                  <div className='flex items-center justify-between pt-0.5'>
+                    <span className='text-muted-foreground text-[10px]'>
+                      {props.video.returnLastFrame ? t('Enabled') : t('Disabled')}
+                    </span>
+                    <Switch
+                      checked={props.video.returnLastFrame}
+                      disabled={props.busy}
+                      onCheckedChange={(checked) =>
+                        props.onVideoChange((c) => ({
+                          ...c,
+                          returnLastFrame: Boolean(checked),
+                        }))
+                      }
+                      className='scale-75'
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Custom Extra JSON */}
+              <div className='bg-muted/10 col-span-2 space-y-1 rounded border p-1.5 sm:col-span-4'>
+                <div className='flex items-center space-x-1.5'>
+                  <Checkbox
+                    id='opt-custom-json'
+                    checked={props.video.hasCustomJson}
+                    disabled={props.busy}
+                    onCheckedChange={(checked) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        hasCustomJson: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <Label htmlFor='opt-custom-json' className='cursor-pointer text-[11px] font-medium'>
+                    {t('Custom Extra Parameters (Merged into top-level JSON)')}
+                  </Label>
+                </div>
+                {props.video.hasCustomJson && (
+                  <Textarea
+                    rows={1}
+                    placeholder='{"camera_motion": "pan_left"}'
+                    value={props.video.customJson}
+                    disabled={props.busy}
+                    onChange={(e) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        customJson: e.target.value,
+                      }))
+                    }
+                    className='font-mono text-xs'
+                  />
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Task Control & Manual Query Toolbar */}
+          <Card className='border-primary/20 bg-primary/5 p-2.5'>
+            <div className='space-y-2'>
+              <div className='flex flex-wrap items-center justify-between gap-2'>
+                <div className='flex flex-1 items-center gap-2'>
+                  <Label className='text-muted-foreground shrink-0 text-xs font-medium'>
+                    {t('Task ID')}:
+                  </Label>
+                  <Input
+                    placeholder={t('Enter Task ID or generate by submitting')}
+                    value={effectiveTaskId}
+                    disabled={props.busy || isManualQuerying}
+                    onChange={(e) =>
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        taskId: e.target.value.trim(),
+                      }))
+                    }
+                    className='h-7 font-mono text-xs'
+                  />
+                </div>
+
+                <Button
+                  type='button'
+                  variant='secondary'
+                  size='sm'
+                  disabled={props.busy || isManualQuerying || !effectiveTaskId}
+                  className='h-7 gap-1 text-xs'
+                  onClick={handleManualQuery}
+                >
+                  <Zap className='size-3 text-amber-500' />
+                  {isManualQuerying ? t('Querying...') : t('Query Status Now')}
+                </Button>
+              </div>
+
+              {/* Execution Actions */}
+              <div className='flex flex-wrap items-center justify-between gap-2 pt-1'>
+                <div className='flex items-center gap-2'>
                   <Button
+                    type='button'
                     variant='outline'
                     size='sm'
-                    className='h-7 gap-1 text-xs'
-                    onClick={props.onExportPdf}
+                    disabled={props.busy}
+                    onClick={() => handleRunSingleCheck('video_submit')}
+                    className='h-7 text-xs'
                   >
-                    <Download className='size-3' />
-                    {t('Export Video PDF')}
+                    <Send className='mr-1 size-3' />
+                    {t('Submit Only')}
                   </Button>
-                )}
-                <RawJsonDialog
-                  videoMetrics={props.videoMetrics}
-                  previewRequestJson={previewRequestJson}
-                  busy={props.busy}
-                  onApplyToForm={handleApplyJsonToForm}
-                  onSendRawJson={props.onSendRawJson}
-                />
+
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    disabled={props.busy || !effectiveTaskId}
+                    onClick={() => handleRunSingleCheck('video_poll')}
+                    className='h-7 text-xs'
+                  >
+                    <RefreshCw className='mr-1 size-3' />
+                    {t('Poll Only')}
+                  </Button>
+                </div>
+
+                <div className='flex items-center gap-2'>
+                  <RawJsonDialog
+                    videoMetrics={props.videoMetrics}
+                    previewRequestJson={previewRequestJson}
+                    busy={props.busy}
+                    onApplyToForm={handleApplyJsonToForm}
+                    onSendRawJson={props.onSendRawJson}
+                  />
+
+                  <Button
+                    type='button'
+                    size='sm'
+                    disabled={props.busy}
+                    onClick={() => props.onRunCheck?.()}
+                    className='h-7 gap-1 text-xs font-semibold'
+                  >
+                    <Play className='size-3 fill-current' />
+                    {t('Start Video Test (Submit & Poll)')}
+                  </Button>
+                </div>
               </div>
             </div>
-          </CardHeader>
-          <CardContent className='space-y-4'>
-            {props.videoMetrics.endpoint_url && (
-              <p className='text-muted-foreground font-mono text-xs break-all'>
-                {t('Endpoint URL')}:{' '}
-                <span className='text-foreground font-semibold'>POST</span>{' '}
-                {props.videoMetrics.endpoint_url}
-              </p>
-            )}
-            {props.videoMetrics.task_id && (
-              <p className='text-muted-foreground font-mono text-xs'>
-                {t('Task ID')}: {props.videoMetrics.task_id}
-              </p>
-            )}
+          </Card>
 
-            {props.videoMetrics.fail_reason && (
-              <Alert variant='destructive'>
-                <AlertTitle>{t('Generation Failed')}</AlertTitle>
-                <AlertDescription className='text-xs break-all'>
-                  {props.videoMetrics.fail_reason}
-                </AlertDescription>
-              </Alert>
-            )}
+          {/* Step Checks Table */}
+          <div className='space-y-1.5'>
+            <p className='text-xs font-medium'>{t('Task Execution Pipeline')}</p>
+            <CheckTable
+              checks={props.videoChecks}
+              busy={props.busy}
+              onRun={(id) => handleRunSingleCheck(id)}
+            />
+          </div>
 
-            {props.videoMetrics.video_url && (
-              <div className='bg-background/80 space-y-3 rounded-xl border p-4 shadow-sm'>
-                <div className='flex items-center justify-between'>
-                  <p className='text-foreground text-sm font-medium'>
+          {/* Generated Video Output Player */}
+          {props.videoMetrics?.video_url && (
+            <Card className='border-primary/20 p-3'>
+              <div className='flex items-center justify-between pb-2'>
+                <div className='flex items-center gap-1.5'>
+                  <Video className='text-primary size-4' />
+                  <span className='text-xs font-semibold'>
                     {t('Generated Video Output')}
-                  </p>
+                  </span>
+                </div>
+                <div className='flex items-center gap-2'>
+                  {props.onExportPdf && (
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      className='h-6 gap-1 text-[11px]'
+                      onClick={props.onExportPdf}
+                    >
+                      <Download className='size-3' />
+                      {t('Export PDF')}
+                    </Button>
+                  )}
                   <a
                     href={props.videoMetrics.video_url}
                     target='_blank'
                     rel='noreferrer'
                     className='text-primary flex items-center gap-1 text-xs hover:underline'
                   >
-                    {t('Open URL in new tab')}
+                    {t('Open URL')}
                     <ExternalLink className='size-3' />
                   </a>
                 </div>
-                <div className='flex justify-center overflow-hidden rounded-lg bg-black'>
-                  <video
-                    src={props.videoMetrics.video_url}
-                    controls
-                    autoPlay
-                    playsInline
-                    className='max-h-96 w-auto max-w-full'
-                  />
+              </div>
+              <div className='flex justify-center overflow-hidden rounded bg-black'>
+                <video
+                  src={props.videoMetrics.video_url}
+                  controls
+                  autoPlay
+                  playsInline
+                  className='max-h-80 w-auto max-w-full'
+                />
+              </div>
+            </Card>
+          )}
+        </div>
+
+        {/* Right Column: Real-time Live JSON Echo Panel */}
+        <div className='space-y-2 lg:sticky lg:top-4 lg:col-span-5'>
+          <Card className='border-muted-foreground/20 shadow-sm'>
+            <CardHeader className='p-3 pb-2'>
+              <div className='flex items-center justify-between'>
+                <div className='flex items-center gap-1.5'>
+                  <Code className='text-primary size-4' />
+                  <CardTitle className='text-xs font-semibold'>
+                    {t('Live JSON Echo')}
+                  </CardTitle>
+                </div>
+                {props.videoMetrics?.status && (
+                  <Badge variant={taskStatusBadgeVariant(props.videoMetrics.status)} className='text-[10px]'>
+                    {props.videoMetrics.status}
+                  </Badge>
+                )}
+              </div>
+
+              {/* Sub-Tabs for JSON types */}
+              <Tabs
+                value={activeJsonTab}
+                onValueChange={(v) => setActiveJsonTab(v as 'request' | 'poll' | 'submit')}
+                className='mt-2 w-full'
+              >
+                <TabsList className='grid h-7 w-full grid-cols-3 p-0.5 text-xs'>
+                  <TabsTrigger value='request' className='text-[11px]'>
+                    {t('Request JSON')}
+                  </TabsTrigger>
+                  <TabsTrigger value='poll' className='text-[11px]'>
+                    {t('Poll Response')}
+                  </TabsTrigger>
+                  <TabsTrigger value='submit' className='text-[11px]'>
+                    {t('Submit Response')}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </CardHeader>
+
+            <CardContent className='p-3 pt-0'>
+              {/* Toolbar in Right Panel */}
+              <div className='mb-2 flex items-center justify-between border-b pb-1.5 text-xs'>
+                <span className='text-muted-foreground text-[11px]'>
+                  {activeJsonTab === 'request' && t('Real-time sync with left form')}
+                  {activeJsonTab === 'poll' && (latestPollJson ? t('Latest task poll data') : t('Awaiting poll query'))}
+                  {activeJsonTab === 'submit' && (submitResponseJson ? t('Task creation response') : t('Awaiting submission'))}
+                </span>
+
+                <div className='flex items-center gap-1'>
+                  {activeJsonTab === 'poll' && (
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      size='sm'
+                      disabled={props.busy || isManualQuerying || !effectiveTaskId}
+                      className='h-6 gap-1 px-1.5 text-[11px]'
+                      onClick={handleManualQuery}
+                    >
+                      <Zap className='size-3 text-amber-500' />
+                      {t('Query Now')}
+                    </Button>
+                  )}
+
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    className='h-6 gap-1 px-1.5 text-[11px]'
+                    onClick={() => {
+                      let textToCopy = previewRequestJson
+                      if (activeJsonTab === 'poll') {
+                        textToCopy = latestPollJson
+                      } else if (activeJsonTab === 'submit') {
+                        textToCopy = submitResponseJson
+                      }
+                      void handleCopyText(textToCopy, activeJsonTab)
+                    }}
+                  >
+                    {copiedTab === activeJsonTab ? (
+                      <Check className='size-3 text-emerald-500' />
+                    ) : (
+                      <Copy className='size-3' />
+                    )}
+                    {copiedTab === activeJsonTab ? t('Copied') : t('Copy')}
+                  </Button>
                 </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Step Checks Table */}
-      <div className='space-y-2'>
-        <p className='text-sm font-medium'>{t('Task Execution Pipeline')}</p>
-        <CheckTable
-          checks={props.videoChecks}
-          busy={props.busy}
-          onRun={() => {}}
-        />
+              {/* Code Container */}
+              <div className='h-[420px] max-h-[65vh] overflow-auto rounded border bg-zinc-950 p-2.5 font-mono text-[11px] text-zinc-100 dark:bg-zinc-900'>
+                {activeJsonTab === 'request' && (
+                  <pre className='whitespace-pre-wrap break-all'>{previewRequestJson}</pre>
+                )}
+
+                {activeJsonTab === 'poll' && (
+                  latestPollJson ? (
+                    <pre className='whitespace-pre-wrap break-all'>{latestPollJson}</pre>
+                  ) : (
+                    <div className='flex h-full flex-col items-center justify-center space-y-2 text-center text-zinc-400'>
+                      <RefreshCw className='size-6 animate-pulse opacity-40' />
+                      <p className='text-xs'>
+                        {t('No poll data yet. Click "Query Status Now" or start test.')}
+                      </p>
+                    </div>
+                  )
+                )}
+
+                {activeJsonTab === 'submit' && (
+                  submitResponseJson ? (
+                    <pre className='whitespace-pre-wrap break-all'>{submitResponseJson}</pre>
+                  ) : (
+                    <div className='flex h-full flex-col items-center justify-center space-y-2 text-center text-zinc-400'>
+                      <Send className='size-6 opacity-40' />
+                      <p className='text-xs'>
+                        {t('No submit response yet. Click "Submit Only" or start test.')}
+                      </p>
+                    </div>
+                  )
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </TabsContent>
   )

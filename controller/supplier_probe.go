@@ -84,3 +84,47 @@ func RunSupplierTest(c *gin.Context) {
 	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
 	flush()
 }
+
+func QuerySupplierTestVideoTask(c *gin.Context) {
+	var req struct {
+		BaseURL    string `json:"base_url"`
+		APIKey     string `json:"api_key"`
+		TaskID     string `json:"task_id"`
+		CustomPath string `json:"custom_path"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid request body"})
+		return
+	}
+	if req.BaseURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "base_url is required"})
+		return
+	}
+	if req.TaskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "task_id is required"})
+		return
+	}
+
+	httpClient := suppliertest.NewHTTPClient(service.GetHttpClient())
+	status, rawResp, err := suppliertest.GetVideoTaskRaw(c.Request.Context(), httpClient, req.BaseURL, req.CustomPath, req.APIKey, req.TaskID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success":      false,
+			"message":      err.Error(),
+			"raw_response": string(rawResp),
+		})
+		return
+	}
+
+	taskState, videoURL, failReason := suppliertest.ParseVideoTaskState(rawResp)
+	c.JSON(http.StatusOK, gin.H{
+		"success":      true,
+		"status_code":  status,
+		"task_id":      req.TaskID,
+		"status":       taskState,
+		"video_url":    videoURL,
+		"fail_reason":  failReason,
+		"raw_response": string(rawResp),
+	})
+}
+

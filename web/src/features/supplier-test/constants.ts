@@ -27,6 +27,7 @@ import veryLongText from './corpora/very-long.txt?raw'
 export const API_ENDPOINTS = {
   MODELS: '/api/supplier-test/models',
   RUNS: '/api/supplier-test/runs',
+  VIDEO_QUERY: '/api/supplier-test/video/query',
 } as const
 
 export function estimateTokens(text: string): number {
@@ -336,6 +337,7 @@ export const DEFAULT_VIDEO_FORM: VideoForm = {
   hasCustomJson: false,
   customJson: '',
   customPath: '',
+  taskId: '',
 }
 
 export const VIDEO_CHECKS: CheckResult[] = [

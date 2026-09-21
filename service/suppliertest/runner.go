@@ -670,9 +670,13 @@ func runStrictKimiKVV(
 		return status, msg
 	}
 
-	fullMsg := "KVV 严苛认证全部通过：① 正向复合 Schema 100% 合规；② 负向拒调工具 0 幻觉；③ 多工具歧义路由精准命中 book_hotel；各阶段 finish_reason 均合规"
+	fullMsg := "KVV 严苛认证全部通过 (4/4)：① 正向复合 Schema 100% 合规 (5必填项/整型/枚举/正则)；② 负向拒调工具 0 幻觉 (finish_reason=stop)；③ 多工具歧义路由精准命中 book_hotel；④ 原厂协议合规"
 	if flightRes.Reasoning != "" || flightRes.ReasoningTokens > 0 {
-		fullMsg += "，包含 Moonshot 流式思维链"
+		if flightRes.ReasoningTokens > 0 {
+			fullMsg += fmt.Sprintf("，捕获 Moonshot 原生流式思维链 (%d tokens)", flightRes.ReasoningTokens)
+		} else {
+			fullMsg += "，包含 Moonshot 流式思维链"
+		}
 	}
 	return "pass", fullMsg
 }

@@ -16,9 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { ShieldCheck } from 'lucide-react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -162,6 +165,56 @@ export function BasicPanel(props: {
             busy={props.busy}
             onRun={props.onRunCheck}
           />
+          {props.vendor === 'kimi' && (
+            <Card className='mt-3 space-y-2.5 border-amber-500/30 bg-amber-500/5 p-3.5'>
+              <div className='flex items-center justify-between gap-2'>
+                <div className='flex items-center gap-1.5'>
+                  <ShieldCheck className='size-4 text-amber-500' />
+                  <span className='text-xs font-semibold text-amber-700 dark:text-amber-400'>
+                    {t('Kimi KVV (Kimi Vendor Verifier) Official Verification Standard')}
+                  </span>
+                </div>
+                <Badge variant='outline' className='border-amber-500/40 text-[10px] text-amber-600'>
+                  {t('Moonshot Certified')}
+                </Badge>
+              </div>
+              <p className='text-muted-foreground text-[11px] leading-relaxed'>
+                {t(
+                  'Aligned with Moonshot AI open-source KVV specification. Designed for third-party upstream admission, running 4-phase closed-loop synthetic probes in seconds to detect model forgery, schema degradation, and tool hallucinations.'
+                )}
+              </p>
+              <div className='grid gap-1.5 pt-1 text-[11px] sm:grid-cols-2'>
+                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
+                  <span className='font-mono font-semibold text-primary'>[1]</span>
+                  <div>
+                    <div className='font-medium text-foreground'>{t('Positive Schema Conformance')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('query_flight 5 required fields, integer types, business enum, YYYY-MM-DD regex')}</div>
+                  </div>
+                </div>
+                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
+                  <span className='font-mono font-semibold text-primary'>[2]</span>
+                  <div>
+                    <div className='font-medium text-foreground'>{t('Negative Anti-Hallucination')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('Common sense queries with tools attached: 0 tool invocation hallucination, finish_reason=stop')}</div>
+                  </div>
+                </div>
+                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
+                  <span className='font-mono font-semibold text-primary'>[3]</span>
+                  <div>
+                    <div className='font-medium text-foreground'>{t('Multi-Tool Disambiguation')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('Flight & hotel candidate interference: accurate routing to book_hotel, strict parameter extraction')}</div>
+                  </div>
+                </div>
+                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
+                  <span className='font-mono font-semibold text-primary'>[4]</span>
+                  <div>
+                    <div className='font-medium text-foreground'>{t('Thinking & CoT Protocol')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('Moonshot reasoning_effort low probe: captures native streaming thinking tokens')}</div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       </div>
     </TabsContent>

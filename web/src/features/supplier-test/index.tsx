@@ -222,16 +222,17 @@ export function SupplierTest() {
   ): SupplierTestRunRequest => {
     const temperature = optionalNumber(basic.temperature)
     const topP = optionalNumber(basic.topP)
-    let resolvedChecks = checks
-    if (!resolvedChecks || resolvedChecks.length === 0) {
-      resolvedChecks =
-        target.vendor === 'kimi'
-          ? [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS]
-          : [
-              ...SHALLOW_BASIC_IDS,
-              ...PROTOCOL_BASIC_IDS.filter((id) => id !== 'kimi_kvv'),
-            ]
-    }
+    const defaultBasicChecks =
+      target.vendor === 'kimi'
+        ? [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS]
+        : [
+            ...SHALLOW_BASIC_IDS,
+            ...PROTOCOL_BASIC_IDS.filter((id) => id !== 'kimi_kvv'),
+          ]
+    const resolvedBasicChecks =
+      module === 'basic' && checks && checks.length > 0
+        ? checks
+        : defaultBasicChecks
     return {
       base_url: target.baseUrl.trim(),
       api_key: target.apiKey,
@@ -244,7 +245,7 @@ export function SupplierTest() {
         stream: basic.stream,
         ...(temperature === undefined ? {} : { temperature }),
         ...(topP === undefined ? {} : { top_p: topP }),
-        checks: resolvedChecks,
+        checks: resolvedBasicChecks,
       },
       cache: {
         prompt: resolveCorpusPrompt(cache),
@@ -264,7 +265,7 @@ export function SupplierTest() {
         stream: stress.stream,
       },
       video: {
-        ...(checks ? { checks } : {}),
+        ...(module === 'video' && checks && checks.length > 0 ? { checks } : {}),
         ...(video.taskId || run.videoMetrics?.task_id
           ? { task_id: (video.taskId || run.videoMetrics?.task_id)?.trim() }
           : {}),

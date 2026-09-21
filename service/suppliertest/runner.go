@@ -212,11 +212,29 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.Basic.Stream == nil {
 		req.Basic.Stream = ptrBool(true)
 	}
-	checks, err := filterBasicChecks(req.Basic.Checks)
-	if err != nil {
-		return err
+	hasBasic := false
+	for _, m := range req.Modules {
+		if m == ModuleBasic {
+			hasBasic = true
+			break
+		}
 	}
-	req.Basic.Checks = checks
+	if hasBasic {
+		checks, err := filterBasicChecks(req.Basic.Checks)
+		if err != nil {
+			return err
+		}
+		req.Basic.Checks = checks
+	} else if len(req.Basic.Checks) == 0 {
+		req.Basic.Checks = allBasicChecks
+	} else {
+		checks, err := filterBasicChecks(req.Basic.Checks)
+		if err != nil {
+			req.Basic.Checks = allBasicChecks
+		} else {
+			req.Basic.Checks = checks
+		}
+	}
 	if req.Cache.MaxTokens == 0 {
 		req.Cache.MaxTokens = 16
 	}

@@ -1,0 +1,35 @@
+name: Mini Program
+
+on:
+  pull_request:
+    paths:
+      - 'miniapp/**'
+      - '.github/workflows/miniapp.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'miniapp/**'
+      - '.github/workflows/miniapp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniapp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run test
+      - run: bun run build:weapp
+        env:
+          MINIAPP_API_BASE_URL: https://miniapp-ci.invalid

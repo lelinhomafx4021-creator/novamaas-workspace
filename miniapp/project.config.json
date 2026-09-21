@@ -1,0 +1,36 @@
+{
+  "appid": "wxbca93d97d0ec8bce",
+  "compileType": "miniprogram",
+  "description": "Mobile mini program client",
+  "miniprogramRoot": "dist/",
+  "projectname": "newapi-miniapp",
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": false,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {}
+}

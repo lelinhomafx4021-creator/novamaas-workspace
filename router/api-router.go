@@ -56,6 +56,24 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 
+		miniAuthRoute := apiRouter.Group("/mini/auth")
+		miniAuthRoute.Use(middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit)
+		{
+			miniAuthRoute.POST("/login", controller.MiniAppLogin)
+			miniAuthRoute.POST("/bind", controller.MiniAppBind)
+			miniAuthRoute.POST("/register", controller.MiniAppRegister)
+			miniAuthRoute.POST("/verification", middleware.EmailVerificationRateLimit(), controller.MiniAppSendEmailVerification)
+			miniAuthRoute.POST("/refresh", controller.MiniAppRefresh)
+			miniAuthRoute.POST("/logout", controller.MiniAppLogout)
+		}
+
+		miniProtectedRoute := apiRouter.Group("/mini")
+		miniProtectedRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			miniProtectedRoute.POST("/security/verify", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.MiniAppVerifySecurity)
+			miniProtectedRoute.POST("/token/:id/key", middleware.CriticalRateLimit(), controller.MiniAppGetTokenKey)
+		}
+
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
 		apiRouter.POST("/waffo/webhook", anonymousRequestBodyLimit, controller.WaffoWebhook)

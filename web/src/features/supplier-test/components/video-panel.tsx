@@ -63,21 +63,48 @@ import {
   VIDEO_ROLES,
 } from '../constants'
 import type { CheckResult, VideoForm, VideoMetrics } from '../types'
+import {
+  buildVideoRequestPayload,
+  parseVideoPayloadToForm,
+} from '../video-json'
 import { CheckTable } from './check-table'
 import { RawJsonDialog } from './raw-json-dialog'
 
 export function VideoPanel(props: {
   video: VideoForm
   busy: boolean
+  model?: string
   videoChecks: CheckResult[]
   videoMetrics: VideoMetrics | null
   onVideoChange: Dispatch<SetStateAction<VideoForm>>
   onExportPdf?: () => void
+  onSendRawJson?: (rawJson: string) => void
+  onModelChange?: (model: string) => void
 }) {
   const { t } = useTranslation()
   const firstFileInputRef = useRef<HTMLInputElement>(null)
   const lastFileInputRef = useRef<HTMLInputElement>(null)
   const [showBase64Textarea, setShowBase64Textarea] = useState(false)
+
+  const previewPayload = buildVideoRequestPayload(
+    props.model || '',
+    props.video
+  )
+  const previewRequestJson = JSON.stringify(previewPayload, null, 2)
+
+  const handleApplyJsonToForm = (rawJson: string) => {
+    const res = parseVideoPayloadToForm(rawJson)
+    if (!res.success) return
+    if (res.model && props.onModelChange) {
+      props.onModelChange(res.model)
+    }
+    if (res.videoPatch) {
+      props.onVideoChange((cur) => ({
+        ...cur,
+        ...res.videoPatch,
+      }))
+    }
+  }
 
   const handleFirstFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -158,7 +185,13 @@ export function VideoPanel(props: {
           )}
         </p>
         <div className='flex items-center gap-2'>
-          <RawJsonDialog videoMetrics={props.videoMetrics} />
+          <RawJsonDialog
+            videoMetrics={props.videoMetrics}
+            previewRequestJson={previewRequestJson}
+            busy={props.busy}
+            onApplyToForm={handleApplyJsonToForm}
+            onSendRawJson={props.onSendRawJson}
+          />
         </div>
       </div>
 
@@ -994,7 +1027,13 @@ export function VideoPanel(props: {
                     {t('Export Video PDF')}
                   </Button>
                 )}
-                <RawJsonDialog videoMetrics={props.videoMetrics} />
+                <RawJsonDialog
+                  videoMetrics={props.videoMetrics}
+                  previewRequestJson={previewRequestJson}
+                  busy={props.busy}
+                  onApplyToForm={handleApplyJsonToForm}
+                  onSendRawJson={props.onSendRawJson}
+                />
               </div>
             </div>
           </CardHeader>

@@ -264,6 +264,9 @@ export function SupplierTest() {
         stream: stress.stream,
       },
       video: {
+        ...(video.rawPayload && video.rawPayload.trim()
+          ? { raw_payload: video.rawPayload.trim() }
+          : {}),
         prompt: video.prompt.trim(),
         ...(video.hasImage
           ? {
@@ -398,42 +401,61 @@ export function SupplierTest() {
       }
     }
     if (module === 'video') {
-      if (!video.prompt.trim()) {
-        toast.error(t('Please enter a prompt for video generation'))
-        return
-      }
-      if (video.hasImage) {
-        if (video.uploadMode === 'url' && !video.imageUrl.trim()) {
-          toast.error(t('Please enter an image URL'))
-          return
-        }
-        if (video.uploadMode === 'base64' && !video.base64Data.trim()) {
-          toast.error(t('Please select an image file or provide Base64 data'))
-          return
-        }
-      }
-      if (video.hasLastFrame) {
-        if (video.lastFrameMode === 'url' && !video.lastFrameUrl.trim()) {
-          toast.error(t('Please enter an end frame image URL'))
-          return
-        }
-        if (video.lastFrameMode === 'base64' && !video.lastFrameBase64.trim()) {
-          toast.error(
-            t('Please select an end frame image file or provide Base64 data')
-          )
-          return
-        }
-      }
-      if (video.hasCustomJson && video.customJson.trim()) {
+      if (video.rawPayload && video.rawPayload.trim()) {
         try {
-          JSON.parse(video.customJson)
+          JSON.parse(video.rawPayload.trim())
         } catch {
-          toast.error(t('Custom extra parameters must be valid JSON'))
+          toast.error(t('Invalid JSON format'))
           return
+        }
+      } else {
+        if (!video.prompt.trim()) {
+          toast.error(t('Please enter a prompt for video generation'))
+          return
+        }
+        if (video.hasImage) {
+          if (video.uploadMode === 'url' && !video.imageUrl.trim()) {
+            toast.error(t('Please enter an image URL'))
+            return
+          }
+          if (video.uploadMode === 'base64' && !video.base64Data.trim()) {
+            toast.error(t('Please select an image file or provide Base64 data'))
+            return
+          }
+        }
+        if (video.hasLastFrame) {
+          if (video.lastFrameMode === 'url' && !video.lastFrameUrl.trim()) {
+            toast.error(t('Please enter an end frame image URL'))
+            return
+          }
+          if (video.lastFrameMode === 'base64' && !video.lastFrameBase64.trim()) {
+            toast.error(
+              t('Please select an end frame image file or provide Base64 data')
+            )
+            return
+          }
+        }
+        if (video.hasCustomJson && video.customJson.trim()) {
+          try {
+            JSON.parse(video.customJson)
+          } catch {
+            toast.error(t('Custom extra parameters must be valid JSON'))
+            return
+          }
         }
       }
     }
     void run.start(buildPayload(module, checks))
+  }
+
+  const handleSendRawJson = (rawJson: string) => {
+    if (!validateTarget()) return
+    const payload = buildPayload('video')
+    if (!payload.video) {
+      payload.video = { prompt: DEFAULT_VIDEO_FORM.prompt }
+    }
+    payload.video.raw_payload = rawJson.trim()
+    void run.start(payload)
   }
 
   const stressAssessment = run.metrics
@@ -684,9 +706,12 @@ export function SupplierTest() {
               <VideoPanel
                 video={video}
                 busy={busy}
+                model={target.model}
                 videoChecks={run.videoChecks}
                 videoMetrics={run.videoMetrics}
                 onVideoChange={setVideo}
+                onModelChange={(m) => setTarget((c) => ({ ...c, model: m }))}
+                onSendRawJson={handleSendRawJson}
                 onExportPdf={() => {
                   exportVideoPdfReport(videoReportInput())
                   toast.success(t('Video PDF report ready'))

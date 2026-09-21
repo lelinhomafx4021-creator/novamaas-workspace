@@ -137,6 +137,7 @@ export type SupplierTestRunRequest = {
     return_last_frame?: boolean
     custom_json?: string
     custom_path?: string
+    raw_payload?: string
   }
 }
 
@@ -212,4 +213,5 @@ export type VideoForm = {
   hasCustomJson: boolean
   customJson: string
   customPath: string
+  rawPayload?: string
 }

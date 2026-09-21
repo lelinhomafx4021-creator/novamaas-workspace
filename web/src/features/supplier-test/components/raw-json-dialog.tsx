@@ -16,11 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, Code2, Copy } from 'lucide-react'
-import { useState } from 'react'
+import {
+  Check,
+  Code2,
+  Copy,
+  Edit3,
+  Eye,
+  Play,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -31,8 +41,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 
 import type { VideoMetrics } from '../types'
+import { parseVideoPayloadToForm } from '../video-json'
 
 function formatJSON(raw?: string): string {
   if (!raw || !raw.trim()) return ''
@@ -90,17 +102,76 @@ function JsonCodeViewer({ code, label }: { code: string; label: string }) {
 
 export function RawJsonDialog(props: {
   videoMetrics?: VideoMetrics | null
+  previewRequestJson?: string
+  busy?: boolean
   disabled?: boolean
+  onSendRawJson?: (rawJson: string) => void
+  onApplyToForm?: (rawJson: string) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'request' | 'submit' | 'poll'>('request')
+  const [editMode, setEditMode] = useState(false)
+  const [customText, setCustomText] = useState('')
 
-  const requestJSON = formatJSON(props.videoMetrics?.raw_request_json)
+  const executedRequestJSON = formatJSON(props.videoMetrics?.raw_request_json)
+  const previewJSON = props.previewRequestJson || ''
+  const displayRequestJSON = executedRequestJSON || previewJSON
+  const isPreview = !executedRequestJSON
+
   const submitJSON = formatJSON(props.videoMetrics?.raw_submit_response_json)
   const pollJSON = formatJSON(props.videoMetrics?.raw_poll_response_json)
 
-  const hasAnyData = Boolean(requestJSON || submitJSON || pollJSON)
+  useEffect(() => {
+    if (open && !editMode) {
+      setCustomText(displayRequestJSON)
+    }
+  }, [open, editMode, displayRequestJSON])
+
+  const handleFormat = () => {
+    try {
+      const parsed = JSON.parse(customText)
+      const formatted = JSON.stringify(parsed, null, 2)
+      setCustomText(formatted)
+      toast.success(t('JSON formatted successfully'))
+    } catch {
+      toast.error(t('Invalid JSON format'))
+    }
+  }
+
+  const handleResetToPreview = () => {
+    setCustomText(displayRequestJSON)
+    toast.success(t('Reset to current form preview'))
+  }
+
+  const handleApplyToForm = () => {
+    if (!props.onApplyToForm) return
+    const res = parseVideoPayloadToForm(customText)
+    if (!res.success) {
+      toast.error(t('Failed to parse JSON: {{error}}', { error: res.error || '' }))
+      return
+    }
+    props.onApplyToForm(customText)
+    setOpen(false)
+    toast.success(t('Successfully parsed and applied JSON to form'))
+  }
+
+  const handleSendDirectly = () => {
+    if (!props.onSendRawJson) return
+    const trimmed = customText.trim()
+    if (!trimmed) {
+      toast.error(t('Please paste or enter a JSON request body'))
+      return
+    }
+    try {
+      JSON.parse(trimmed)
+    } catch {
+      toast.error(t('Invalid JSON format'))
+      return
+    }
+    props.onSendRawJson(trimmed)
+    setOpen(false)
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -109,11 +180,16 @@ export function RawJsonDialog(props: {
           <Button
             variant='outline'
             size='sm'
-            disabled={props.disabled || !hasAnyData}
+            disabled={props.disabled || props.busy}
             className='gap-1.5'
           >
             <Code2 className='size-4' />
             {t('View Raw Request & Response JSON')}
+            {props.videoMetrics && (
+              <Badge variant='secondary' className='h-4 px-1 text-[10px]'>
+                {t('Results Ready')}
+              </Badge>
+            )}
           </Button>
         }
       />
@@ -122,7 +198,7 @@ export function RawJsonDialog(props: {
           <DialogTitle>{t('Raw Request & Response JSON')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Inspect exact JSON payloads sent to and received from Volcano Ark API.'
+              'Inspect, edit, or paste Volcano Ark video generation request and response payloads.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -144,11 +220,102 @@ export function RawJsonDialog(props: {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value='request' className='mt-3'>
-            <JsonCodeViewer
-              code={requestJSON}
-              label={t('Submit Request Body')}
-            />
+          <TabsContent value='request' className='mt-3 space-y-3'>
+            <div className='flex flex-wrap items-center justify-between gap-2 border-b pb-2'>
+              <div className='flex items-center gap-2'>
+                <span className='text-xs text-muted-foreground'>
+                  {isPreview
+                    ? t('Live preview based on current form settings')
+                    : t('Executed upstream request payload')}
+                </span>
+              </div>
+              <div className='flex items-center gap-1.5'>
+                <Button
+                  variant={editMode ? 'ghost' : 'secondary'}
+                  size='xs'
+                  className='h-7 gap-1 text-xs'
+                  onClick={() => setEditMode(false)}
+                >
+                  <Eye className='size-3.5' />
+                  {t('Preview')}
+                </Button>
+                <Button
+                  variant={editMode ? 'secondary' : 'ghost'}
+                  size='xs'
+                  className='h-7 gap-1 text-xs'
+                  onClick={() => {
+                    setEditMode(true)
+                    if (!customText.trim()) setCustomText(displayRequestJSON)
+                  }}
+                >
+                  <Edit3 className='size-3.5' />
+                  {t('Paste & Edit JSON')}
+                </Button>
+              </div>
+            </div>
+
+            {!editMode ? (
+              <JsonCodeViewer
+                code={displayRequestJSON}
+                label={t('Submit Request Body')}
+              />
+            ) : (
+              <div className='space-y-3'>
+                <Textarea
+                  value={customText}
+                  onChange={(e) => setCustomText(e.target.value)}
+                  placeholder='{\n  "model": "doubao-seedance-1-0-pro",\n  "content": [\n    {"type": "text", "text": "..."}\n  ]\n}'
+                  rows={13}
+                  className='font-mono text-xs leading-relaxed break-all whitespace-pre'
+                />
+                <div className='flex flex-wrap items-center justify-between gap-2 pt-1'>
+                  <div className='flex items-center gap-2'>
+                    <Button
+                      variant='outline'
+                      size='xs'
+                      className='h-7 gap-1 text-xs'
+                      onClick={handleFormat}
+                    >
+                      <Sparkles className='size-3.5' />
+                      {t('Format JSON')}
+                    </Button>
+                    <Button
+                      variant='ghost'
+                      size='xs'
+                      className='h-7 gap-1 text-xs text-muted-foreground'
+                      onClick={handleResetToPreview}
+                    >
+                      <RotateCcw className='size-3.5' />
+                      {t('Reset to Form')}
+                    </Button>
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    {props.onApplyToForm && (
+                      <Button
+                        variant='outline'
+                        size='xs'
+                        className='h-7 gap-1 text-xs'
+                        onClick={handleApplyToForm}
+                      >
+                        {t('Apply to Form')}
+                      </Button>
+                    )}
+                    {props.onSendRawJson && (
+                      <Button
+                        variant='default'
+                        size='xs'
+                        className='h-7 gap-1 text-xs font-semibold'
+                        disabled={props.busy}
+                        onClick={handleSendDirectly}
+                      >
+                        <Play className='size-3.5 fill-current' />
+                        {t('Send This JSON Directly')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value='submit' className='mt-3'>

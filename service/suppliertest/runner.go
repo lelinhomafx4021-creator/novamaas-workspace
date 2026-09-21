@@ -73,6 +73,7 @@ type VideoConfig struct {
 	ReturnLastFrame *bool   `json:"return_last_frame,omitempty"`
 	CustomJSON      string  `json:"custom_json,omitempty"`
 	CustomPath      string  `json:"custom_path,omitempty"`
+	RawPayload      string  `json:"raw_payload,omitempty"`
 }
 
 type Event struct {
@@ -1165,161 +1166,197 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		Video:   metrics,
 	})
 
-	contentSlice := []map[string]any{
-		{
-			"type": "text",
-			"text": req.Video.Prompt,
-		},
-	}
-
-	uploadMode := strings.ToLower(strings.TrimSpace(req.Video.UploadMode))
-	if uploadMode == "url" {
-		rawURL := strings.TrimSpace(req.Video.ImageURL)
-		if rawURL == "" {
+	var payloadBytes []byte
+	rawPayloadTrimmed := strings.TrimSpace(req.Video.RawPayload)
+	if rawPayloadTrimmed != "" {
+		var rawMap map[string]any
+		if err := common.Unmarshal([]byte(rawPayloadTrimmed), &rawMap); err != nil {
 			emit(Event{
 				Type:    "check",
 				Module:  ModuleVideo,
 				CheckID: CheckVideoSubmit,
 				Status:  "fail",
 				Title:   "任务提交",
-				Message: "选择了公网 URL 模式但未提供图片地址",
+				Message: "原生请求 JSON 解析失败: " + err.Error(),
 				Video:   metrics,
 			})
 			return
 		}
-		role := "reference_image"
-		if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
-			role = strings.TrimSpace(*req.Video.Role)
+		if _, hasModel := rawMap["model"]; !hasModel && strings.TrimSpace(req.Model) != "" {
+			rawMap["model"] = strings.TrimSpace(req.Model)
 		}
-		contentSlice = append(contentSlice, map[string]any{
-			"type": "image_url",
-			"image_url": map[string]any{
-				"url": rawURL,
+		b, err := common.Marshal(rawMap)
+		if err != nil {
+			emit(Event{
+				Type:    "check",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoSubmit,
+				Status:  "fail",
+				Title:   "任务提交",
+				Message: "序列化原生请求 JSON 失败: " + err.Error(),
+				Video:   metrics,
+			})
+			return
+		}
+		payloadBytes = b
+	} else {
+		contentSlice := []map[string]any{
+			{
+				"type": "text",
+				"text": req.Video.Prompt,
 			},
-			"role": role,
-		})
-	} else if uploadMode == "base64" {
-		rawB64 := strings.TrimSpace(req.Video.Base64Data)
-		if rawB64 == "" {
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoSubmit,
-				Status:  "fail",
-				Title:   "任务提交",
-				Message: "选择了 Base64 模式但未提供数据",
-				Video:   metrics,
-			})
-			return
 		}
-		if !strings.HasPrefix(rawB64, "data:image/") || !strings.Contains(rawB64, ";base64,") {
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoSubmit,
-				Status:  "fail",
-				Title:   "任务提交",
-				Message: "Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
-				Video:   metrics,
-			})
-			return
-		}
-		role := "reference_image"
-		if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
-			role = strings.TrimSpace(*req.Video.Role)
-		}
-		contentSlice = append(contentSlice, map[string]any{
-			"type": "image_url",
-			"image_url": map[string]any{
-				"url": rawB64,
-			},
-			"role": role,
-		})
-	}
 
-	lastFrameMode := strings.ToLower(strings.TrimSpace(req.Video.LastFrameMode))
-	if lastFrameMode == "url" {
-		lastURL := strings.TrimSpace(req.Video.LastFrameURL)
-		if lastURL != "" {
-			contentSlice = append(contentSlice, map[string]any{
-				"type": "image_url",
-				"image_url": map[string]any{
-					"url": lastURL,
-				},
-				"role": "last_frame",
-			})
-		}
-	} else if lastFrameMode == "base64" {
-		lastB64 := strings.TrimSpace(req.Video.LastFrameBase64)
-		if lastB64 != "" {
-			if !strings.HasPrefix(lastB64, "data:image/") || !strings.Contains(lastB64, ";base64,") {
+		uploadMode := strings.ToLower(strings.TrimSpace(req.Video.UploadMode))
+		if uploadMode == "url" {
+			rawURL := strings.TrimSpace(req.Video.ImageURL)
+			if rawURL == "" {
 				emit(Event{
 					Type:    "check",
 					Module:  ModuleVideo,
 					CheckID: CheckVideoSubmit,
 					Status:  "fail",
 					Title:   "任务提交",
-					Message: "尾帧 Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+					Message: "选择了公网 URL 模式但未提供图片地址",
 					Video:   metrics,
 				})
 				return
 			}
+			role := "reference_image"
+			if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
+				role = strings.TrimSpace(*req.Video.Role)
+			}
 			contentSlice = append(contentSlice, map[string]any{
 				"type": "image_url",
 				"image_url": map[string]any{
-					"url": lastB64,
+					"url": rawURL,
 				},
-				"role": "last_frame",
+				"role": role,
+			})
+		} else if uploadMode == "base64" {
+			rawB64 := strings.TrimSpace(req.Video.Base64Data)
+			if rawB64 == "" {
+				emit(Event{
+					Type:    "check",
+					Module:  ModuleVideo,
+					CheckID: CheckVideoSubmit,
+					Status:  "fail",
+					Title:   "任务提交",
+					Message: "选择了 Base64 模式但未提供数据",
+					Video:   metrics,
+				})
+				return
+			}
+			if !strings.HasPrefix(rawB64, "data:image/") || !strings.Contains(rawB64, ";base64,") {
+				emit(Event{
+					Type:    "check",
+					Module:  ModuleVideo,
+					CheckID: CheckVideoSubmit,
+					Status:  "fail",
+					Title:   "任务提交",
+					Message: "Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+					Video:   metrics,
+				})
+				return
+			}
+			role := "reference_image"
+			if req.Video.Role != nil && strings.TrimSpace(*req.Video.Role) != "" {
+				role = strings.TrimSpace(*req.Video.Role)
+			}
+			contentSlice = append(contentSlice, map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": rawB64,
+				},
+				"role": role,
 			})
 		}
-	}
 
-	payloadMap := map[string]any{
-		"model":   req.Model,
-		"content": contentSlice,
-	}
-	if req.Video.Resolution != nil && strings.TrimSpace(*req.Video.Resolution) != "" {
-		payloadMap["resolution"] = strings.TrimSpace(*req.Video.Resolution)
-	}
-	if req.Video.Ratio != nil && strings.TrimSpace(*req.Video.Ratio) != "" {
-		payloadMap["ratio"] = strings.TrimSpace(*req.Video.Ratio)
-	}
-	if req.Video.Duration != nil && *req.Video.Duration != 0 {
-		payloadMap["duration"] = *req.Video.Duration
-	}
-	if req.Video.Watermark != nil {
-		payloadMap["watermark"] = *req.Video.Watermark
-	}
-	if req.Video.Seed != nil {
-		payloadMap["seed"] = *req.Video.Seed
-	}
-	if req.Video.GenerateAudio != nil {
-		payloadMap["generate_audio"] = *req.Video.GenerateAudio
-	}
-	if req.Video.ReturnLastFrame != nil {
-		payloadMap["return_last_frame"] = *req.Video.ReturnLastFrame
-	}
-	if strings.TrimSpace(req.Video.CustomJSON) != "" {
-		var extra map[string]any
-		if err := common.Unmarshal([]byte(req.Video.CustomJSON), &extra); err == nil {
-			for k, v := range extra {
-				payloadMap[k] = v
+		lastFrameMode := strings.ToLower(strings.TrimSpace(req.Video.LastFrameMode))
+		if lastFrameMode == "url" {
+			lastURL := strings.TrimSpace(req.Video.LastFrameURL)
+			if lastURL != "" {
+				contentSlice = append(contentSlice, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": lastURL,
+					},
+					"role": "last_frame",
+				})
+			}
+		} else if lastFrameMode == "base64" {
+			lastB64 := strings.TrimSpace(req.Video.LastFrameBase64)
+			if lastB64 != "" {
+				if !strings.HasPrefix(lastB64, "data:image/") || !strings.Contains(lastB64, ";base64,") {
+					emit(Event{
+						Type:    "check",
+						Module:  ModuleVideo,
+						CheckID: CheckVideoSubmit,
+						Status:  "fail",
+						Title:   "任务提交",
+						Message: "尾帧 Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+						Video:   metrics,
+					})
+					return
+				}
+				contentSlice = append(contentSlice, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": lastB64,
+					},
+					"role": "last_frame",
+				})
 			}
 		}
-	}
 
-	payloadBytes, err := common.Marshal(payloadMap)
-	if err != nil {
-		emit(Event{
-			Type:    "check",
-			Module:  ModuleVideo,
-			CheckID: CheckVideoSubmit,
-			Status:  "fail",
-			Title:   "任务提交",
-			Message: "构建请求 JSON 失败: " + err.Error(),
-			Video:   metrics,
-		})
-		return
+		payloadMap := map[string]any{
+			"model":   req.Model,
+			"content": contentSlice,
+		}
+		if req.Video.Resolution != nil && strings.TrimSpace(*req.Video.Resolution) != "" {
+			payloadMap["resolution"] = strings.TrimSpace(*req.Video.Resolution)
+		}
+		if req.Video.Ratio != nil && strings.TrimSpace(*req.Video.Ratio) != "" {
+			payloadMap["ratio"] = strings.TrimSpace(*req.Video.Ratio)
+		}
+		if req.Video.Duration != nil && *req.Video.Duration != 0 {
+			payloadMap["duration"] = *req.Video.Duration
+		}
+		if req.Video.Watermark != nil {
+			payloadMap["watermark"] = *req.Video.Watermark
+		}
+		if req.Video.Seed != nil {
+			payloadMap["seed"] = *req.Video.Seed
+		}
+		if req.Video.GenerateAudio != nil {
+			payloadMap["generate_audio"] = *req.Video.GenerateAudio
+		}
+		if req.Video.ReturnLastFrame != nil {
+			payloadMap["return_last_frame"] = *req.Video.ReturnLastFrame
+		}
+		if strings.TrimSpace(req.Video.CustomJSON) != "" {
+			var extra map[string]any
+			if err := common.Unmarshal([]byte(req.Video.CustomJSON), &extra); err == nil {
+				for k, v := range extra {
+					payloadMap[k] = v
+				}
+			}
+		}
+
+		b, err := common.Marshal(payloadMap)
+		if err != nil {
+			emit(Event{
+				Type:    "check",
+				Module:  ModuleVideo,
+				CheckID: CheckVideoSubmit,
+				Status:  "fail",
+				Title:   "任务提交",
+				Message: "构建请求 JSON 失败: " + err.Error(),
+				Video:   metrics,
+			})
+			return
+		}
+		payloadBytes = b
 	}
 
 	metrics.RawRequestJSON = string(payloadBytes)

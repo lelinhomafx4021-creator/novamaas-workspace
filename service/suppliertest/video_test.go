@@ -2,6 +2,7 @@ package suppliertest
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -360,3 +361,62 @@ func TestRunVideo_CustomEndpointPath(t *testing.T) {
 	assert.Equal(t, "/isolated/vendor/generations", submitPath)
 	assert.Equal(t, "/isolated/vendor/generations/cgt-custom-path-task", pollPath)
 }
+
+func TestRunVideo_RawPayload(t *testing.T) {
+	var receivedRaw string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			receivedRaw = string(body)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": "cgt-raw-payload-task"}`))
+			return
+		}
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": "cgt-raw-payload-task", "status": "succeeded", "content": {"video_url": "https://tos.volces.com/raw-result.mp4"}}`))
+			return
+		}
+	}))
+	defer server.Close()
+
+	rawJSON := `{"content":[{"type":"text","text":"custom raw prompt"}],"resolution":"1080p","custom_param":"abc"}`
+
+	req := RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Model:   "doubao-seedance-raw",
+		Modules: []string{ModuleVideo},
+		Video: VideoConfig{
+			RawPayload: rawJSON,
+		},
+	}
+
+	var events []Event
+	emit := func(e Event) {
+		events = append(events, e)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := Run(ctx, server.Client(), req, emit)
+	require.NoError(t, err)
+
+	assert.Equal(t, "doubao-seedance-raw", gjson.Get(receivedRaw, "model").String())
+	assert.Equal(t, "1080p", gjson.Get(receivedRaw, "resolution").String())
+	assert.Equal(t, "abc", gjson.Get(receivedRaw, "custom_param").String())
+
+	var lastVideoEvent *Event
+	for i := range events {
+		if events[i].Module == ModuleVideo && events[i].Video != nil {
+			lastVideoEvent = &events[i]
+		}
+	}
+	require.NotNil(t, lastVideoEvent)
+	assert.Equal(t, "https://tos.volces.com/raw-result.mp4", lastVideoEvent.Video.VideoURL)
+	assert.Contains(t, lastVideoEvent.Video.RawRequestJSON, "custom raw prompt")
+	assert.Contains(t, lastVideoEvent.Video.RawRequestJSON, "custom_param")
+}
+

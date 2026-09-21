@@ -219,12 +219,13 @@ export function SupplierTest() {
   ): SupplierTestRunRequest => {
     const temperature = optionalNumber(basic.temperature)
     const topP = optionalNumber(basic.topP)
-    const resolvedChecks =
-      checks && checks.length > 0
-        ? checks
-        : target.vendor === 'kimi'
+    let resolvedChecks = checks
+    if (!resolvedChecks || resolvedChecks.length === 0) {
+      resolvedChecks =
+        target.vendor === 'kimi'
           ? [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS]
           : [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS.filter((id) => id !== 'kimi_kvv')]
+    }
     return {
       base_url: target.baseUrl.trim(),
       api_key: target.apiKey,
@@ -277,7 +278,7 @@ export function SupplierTest() {
         ...(video.hasRatio && video.ratio ? { ratio: video.ratio } : {}),
         ...(video.hasDuration && video.duration > 0 ? { duration: video.duration } : {}),
         ...(video.hasWatermark ? { watermark: video.watermark } : {}),
-        ...(video.hasSeed && video.seed.trim() !== '' ? { seed: parseInt(video.seed, 10) } : {}),
+        ...(video.hasSeed && video.seed.trim() !== '' ? { seed: Number.parseInt(video.seed, 10) } : {}),
         ...(video.hasGenerateAudio ? { generate_audio: video.generateAudio } : {}),
         ...(video.hasReturnLastFrame ? { return_last_frame: video.returnLastFrame } : {}),
         ...(video.hasCustomJson && video.customJson.trim() ? { custom_json: video.customJson.trim() } : {}),

@@ -26,8 +26,13 @@ import {
   Upload,
   Video,
 } from 'lucide-react'
-import type { ChangeEvent, Dispatch, SetStateAction } from 'react'
-import { useRef, useState } from 'react'
+import {
+  useRef,
+  useState,
+  type ChangeEvent,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -80,7 +85,7 @@ export function VideoPanel(props: {
       return
     }
     const reader = new FileReader()
-    reader.onload = (event) => {
+    reader.addEventListener('load', (event) => {
       const result = event.target?.result
       if (typeof result === 'string') {
         props.onVideoChange((current) => ({
@@ -93,10 +98,10 @@ export function VideoPanel(props: {
           })
         )
       }
-    }
-    reader.onerror = () => {
+    })
+    reader.addEventListener('error', () => {
       toast.error(t('Failed to read image file'))
-    }
+    })
     reader.readAsDataURL(file)
   }
 
@@ -108,7 +113,7 @@ export function VideoPanel(props: {
       return
     }
     const reader = new FileReader()
-    reader.onload = (event) => {
+    reader.addEventListener('load', (event) => {
       const result = event.target?.result
       if (typeof result === 'string') {
         props.onVideoChange((current) => ({
@@ -121,10 +126,10 @@ export function VideoPanel(props: {
           })
         )
       }
-    }
-    reader.onerror = () => {
+    })
+    reader.addEventListener('error', () => {
       toast.error(t('Failed to read image file'))
-    }
+    })
     reader.readAsDataURL(file)
   }
 
@@ -692,7 +697,7 @@ export function VideoPanel(props: {
                     onChange={(e) =>
                       props.onVideoChange((c) => ({
                         ...c,
-                        duration: parseInt(e.target.value, 10) || 5,
+                        duration: Number.parseInt(e.target.value, 10) || 5,
                       }))
                     }
                     className='h-8 text-xs'

@@ -48,6 +48,7 @@ import {
   DEFAULT_BASIC_FORM,
   DEFAULT_CACHE_FORM,
   DEFAULT_STRESS_FORM,
+  DEFAULT_VIDEO_FORM,
   MAX_CACHE_ROUNDS,
   MAX_CACHE_WAIT_SECONDS,
   MAX_CONCURRENCY,
@@ -72,6 +73,7 @@ import type {
   SupplierTestModule,
   SupplierTestRunRequest,
   TargetForm,
+  VideoForm,
 } from './types'
 import { BasicPanel } from './components/basic-panel'
 import { CachePanel } from './components/cache-panel'
@@ -79,14 +81,17 @@ import { statusLabel } from './formatters'
 import { JudgmentStandardCard } from './components/judgment-standard-card'
 import { StressPanel } from './components/stress-panel'
 import { TargetCard } from './components/target-card'
+import { VideoPanel } from './components/video-panel'
 
 export { AssessmentTable } from './components/assessment-table'
 export { BasicPanel } from './components/basic-panel'
 export { CachePanel } from './components/cache-panel'
 export { CheckTable } from './components/check-table'
 export { JudgmentStandardCard } from './components/judgment-standard-card'
+export { RawJsonDialog } from './components/raw-json-dialog'
 export { StressPanel } from './components/stress-panel'
 export { TargetCard } from './components/target-card'
+export { VideoPanel } from './components/video-panel'
 
 function axiosErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object' && 'response' in error) {
@@ -134,6 +139,7 @@ export function SupplierTest() {
   const [basic, setBasic] = useState<BasicForm>(DEFAULT_BASIC_FORM)
   const [cache, setCache] = useState<CacheForm>(DEFAULT_CACHE_FORM)
   const [stress, setStress] = useState<StressForm>(DEFAULT_STRESS_FORM)
+  const [video, setVideo] = useState<VideoForm>(DEFAULT_VIDEO_FORM)
   const [standard, setStandard] = useState<SupplierStandard>(readStoredStandard)
   const [moduleTab, setModuleTab] = useState<SupplierTestModule>('basic')
   const run = useSupplierTestRun()
@@ -161,7 +167,9 @@ export function SupplierTest() {
     Boolean(run.summaries.basic || run.summaries.cache || run.summaries.stress) ||
     run.basicChecks.some((check) => check.status !== 'idle') ||
     run.cacheChecks.some((check) => check.status !== 'idle') ||
-    run.metrics !== null
+    run.videoChecks.some((check) => check.status !== 'idle') ||
+    run.metrics !== null ||
+    run.videoMetrics !== null
 
   const progressValue =
     run.progress.total > 0
@@ -173,6 +181,8 @@ export function SupplierTest() {
     runLabel = t('Run cache test')
   } else if (moduleTab === 'stress') {
     runLabel = t('Run stress test')
+  } else if (moduleTab === 'video') {
+    runLabel = t('Start Video Test')
   }
 
   const modelsMutation = useMutation({
@@ -237,6 +247,33 @@ export function SupplierTest() {
         prompt: resolveCorpusPrompt(stress),
         break_cache: stress.breakCache,
         stream: stress.stream,
+      },
+      video: {
+        prompt: video.prompt.trim(),
+        ...(video.hasImage
+          ? {
+              upload_mode: video.uploadMode,
+              ...(video.uploadMode === 'url' ? { image_url: video.imageUrl.trim() } : {}),
+              ...(video.uploadMode === 'base64' ? { base64_data: video.base64Data.trim() } : {}),
+              role: video.role,
+            }
+          : {}),
+        ...(video.hasLastFrame
+          ? {
+              last_frame_mode: video.lastFrameMode,
+              ...(video.lastFrameMode === 'url' ? { last_frame_url: video.lastFrameUrl.trim() } : {}),
+              ...(video.lastFrameMode === 'base64' ? { last_frame_base64: video.lastFrameBase64.trim() } : {}),
+            }
+          : {}),
+        ...(video.hasResolution && video.resolution ? { resolution: video.resolution } : {}),
+        ...(video.hasRatio && video.ratio ? { ratio: video.ratio } : {}),
+        ...(video.hasDuration && video.duration > 0 ? { duration: video.duration } : {}),
+        ...(video.hasWatermark ? { watermark: video.watermark } : {}),
+        ...(video.hasSeed && video.seed.trim() !== '' ? { seed: parseInt(video.seed, 10) } : {}),
+        ...(video.hasGenerateAudio ? { generate_audio: video.generateAudio } : {}),
+        ...(video.hasReturnLastFrame ? { return_last_frame: video.returnLastFrame } : {}),
+        ...(video.hasCustomJson && video.customJson.trim() ? { custom_json: video.customJson.trim() } : {}),
+        ...(video.customPath.trim() ? { custom_path: video.customPath.trim() } : {}),
       },
     }
   }
@@ -319,6 +356,40 @@ export function SupplierTest() {
           t('Max tokens must be between 1 and {{max}}', { max: MAX_TOKENS_CAP })
         )
         return
+      }
+    }
+    if (module === 'video') {
+      if (!video.prompt.trim()) {
+        toast.error(t('Please enter a prompt for video generation'))
+        return
+      }
+      if (video.hasImage) {
+        if (video.uploadMode === 'url' && !video.imageUrl.trim()) {
+          toast.error(t('Please enter an image URL'))
+          return
+        }
+        if (video.uploadMode === 'base64' && !video.base64Data.trim()) {
+          toast.error(t('Please select an image file or provide Base64 data'))
+          return
+        }
+      }
+      if (video.hasLastFrame) {
+        if (video.lastFrameMode === 'url' && !video.lastFrameUrl.trim()) {
+          toast.error(t('Please enter an end frame image URL'))
+          return
+        }
+        if (video.lastFrameMode === 'base64' && !video.lastFrameBase64.trim()) {
+          toast.error(t('Please select an end frame image file or provide Base64 data'))
+          return
+        }
+      }
+      if (video.hasCustomJson && video.customJson.trim()) {
+        try {
+          JSON.parse(video.customJson)
+        } catch {
+          toast.error(t('Custom extra parameters must be valid JSON'))
+          return
+        }
       }
     }
     void run.start(buildPayload(module, checks))
@@ -446,7 +517,12 @@ export function SupplierTest() {
             value={moduleTab}
             onValueChange={(value) => {
               const next = String(value)
-              if (next === 'basic' || next === 'cache' || next === 'stress') {
+              if (
+                next === 'basic' ||
+                next === 'cache' ||
+                next === 'stress' ||
+                next === 'video'
+              ) {
                 setModuleTab(next)
               }
             }}
@@ -469,10 +545,11 @@ export function SupplierTest() {
                 </Button>
               }
             >
-              <TabsList className='mb-4 grid h-auto w-full grid-cols-3 sm:w-fit'>
+              <TabsList className='mb-4 grid h-auto w-full grid-cols-2 sm:grid-cols-4 sm:w-fit'>
                 <TabsTrigger value='basic'>{t('Basic acceptance')}</TabsTrigger>
                 <TabsTrigger value='cache'>{t('Cache test')}</TabsTrigger>
                 <TabsTrigger value='stress'>{t('Stress test')}</TabsTrigger>
+                <TabsTrigger value='video'>{t('Doubao Video')}</TabsTrigger>
               </TabsList>
 
               <BasicPanel
@@ -504,6 +581,14 @@ export function SupplierTest() {
                 stressSummary={run.summaries.stress}
                 stressAssessment={stressAssessment}
                 onStressChange={setStress}
+              />
+
+              <VideoPanel
+                video={video}
+                busy={busy}
+                videoChecks={run.videoChecks}
+                videoMetrics={run.videoMetrics}
+                onVideoChange={setVideo}
               />
             </TitledCard>
           </Tabs>

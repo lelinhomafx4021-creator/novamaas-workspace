@@ -18,9 +18,21 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { VendorId } from './vendors'
 
-export type SupplierTestModule = 'basic' | 'stress' | 'cache'
+export type SupplierTestModule = 'basic' | 'stress' | 'cache' | 'video'
 
 export type CheckStatus = 'idle' | 'running' | 'pass' | 'fail' | 'skip'
+
+export type VideoMetrics = {
+  task_id: string
+  status: string
+  video_url?: string
+  endpoint_url?: string
+  elapsed_ms: number
+  fail_reason?: string
+  raw_request_json?: string
+  raw_submit_response_json?: string
+  raw_poll_response_json?: string
+}
 
 export type StressMetrics = {
   total: number
@@ -73,6 +85,7 @@ export type SupplierTestEvent = {
   total?: number
   metrics?: StressMetrics
   cache?: CacheMetrics
+  video?: VideoMetrics
 }
 
 export type SupplierTestRunRequest = {
@@ -105,6 +118,25 @@ export type SupplierTestRunRequest = {
     prompt: string
     break_cache: boolean
     stream: boolean
+  }
+  video?: {
+    prompt: string
+    upload_mode?: string
+    image_url?: string
+    base64_data?: string
+    role?: string
+    last_frame_mode?: string
+    last_frame_url?: string
+    last_frame_base64?: string
+    resolution?: string
+    ratio?: string
+    duration?: number
+    watermark?: boolean
+    seed?: number
+    generate_audio?: boolean
+    return_last_frame?: boolean
+    custom_json?: string
+    custom_path?: string
   }
 }
 
@@ -150,4 +182,34 @@ export type CacheForm = {
   rounds: number
   stream: boolean
   mode: CacheMode
+}
+
+export type VideoForm = {
+  prompt: string
+  hasImage: boolean
+  uploadMode: 'url' | 'base64'
+  imageUrl: string
+  base64Data: string
+  role: string
+  hasLastFrame: boolean
+  lastFrameMode: 'url' | 'base64'
+  lastFrameUrl: string
+  lastFrameBase64: string
+  hasResolution: boolean
+  resolution: string
+  hasRatio: boolean
+  ratio: string
+  hasDuration: boolean
+  duration: number
+  hasWatermark: boolean
+  watermark: boolean
+  hasSeed: boolean
+  seed: string
+  hasGenerateAudio: boolean
+  generateAudio: boolean
+  hasReturnLastFrame: boolean
+  returnLastFrame: boolean
+  hasCustomJson: boolean
+  customJson: string
+  customPath: string
 }

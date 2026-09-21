@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { BasicForm, CacheForm, CacheMode, CheckResult, StressForm } from './types'
+import type { BasicForm, CacheForm, CacheMode, CheckResult, StressForm, VideoForm } from './types'
 import longText from './corpora/long.txt?raw'
 import mediumText from './corpora/medium.txt?raw'
 import minQpsText from './corpora/min-qps.txt?raw'
@@ -304,3 +304,80 @@ export const MAX_TOKENS_CAP = 256000
 export const MAX_CACHE_ROUNDS = 50
 export const MAX_CACHE_WAIT_SECONDS = 600
 export const STRESS_WARN_TOTAL = 50
+
+export const DEFAULT_VIDEO_PROMPT =
+  '镜头缓慢向前推进，画面中的人物在雨夜霓虹街道穿梭，4K高清，电影级光影'
+
+export const DEFAULT_VIDEO_FORM: VideoForm = {
+  prompt: DEFAULT_VIDEO_PROMPT,
+  hasImage: false,
+  uploadMode: 'url',
+  imageUrl: '',
+  base64Data: '',
+  role: 'first_frame',
+  hasLastFrame: false,
+  lastFrameMode: 'url',
+  lastFrameUrl: '',
+  lastFrameBase64: '',
+  hasResolution: false,
+  resolution: '720p',
+  hasRatio: false,
+  ratio: '16:9',
+  hasDuration: false,
+  duration: 5,
+  hasWatermark: false,
+  watermark: false,
+  hasSeed: false,
+  seed: '',
+  hasGenerateAudio: false,
+  generateAudio: false,
+  hasReturnLastFrame: false,
+  returnLastFrame: false,
+  hasCustomJson: false,
+  customJson: '',
+  customPath: '',
+}
+
+export const VIDEO_CHECKS: CheckResult[] = [
+  {
+    id: 'video_submit',
+    title: 'Task submit',
+    status: 'idle',
+    hintKey: 'POST /api/v3/contents/generations/tasks: returns task ID.',
+  },
+  {
+    id: 'video_poll',
+    title: 'Status polling',
+    status: 'idle',
+    hintKey: 'GET /api/v3/contents/generations/tasks/{id}: polls status until completed.',
+  },
+  {
+    id: 'video_result',
+    title: 'Video result',
+    status: 'idle',
+    hintKey: 'Extracts playable video_url from completed task.',
+  },
+]
+
+export const VIDEO_RESOLUTIONS = ['720p', '1080p', '480p', '4k'] as const
+export const VIDEO_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'] as const
+export const VIDEO_ROLES = [
+  { value: 'first_frame', label: 'First frame (首帧)' },
+  { value: 'reference_image', label: 'Reference image (参考图)' },
+] as const
+
+export const ENDPOINT_PATH_PRESETS: Array<{ value: string; label: string }> = [
+  { value: '', label: '自动探测 / 默认 (Auto Detect)' },
+  {
+    value: '/api/v3/contents/generations/tasks',
+    label: '官方标准 (/api/v3/contents/generations/tasks)',
+  },
+  {
+    value: '/contents/generations/tasks',
+    label: '无 /api/v3 (/contents/generations/tasks)',
+  },
+  {
+    value: '/v1/contents/generations/tasks',
+    label: '网关 /v1 (/v1/contents/generations/tasks)',
+  },
+]

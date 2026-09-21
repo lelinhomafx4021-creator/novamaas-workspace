@@ -4,6 +4,7 @@ const (
 	ModuleBasic  = "basic"
 	ModuleStress = "stress"
 	ModuleCache  = "cache"
+	ModuleVideo  = "video"
 
 	CheckConnectivity = "connectivity"
 	CheckUsage        = "usage"
@@ -22,10 +23,15 @@ const (
 	CheckCacheHitRate = "cache_hit_rate"
 	CheckCacheTTL     = "cache_ttl"
 
+	CheckVideoSubmit = "video_submit"
+	CheckVideoPoll   = "video_poll"
+	CheckVideoResult = "video_result"
+
 	DefaultStressPrompt  = "请用简洁的中文写一段话，说明流式输出在接口压测中的作用。"
 	DefaultBasicPrompt   = "请用一句话介绍你自己。"
 	DefaultCachePrefix   = "这是一段用于提示缓存的稳定前缀。请记住这段文字，后续问题会基于它。"
 	DefaultCacheFollowUp = "根据前面的内容，只用一个词回复：pong"
+	DefaultVideoPrompt   = "镜头缓慢向前推进，画面中的人物在雨夜霓虹街道穿梭，4K高清，电影级光影"
 
 	CacheModeStatic     = "static"
 	CacheModeCumulative = "cumulative"

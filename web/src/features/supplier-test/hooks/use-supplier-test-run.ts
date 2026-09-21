@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 
 import { getFreshAuthHeaders } from '@/lib/api'
 
-import { API_ENDPOINTS, BASIC_CHECKS, CACHE_CHECKS } from '../constants'
+import { API_ENDPOINTS, BASIC_CHECKS, CACHE_CHECKS, VIDEO_CHECKS } from '../constants'
 import type {
   CacheMetrics,
   CheckResult,
@@ -31,6 +31,7 @@ import type {
   SupplierTestEvent,
   SupplierTestModule,
   SupplierTestRunRequest,
+  VideoMetrics,
 } from '../types'
 
 type StreamHandle = {
@@ -91,11 +92,13 @@ export function useSupplierTestRun() {
   )
   const [basicChecks, setBasicChecks] = useState<CheckResult[]>(BASIC_CHECKS)
   const [cacheChecks, setCacheChecks] = useState<CheckResult[]>(CACHE_CHECKS)
+  const [videoChecks, setVideoChecks] = useState<CheckResult[]>(VIDEO_CHECKS)
   const [streamText, setStreamText] = useState('')
   const [basicStreamText, setBasicStreamText] = useState('')
   const [progress, setProgress] = useState({ completed: 0, total: 0 })
   const [metrics, setMetrics] = useState<StressMetrics | null>(null)
   const [cacheMetrics, setCacheMetrics] = useState<CacheMetrics | null>(null)
+  const [videoMetrics, setVideoMetrics] = useState<VideoMetrics | null>(null)
   const [summaries, setSummaries] = useState({
     basic: '',
     cache: '',
@@ -131,6 +134,12 @@ export function useSupplierTestRun() {
         setStreamText('')
         setMetrics(null)
         setSummaries((current) => ({ ...current, stress: '' }))
+      }
+      if (module === 'video') {
+        setVideoChecks(
+          VIDEO_CHECKS.map((check) => ({ ...check, status: 'idle', message: undefined }))
+        )
+        setVideoMetrics(null)
       }
 
       let headers: Record<string, string>
@@ -183,6 +192,9 @@ export function useSupplierTestRun() {
           handleError(t('Failed to parse stream'))
           return
         }
+        if (parsed.video) {
+          setVideoMetrics(parsed.video)
+        }
         if (parsed.type === 'error') {
           handleError(parsed.message || t('Failed to start test'))
           return
@@ -199,7 +211,9 @@ export function useSupplierTestRun() {
                   }
                 : check
             )
-          if (parsed.module === 'cache') {
+          if (parsed.module === 'video') {
+            setVideoChecks(applyCheck)
+          } else if (parsed.module === 'cache') {
             setCacheChecks(applyCheck)
           } else if (parsed.module !== 'stress') {
             setBasicChecks(applyCheck)
@@ -283,11 +297,13 @@ export function useSupplierTestRun() {
     runningModule,
     basicChecks,
     cacheChecks,
+    videoChecks,
     streamText,
     basicStreamText,
     progress,
     metrics,
     cacheMetrics,
+    videoMetrics,
     summaries,
     errorMessage,
     start,

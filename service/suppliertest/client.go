@@ -2,6 +2,7 @@ package suppliertest
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -151,6 +152,123 @@ func ChatCompletionsURL(raw string) (string, error) {
 
 func ModelsURL(raw string) (string, error) {
 	return joinOpenAIPath(raw, "models")
+}
+
+func VideoTasksURL(raw string, customEndpoint ...string) (string, error) {
+	parsed, err := parseSupplierBase(raw)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	for _, suffix := range []string{"/supplier-test", "/console", "/dashboard"} {
+		path = strings.TrimSuffix(path, suffix)
+	}
+	path = strings.TrimRight(path, "/")
+
+	// If a custom endpoint path is explicitly provided (e.g. from VideoConfig.CustomPath)
+	if len(customEndpoint) > 0 && strings.TrimSpace(customEndpoint[0]) != "" {
+		custom := strings.TrimSpace(customEndpoint[0])
+		if !strings.HasPrefix(custom, "/") {
+			custom = "/" + custom
+		}
+		if path == "" || path == "/" {
+			parsed.Path = custom
+		} else if strings.HasSuffix(path, custom) {
+			parsed.Path = path
+		} else {
+			parsed.Path = strings.TrimRight(path, "/") + custom
+		}
+		return parsed.String(), nil
+	}
+
+	leaf := "contents/generations/tasks"
+	switch {
+	// Case 1: User filled in full path ending with /contents/generations/tasks
+	case strings.HasSuffix(path, "/"+leaf) || path == leaf || path == "/"+leaf:
+		parsed.Path = path
+	// Case 2: User filled path ending with /contents/generations
+	case strings.HasSuffix(path, "/contents/generations"):
+		parsed.Path = path + "/tasks"
+	// Case 3: User filled path ending with /contents (e.g. /api/v3/contents or /v1/contents or /contents)
+	case strings.HasSuffix(path, "/contents"):
+		parsed.Path = path + "/generations/tasks"
+	// Case 4: Path ends with /api/v3
+	case strings.HasSuffix(path, "/api/v3"):
+		parsed.Path = path + "/" + leaf
+	// Case 5: Path is root or empty
+	case path == "" || path == "/":
+		parsed.Path = "/api/v3/" + leaf
+	// Case 6: Custom proxy path
+	default:
+		cleanPath := strings.TrimSuffix(path, "/v1")
+		parsed.Path = strings.TrimRight(cleanPath, "/") + "/api/v3/" + leaf
+	}
+	return parsed.String(), nil
+}
+
+func VideoTaskGetURL(raw string, taskID string, customEndpoint ...string) (string, error) {
+	tasksURL, err := VideoTasksURL(raw, customEndpoint...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(tasksURL, "/") + "/" + url.PathEscape(taskID), nil
+}
+
+func CreateVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, customPath, apiKey string, payload []byte) (int, []byte, error) {
+	if httpClient == nil {
+		return 0, nil, fmt.Errorf("http client is required")
+	}
+	endpoint, err := VideoTasksURL(baseURL, customPath)
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	rawResp, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, rawResp, nil
+}
+
+func GetVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, customPath, apiKey, taskID string) (int, []byte, error) {
+	if httpClient == nil {
+		return 0, nil, fmt.Errorf("http client is required")
+	}
+	endpoint, err := VideoTaskGetURL(baseURL, taskID, customPath)
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	rawResp, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, rawResp, nil
 }
 
 func parseSupplierBase(raw string) (*url.URL, error) {

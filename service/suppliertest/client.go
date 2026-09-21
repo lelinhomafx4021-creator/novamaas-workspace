@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/tidwall/gjson"
 )
 
 type streamOptionsKey struct{}
@@ -355,7 +356,7 @@ func ListModels(ctx context.Context, httpClient *http.Client, baseURL, apiKey st
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("%s", extractAPIError(raw, fmt.Sprintf("HTTP %d", resp.StatusCode)))
+		return nil, fmt.Errorf("%s", ExtractAPIError(raw, fmt.Sprintf("HTTP %d", resp.StatusCode)))
 	}
 	ids, err := parseModelIDs(raw)
 	if err != nil {
@@ -460,7 +461,7 @@ func streamChat(
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-		result.ErrorMessage = extractAPIError(raw, resp.Status)
+		result.ErrorMessage = ExtractAPIError(raw, resp.Status)
 		if req.StreamOptions != nil && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) {
 			errMsg := strings.ToLower(result.ErrorMessage)
 			if !strings.Contains(errMsg, "thinking") && !strings.Contains(errMsg, "model") && !strings.Contains(errMsg, "messages") {
@@ -693,20 +694,24 @@ func applyUsage(usage *usageFields, result *StreamResult) {
 	}
 }
 
-func extractAPIError(raw []byte, fallback string) string {
-	var payload struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-		Message string `json:"message"`
+func ExtractAPIError(raw []byte, fallback string) string {
+	for _, p := range []struct{ msg, code string }{
+		{"error.message", "error.code"},
+		{"ResponseMetadata.Error.Message", "ResponseMetadata.Error.Code"},
+		{"response_metadata.error.message", "response_metadata.error.code"},
+		{"data.error.message", "data.error.code"},
+	} {
+		msg := strings.TrimSpace(gjson.GetBytes(raw, p.msg).String())
+		if msg != "" {
+			code := strings.TrimSpace(gjson.GetBytes(raw, p.code).String())
+			if code != "" {
+				return fmt.Sprintf("[%s] %s", code, msg)
+			}
+			return msg
+		}
 	}
-	if err := common.Unmarshal(raw, &payload); err == nil {
-		if payload.Error.Message != "" {
-			return payload.Error.Message
-		}
-		if payload.Message != "" {
-			return payload.Message
-		}
+	if msg := strings.TrimSpace(gjson.GetBytes(raw, "message").String()); msg != "" {
+		return msg
 	}
 	text := strings.TrimSpace(string(raw))
 	if text != "" {

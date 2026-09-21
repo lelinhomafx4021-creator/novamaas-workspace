@@ -32,6 +32,7 @@ import {
   Zap,
 } from 'lucide-react'
 import {
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -116,6 +117,21 @@ export function VideoPanel(props: {
 
   // Effective latest Task ID
   const effectiveTaskId = props.video.taskId?.trim() || props.videoMetrics?.task_id?.trim() || ''
+
+  // Auto-sync Task ID from video metrics when new task_id is returned
+  const lastMetricsTaskIdRef = useRef<string>('')
+  const videoMetricsTaskId = props.videoMetrics?.task_id
+  const onVideoChange = props.onVideoChange
+  useEffect(() => {
+    const newTaskId = videoMetricsTaskId?.trim()
+    if (newTaskId && newTaskId !== lastMetricsTaskIdRef.current) {
+      lastMetricsTaskIdRef.current = newTaskId
+      onVideoChange((cur) => ({
+        ...cur,
+        taskId: newTaskId,
+      }))
+    }
+  }, [videoMetricsTaskId, onVideoChange])
 
   // Latest poll JSON (prioritizes manual query, falls back to metrics stream)
   const latestPollJson =
@@ -251,7 +267,9 @@ export function VideoPanel(props: {
         setManualPollJson(JSON.stringify(res, null, 2))
       }
       setActiveJsonTab('poll')
-      if (res.status) {
+      if (!res.success) {
+        toast.error(res.message || t('Failed to query task'))
+      } else if (res.status) {
         toast.success(t('Task status: {{status}}', { status: res.status }))
       } else if (res.message) {
         toast.error(res.message)
@@ -264,7 +282,7 @@ export function VideoPanel(props: {
   }
 
   const handleRunSingleCheck = (checkId: string) => {
-    if (checkId === 'video_poll' && !effectiveTaskId) {
+    if ((checkId === 'video_poll' || checkId === 'video_result') && !effectiveTaskId) {
       toast.error(t('Please submit task first or provide a Task ID'))
       return
     }
@@ -936,12 +954,12 @@ export function VideoPanel(props: {
                   </Label>
                   <Input
                     placeholder={t('Enter Task ID or generate by submitting')}
-                    value={effectiveTaskId}
+                    value={props.video.taskId ?? ''}
                     disabled={props.busy || isManualQuerying}
                     onChange={(e) =>
                       props.onVideoChange((c) => ({
                         ...c,
-                        taskId: e.target.value.trim(),
+                        taskId: e.target.value,
                       }))
                     }
                     className='h-7 font-mono text-xs'

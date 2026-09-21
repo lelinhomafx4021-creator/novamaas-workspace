@@ -315,9 +315,20 @@ func Run(ctx context.Context, httpClient *http.Client, req RunRequest, emit Emit
 	if err := NormalizeRunRequest(&req); err != nil {
 		return err
 	}
-	endpoint, err := ChatCompletionsURL(req.BaseURL)
-	if err != nil {
-		return err
+	var endpoint string
+	hasChatModule := false
+	for _, m := range req.Modules {
+		if m == ModuleBasic || m == ModuleStress || m == ModuleCache {
+			hasChatModule = true
+			break
+		}
+	}
+	if hasChatModule {
+		var err error
+		endpoint, err = ChatCompletionsURL(req.BaseURL)
+		if err != nil {
+			return err
+		}
 	}
 	ctx = withStreamOptionsTracker(ctx)
 	client := NewHTTPClient(httpClient)
@@ -1122,7 +1133,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func extractTaskID(raw []byte) string {
-	for _, path := range []string{"id", "task_id", "data.id", "data.task_id", "Result.Id"} {
+	for _, path := range []string{"id", "task_id", "data.id", "data.task_id", "Result.Id", "Result.ID", "Result.TaskId", "Result.TaskID"} {
 		if val := gjson.GetBytes(raw, path).String(); strings.TrimSpace(val) != "" {
 			return strings.TrimSpace(val)
 		}
@@ -1131,7 +1142,7 @@ func extractTaskID(raw []byte) string {
 }
 
 func ParseVideoTaskState(raw []byte) (status string, videoURL string, failReason string) {
-	for _, path := range []string{"status", "data.status", "data.data.status", "Result.Status"} {
+	for _, path := range []string{"status", "task_status", "data.status", "data.task_status", "data.data.status", "Result.Status"} {
 		if val := gjson.GetBytes(raw, path).String(); strings.TrimSpace(val) != "" {
 			status = strings.TrimSpace(val)
 			break
@@ -1159,6 +1170,7 @@ func ParseVideoTaskState(raw []byte) (status string, videoURL string, failReason
 
 	for _, path := range []string{
 		"error.message",
+		"error.code",
 		"data.error.message",
 		"data.data.error.message",
 		"fail_reason",
@@ -1166,6 +1178,7 @@ func ParseVideoTaskState(raw []byte) (status string, videoURL string, failReason
 		"data.data.fail_reason",
 		"message",
 		"data.message",
+		"ResponseMetadata.Error.Message",
 	} {
 		if val := gjson.GetBytes(raw, path).String(); strings.TrimSpace(val) != "" {
 			failReason = strings.TrimSpace(val)
@@ -1204,12 +1217,18 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 	if !runSubmit {
 		taskID = strings.TrimSpace(req.Video.TaskID)
 		if taskID == "" {
+			failedCheckID := CheckVideoPoll
+			failedTitle := "状态轮询"
+			if !runPoll && runResult {
+				failedCheckID = CheckVideoResult
+				failedTitle = "视频结果"
+			}
 			emit(Event{
 				Type:    "check",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: failedCheckID,
 				Status:  "fail",
-				Title:   "状态轮询",
+				Title:   failedTitle,
 				Message: "未提供任务 ID，无法执行状态查询。请先执行任务提交或输入任务 ID",
 				Video:   metrics,
 			})
@@ -1441,7 +1460,7 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		}
 
 		if status != http.StatusOK && status != http.StatusCreated && status != http.StatusAccepted {
-			errMsg := extractAPIError(submitResp, fmt.Sprintf("HTTP %d", status))
+			errMsg := ExtractAPIError(submitResp, fmt.Sprintf("HTTP %d", status))
 			emit(Event{
 				Type:    "check",
 				Module:  ModuleVideo,
@@ -1480,20 +1499,32 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			Video:   metrics,
 		})
 
-		if !runPoll {
+		if !runPoll && !runResult {
 			return
 		}
 	}
 
-	emit(Event{
-		Type:    "check",
-		Module:  ModuleVideo,
-		CheckID: CheckVideoPoll,
-		Status:  "running",
-		Title:   "状态轮询",
-		Message: fmt.Sprintf("任务 [%s] 已进入队列，开始轮询状态...", taskID),
-		Video:   metrics,
-	})
+	if runPoll {
+		emit(Event{
+			Type:    "check",
+			Module:  ModuleVideo,
+			CheckID: CheckVideoPoll,
+			Status:  "running",
+			Title:   "状态轮询",
+			Message: fmt.Sprintf("任务 [%s] 已进入队列，开始轮询状态...", taskID),
+			Video:   metrics,
+		})
+	} else if runResult {
+		emit(Event{
+			Type:    "check",
+			Module:  ModuleVideo,
+			CheckID: CheckVideoResult,
+			Status:  "running",
+			Title:   "视频结果",
+			Message: fmt.Sprintf("正在查询任务 [%s] 的视频生成结果...", taskID),
+			Video:   metrics,
+		})
+	}
 
 	queryTask := func() (done bool) {
 		pollStatus, pollResp, pollErr := GetVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, taskID)
@@ -1501,13 +1532,20 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		elapsed := time.Since(started)
 		metrics.ElapsedMS = float64(elapsed.Milliseconds())
 
+		activeCheckID := CheckVideoPoll
+		activeTitle := "状态轮询"
+		if !runPoll && runResult {
+			activeCheckID = CheckVideoResult
+			activeTitle = "视频结果"
+		}
+
 		if pollErr != nil {
 			emit(Event{
 				Type:    "progress",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: activeCheckID,
 				Status:  "running",
-				Title:   "状态轮询",
+				Title:   activeTitle,
 				Message: fmt.Sprintf("轮询异常 (%s)，5 秒后重试...", pollErr.Error()),
 				Video:   metrics,
 			})
@@ -1518,9 +1556,9 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			emit(Event{
 				Type:    "progress",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: activeCheckID,
 				Status:  "running",
-				Title:   "状态轮询",
+				Title:   activeTitle,
 				Message: fmt.Sprintf("轮询返回 HTTP %d，5 秒后重试...", pollStatus),
 				Video:   metrics,
 			})
@@ -1538,9 +1576,9 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			emit(Event{
 				Type:    "progress",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: activeCheckID,
 				Status:  "running",
-				Title:   "状态轮询",
+				Title:   activeTitle,
 				Message: fmt.Sprintf("排队中 (queued)，已等待 %.1f 秒...", elapsed.Seconds()),
 				Video:   metrics,
 			})
@@ -1549,23 +1587,25 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			emit(Event{
 				Type:    "progress",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: activeCheckID,
 				Status:  "running",
-				Title:   "状态轮询",
+				Title:   activeTitle,
 				Message: fmt.Sprintf("生成渲染中 (running)，已耗时 %.1f 秒...", elapsed.Seconds()),
 				Video:   metrics,
 			})
 			return false
 		case "succeeded", "success":
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
-				Status:  "pass",
-				Title:   "状态轮询",
-				Message: fmt.Sprintf("任务生成完成，总耗时 %.1f 秒", elapsed.Seconds()),
-				Video:   metrics,
-			})
+			if runPoll {
+				emit(Event{
+					Type:    "check",
+					Module:  ModuleVideo,
+					CheckID: CheckVideoPoll,
+					Status:  "pass",
+					Title:   "状态轮询",
+					Message: fmt.Sprintf("任务生成完成，总耗时 %.1f 秒", elapsed.Seconds()),
+					Video:   metrics,
+				})
+			}
 
 			if runResult {
 				if videoURL != "" {
@@ -1594,17 +1634,19 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		case "failed", "failure", "cancelled", "expired":
 			errMsg := failReason
 			if errMsg == "" {
-				errMsg = extractAPIError(pollResp, "任务执行失败")
+				errMsg = ExtractAPIError(pollResp, "任务执行失败")
 			}
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
-				Status:  "fail",
-				Title:   "状态轮询",
-				Message: fmt.Sprintf("任务执行失败 (%s): %s", taskState, errMsg),
-				Video:   metrics,
-			})
+			if runPoll {
+				emit(Event{
+					Type:    "check",
+					Module:  ModuleVideo,
+					CheckID: CheckVideoPoll,
+					Status:  "fail",
+					Title:   "状态轮询",
+					Message: fmt.Sprintf("任务执行失败 (%s): %s", taskState, errMsg),
+					Video:   metrics,
+				})
+			}
 			if runResult {
 				emit(Event{
 					Type:    "check",
@@ -1612,7 +1654,7 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 					CheckID: CheckVideoResult,
 					Status:  "fail",
 					Title:   "视频结果",
-					Message: "由于任务失败，未能生成视频结果",
+					Message: fmt.Sprintf("由于任务失败 (%s)，未能生成视频结果: %s", taskState, errMsg),
 					Video:   metrics,
 				})
 			}
@@ -1621,9 +1663,9 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			emit(Event{
 				Type:    "progress",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: activeCheckID,
 				Status:  "running",
-				Title:   "状态轮询",
+				Title:   activeTitle,
 				Message: fmt.Sprintf("当前状态: %s，已耗时 %.1f 秒...", taskState, elapsed.Seconds()),
 				Video:   metrics,
 			})
@@ -1639,15 +1681,22 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 	defer ticker.Stop()
 	pollTimeout := time.After(1800 * time.Second)
 
+	timeoutCheckID := CheckVideoPoll
+	timeoutTitle := "状态轮询"
+	if !runPoll && runResult {
+		timeoutCheckID = CheckVideoResult
+		timeoutTitle = "视频结果"
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			emit(Event{
 				Type:    "check",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: timeoutCheckID,
 				Status:  "fail",
-				Title:   "状态轮询",
+				Title:   timeoutTitle,
 				Message: "测试已手动取消",
 				Video:   metrics,
 			})
@@ -1656,9 +1705,9 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			emit(Event{
 				Type:    "check",
 				Module:  ModuleVideo,
-				CheckID: CheckVideoPoll,
+				CheckID: timeoutCheckID,
 				Status:  "fail",
-				Title:   "状态轮询",
+				Title:   timeoutTitle,
 				Message: "任务轮询超时（超过 30 分钟），上游未在预期时间内完成",
 				Video:   metrics,
 			})

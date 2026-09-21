@@ -406,9 +406,11 @@ export function SupplierTest() {
       }
     }
     if (module === 'video') {
-      const isPollOnly =
-        checks && checks.includes('video_poll') && !checks.includes('video_submit')
-      if (isPollOnly) {
+      const isQueryOnly =
+        checks &&
+        (checks.includes('video_poll') || checks.includes('video_result')) &&
+        !checks.includes('video_submit')
+      if (isQueryOnly) {
         const currentTaskId =
           video.taskId?.trim() || run.videoMetrics?.task_id?.trim()
         if (!currentTaskId) {
@@ -511,7 +513,7 @@ export function SupplierTest() {
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
     endpointUrl: run.videoMetrics?.endpoint_url,
-    taskId: run.videoMetrics?.task_id,
+    taskId: run.videoMetrics?.task_id || video.taskId?.trim() || undefined,
     status: run.videoMetrics?.status,
     elapsedMs: run.videoMetrics?.elapsed_ms ?? 0,
     failReason: run.videoMetrics?.fail_reason,

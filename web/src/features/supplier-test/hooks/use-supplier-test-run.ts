@@ -136,10 +136,11 @@ export function useSupplierTestRun() {
         setSummaries((current) => ({ ...current, stress: '' }))
       }
       if (module === 'video') {
-        setVideoChecks(
-          VIDEO_CHECKS.map((check) => ({ ...check, status: 'idle', message: undefined }))
-        )
-        setVideoMetrics(null)
+        const videoChecksToRun = payload.video?.checks
+        setVideoChecks((current) => resetChecks(current, videoChecksToRun))
+        if (!videoChecksToRun || videoChecksToRun.includes('video_submit')) {
+          setVideoMetrics(null)
+        }
       }
 
       let headers: Record<string, string>

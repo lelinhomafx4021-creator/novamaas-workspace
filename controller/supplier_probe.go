@@ -70,11 +70,20 @@ func RunSupplierTest(c *gin.Context) {
 		flush()
 		return
 	}
-	if _, err := suppliertest.ChatCompletionsURL(req.BaseURL); err != nil {
-		emit(suppliertest.Event{Type: "error", Message: err.Error()})
-		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-		flush()
-		return
+	hasChatModule := false
+	for _, m := range req.Modules {
+		if m == suppliertest.ModuleBasic || m == suppliertest.ModuleStress || m == suppliertest.ModuleCache {
+			hasChatModule = true
+			break
+		}
+	}
+	if hasChatModule {
+		if _, err := suppliertest.ChatCompletionsURL(req.BaseURL); err != nil {
+			emit(suppliertest.Event{Type: "error", Message: err.Error()})
+			fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+			flush()
+			return
+		}
 	}
 
 	err := suppliertest.Run(c.Request.Context(), suppliertest.NewHTTPClient(service.GetHttpClient()), req, emit)
@@ -111,6 +120,18 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success":      false,
 			"message":      err.Error(),
+			"raw_response": string(rawResp),
+		})
+		return
+	}
+
+	if status != http.StatusOK {
+		errMsg := suppliertest.ExtractAPIError(rawResp, fmt.Sprintf("HTTP %d", status))
+		c.JSON(http.StatusOK, gin.H{
+			"success":      false,
+			"status_code":  status,
+			"task_id":      req.TaskID,
+			"message":      errMsg,
 			"raw_response": string(rawResp),
 		})
 		return

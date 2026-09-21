@@ -556,4 +556,117 @@ func TestRunVideo_SingleCheckPoll(t *testing.T) {
 	assert.Equal(t, "https://tos.volces.com/poll-only.mp4", passPollEvent.Video.VideoURL)
 }
 
+func TestRunVideo_SingleCheckResult(t *testing.T) {
+	pollCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "cgt-result-id") {
+			pollCalled = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"succeeded","content":{"video_url":"https://tos.volces.com/result-only.mp4"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	// 1. Missing TaskID should fail with CheckVideoResult
+	missingReq := RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Model:   "doubao-seedance-1-0-pro",
+		Modules: []string{ModuleVideo},
+		Video: VideoConfig{
+			Checks: []string{CheckVideoResult},
+		},
+	}
+	var missingEvents []Event
+	err := Run(context.Background(), server.Client(), missingReq, func(e Event) {
+		missingEvents = append(missingEvents, e)
+	})
+	require.NoError(t, err)
+	var failResultEvent *Event
+	for i := range missingEvents {
+		if missingEvents[i].CheckID == CheckVideoResult && missingEvents[i].Status == "fail" {
+			failResultEvent = &missingEvents[i]
+		}
+	}
+	require.NotNil(t, failResultEvent)
+	assert.Contains(t, failResultEvent.Message, "未提供任务 ID")
+
+	// 2. Providing TaskID emits CheckVideoResult without CheckVideoPoll
+	req := RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Model:   "doubao-seedance-1-0-pro",
+		Modules: []string{ModuleVideo},
+		Video: VideoConfig{
+			TaskID: "cgt-result-id",
+			Checks: []string{CheckVideoResult},
+		},
+	}
+	var events []Event
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = Run(ctx, server.Client(), req, func(e Event) {
+		events = append(events, e)
+	})
+	require.NoError(t, err)
+	assert.True(t, pollCalled)
+
+	var hasPollEvent bool
+	var passResultEvent *Event
+	for i := range events {
+		if events[i].CheckID == CheckVideoPoll {
+			hasPollEvent = true
+		}
+		if events[i].CheckID == CheckVideoResult && events[i].Status == "pass" {
+			passResultEvent = &events[i]
+		}
+	}
+	assert.False(t, hasPollEvent, "video_result single run should not emit video_poll check events")
+	require.NotNil(t, passResultEvent)
+	assert.Equal(t, "https://tos.volces.com/result-only.mp4", passResultEvent.Video.VideoURL)
+}
+
+func TestExtractAPIError_Formats(t *testing.T) {
+	// Standard OpenAI format
+	err1 := ExtractAPIError([]byte(`{"error":{"code":"invalid_request","message":"prompt is empty"}}`), "fallback")
+	assert.Equal(t, "[invalid_request] prompt is empty", err1)
+
+	// Volcengine Ark standard RPC format
+	err2 := ExtractAPIError([]byte(`{"ResponseMetadata":{"RequestId":"req-123","Error":{"Code":"InvalidParameter","Message":"The parameter prompt is invalid."}}}`), "fallback")
+	assert.Equal(t, "[InvalidParameter] The parameter prompt is invalid.", err2)
+
+	// Simple message format
+	err3 := ExtractAPIError([]byte(`{"message":"upstream timeout"}`), "fallback")
+	assert.Equal(t, "upstream timeout", err3)
+
+	// Fallback on empty or non-JSON
+	err4 := ExtractAPIError([]byte(`bad gateway`), "fallback")
+	assert.Equal(t, "bad gateway", err4)
+}
+
+func TestExtractTaskID_AndState(t *testing.T) {
+	// Gateway Result.TaskId
+	id1 := extractTaskID([]byte(`{"Result":{"TaskId":"cgt-gw-123"}}`))
+	assert.Equal(t, "cgt-gw-123", id1)
+
+	// Gateway Result.ID
+	id2 := extractTaskID([]byte(`{"Result":{"ID":"cgt-gw-456"}}`))
+	assert.Equal(t, "cgt-gw-456", id2)
+
+	// Volcengine status in task_status
+	state, url, fail := ParseVideoTaskState([]byte(`{"task_status":"succeeded","content":{"video_url":"https://test.com/v.mp4"}}`))
+	assert.Equal(t, "succeeded", state)
+	assert.Equal(t, "https://test.com/v.mp4", url)
+	assert.Empty(t, fail)
+
+	// Volcengine error in ResponseMetadata
+	state2, _, fail2 := ParseVideoTaskState([]byte(`{"status":"failed","ResponseMetadata":{"Error":{"Message":"Resource exhausted"}}}`))
+	assert.Equal(t, "failed", state2)
+	assert.Equal(t, "Resource exhausted", fail2)
+}
+
+
 

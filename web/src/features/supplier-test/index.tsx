@@ -54,7 +54,9 @@ import {
   MAX_CONCURRENCY,
   MAX_ROUNDS,
   MAX_TOKENS_CAP,
+  PROTOCOL_BASIC_IDS,
   resolveCorpusPrompt,
+  SHALLOW_BASIC_IDS,
   thisPlatformBaseURL,
 } from './constants'
 import { useSupplierTestRun } from './hooks/use-supplier-test-run'
@@ -165,9 +167,9 @@ export function SupplierTest() {
   const busy = run.runningModule !== null
   const hasReport =
     Boolean(run.summaries.basic || run.summaries.cache || run.summaries.stress) ||
-    run.basicChecks.some((check) => check.status !== 'idle') ||
-    run.cacheChecks.some((check) => check.status !== 'idle') ||
-    run.videoChecks.some((check) => check.status !== 'idle') ||
+    (run.basicChecks ?? []).some((check) => check.status !== 'idle') ||
+    (run.cacheChecks ?? []).some((check) => check.status !== 'idle') ||
+    (run.videoChecks ?? []).some((check) => check.status !== 'idle') ||
     run.metrics !== null ||
     run.videoMetrics !== null
 
@@ -199,13 +201,13 @@ export function SupplierTest() {
     },
   })
 
-  const validateTarget = (): boolean => {
+  const validateTarget = () => {
     if (!target.baseUrl.trim()) {
       toast.error(t('Enter a base URL first'))
       return false
     }
     if (!target.model.trim()) {
-      toast.error(t('Enter a model ID first'))
+      toast.error(t('Select a model first'))
       return false
     }
     return true
@@ -217,6 +219,12 @@ export function SupplierTest() {
   ): SupplierTestRunRequest => {
     const temperature = optionalNumber(basic.temperature)
     const topP = optionalNumber(basic.topP)
+    const resolvedChecks =
+      checks && checks.length > 0
+        ? checks
+        : target.vendor === 'kimi'
+          ? [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS]
+          : [...SHALLOW_BASIC_IDS, ...PROTOCOL_BASIC_IDS.filter((id) => id !== 'kimi_kvv')]
     return {
       base_url: target.baseUrl.trim(),
       api_key: target.apiKey,
@@ -229,7 +237,7 @@ export function SupplierTest() {
         stream: basic.stream,
         ...(temperature === undefined ? {} : { temperature }),
         ...(topP === undefined ? {} : { top_p: topP }),
-        ...(checks && checks.length > 0 ? { checks } : {}),
+        checks: resolvedChecks,
       },
       cache: {
         prompt: resolveCorpusPrompt(cache),
@@ -405,8 +413,12 @@ export function SupplierTest() {
   const reportInput = (): ReportInput => ({
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
+    vendor: target.vendor,
     standardLabel,
-    basicChecks: run.basicChecks,
+    basicChecks:
+      target.vendor === 'kimi'
+        ? run.basicChecks
+        : run.basicChecks.filter((check) => check.id !== 'kimi_kvv'),
     cacheChecks: run.cacheChecks,
     summaries: run.summaries,
     stressAssessment,
@@ -558,6 +570,7 @@ export function SupplierTest() {
                 basicChecks={run.basicChecks}
                 basicStreamText={run.basicStreamText}
                 basicSummary={run.summaries.basic}
+                vendor={target.vendor}
                 onBasicChange={setBasic}
                 onRunCheck={(id) => startModule('basic', [id])}
               />

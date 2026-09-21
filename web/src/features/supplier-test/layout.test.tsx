@@ -21,18 +21,20 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { BASIC_CHECKS, CACHE_CHECKS } from './constants'
+import { BASIC_CHECKS, CACHE_CHECKS, VIDEO_CHECKS } from './constants'
 
 vi.mock('./hooks/use-supplier-test-run', () => ({
   useSupplierTestRun: () => ({
     runningModule: null,
     basicChecks: BASIC_CHECKS,
     cacheChecks: CACHE_CHECKS,
+    videoChecks: VIDEO_CHECKS,
     streamText: '',
     basicStreamText: '',
     progress: { completed: 0, total: 0 },
     metrics: null,
     cacheMetrics: null,
+    videoMetrics: null,
     summaries: { basic: '', cache: '', stress: '' },
     errorMessage: '',
     start: vi.fn(),
@@ -98,4 +100,26 @@ test('target sits above tests, modules are tabbed, and judgment starts collapsed
 
   await user.click(screen.getByRole('button', { name: /Expand/ }))
   expect(screen.getByLabelText('Error rate (%)')).toBeInTheDocument()
+})
+
+test('Kimi KVV check only displays when Kimi vendor is selected', async () => {
+  renderPage()
+  const user = userEvent.setup()
+
+  // Default vendor is generic, Kimi KVV should NOT be displayed
+  expect(screen.queryByText('Kimi KVV')).not.toBeInTheDocument()
+
+  // Click vendor selector and choose Kimi
+  const vendorTrigger = screen.getByText('Generic OpenAI-compatible')
+  await user.click(vendorTrigger)
+  await user.click(screen.getByRole('option', { name: 'Kimi' }))
+
+  // Now Kimi KVV should be visible in the table
+  expect(screen.getByText('Kimi KVV')).toBeInTheDocument()
+
+  // Switch back to DeepSeek, Kimi KVV should disappear
+  const kimiTrigger = screen.getByText('Kimi', { selector: '[data-slot="select-value"]' })
+  await user.click(kimiTrigger)
+  await user.click(screen.getByRole('option', { name: 'DeepSeek' }))
+  expect(screen.queryByText('Kimi KVV')).not.toBeInTheDocument()
 })

@@ -29,6 +29,7 @@ import {
   SHALLOW_BASIC_IDS,
 } from '../constants'
 import type { BasicForm, CheckResult } from '../types'
+import type { VendorId } from '../vendors'
 import { CheckTable } from './check-table'
 import { NumberField, OptionalNumberField, StreamSwitch } from './form-controls'
 
@@ -38,6 +39,7 @@ export function BasicPanel(props: {
   basicChecks: CheckResult[]
   basicStreamText: string
   basicSummary: string
+  vendor?: VendorId
   onBasicChange: Dispatch<SetStateAction<BasicForm>>
   onRunCheck: (id: string) => void
 }) {
@@ -151,9 +153,12 @@ export function BasicPanel(props: {
             )}
           </p>
           <CheckTable
-            checks={props.basicChecks.filter((check) =>
-              (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
-            )}
+            checks={props.basicChecks.filter((check) => {
+              if (check.id === 'kimi_kvv' && props.vendor !== 'kimi') {
+                return false
+              }
+              return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+            })}
             busy={props.busy}
             onRun={props.onRunCheck}
           />

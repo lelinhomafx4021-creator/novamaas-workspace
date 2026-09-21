@@ -48,6 +48,7 @@ export type StressConfig = {
 export type ReportInput = {
   baseUrl: string
   model: string
+  vendor?: string
   basicChecks: CheckResult[]
   cacheChecks: CheckResult[]
   summaries: { basic: string; cache: string; stress: string }
@@ -157,9 +158,12 @@ export function buildMarkdownReport(input: ReportInput): string {
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
   )
-  const protocolChecks = input.basicChecks.filter((check) =>
-    (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
-  )
+  const protocolChecks = input.basicChecks.filter((check) => {
+    if (check.id === 'kimi_kvv' && input.vendor && input.vendor !== 'kimi') {
+      return false
+    }
+    return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+  })
 
   const lines = [
     `# ${t('Supplier Test Report')}`,
@@ -343,9 +347,12 @@ export function buildHtmlReport(input: ReportInput): string {
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
   )
-  const protocolChecks = input.basicChecks.filter((check) =>
-    (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
-  )
+  const protocolChecks = input.basicChecks.filter((check) => {
+    if (check.id === 'kimi_kvv' && input.vendor && input.vendor !== 'kimi') {
+      return false
+    }
+    return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+  })
 
   // Section 2: Stress test HTML
   let stressSection = ''

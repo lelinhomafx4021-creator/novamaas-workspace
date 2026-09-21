@@ -157,6 +157,8 @@ import { useChannelMutateForm } from '../../hooks/use-channel-mutate-form'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
   CHANNEL_TYPE_ADVANCED_CUSTOM,
+  MOONSHOT_FACADE_MODE_EMULATE,
+  MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH,
   channelFormSchema,
   channelsQueryKeys,
   getAdvancedCustomStats,
@@ -295,6 +297,7 @@ const SENSITIVE_FORM_FIELDS = [
   'http_protocol',
   'http2_connection_shards',
   'pass_through_body_enabled',
+  'moonshot_facade_mode',
   'system_prompt',
   'system_prompt_override',
   'allow_service_tier',
@@ -351,6 +354,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.force_format ||
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
+    values.moonshot_facade_mode === MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH ||
     values.system_prompt_override ||
     (values.http_protocol && values.http_protocol !== 'auto') ||
     (values.http2_connection_shards != null &&
@@ -762,6 +766,7 @@ export function ChannelMutateDrawer({
   const currentForceFormat = form.watch('force_format')
   const currentThinkingToContent = form.watch('thinking_to_content')
   const currentPassThroughBodyEnabled = form.watch('pass_through_body_enabled')
+  const currentMoonshotFacadeMode = form.watch('moonshot_facade_mode')
   const currentDisableTaskPollingSleep = form.watch(
     'disable_task_polling_sleep'
   )
@@ -788,6 +793,8 @@ export function ChannelMutateDrawer({
   const currentUpstreamModelUpdateIgnoredModels = form.watch(
     'upstream_model_update_ignored_models'
   )
+  const isKimiPassthrough =
+    currentMoonshotFacadeMode === MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH
   const shouldPreviewUnsavedModels =
     !isEditing ||
     (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && canEditSensitive)
@@ -1044,6 +1051,7 @@ export function ChannelMutateDrawer({
     currentForceFormat ||
     currentThinkingToContent ||
     currentPassThroughBodyEnabled ||
+    isKimiPassthrough ||
     currentDisableTaskPollingSleep ||
     currentBase64StagingEnabled ||
     (currentType === CHANNEL_TYPE_DOUBAO_VIDEO &&
@@ -2029,6 +2037,13 @@ export function ChannelMutateDrawer({
                                             nextType > 0
                                           ) {
                                             field.onChange(nextType)
+                                            if (nextType !== 1) {
+                                              form.setValue(
+                                                'moonshot_facade_mode',
+                                                MOONSHOT_FACADE_MODE_EMULATE,
+                                                { shouldDirty: true }
+                                              )
+                                            }
                                           }
                                         }}
                                         placeholder={t('Select channel type')}
@@ -4130,6 +4145,98 @@ export function ChannelMutateDrawer({
                               {currentType === 1 && (
                                 <FormField
                                   control={form.control}
+                                  name='moonshot_facade_mode'
+                                  render={({ field }) => (
+                                    <FormItem className='px-4 py-3'>
+                                      <FormLabel>
+                                        {t('Moonshot upstream mode')}
+                                      </FormLabel>
+                                      <Select
+                                        value={
+                                          field.value ||
+                                          MOONSHOT_FACADE_MODE_EMULATE
+                                        }
+                                        onValueChange={(value) => {
+                                          field.onChange(value)
+                                          if (
+                                            value ===
+                                            MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH
+                                          ) {
+                                            form.setValue(
+                                              'force_format',
+                                              false,
+                                              { shouldDirty: true }
+                                            )
+                                            form.setValue(
+                                              'thinking_to_content',
+                                              false,
+                                              { shouldDirty: true }
+                                            )
+                                            form.setValue('system_prompt', '', {
+                                              shouldDirty: true,
+                                            })
+                                            form.setValue(
+                                              'system_prompt_override',
+                                              false,
+                                              { shouldDirty: true }
+                                            )
+                                          }
+                                        }}
+                                      >
+                                        <FormControl>
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent
+                                          alignItemWithTrigger={false}
+                                        >
+                                          <SelectGroup>
+                                            <SelectItem
+                                              value={
+                                                MOONSHOT_FACADE_MODE_EMULATE
+                                              }
+                                            >
+                                              {t(
+                                                'OpenAI compatibility emulation'
+                                              )}
+                                            </SelectItem>
+                                            <SelectItem
+                                              value={
+                                                MOONSHOT_FACADE_MODE_KIMI_PASSTHROUGH
+                                              }
+                                            >
+                                              {t('Kimi-compatible passthrough')}
+                                            </SelectItem>
+                                          </SelectGroup>
+                                        </SelectContent>
+                                      </Select>
+                                      <FormDescription>
+                                        {t(
+                                          'Choose whether /moonshot converts a generic OpenAI upstream or transparently proxies a Kimi-compatible upstream.'
+                                        )}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
+
+                              {isKimiPassthrough && (
+                                <div className='px-4 py-3'>
+                                  <Alert>
+                                    <AlertDescription>
+                                      {t(
+                                        'Kimi-compatible passthrough preserves Kimi request and response fields for KVV. Remove parameter overrides and status code mappings before saving.'
+                                      )}
+                                    </AlertDescription>
+                                  </Alert>
+                                </div>
+                              )}
+
+                              {currentType === 1 && (
+                                <FormField
+                                  control={form.control}
                                   name='force_format'
                                   render={({ field }) => (
                                     <FormItem className='flex items-center justify-between px-4 py-3'>
@@ -4147,6 +4254,7 @@ export function ChannelMutateDrawer({
                                         <Switch
                                           checked={field.value}
                                           onCheckedChange={field.onChange}
+                                          disabled={isKimiPassthrough}
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -4173,6 +4281,7 @@ export function ChannelMutateDrawer({
                                       <Switch
                                         checked={field.value}
                                         onCheckedChange={field.onChange}
+                                        disabled={isKimiPassthrough}
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -4198,6 +4307,7 @@ export function ChannelMutateDrawer({
                                       <Switch
                                         checked={field.value}
                                         onCheckedChange={field.onChange}
+                                        disabled={isKimiPassthrough}
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -4471,6 +4581,7 @@ export function ChannelMutateDrawer({
                                         'Enter system prompt (user prompt takes priority)'
                                       )}
                                       rows={3}
+                                      disabled={isKimiPassthrough}
                                       {...field}
                                     />
                                   </FormControl>
@@ -4503,6 +4614,7 @@ export function ChannelMutateDrawer({
                                     <Switch
                                       checked={field.value}
                                       onCheckedChange={field.onChange}
+                                      disabled={isKimiPassthrough}
                                     />
                                   </FormControl>
                                 </FormItem>

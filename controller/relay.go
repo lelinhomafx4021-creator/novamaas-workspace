@@ -140,7 +140,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 	if moonshotfacade.Enabled(c) {
-		if err = moonshotfacade.NormalizeRequest(relayFormat, request); err != nil {
+		if err = moonshotfacade.NormalizeRequest(c, relayFormat, request); err != nil {
 			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			return
 		}

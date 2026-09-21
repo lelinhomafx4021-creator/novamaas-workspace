@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	moonshotfacade "github.com/QuantumNous/new-api/relay/facade/moonshot"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert"
@@ -108,6 +109,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	}
 
 	defer service.CloseResponseBodyGracefully(resp)
+	kimiPassthrough := moonshotfacade.KimiPassthroughEnabled(c)
+	forceFormat := info.ChannelSetting.ForceFormat && !kimiPassthrough
+	thinkingToContent := info.ChannelSetting.ThinkingToContent && !kimiPassthrough
 
 	model := info.UpstreamModelName
 	var responseId string
@@ -127,7 +131,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if lastStreamData != "" {
-			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
+			if err := HandleStreamFormat(c, info, lastStreamData, forceFormat, thinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
 				sr.Error(err)
 			}
@@ -171,10 +175,13 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		&containStreamUsage, info, &shouldSendLastResp); err != nil {
 		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
 	}
+	if kimiPassthrough {
+		shouldSendLastResp = true
+	}
 
 	if info.RelayFormat == types.RelayFormatOpenAI {
 		if shouldSendLastResp {
-			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
+			_ = sendStreamData(c, info, lastStreamData, forceFormat, thinkingToContent)
 		}
 	}
 
@@ -266,13 +273,10 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		}
 	}
 
-	forceFormat := false
-	if info.ChannelSetting.ForceFormat {
-		forceFormat = true
-	}
+	forceFormat := info.ChannelSetting.ForceFormat && !moonshotfacade.KimiPassthroughEnabled(c)
 
 	usageModified := false
-	if simpleResponse.Usage.PromptTokens == 0 {
+	if simpleResponse.Usage.PromptTokens == 0 && allowsSyntheticUsage(c) {
 		completionTokens := simpleResponse.Usage.CompletionTokens
 		if completionTokens == 0 {
 			for _, choice := range simpleResponse.Choices {

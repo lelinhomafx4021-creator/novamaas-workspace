@@ -42,6 +42,7 @@ import {
   createProgressColumn,
 } from './column-helpers'
 import { TaskLogDetailsCell } from './task-log-details-cell'
+import { TaskRequestMetricsCell } from './task-request-metrics-cell'
 
 function parseTaskData(data: unknown): unknown[] {
   if (Array.isArray(data)) return data
@@ -196,6 +197,15 @@ export function useTaskLogsColumns(isAdmin: boolean): ColumnDef<TaskLog>[] {
       headerLabel: t('Duration'),
       warningThresholdSec: 300,
     }),
+    {
+      accessorKey: 'request_metrics',
+      header: t('Request metrics'),
+      cell: ({ row }) => (
+        <TaskRequestMetricsCell metrics={row.original.request_metrics} />
+      ),
+      enableSorting: false,
+      size: 170,
+    },
     {
       accessorKey: 'status',
       header: t('Status'),

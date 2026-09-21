@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,14 @@ func TestPropertiesDatabaseValueRoundTripPreservesRequestBody(t *testing.T) {
 		OriginModelName:   "public-model",
 		UpstreamModelName: "upstream-model",
 		RequestBody:       json.RawMessage(`{"model":"public-model","duration":5}`),
+		RequestMetrics: &hosttypes.TaskRequestMetrics{
+			RequestBodyBytes:             128,
+			UpstreamBodyBytes:            96,
+			TemporaryStorageMilliseconds: 42,
+			UpstreamRequestMilliseconds:  75,
+			TotalMilliseconds:            130,
+			Attempts:                     1,
+		},
 	}
 
 	value, err := properties.Value()
@@ -27,6 +36,7 @@ func TestPropertiesDatabaseValueRoundTripPreservesRequestBody(t *testing.T) {
 	assert.Equal(t, properties.OriginModelName, restored.OriginModelName)
 	assert.Equal(t, properties.UpstreamModelName, restored.UpstreamModelName)
 	assert.JSONEq(t, string(properties.RequestBody), string(restored.RequestBody))
+	assert.Equal(t, properties.RequestMetrics, restored.RequestMetrics)
 }
 
 func TestTaskJSONDoesNotExposeStoredRequestBody(t *testing.T) {

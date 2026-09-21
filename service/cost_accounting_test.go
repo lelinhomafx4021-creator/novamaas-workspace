@@ -33,6 +33,42 @@ func TestCostAccountingWithoutDiscountUsesSaleQuotaAsCost(t *testing.T) {
 	assert.Equal(t, int64(-1720), refund.CostQuota)
 }
 
+func TestHistoricalCostBackfillRecognizesRealtimeTaskSnapshotBySourceLog(t *testing.T) {
+	truncate(t)
+	log := &model.Log{
+		UserId: 4, Type: model.LogTypeConsume, CreatedAt: 100, Quota: 1000,
+		ChannelId: 6, RequestId: "request-task-existing", ModelName: "task-model",
+		Other: common.MapToJsonStr(map[string]interface{}{"group_ratio": 1}),
+	}
+	require.NoError(t, model.LOG_DB.Create(log).Error)
+	snapshot, err := model.BuildCostAccountingSnapshot(log, &model.CostAccountingInput{
+		EventKey:       "task:existing:initial",
+		CostBasisQuota: "1000",
+		CostQuota:      1000,
+		Source:         model.CostSnapshotSourceRealtime,
+	})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(snapshot).Error)
+
+	result, err := BackfillCostAccounting(CostAccountingBackfillInput{
+		StartTimestamp: 1,
+		EndTimestamp:   200,
+		ChannelID:      6,
+		CostDiscount:   "0.8",
+		Limit:          100,
+		Apply:          true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Scanned)
+	assert.Equal(t, 1, result.Existing)
+	assert.Zero(t, result.Ready)
+	assert.Zero(t, result.Applied)
+
+	var count int64
+	require.NoError(t, model.DB.Model(&model.CostAccountingSnapshot{}).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
 func TestTaskRefundRestoresOriginalPriceWithTheCapturedBillingDiscount(t *testing.T) {
 	truncate(t)
 

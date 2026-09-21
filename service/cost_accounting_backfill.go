@@ -86,11 +86,7 @@ func BackfillCostAccounting(input CostAccountingBackfillInput) (*CostAccountingB
 		NextOffset: input.Offset + len(logs),
 		HasMore:    len(logs) == input.Limit,
 	}
-	eventKeys := make([]string, 0, len(logs))
-	for i := range logs {
-		eventKeys = append(eventKeys, model.CostSnapshotEventKey(&logs[i]))
-	}
-	existing, err := model.ExistingCostSnapshotEventKeys(eventKeys)
+	existing, err := model.ExistingCostSnapshotLogIndexes(logs)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +97,7 @@ func BackfillCostAccounting(input CostAccountingBackfillInput) (*CostAccountingB
 	snapshots := make([]model.CostAccountingSnapshot, 0, len(logs))
 	for i := range logs {
 		log := &logs[i]
-		if _, ok := existing[model.CostSnapshotEventKey(log)]; ok {
+		if _, ok := existing[i]; ok {
 			result.Existing++
 			continue
 		}

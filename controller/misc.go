@@ -49,6 +49,7 @@ func GetStatus(c *gin.Context) {
 
 	passkeySetting := system_setting.GetPasskeySettings()
 	legalSetting := system_setting.GetLegalSettings()
+	weChatMiniAppSetting := system_setting.GetWeChatMiniAppSettings()
 
 	data := gin.H{
 		"version":                     common.Version,
@@ -123,6 +124,7 @@ func GetStatus(c *gin.Context) {
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
+		"wechat_miniapp_login":        weChatMiniAppSetting.IsReady(),
 	}
 
 	// 根据启用状态注入可选内容
@@ -235,7 +237,11 @@ func GetHomePageContent(c *gin.Context) {
 }
 
 func SendEmailVerification(c *gin.Context) {
-	email := model.NormalizeEmail(c.Query("email"))
+	sendEmailVerification(c, c.Query("email"))
+}
+
+func sendEmailVerification(c *gin.Context, requestedEmail string) {
+	email := model.NormalizeEmail(requestedEmail)
 	if err := common.Validate.Var(email, "required,email"); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return

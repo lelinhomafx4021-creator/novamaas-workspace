@@ -1,0 +1,37 @@
+.feature-page__badge {
+  flex: none;
+  padding: 10rpx 18rpx;
+  color: #4338ca;
+  background: rgba(224, 231, 255, 0.88);
+  border: 1rpx solid rgba(99, 102, 241, 0.18);
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 650;
+}
+
+.feature-page__card {
+  display: flex;
+  gap: 22rpx;
+  align-items: flex-start;
+  padding: 30rpx;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1rpx solid rgba(219, 224, 235, 0.92);
+  border-radius: 28rpx;
+  box-shadow: 0 18rpx 60rpx rgba(40, 50, 78, 0.08);
+}
+
+.feature-page__marker {
+  flex: none;
+  width: 16rpx;
+  height: 16rpx;
+  margin-top: 11rpx;
+  background: #6366f1;
+  border: 8rpx solid #e0e7ff;
+  border-radius: 999rpx;
+}
+
+.feature-page__next {
+  color: #4b5568;
+  font-size: 28rpx;
+  line-height: 1.65;
+}

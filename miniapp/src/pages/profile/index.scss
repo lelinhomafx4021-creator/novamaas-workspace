@@ -1,0 +1,153 @@
+.profile-card {
+  padding: 34rpx;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1rpx solid rgba(219, 224, 235, 0.92);
+  border-radius: 28rpx;
+  box-shadow: 0 18rpx 60rpx rgba(40, 50, 78, 0.08);
+}
+
+.profile-card__label,
+.profile-card__hint,
+.profile-card__error,
+.profile-card__username {
+  display: block;
+}
+
+.profile-card__label,
+.profile-card__hint {
+  color: #727b8f;
+  font-size: 25rpx;
+  line-height: 1.55;
+}
+
+.profile-card__username {
+  margin: 12rpx 0;
+  color: #172033;
+  font-size: 38rpx;
+  font-weight: 720;
+}
+
+.profile-card__error {
+  margin: 20rpx 0;
+  padding: 20rpx;
+  color: #b42318;
+  background: #fff1f0;
+  border-radius: 16rpx;
+  font-size: 25rpx;
+  line-height: 1.5;
+}
+
+.profile-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  margin: 26rpx 0 0;
+  color: #ffffff;
+  background: #4f46e5;
+  border-radius: 20rpx;
+  font-size: 28rpx;
+  font-weight: 680;
+  line-height: 88rpx;
+}
+
+.profile-button--secondary {
+  color: #3730a3;
+  background: #eef2ff;
+}
+
+.profile-mode {
+  display: flex;
+  gap: 12rpx;
+  padding: 8rpx;
+  background: #e9ebf3;
+  border-radius: 20rpx;
+}
+
+.profile-mode__button {
+  flex: 1;
+  height: 72rpx;
+  margin: 0;
+  color: #697287;
+  background: transparent;
+  border-radius: 15rpx;
+  font-size: 25rpx;
+  line-height: 72rpx;
+}
+
+.profile-mode__button--active {
+  color: #28246e;
+  background: #ffffff;
+  box-shadow: 0 6rpx 20rpx rgba(40, 50, 78, 0.08);
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.profile-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 84rpx;
+  padding: 0 24rpx;
+  color: #172033;
+  background: #f7f8fc;
+  border: 1rpx solid #dde2ed;
+  border-radius: 18rpx;
+  font-size: 27rpx;
+}
+
+.profile-consent {
+  display: flex;
+  gap: 16rpx;
+  align-items: flex-start;
+  padding-top: 6rpx;
+}
+
+.profile-consent__text {
+  flex: 1;
+  color: #5f687c;
+  font-size: 24rpx;
+  line-height: 1.55;
+}
+
+.profile-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx 20rpx;
+}
+
+.profile-link {
+  display: inline-flex;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  color: #4f46e5;
+  background: transparent;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.profile-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+  margin-top: 26rpx;
+}
+
+.profile-nav__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 92rpx;
+  margin: 0;
+  padding: 14rpx;
+  color: #3730a3;
+  background: #eef2ff;
+  border-radius: 18rpx;
+  font-size: 24rpx;
+  font-weight: 650;
+  line-height: 1.35;
+}

@@ -171,12 +171,17 @@ func VideoTasksURL(raw string, customEndpoint ...string) (string, error) {
 		if !strings.HasPrefix(custom, "/") {
 			custom = "/" + custom
 		}
-		if path == "" || path == "/" {
+		trimmedPath := strings.TrimRight(path, "/")
+		if trimmedPath == "" || trimmedPath == "/" {
 			parsed.Path = custom
-		} else if strings.HasSuffix(path, custom) {
-			parsed.Path = path
+		} else if strings.HasSuffix(trimmedPath, custom) {
+			parsed.Path = trimmedPath
+		} else if strings.HasSuffix(trimmedPath, "/api") && strings.HasPrefix(custom, "/api/") {
+			parsed.Path = trimmedPath + strings.TrimPrefix(custom, "/api")
+		} else if strings.HasSuffix(trimmedPath, "/v1") && strings.HasPrefix(custom, "/v1/") {
+			parsed.Path = trimmedPath + strings.TrimPrefix(custom, "/v1")
 		} else {
-			parsed.Path = strings.TrimRight(path, "/") + custom
+			parsed.Path = trimmedPath + custom
 		}
 		return parsed.String(), nil
 	}
@@ -192,16 +197,26 @@ func VideoTasksURL(raw string, customEndpoint ...string) (string, error) {
 	// Case 3: User filled path ending with /contents (e.g. /api/v3/contents or /v1/contents or /contents)
 	case strings.HasSuffix(path, "/contents"):
 		parsed.Path = path + "/generations/tasks"
-	// Case 4: Path ends with /api/v3
-	case strings.HasSuffix(path, "/api/v3"):
+	// Case 4: Path ends with /api/v3 or /v3
+	case strings.HasSuffix(path, "/api/v3") || strings.HasSuffix(path, "/v3"):
 		parsed.Path = path + "/" + leaf
-	// Case 5: Path is root or empty
+	// Case 5: Path ends with /api (e.g. https://domain.com/api)
+	case strings.HasSuffix(path, "/api"):
+		parsed.Path = path + "/v3/" + leaf
+	// Case 6: Path is root or empty
 	case path == "" || path == "/":
 		parsed.Path = "/api/v3/" + leaf
-	// Case 6: Custom proxy path
+	// Case 7: Custom proxy path
 	default:
 		cleanPath := strings.TrimSuffix(path, "/v1")
-		parsed.Path = strings.TrimRight(cleanPath, "/") + "/api/v3/" + leaf
+		cleanPath = strings.TrimRight(cleanPath, "/")
+		if strings.HasSuffix(cleanPath, "/api") {
+			parsed.Path = cleanPath + "/v3/" + leaf
+		} else if strings.HasSuffix(cleanPath, "/api/v3") || strings.HasSuffix(cleanPath, "/v3") {
+			parsed.Path = cleanPath + "/" + leaf
+		} else {
+			parsed.Path = cleanPath + "/api/v3/" + leaf
+		}
 	}
 	return parsed.String(), nil
 }

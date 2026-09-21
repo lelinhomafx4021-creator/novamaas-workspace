@@ -64,6 +64,23 @@ func TestVideoURLs(t *testing.T) {
 			customEndpoint: "/contents/generations/tasks",
 			expected:       "https://custom-vendor.com/v1/contents/generations/tasks",
 		},
+		{
+			// Base URL ending with /api (should not duplicate /api to /api/api/v3)
+			input:    "https://api.myproxy.com/api",
+			expected: "https://api.myproxy.com/api/v3/contents/generations/tasks",
+		},
+		{
+			// Base URL ending with /api with custom /api/v3 override (deduplicates /api)
+			input:          "https://api.myproxy.com/api",
+			customEndpoint: "/api/v3/contents/generations/tasks",
+			expected:       "https://api.myproxy.com/api/v3/contents/generations/tasks",
+		},
+		{
+			// Base URL ending with /api with custom /contents override
+			input:          "https://api.myproxy.com/api",
+			customEndpoint: "/contents/generations/tasks",
+			expected:       "https://api.myproxy.com/api/contents/generations/tasks",
+		},
 	}
 
 	for _, tt := range tests {

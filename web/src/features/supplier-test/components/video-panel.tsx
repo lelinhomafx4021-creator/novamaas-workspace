@@ -22,6 +22,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Network,
   Play,
   RefreshCw,
   Send,
@@ -60,6 +61,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { querySupplierVideoTask } from '../api'
 import {
   DEFAULT_VIDEO_PROMPT,
+  ENDPOINT_PATH_PRESETS,
   VIDEO_RATIOS,
   VIDEO_RESOLUTIONS,
   VIDEO_ROLES,
@@ -311,6 +313,75 @@ export function VideoPanel(props: {
               className='text-xs'
             />
           </div>
+
+          {/* Endpoint Path & Route Compatibility */}
+          <Card className='p-2.5'>
+            <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+              <div className='flex items-center gap-1.5 text-xs font-semibold'>
+                <Network className='text-primary size-3.5' />
+                <span>{t('Endpoint Path & Route Compatibility')}</span>
+              </div>
+              {props.video.customPath.trim() ? (
+                <Badge variant='secondary' className='font-mono text-[10px]'>
+                  {props.video.customPath}
+                </Badge>
+              ) : (
+                <Badge variant='outline' className='text-[10px]'>
+                  {t('Auto Detect / Standard')}
+                </Badge>
+              )}
+            </div>
+            <div className='grid gap-2 sm:grid-cols-2'>
+              <div className='space-y-1'>
+                <Label className='text-muted-foreground text-[11px]'>{t('Quick Path Preset')}</Label>
+                <Select
+                  value={props.video.customPath || '__auto__'}
+                  disabled={props.busy}
+                  onValueChange={(val) => {
+                    props.onVideoChange((c) => ({
+                      ...c,
+                      customPath: val === '__auto__' ? '' : val || '',
+                    }))
+                  }}
+                >
+                  <SelectTrigger className='h-7 w-full text-xs'>
+                    <SelectValue placeholder={t('Select path preset')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ENDPOINT_PATH_PRESETS.map((preset) => (
+                      <SelectItem
+                        key={preset.value || '__auto__'}
+                        value={preset.value || '__auto__'}
+                        className='text-xs'
+                      >
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className='space-y-1'>
+                <Label className='text-muted-foreground text-[11px]'>{t('Custom Path String')}</Label>
+                <Input
+                  placeholder='/api/v3/contents/generations/tasks'
+                  value={props.video.customPath}
+                  disabled={props.busy}
+                  onChange={(e) =>
+                    props.onVideoChange((c) => ({
+                      ...c,
+                      customPath: e.target.value,
+                    }))
+                  }
+                  className='h-7 font-mono text-xs'
+                />
+              </div>
+            </div>
+            <p className='text-muted-foreground mt-1.5 text-[10px] leading-tight'>
+              {t(
+                'Supports custom vendor path isolation. You can specify a path override here, or directly fill in a full URL (with /contents/generations/tasks) in Base URL above. Both are automatically normalized and supported.'
+              )}
+            </p>
+          </Card>
 
           {/* Compact First Frame / Reference Image Card */}
           <Card className='p-2.5'>

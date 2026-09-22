@@ -73,12 +73,12 @@ func runOfficialKimiKVV(ctx context.Context, httpClient *http.Client, endpoint, 
 }
 
 func (k *kvvClient) params() string {
-	if msg := k.step("params no-param thinking", kvvFastTimeout, kvvParamPayload("", nil, true), false, kvvWantStatus(http.StatusOK)); msg != "" {
+	if msg := k.step("params no-param thinking", kvvFastTimeout, kvvParamPayload("", nil), false, kvvWantStatus(http.StatusOK)); msg != "" {
 		return msg
 	}
 	for _, param := range kvvImmutableParams {
 		name := fmt.Sprintf("params default %s=%v thinking", param.name, param.accepted)
-		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.accepted, true), false, kvvWantStatus(http.StatusOK)); msg != "" {
+		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.accepted), false, kvvWantStatus(http.StatusOK)); msg != "" {
 			return msg
 		}
 	}
@@ -87,7 +87,7 @@ func (k *kvvClient) params() string {
 			continue
 		}
 		name := fmt.Sprintf("params reject %s=%v thinking", param.name, param.wrong)
-		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.wrong, false), false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.wrong), false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
 			return msg
 		}
 	}
@@ -493,13 +493,10 @@ func (k *kvvClient) post(timeout time.Duration, payload map[string]any) (int, []
 	return resp.StatusCode, respBody, nil
 }
 
-func kvvParamPayload(name string, value any, withMax bool) map[string]any {
+func kvvParamPayload(name string, value any) map[string]any {
 	payload := map[string]any{
 		"messages": kvvUser(kvvOKPrompt),
 		"thinking": map[string]any{"type": "enabled", "keep": "all"},
-	}
-	if withMax {
-		payload["max_tokens"] = 16
 	}
 	if name != "" {
 		payload[name] = value
@@ -662,8 +659,10 @@ func kvvWantJSON(types map[string]string, objectOnly bool) func(int, []byte) str
 		if objectOnly {
 			return ""
 		}
-		if _, ok := types["city"]; !ok && !parsed.Get("city").Exists() {
-			return "JSON 缺少 city"
+		if types == nil {
+			if !parsed.Get("city").Exists() {
+				return "JSON 缺少 city"
+			}
 		}
 		for key, kind := range types {
 			value := parsed.Get(key)

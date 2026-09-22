@@ -58,7 +58,7 @@ func TestKimiKVVRejectsLooseSampling(t *testing.T) {
 
 	status, message := runKVVAgainst(t, upstream)
 	assert.Equal(t, "fail", status)
-	assert.Contains(t, message, "params reject temperature=1.1")
+	assert.Contains(t, message, "params reject temperature=")
 	assert.Contains(t, message, "期望 HTTP 400")
 }
 
@@ -110,7 +110,7 @@ func kvvOfficialFixtureBody(w http.ResponseWriter, body []byte) {
 func kvvFixtureReject(body []byte) (int, bool) {
 	if gjson.GetBytes(body, "temperature").Exists() {
 		value := gjson.GetBytes(body, "temperature").Float()
-		if value < 0 || value > 1 {
+		if math.Abs(value-1.0) > 0.001 {
 			return http.StatusBadRequest, true
 		}
 	}

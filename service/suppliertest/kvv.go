@@ -28,20 +28,34 @@ const (
 	kvvOKPrompt      = "Say 'OK' and nothing else."
 )
 
-type kvvParam struct {
-	name     string
-	accepted any
-	wrong    any
+type kvvParamCheck struct {
+	name  string
+	value any
 }
 
-var kvvImmutableParams = []kvvParam{
-	{"temperature", 0.6, 1.1},
-	{"temperature", 0.0, 2.0},
-	{"temperature", 1.0, -0.1},
-	{"top_p", 0.95, 0.8},
-	{"presence_penalty", 0, 0.5},
-	{"frequency_penalty", 0, 0.5},
-	{"n", 1, 2},
+// For Kimi-K3 (always thinking enabled):
+// Per official Moonshot KVV (verify_params.py and Kimi K3 documentation):
+// - temperature: fixed to 1.0 (other values like 0.6, 0.0, 1.1 are strictly rejected with 400).
+// - top_p: default 0.95 (wrong value 0.8 rejected).
+// - presence_penalty: default 0 (wrong value 0.5 rejected).
+// - frequency_penalty: default 0 (wrong value 0.5 rejected).
+// - n: default 1 (wrong value 2 rejected).
+var kvvAcceptedParams = []kvvParamCheck{
+	{"temperature", 1.0},
+	{"top_p", 0.95},
+	{"presence_penalty", 0},
+	{"frequency_penalty", 0},
+	{"n", 1},
+}
+
+var kvvRejectParams = []kvvParamCheck{
+	{"temperature", 0.6},
+	{"temperature", 1.1},
+	{"temperature", -0.1},
+	{"top_p", 0.8},
+	{"presence_penalty", 0.5},
+	{"frequency_penalty", 0.5},
+	{"n", 2},
 }
 
 type kvvClient struct {
@@ -76,18 +90,15 @@ func (k *kvvClient) params() string {
 	if msg := k.step("params no-param thinking", kvvFastTimeout, kvvParamPayload("", nil), false, kvvWantStatus(http.StatusOK)); msg != "" {
 		return msg
 	}
-	for _, param := range kvvImmutableParams {
-		name := fmt.Sprintf("params default %s=%v thinking", param.name, param.accepted)
-		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.accepted), false, kvvWantStatus(http.StatusOK)); msg != "" {
+	for _, param := range kvvAcceptedParams {
+		name := fmt.Sprintf("params default %s=%v thinking", param.name, param.value)
+		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.value), false, kvvWantStatus(http.StatusOK)); msg != "" {
 			return msg
 		}
 	}
-	for _, param := range kvvImmutableParams {
-		if param.wrong == param.accepted {
-			continue
-		}
-		name := fmt.Sprintf("params reject %s=%v thinking", param.name, param.wrong)
-		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.wrong), false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+	for _, param := range kvvRejectParams {
+		name := fmt.Sprintf("params reject %s=%v thinking", param.name, param.value)
+		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.value), false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
 			return msg
 		}
 	}
@@ -100,7 +111,6 @@ func (k *kvvClient) toolChoice() string {
 		"messages":    kvvUser("北京今天天气怎么样？请查一下，你应当使用工具。"),
 		"tools":       weather,
 		"tool_choice": "auto",
-		"max_tokens":  64,
 	}, true, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
@@ -108,7 +118,6 @@ func (k *kvvClient) toolChoice() string {
 		"messages":    kvvUser("你好，请简单介绍一下你自己。你不应使用任何工具。"),
 		"tools":       weather,
 		"tool_choice": "auto",
-		"max_tokens":  64,
 	}, true, kvvWantText(true)); msg != "" {
 		return msg
 	}
@@ -116,7 +125,6 @@ func (k *kvvClient) toolChoice() string {
 		"messages":    kvvUser("请简要回答：北京天气怎么样？"),
 		"tools":       weather,
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("", nil)); msg != "" {
 		return msg
 	}
@@ -130,7 +138,6 @@ func (k *kvvClient) toolChoice() string {
 		"messages":    kvvUser("请查一下北京的天气。"),
 		"tools":       weather,
 		"tool_choice": "none",
-		"max_tokens":  64,
 	}, false, kvvWantText(false)); msg != "" {
 		return msg
 	}
@@ -138,7 +145,6 @@ func (k *kvvClient) toolChoice() string {
 		if msg := k.step("tool_choice "+choice+" without tools", kvvFastTimeout, map[string]any{
 			"messages":    kvvUser("你好。"),
 			"tool_choice": choice,
-			"max_tokens":  32,
 		}, false, kvvWantText(true)); msg != "" {
 			return msg
 		}
@@ -161,14 +167,12 @@ func (k *kvvClient) responseFormat() string {
 	if msg := k.step("response_format text", kvvFastTimeout, map[string]any{
 		"messages":        kvvUser("用一句话介绍北京。"),
 		"response_format": map[string]any{"type": "text"},
-		"max_tokens":      64,
 	}, false, kvvWantText(true)); msg != "" {
 		return msg
 	}
 	if msg := k.step("response_format json_object", kvvFastTimeout, map[string]any{
 		"messages":        kvvUser("Return the weather of Beijing as JSON. The response must contain a key named 'city'."),
 		"response_format": map[string]any{"type": "json_object"},
-		"max_tokens":      128,
 	}, false, kvvWantJSON(nil, false)); msg != "" {
 		return msg
 	}
@@ -191,7 +195,6 @@ func (k *kvvClient) responseFormat() string {
 				"schema": schema,
 			},
 		},
-		"max_tokens": 128,
 	}, false, kvvWantJSON(map[string]string{"city": "string", "temperature": "number"}, false)); msg != "" {
 		return msg
 	}
@@ -208,7 +211,6 @@ func (k *kvvClient) responseFormat() string {
 				},
 			},
 		},
-		"max_tokens": 128,
 	}, false, kvvWantJSON(nil, true)); msg != "" {
 		return msg
 	}
@@ -244,7 +246,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
@@ -257,7 +258,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
@@ -267,7 +267,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "system", "content": "", "tools": []any{weather}},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
@@ -277,7 +276,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("", []string{"get_weather", "get_time", "get_news"})); msg != "" {
 		return msg
 	}
@@ -287,7 +285,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "use the tool"},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("nested_tool", nil)); msg != "" {
 		return msg
 	}
@@ -298,7 +295,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("", []string{"get_weather", "get_time"})); msg != "" {
 		return msg
 	}
@@ -310,7 +306,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, false, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
@@ -321,7 +316,6 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-		"max_tokens":  64,
 	}, true, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}

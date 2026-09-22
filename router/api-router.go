@@ -278,6 +278,30 @@ func SetApiRouter(router *gin.Engine) {
 			storageRoute.POST("/profiles/:id/test", controller.TestSavedStorageProfile)
 			storageRoute.GET("/policies/relay-media-temp", controller.GetRelayMediaStoragePolicy)
 			storageRoute.PUT("/policies/relay-media-temp", controller.UpdateRelayMediaStoragePolicy)
+			storageRoute.GET("/policies/asset-library", controller.GetAssetLibraryStoragePolicy)
+			storageRoute.PUT("/policies/asset-library", controller.UpdateAssetLibraryStoragePolicy)
+		}
+		assetLibraryRoute := apiRouter.Group("/asset-library")
+		assetLibraryRoute.Use(middleware.TokenOrUserAuth(), middleware.DisableCache())
+		{
+			assetLibraryRoute.GET("/groups", controller.ListAssetGroups)
+			assetLibraryRoute.POST("/groups", controller.CreateAssetGroup)
+			assetLibraryRoute.PUT("/groups/:id", controller.UpdateAssetGroup)
+			assetLibraryRoute.DELETE("/groups/:id", controller.DeleteAssetGroup)
+			assetLibraryRoute.GET("/assets", controller.ListMediaAssets)
+			assetLibraryRoute.POST("/assets", controller.UploadMediaAsset)
+			assetLibraryRoute.GET("/assets/:id/preview", controller.GetMediaAssetPreview)
+			assetLibraryRoute.DELETE("/assets/:id", controller.DeleteMediaAsset)
+		}
+		assetLibraryAdminRoute := apiRouter.Group("/asset-library/admin")
+		assetLibraryAdminRoute.Use(middleware.RootAuth(), middleware.DisableCache())
+		{
+			assetLibraryAdminRoute.GET("/channels", controller.ListAssetChannelConfigs)
+			assetLibraryAdminRoute.PUT("/channels/:channel_id", controller.UpdateAssetChannelConfig)
+			assetLibraryAdminRoute.POST("/channels/:channel_id/test", controller.TestAssetChannelConfig)
+			assetLibraryAdminRoute.POST("/channels/:channel_id/sync", controller.SyncAssetChannel)
+			assetLibraryAdminRoute.GET("/sync-jobs", controller.ListAssetSyncJobs)
+			assetLibraryAdminRoute.POST("/sync-jobs/:id/retry", controller.RetryAssetSyncJob)
 		}
 		performanceRoute := apiRouter.Group("/performance")
 		performanceRoute.Use(middleware.RootAuth())

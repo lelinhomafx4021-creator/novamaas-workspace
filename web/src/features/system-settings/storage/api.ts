@@ -20,6 +20,8 @@ import { api } from '@/lib/api'
 
 import type {
   StorageAPIResponse,
+  AssetChannelConfig,
+  AssetChannelConfigInput,
   StoragePolicy,
   StoragePolicyInput,
   StorageProfile,
@@ -90,6 +92,55 @@ export async function getRelayMediaStoragePolicy() {
 export async function updateRelayMediaStoragePolicy(input: StoragePolicyInput) {
   const response = await api.put<StorageAPIResponse<StoragePolicy>>(
     '/api/storage/policies/relay-media-temp',
+    input,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function getAssetLibraryStoragePolicy() {
+  const response = await api.get<StorageAPIResponse<StoragePolicy>>(
+    '/api/storage/policies/asset-library'
+  )
+  return response.data
+}
+
+export async function updateAssetLibraryStoragePolicy(
+  input: StoragePolicyInput
+) {
+  const response = await api.put<StorageAPIResponse<StoragePolicy>>(
+    '/api/storage/policies/asset-library',
+    input,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function listAssetChannelConfigs() {
+  const response = await api.get<StorageAPIResponse<AssetChannelConfig[]>>(
+    '/api/asset-library/admin/channels'
+  )
+  return response.data
+}
+
+export async function updateAssetChannelConfig(
+  channelId: number,
+  input: AssetChannelConfigInput
+) {
+  const response = await api.put<StorageAPIResponse<AssetChannelConfig>>(
+    `/api/asset-library/admin/channels/${channelId}`,
+    input,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function testAssetChannelConfig(
+  channelId: number,
+  input?: AssetChannelConfigInput
+) {
+  const response = await api.post<StorageAPIResponse>(
+    `/api/asset-library/admin/channels/${channelId}/test`,
     input,
     { skipBusinessError: true, skipErrorHandler: true }
   )

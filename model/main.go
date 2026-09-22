@@ -306,6 +306,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := ensureStorageObjectUploadMetadataColumns(DB); err != nil {
+		return err
+	}
 	err := DB.AutoMigrate(
 		&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{},
 		&CostAccountingSnapshot{}, &CostAccountingAdjustment{},
@@ -347,6 +350,11 @@ func migrateDB() error {
 		&StorageCredential{},
 		&StoragePolicy{},
 		&StorageObject{},
+		&AssetGroup{},
+		&MediaAsset{},
+		&AssetChannelConfig{},
+		&AssetGroupReplica{},
+		&AssetReplica{},
 		&CasbinRule{},
 		&AuthzRole{},
 	)
@@ -378,6 +386,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := ensureStorageObjectUploadMetadataColumns(DB); err != nil {
+		return err
+	}
 	if err := DB.AutoMigrate(&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{}, &CostAccountingSnapshot{}, &CostAccountingAdjustment{}); err != nil {
 		return err
 	}

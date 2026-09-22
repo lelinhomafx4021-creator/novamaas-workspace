@@ -16,6 +16,4 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export { StorageManagement } from './storage-management'
-export { AssetLibrarySettings } from './asset-library-settings'
-export { AssetSyncManagement } from './asset-sync-management'
+export { AssetLibrary } from './asset-library'

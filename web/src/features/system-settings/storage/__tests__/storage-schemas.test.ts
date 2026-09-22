@@ -19,11 +19,20 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'vitest'
 
 import {
+  assetChannelConfigToInput,
+  assetLibraryPolicyToInput,
+  createAssetChannelConfigSchema,
+  createAssetLibraryPolicySchema,
   createStoragePolicySchema,
   createStorageProfileSchema,
   storagePolicyToInput,
 } from '../storage-schemas'
-import { STORAGE_AUTH_STATIC, STORAGE_PROVIDER_ALIYUN_OSS } from '../types'
+import {
+  ASSET_PROTOCOL_VOLC_ACTION,
+  ASSET_PROTOCOL_YOUFANG_REST,
+  STORAGE_AUTH_STATIC,
+  STORAGE_PROVIDER_ALIYUN_OSS,
+} from '../types'
 
 const t = (key: string) => key
 
@@ -84,5 +93,113 @@ describe('storage settings validation', () => {
       allowed_mime_types:
         'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime',
     })
+  })
+
+  test('converts the permanent asset policy without a retention deadline', () => {
+    const values = {
+      enabled: true,
+      storage_profile_id: 3,
+      object_prefix: '/assets/library/',
+      signed_url_ttl_hours: 24,
+      max_file_mib: 512,
+      max_files: 100,
+    }
+
+    expect(createAssetLibraryPolicySchema(t).safeParse(values).success).toBe(
+      true
+    )
+    expect(assetLibraryPolicyToInput(values)).toEqual({
+      enabled: true,
+      storage_profile_id: 3,
+      object_prefix: 'assets/library',
+      signed_url_ttl_seconds: 86400,
+      retention_seconds: 0,
+      max_file_bytes: 536870912,
+      max_total_bytes: 536870912,
+      max_files: 100,
+      allowed_mime_types:
+        'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg',
+    })
+  })
+
+  test('validates channel credentials and preserves custom upstream paths', () => {
+    const values = {
+      enabled: true,
+      protocol: 'volc_action' as const,
+      auth_type: 'ak_sk' as const,
+      base_url: 'https://provider.example.com/custom/assets/',
+      region: 'cn-beijing',
+      service: 'ark',
+      api_version: '2024-01-01',
+      project_name: 'default',
+      qpm: 60,
+      access_key_id: 'test-ak',
+      credential: 'test-sk',
+    }
+
+    expect(createAssetChannelConfigSchema(t).safeParse(values).success).toBe(
+      true
+    )
+    expect(assetChannelConfigToInput(values).base_url).toBe(
+      'https://provider.example.com/custom/assets/'
+    )
+  })
+
+  test('allows empty credentials only when a saved credential exists', () => {
+    const values = {
+      enabled: true,
+      protocol: ASSET_PROTOCOL_VOLC_ACTION,
+      auth_type: 'bearer' as const,
+      base_url: 'https://provider.example.com',
+      region: 'cn-beijing',
+      service: 'ark',
+      api_version: '2024-01-01',
+      project_name: 'default',
+      qpm: 60,
+      access_key_id: '',
+      credential: '',
+    }
+
+    expect(createAssetChannelConfigSchema(t).safeParse(values).success).toBe(
+      false
+    )
+    expect(
+      createAssetChannelConfigSchema(t, {
+        credential_configured: true,
+        protocol: ASSET_PROTOCOL_VOLC_ACTION,
+        auth_type: 'bearer',
+      }).safeParse(values).success
+    ).toBe(true)
+  })
+
+  test('requires a new Bearer sk key when switching to YooFang REST', () => {
+    const values = {
+      enabled: true,
+      protocol: ASSET_PROTOCOL_YOUFANG_REST,
+      auth_type: 'bearer' as const,
+      base_url: 'https://asset-inference-doubao.yoofang.com',
+      region: '',
+      service: '',
+      api_version: '',
+      project_name: '',
+      qpm: 60,
+      access_key_id: '',
+      credential: '',
+    }
+
+    expect(
+      createAssetChannelConfigSchema(t, {
+        credential_configured: true,
+        protocol: ASSET_PROTOCOL_VOLC_ACTION,
+        auth_type: 'bearer',
+      }).safeParse(values).success
+    ).toBe(false)
+    expect(
+      createAssetChannelConfigSchema(t, {
+        credential_configured: true,
+        protocol: ASSET_PROTOCOL_YOUFANG_REST,
+        auth_type: 'bearer',
+      }).safeParse(values).success
+    ).toBe(true)
   })
 })

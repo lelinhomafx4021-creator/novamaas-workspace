@@ -15,14 +15,25 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-const channelCredentialVersion = "aes-gcm-v1"
+const (
+	channelCredentialVersion = "aes-gcm-v1"
+	accessKeySecretVersion   = "aes-gcm-v1"
+)
 
 type channelCredential struct {
 	Secret string `json:"secret"`
 }
 
 func encryptChannelCredential(secret string) (string, error) {
-	key, err := channelCredentialEncryptionKey()
+	return encryptAssetCredential(secret, "channel")
+}
+
+func encryptAccessKeySecret(secret string) (string, error) {
+	return encryptAssetCredential(secret, "access-key")
+}
+
+func encryptAssetCredential(secret string, purpose string) (string, error) {
+	key, err := assetCredentialEncryptionKey(purpose)
 	if err != nil {
 		return "", err
 	}
@@ -42,12 +53,20 @@ func encryptChannelCredential(secret string) (string, error) {
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
-	sealed := aead.Seal(nil, nonce, plaintext, []byte("new-api/asset-channel-credential/v1"))
+	sealed := aead.Seal(nil, nonce, plaintext, []byte("new-api/asset-"+purpose+"-credential/v1"))
 	return base64.RawStdEncoding.EncodeToString(append(nonce, sealed...)), nil
 }
 
 func decryptChannelCredential(payload string) (string, error) {
-	key, err := channelCredentialEncryptionKey()
+	return decryptAssetCredential(payload, "channel")
+}
+
+func decryptAccessKeySecret(payload string) (string, error) {
+	return decryptAssetCredential(payload, "access-key")
+}
+
+func decryptAssetCredential(payload string, purpose string) (string, error) {
+	key, err := assetCredentialEncryptionKey(purpose)
 	if err != nil {
 		return "", err
 	}
@@ -66,9 +85,9 @@ func decryptChannelCredential(payload string) (string, error) {
 	if len(encoded) < aead.NonceSize() {
 		return "", errors.New("asset channel credential payload is truncated")
 	}
-	plaintext, err := aead.Open(nil, encoded[:aead.NonceSize()], encoded[aead.NonceSize():], []byte("new-api/asset-channel-credential/v1"))
+	plaintext, err := aead.Open(nil, encoded[:aead.NonceSize()], encoded[aead.NonceSize():], []byte("new-api/asset-"+purpose+"-credential/v1"))
 	if err != nil {
-		return "", errors.New("asset channel credential cannot be decrypted")
+		return "", errors.New("asset credential cannot be decrypted")
 	}
 	var secret channelCredential
 	if err = common.Unmarshal(plaintext, &secret); err != nil {
@@ -77,7 +96,7 @@ func decryptChannelCredential(payload string) (string, error) {
 	return secret.Secret, nil
 }
 
-func channelCredentialEncryptionKey() ([]byte, error) {
+func assetCredentialEncryptionKey(purpose string) ([]byte, error) {
 	masterKey := strings.TrimSpace(os.Getenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY"))
 	if masterKey == "" {
 		masterKey = strings.TrimSpace(os.Getenv("CRYPTO_SECRET"))
@@ -86,9 +105,9 @@ func channelCredentialEncryptionKey() ([]byte, error) {
 		masterKey = strings.TrimSpace(os.Getenv("SESSION_SECRET"))
 	}
 	if masterKey == "" {
-		return nil, errors.New("set STORAGE_CREDENTIAL_ENCRYPTION_KEY, CRYPTO_SECRET, or SESSION_SECRET before saving asset channel credentials")
+		return nil, errors.New("set STORAGE_CREDENTIAL_ENCRYPTION_KEY, CRYPTO_SECRET, or SESSION_SECRET before saving asset credentials")
 	}
-	key := sha256.Sum256([]byte("new-api/asset-channel-credential/v1:" + masterKey))
+	key := sha256.Sum256([]byte("new-api/asset-" + purpose + "-credential/v1:" + masterKey))
 	return key[:], nil
 }
 

@@ -353,6 +353,7 @@ func migrateDB() error {
 		&AssetGroup{},
 		&MediaAsset{},
 		&AssetChannelConfig{},
+		&AssetAccessKey{},
 		&AssetGroupReplica{},
 		&AssetReplica{},
 		&CasbinRule{},

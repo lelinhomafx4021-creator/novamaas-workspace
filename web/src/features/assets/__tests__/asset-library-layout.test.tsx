@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { getMediaAssetPreview, listAssetGroups, listMediaAssets } from '../api'
@@ -77,20 +77,27 @@ beforeEach(() => {
   })
   vi.mocked(listMediaAssets).mockResolvedValue({
     success: true,
-    data: [
-      {
-        id: 'asset-20260922120000-abcde',
-        group_id: 'group-1',
-        name: 'Hero image',
-        type: 'image',
-        content_type: 'image/png',
-        size: 2048,
-        sha256: 'checksum',
-        status: 'ready',
-        created_at: 1,
-        updated_at: 1,
-      },
-    ],
+    data: {
+      items: [
+        {
+          id: 'asset-20260922120000-abcde',
+          group_id: 'group-1',
+          owner_user_id: 1,
+          owner_name: 'asset-owner',
+          name: 'Hero image',
+          type: 'image',
+          content_type: 'image/png',
+          size: 2048,
+          sha256: 'checksum',
+          status: 'ready',
+          created_at: 1,
+          updated_at: 1,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 40,
+    },
   })
   vi.mocked(getMediaAssetPreview).mockResolvedValue({
     success: true,
@@ -100,6 +107,7 @@ beforeEach(() => {
 
 afterEach(() => {
   queryClient?.clear()
+  vi.unstubAllGlobals()
 })
 
 describe('asset library business layout', () => {
@@ -117,6 +125,62 @@ describe('asset library business layout', () => {
     expect(
       screen.queryByText('No asset channels are enabled')
     ).not.toBeInTheDocument()
+    expect(screen.getByText(/asset-owner/)).toBeVisible()
+    expect(screen.getByText(/Uploaded at/)).toBeVisible()
+  })
+
+  test('keeps the grid bounded with server pagination', async () => {
+    vi.mocked(listMediaAssets).mockResolvedValueOnce({
+      success: true,
+      data: {
+        items: [],
+        total: 41,
+        page: 1,
+        page_size: 40,
+      },
+    })
+    renderLibrary()
+
+    const nextButton = await screen.findByRole('button', { name: 'Next' })
+    fireEvent.click(nextButton)
+
+    await waitFor(() =>
+      expect(listMediaAssets).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2, pageSize: 40 })
+      )
+    )
+  })
+
+  test('requests a preview only when its card approaches the viewport', async () => {
+    let intersectionCallback: IntersectionObserverCallback | undefined
+    const disconnect = vi.fn()
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          intersectionCallback = callback
+        }
+
+        observe() {}
+        disconnect() {
+          disconnect()
+        }
+      }
+    )
+    renderLibrary()
+
+    expect(await screen.findByText('Hero image')).toBeVisible()
+    expect(getMediaAssetPreview).not.toHaveBeenCalled()
+
+    act(() => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+    })
+
+    await waitFor(() => expect(getMediaAssetPreview).toHaveBeenCalledOnce())
+    expect(disconnect).toHaveBeenCalled()
   })
 
   test('infers the asset type from the selected file before upload', async () => {

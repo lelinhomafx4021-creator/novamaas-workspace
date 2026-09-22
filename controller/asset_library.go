@@ -66,7 +66,15 @@ func DeleteAssetGroup(c *gin.Context) {
 }
 
 func ListMediaAssets(c *gin.Context) {
-	assets, err := assetService.ListAssets(c.GetInt("id"), c.GetInt("role") >= common.RoleAdminUser && c.Query("scope") == "all", strings.TrimSpace(c.Query("group_id")))
+	pageInfo := common.GetPageQuery(c)
+	assets, err := assetService.ListAssets(assetService.AssetListInput{
+		OwnerUserID:      c.GetInt("id"),
+		IncludeAllOwners: c.GetInt("role") >= common.RoleAdminUser && c.Query("scope") == "all",
+		GroupPublicID:    strings.TrimSpace(c.Query("group_id")),
+		Search:           strings.TrimSpace(c.Query("search")),
+		Page:             pageInfo.GetPage(),
+		PageSize:         pageInfo.GetPageSize(),
+	})
 	if err != nil {
 		assetLibraryError(c, err)
 		return

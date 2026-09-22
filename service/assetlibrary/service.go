@@ -58,6 +58,8 @@ type AssetInput struct {
 type AssetView struct {
 	ID          string `json:"id"`
 	GroupID     string `json:"group_id"`
+	OwnerUserID int    `json:"owner_user_id"`
+	OwnerName   string `json:"owner_name"`
 	Name        string `json:"name"`
 	Type        string `json:"type"`
 	ContentType string `json:"content_type"`
@@ -66,6 +68,25 @@ type AssetView struct {
 	Status      string `json:"status"`
 	CreatedAt   int64  `json:"created_at"`
 	UpdatedAt   int64  `json:"updated_at"`
+}
+
+type AssetListInput struct {
+	OwnerUserID      int
+	IncludeAllOwners bool
+	GroupPublicID    string
+	GroupPublicIDs   []string
+	Search           string
+	Page             int
+	PageSize         int
+	SortBy           string
+	SortOrder        string
+}
+
+type AssetListView struct {
+	Items    []AssetView `json:"items"`
+	Total    int64       `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"page_size"`
 }
 
 type ChannelConfigInput struct {
@@ -271,25 +292,73 @@ func CreateAsset(ctx context.Context, ownerUserID int, input AssetInput) (*Asset
 	return &views[0], nil
 }
 
-func ListAssets(ownerUserID int, includeAllOwners bool, groupPublicID string) ([]AssetView, error) {
-	query := model.DB.Model(&model.MediaAsset{}).Where("status <> ?", model.AssetStatusDeleted)
-	if !includeAllOwners {
-		query = query.Where("owner_user_id = ?", ownerUserID)
+func ListAssets(input AssetListInput) (*AssetListView, error) {
+	if input.Page < 1 {
+		input.Page = 1
 	}
-	if groupPublicID != "" {
-		group, err := model.FindAssetGroup(groupPublicID, ownerUserID, includeAllOwners)
+	if input.PageSize < 1 {
+		input.PageSize = 40
+	}
+	if input.PageSize > 100 {
+		input.PageSize = 100
+	}
+	query := model.DB.Model(&model.MediaAsset{}).Where("status <> ?", model.AssetStatusDeleted)
+	if !input.IncludeAllOwners {
+		query = query.Where("owner_user_id = ?", input.OwnerUserID)
+	}
+	if input.GroupPublicID != "" {
+		group, err := model.FindAssetGroup(input.GroupPublicID, input.OwnerUserID, input.IncludeAllOwners)
 		if err != nil {
 			return nil, err
 		}
 		query = query.Where("group_id = ?", group.ID)
 	}
+	if len(input.GroupPublicIDs) > 0 {
+		groupQuery := model.DB.Model(&model.AssetGroup{}).
+			Select("id").
+			Where("public_id IN ? AND status <> ?", input.GroupPublicIDs, model.AssetStatusDeleted)
+		if !input.IncludeAllOwners {
+			groupQuery = groupQuery.Where("owner_user_id = ?", input.OwnerUserID)
+		}
+		query = query.Where("group_id IN (?)", groupQuery)
+	}
+	if keyword := strings.ToLower(strings.TrimSpace(input.Search)); keyword != "" {
+		keyword = strings.ReplaceAll(keyword, "!", "!!")
+		keyword = strings.ReplaceAll(keyword, "%", "!%")
+		keyword = strings.ReplaceAll(keyword, "_", "!_")
+		pattern := "%" + keyword + "%"
+		ownerIDs := model.DB.Model(&model.User{}).
+			Select("id").
+			Where("LOWER(username) LIKE ? ESCAPE '!' OR LOWER(display_name) LIKE ? ESCAPE '!'", pattern, pattern)
+		query = query.Where(
+			"LOWER(name) LIKE ? ESCAPE '!' OR LOWER(public_id) LIKE ? ESCAPE '!' OR LOWER(content_type) LIKE ? ESCAPE '!' OR owner_user_id IN (?)",
+			pattern, pattern, pattern, ownerIDs,
+		)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, err
+	}
 	var assets []model.MediaAsset
-	if err := query.Order("created_at desc").Find(&assets).Error; err != nil {
+	orderColumn := "created_at"
+	if strings.EqualFold(input.SortBy, "UpdateTime") {
+		orderColumn = "updated_at"
+	} else if strings.EqualFold(input.SortBy, "GroupId") {
+		orderColumn = "group_id"
+	}
+	orderDirection := "desc"
+	if strings.EqualFold(input.SortOrder, "Asc") {
+		orderDirection = "asc"
+	}
+	if err := query.Order(orderColumn + " " + orderDirection).Order("id desc").
+		Limit(input.PageSize).Offset((input.Page - 1) * input.PageSize).Find(&assets).Error; err != nil {
 		return nil, err
 	}
 	groupIDs := make([]int64, 0, len(assets))
+	ownerIDs := make([]int, 0, len(assets))
 	for _, asset := range assets {
 		groupIDs = append(groupIDs, asset.GroupID)
+		ownerIDs = append(ownerIDs, asset.OwnerUserID)
 	}
 	groups := make(map[int64]string)
 	if len(groupIDs) > 0 {
@@ -301,7 +370,13 @@ func ListAssets(ownerUserID int, includeAllOwners bool, groupPublicID string) ([
 			groups[group.ID] = group.PublicID
 		}
 	}
-	return assetViews(assets, groups), nil
+	ownerNames, err := model.GetUsernamesByIDs(ownerIDs)
+	if err != nil {
+		return nil, err
+	}
+	return &AssetListView{
+		Items: assetViews(assets, groups, ownerNames), Total: total, Page: input.Page, PageSize: input.PageSize,
+	}, nil
 }
 
 func PreviewURL(ctx context.Context, publicID string, ownerUserID int, isAdmin bool) (string, int64, error) {
@@ -669,11 +744,15 @@ func newPublicID(prefix string) (string, error) {
 	return prefix + time.Now().UTC().Format("20060102150405") + "-" + strings.ToLower(value), nil
 }
 
-func assetViews(assets []model.MediaAsset, groups map[int64]string) []AssetView {
+func assetViews(assets []model.MediaAsset, groups map[int64]string, ownerNames ...map[int]string) []AssetView {
+	names := map[int]string{}
+	if len(ownerNames) > 0 && ownerNames[0] != nil {
+		names = ownerNames[0]
+	}
 	views := make([]AssetView, 0, len(assets))
 	for _, asset := range assets {
 		views = append(views, AssetView{
-			ID: asset.PublicID, GroupID: groups[asset.GroupID], Name: asset.Name, Type: asset.AssetType,
+			ID: asset.PublicID, GroupID: groups[asset.GroupID], OwnerUserID: asset.OwnerUserID, OwnerName: names[asset.OwnerUserID], Name: asset.Name, Type: asset.AssetType,
 			ContentType: asset.ContentType, Size: asset.Size, SHA256: asset.SHA256, Status: asset.Status,
 			CreatedAt: asset.CreatedAt, UpdatedAt: asset.UpdatedAt,
 		})

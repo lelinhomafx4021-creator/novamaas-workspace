@@ -23,11 +23,13 @@ import type {
   AssetLibraryResponse,
   AssetSyncJobList,
   MediaAsset,
+  MediaAssetList,
 } from './types'
 
-export async function listAssetGroups() {
+export async function listAssetGroups(includeAllOwners = false) {
   const response = await api.get<AssetLibraryResponse<AssetGroup[]>>(
-    '/api/asset-library/groups'
+    '/api/asset-library/groups',
+    { params: includeAllOwners ? { scope: 'all' } : undefined }
   )
   return response.data
 }
@@ -52,10 +54,24 @@ export async function deleteAssetGroup(id: string) {
   return response.data
 }
 
-export async function listMediaAssets(groupId?: string) {
-  const response = await api.get<AssetLibraryResponse<MediaAsset[]>>(
+export async function listMediaAssets(params: {
+  groupId?: string
+  search?: string
+  page: number
+  pageSize: number
+  includeAllOwners?: boolean
+}) {
+  const response = await api.get<AssetLibraryResponse<MediaAssetList>>(
     '/api/asset-library/assets',
-    { params: groupId ? { group_id: groupId } : undefined }
+    {
+      params: {
+        group_id: params.groupId || undefined,
+        search: params.search || undefined,
+        p: params.page,
+        page_size: params.pageSize,
+        scope: params.includeAllOwners ? 'all' : undefined,
+      },
+    }
   )
   return response.data
 }

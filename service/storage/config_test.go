@@ -146,12 +146,13 @@ func TestMarkStorageObjectUploadedUsesMappedETagColumn(t *testing.T) {
 	}
 	require.NoError(t, model.CreateStorageObject(object))
 
-	require.NoError(t, model.MarkStorageObjectUploaded(object.ID, "aliyun-etag"))
+	require.NoError(t, model.MarkStorageObjectUploaded(object.ID, "aliyun-etag", "asset-sha256"))
 
 	var stored model.StorageObject
 	require.NoError(t, model.DB.First(&stored, object.ID).Error)
 	assert.Equal(t, model.StorageObjectStatusUploaded, stored.Status)
 	assert.Equal(t, "aliyun-etag", stored.ETag)
+	assert.Equal(t, "asset-sha256", stored.SHA256)
 	assert.NotZero(t, stored.UpdatedAt)
 }
 
@@ -189,6 +190,44 @@ func TestStoragePolicyAcceptsVideoMediaTypes(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "video/mp4,video/webm,video/quicktime", policy.AllowedMIMETypes)
+}
+
+func TestAssetLibraryPolicyIsPermanentAndAcceptsAudio(t *testing.T) {
+	setupStorageDatabase(t)
+
+	policy, err := SaveAssetLibraryPolicy(PolicyInput{
+		ObjectPrefix:        "/assets/library/",
+		SignedURLTTLSeconds: 24 * 60 * 60,
+		RetentionSeconds:    48 * 60 * 60,
+		MaxFileBytes:        512 * 1024 * 1024,
+		MaxTotalBytes:       512 * 1024 * 1024,
+		MaxFiles:            100,
+		AllowedMIMETypes:    "image/png,audio/mpeg,video/mp4",
+		Enabled:             false,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, model.StoragePolicyAssetLibrary, policy.Key)
+	assert.Equal(t, model.StorageObjectPurposeAssetLibrary, policy.Purpose)
+	assert.Equal(t, int64(0), policy.RetentionSeconds)
+	assert.Equal(t, "assets/library", policy.ObjectPrefix)
+	assert.Equal(t, "image/png,audio/mpeg,video/mp4", policy.AllowedMIMETypes)
+}
+
+func TestAssetLibraryPolicyRequiresProfileWhenEnabled(t *testing.T) {
+	setupStorageDatabase(t)
+
+	_, err := SaveAssetLibraryPolicy(PolicyInput{
+		ObjectPrefix:        "assets/library",
+		SignedURLTTLSeconds: 3600,
+		MaxFileBytes:        1024,
+		MaxFiles:            10,
+		AllowedMIMETypes:    "image/png",
+		Enabled:             true,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a storage profile")
 }
 
 func TestAliyunProfileRejectsCustomEndpointPort(t *testing.T) {

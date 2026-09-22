@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
+	assetLibraryService "github.com/QuantumNous/new-api/service/assetlibrary"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 
 	"github.com/gin-gonic/gin"
@@ -121,6 +122,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			common.SetContextKey(c, constant.ContextKeyTemporaryMediaConvertedCount, convertedCount)
 			common.SetContextKey(c, constant.ContextKeyTemporaryMediaConverted, convertedCount > 0)
 		}
+	}
+	body, _, err = assetLibraryService.ResolveRequestAssetIDs(body, info.UserId, info.GetChannelID())
+	if err != nil {
+		return nil, err
 	}
 	body, err = helper.ApplyModelMappingToJSONBody(info, body)
 	if err != nil {

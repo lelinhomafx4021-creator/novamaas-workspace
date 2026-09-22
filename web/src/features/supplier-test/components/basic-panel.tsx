@@ -171,45 +171,45 @@ export function BasicPanel(props: {
                 <div className='flex items-center gap-1.5'>
                   <ShieldCheck className='size-4 text-amber-500' />
                   <span className='text-xs font-semibold text-amber-700 dark:text-amber-400'>
-                    {t('Kimi KVV (Kimi Vendor Verifier) Official Verification Standard')}
+                    {t('KVV preflight')}
                   </span>
                 </div>
                 <Badge variant='outline' className='border-amber-500/40 text-[10px] text-amber-600'>
-                  {t('Moonshot Certified')}
+                  {t('Not official certification')}
                 </Badge>
               </div>
               <p className='text-muted-foreground text-[11px] leading-relaxed'>
                 {t(
-                  'Aligned with Moonshot AI open-source KVV specification. Designed for third-party upstream admission, running 4-phase closed-loop synthetic probes in seconds to detect model forgery, schema degradation, and tool hallucinations.'
+                  'In-product preflight for sampling parameters, tool_choice, response_format, dynamic tools, and thinking fields. A pass is not official Kimi KVV certification.'
                 )}
               </p>
               <div className='grid gap-1.5 pt-1 text-[11px] sm:grid-cols-2'>
                 <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
                   <span className='font-mono font-semibold text-primary'>[1]</span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Positive Schema Conformance')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('query_flight 5 required fields, integer types, business enum, YYYY-MM-DD regex')}</div>
+                    <div className='font-medium text-foreground'>{t('Immutable parameters')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('Official defaults of temperature, top_p, presence_penalty, frequency_penalty, and n are accepted. Other values are rejected.')}</div>
                   </div>
                 </div>
                 <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
                   <span className='font-mono font-semibold text-primary'>[2]</span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Negative Anti-Hallucination')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('Common sense queries with tools attached: 0 tool invocation hallucination, finish_reason=stop')}</div>
+                    <div className='font-medium text-foreground'>{t('tool_choice contract')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('auto, none, and required. required without tools is rejected. none does not call a tool.')}</div>
                   </div>
                 </div>
                 <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
                   <span className='font-mono font-semibold text-primary'>[3]</span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Multi-Tool Disambiguation')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('Flight & hotel candidate interference: accurate routing to book_hotel, strict parameter extraction')}</div>
+                    <div className='font-medium text-foreground'>{t('response_format and dynamic tools')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('text, json_object, and json_schema. Dynamic tools belong on system messages.')}</div>
                   </div>
                 </div>
                 <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
                   <span className='font-mono font-semibold text-primary'>[4]</span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Thinking & CoT Protocol')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('Moonshot reasoning_effort low probe: captures native streaming thinking tokens')}</div>
+                    <div className='font-medium text-foreground'>{t('Thinking contract')}</div>
+                    <div className='text-muted-foreground text-[10px]'>{t('thinking enabled with keep=all returns reasoning_content, including streamed chunks.')}</div>
                   </div>
                 </div>
               </div>

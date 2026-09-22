@@ -1,0 +1,733 @@
+package suppliertest
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/tidwall/gjson"
+)
+
+// Official preflight from MoonshotAI/Kimi-Vendor-Verifier.
+// Covered: tests/params, tests/k3_features tool_choice, response_format,
+// dynamic tools, and the non-skipped thinking presence checks.
+// Not covered: OCRBench, MMMU, BEAM, DeepSWE, prompt-token cases, and the
+// upstream tests marked skip or flaky on reasoning length.
+
+const (
+	kvvFastTimeout   = 30 * time.Second
+	kvvThinkTimeout  = 120 * time.Second
+	kvvThinkTokens   = 4096
+	kvvPassMessage   = "KVV 预检通过：按 K3 始终开启思考，核对了采样参数、tool_choice、response_format、动态工具和思考字段。未发送关闭思考的请求。不是官方 Kimi KVV 认证。"
+	kvvChickenPrompt = "鸡兔同笼，共有 35 个头，94 条腿。问鸡和兔各有多少只？请逐步推理。"
+	kvvOKPrompt      = "Say 'OK' and nothing else."
+)
+
+type kvvParam struct {
+	name     string
+	accepted any
+	wrong    any
+}
+
+var kvvImmutableParams = []kvvParam{
+	{"temperature", 0.6, 1.1},
+	{"temperature", 0.0, 2.0},
+	{"temperature", 1.0, -0.1},
+	{"top_p", 0.95, 0.8},
+	{"presence_penalty", 0, 0.5},
+	{"frequency_penalty", 0, 0.5},
+	{"n", 1, 2},
+}
+
+type kvvClient struct {
+	ctx              context.Context
+	http             *http.Client
+	endpoint         string
+	apiKey           string
+	model            string
+	thinkingRequired bool
+}
+
+func runOfficialKimiKVV(ctx context.Context, httpClient *http.Client, endpoint, apiKey, model string) (string, string) {
+	k := &kvvClient{ctx: ctx, http: httpClient, endpoint: endpoint, apiKey: apiKey, model: model, thinkingRequired: true}
+	if strings.TrimSpace(model) == "" {
+		return "fail", "KVV 缺少模型名"
+	}
+	for _, run := range []func() string{
+		k.params,
+		k.toolChoice,
+		k.responseFormat,
+		k.dynamicTools,
+		k.thinking,
+	} {
+		if msg := run(); msg != "" {
+			return "fail", msg
+		}
+	}
+	return "pass", kvvPassMessage
+}
+
+func (k *kvvClient) params() string {
+	if msg := k.step("params no-param thinking", kvvFastTimeout, kvvParamPayload("", nil, true), false, kvvWantStatus(http.StatusOK)); msg != "" {
+		return msg
+	}
+	for _, param := range kvvImmutableParams {
+		name := fmt.Sprintf("params default %s=%v thinking", param.name, param.accepted)
+		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.accepted, true), false, kvvWantStatus(http.StatusOK)); msg != "" {
+			return msg
+		}
+	}
+	for _, param := range kvvImmutableParams {
+		if param.wrong == param.accepted {
+			continue
+		}
+		name := fmt.Sprintf("params reject %s=%v thinking", param.name, param.wrong)
+		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.wrong, false), false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+			return msg
+		}
+	}
+	return ""
+}
+
+func (k *kvvClient) toolChoice() string {
+	weather := []any{kvvWeatherTool()}
+	if msg := k.step("tool_choice auto may call", kvvFastTimeout, map[string]any{
+		"messages":    kvvUser("北京今天天气怎么样？请查一下，你应当使用工具。"),
+		"tools":       weather,
+		"tool_choice": "auto",
+		"max_tokens":  64,
+	}, true, kvvWantTool("get_weather", nil)); msg != "" {
+		return msg
+	}
+	if msg := k.step("tool_choice auto may not call", kvvFastTimeout, map[string]any{
+		"messages":    kvvUser("你好，请简单介绍一下你自己。你不应使用任何工具。"),
+		"tools":       weather,
+		"tool_choice": "auto",
+		"max_tokens":  64,
+	}, true, kvvWantText(true)); msg != "" {
+		return msg
+	}
+	if msg := k.step("tool_choice required forces call", kvvFastTimeout, map[string]any{
+		"messages":    kvvUser("请简要回答：北京天气怎么样？"),
+		"tools":       weather,
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("", nil)); msg != "" {
+		return msg
+	}
+	if msg := k.step("tool_choice required without tools", kvvFastTimeout, map[string]any{
+		"messages":    kvvUser("北京天气怎么样？"),
+		"tool_choice": "required",
+	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+		return msg
+	}
+	if msg := k.step("tool_choice none forbids call", kvvFastTimeout, map[string]any{
+		"messages":    kvvUser("请查一下北京的天气。"),
+		"tools":       weather,
+		"tool_choice": "none",
+		"max_tokens":  64,
+	}, false, kvvWantText(false)); msg != "" {
+		return msg
+	}
+	for _, choice := range []string{"none", "auto"} {
+		if msg := k.step("tool_choice "+choice+" without tools", kvvFastTimeout, map[string]any{
+			"messages":    kvvUser("你好。"),
+			"tool_choice": choice,
+			"max_tokens":  32,
+		}, false, kvvWantText(true)); msg != "" {
+			return msg
+		}
+	}
+	if msg := k.step("tool_choice required empty tools", kvvFastTimeout, map[string]any{
+		"messages":    kvvUser("what is the weather in beijing?"),
+		"tools":       []any{},
+		"tool_choice": "required",
+	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+		return msg
+	}
+	return k.step("tool_choice bogus", kvvFastTimeout, map[string]any{
+		"messages":    kvvUser("北京天气怎么样？"),
+		"tools":       weather,
+		"tool_choice": "bogus",
+	}, false, kvvWantStatus(http.StatusBadRequest))
+}
+
+func (k *kvvClient) responseFormat() string {
+	if msg := k.step("response_format text", kvvFastTimeout, map[string]any{
+		"messages":        kvvUser("用一句话介绍北京。"),
+		"response_format": map[string]any{"type": "text"},
+		"max_tokens":      64,
+	}, false, kvvWantText(true)); msg != "" {
+		return msg
+	}
+	if msg := k.step("response_format json_object", kvvFastTimeout, map[string]any{
+		"messages":        kvvUser("Return the weather of Beijing as JSON. The response must contain a key named 'city'."),
+		"response_format": map[string]any{"type": "json_object"},
+		"max_tokens":      128,
+	}, false, kvvWantJSON(nil, false)); msg != "" {
+		return msg
+	}
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"city":        map[string]any{"type": "string"},
+			"temperature": map[string]any{"type": "number"},
+		},
+		"required":             []string{"city", "temperature"},
+		"additionalProperties": false,
+	}
+	if msg := k.step("response_format json_schema strict", kvvFastTimeout, map[string]any{
+		"messages": kvvUser("Return the weather of Beijing as JSON following the schema."),
+		"response_format": map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   "weather",
+				"strict": true,
+				"schema": schema,
+			},
+		},
+		"max_tokens": 128,
+	}, false, kvvWantJSON(map[string]string{"city": "string", "temperature": "number"}, false)); msg != "" {
+		return msg
+	}
+	if msg := k.step("response_format json_schema non-strict", kvvFastTimeout, map[string]any{
+		"messages": kvvUser("Return the weather of Beijing as JSON."),
+		"response_format": map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   "weather",
+				"strict": false,
+				"schema": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"city": map[string]any{"type": "string"}},
+				},
+			},
+		},
+		"max_tokens": 128,
+	}, false, kvvWantJSON(nil, true)); msg != "" {
+		return msg
+	}
+	if msg := k.step("response_format bogus", kvvFastTimeout, map[string]any{
+		"messages":        kvvUser("hello"),
+		"response_format": map[string]any{"type": "bogus"},
+	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+		return msg
+	}
+	if msg := k.step("response_format json_schema missing name", kvvFastTimeout, map[string]any{
+		"messages": kvvUser("hello"),
+		"response_format": map[string]any{
+			"type":        "json_schema",
+			"json_schema": map[string]any{"schema": map[string]any{"type": "object"}},
+		},
+	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+		return msg
+	}
+	return k.step("response_format json_schema missing schema", kvvFastTimeout, map[string]any{
+		"messages": kvvUser("hello"),
+		"response_format": map[string]any{
+			"type":        "json_schema",
+			"json_schema": map[string]any{"name": "weather"},
+		},
+	}, false, kvvWantStatus(http.StatusBadRequest))
+}
+
+func (k *kvvClient) dynamicTools() string {
+	weather := kvvWeatherTool()
+	if msg := k.step("dynamic tool in system", kvvFastTimeout, map[string]any{
+		"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{weather}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+		return msg
+	}
+	if msg := k.step("dynamic tool later system", kvvFastTimeout, map[string]any{
+		"messages": []any{
+			map[string]any{"role": "system", "content": "You are a helpful assistant."},
+			map[string]any{"role": "user", "content": "hi"},
+			map[string]any{"role": "assistant", "content": "Hello!"},
+			map[string]any{"role": "system", "content": "", "tools": []any{weather}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+		return msg
+	}
+	if msg := k.step("dynamic tool last message", kvvFastTimeout, map[string]any{
+		"messages": []any{
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+			map[string]any{"role": "system", "content": "", "tools": []any{weather}},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+		return msg
+	}
+	if msg := k.step("dynamic three tools", kvvFastTimeout, map[string]any{
+		"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("get_weather", ""), kvvFn("get_time", ""), kvvFn("get_news", "")}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("", []string{"get_weather", "get_time", "get_news"})); msg != "" {
+		return msg
+	}
+	if msg := k.step("dynamic nested schema", kvvFastTimeout, map[string]any{
+		"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvNestedTool()}},
+			map[string]any{"role": "user", "content": "use the tool"},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("nested_tool", nil)); msg != "" {
+		return msg
+	}
+	if msg := k.step("dynamic two messages", kvvFastTimeout, map[string]any{
+		"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("get_weather", "")}},
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("get_time", "")}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("", []string{"get_weather", "get_time"})); msg != "" {
+		return msg
+	}
+	strictFalse := kvvWeatherTool()
+	strictFalse["function"].(map[string]any)["strict"] = false
+	if msg := k.step("dynamic strict false", kvvFastTimeout, map[string]any{
+		"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{strictFalse}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+		return msg
+	}
+	if msg := k.step("dynamic and global coexist", kvvFastTimeout, map[string]any{
+		"tools": []any{kvvFn("get_stock_price", "Get the stock price of a company.")},
+		"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{weather}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		},
+		"tool_choice": "required",
+		"max_tokens":  64,
+	}, true, kvvWantTool("get_weather", nil)); msg != "" {
+		return msg
+	}
+	rejects := []struct {
+		name    string
+		payload map[string]any
+	}{
+		{"dynamic tool on user", map[string]any{"messages": []any{
+			map[string]any{"role": "user", "content": "hi", "tools": []any{weather}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		}}},
+		{"dynamic tool on assistant", map[string]any{"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+			map[string]any{"role": "assistant", "content": "hello", "tools": []any{weather}},
+			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
+		}}},
+		{"dynamic tool with content", map[string]any{"messages": []any{
+			map[string]any{"role": "system", "content": "not empty", "tools": []any{weather}},
+			map[string]any{"role": "user", "content": "hello"},
+		}}},
+		{"dynamic missing type", kvvDynTools(kvvToolWithout("type"))},
+		{"dynamic missing function", kvvDynTools(kvvToolWithout("function"))},
+		{"dynamic missing name", kvvDynTools(kvvToolWithout("name"))},
+		{"dynamic bad name number", kvvDynTools(kvvFn("1bad_name", ""))},
+		{"dynamic bad name char", kvvDynTools(kvvFn("bad@name", ""))},
+		{"dynamic bad name empty", kvvDynTools(kvvFn("", ""))},
+		{"dynamic bad name length", kvvDynTools(kvvFn(strings.Repeat("a", 257), ""))},
+		{"dynamic bogus type", kvvDynTools(map[string]any{"type": "bogus", "function": map[string]any{"name": "x"}})},
+		{"dynamic mixed bogus type", map[string]any{"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("good_tool", ""), map[string]any{"type": "bogus", "function": map[string]any{"name": "x"}}}},
+			map[string]any{"role": "user", "content": "hello"},
+		}}},
+		{"dynamic tools not array", map[string]any{"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": map[string]any{"type": "function"}},
+			map[string]any{"role": "user", "content": "hello"},
+		}}},
+		{"dynamic tool item null", map[string]any{"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{nil}},
+			map[string]any{"role": "user", "content": "hello"},
+		}}},
+		{"dynamic duplicate name", map[string]any{"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", ""), kvvFn("dup", "")}},
+			map[string]any{"role": "user", "content": "hello"},
+		}}},
+		{"dynamic duplicate across messages", map[string]any{"messages": []any{
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", "")}},
+			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", "")}},
+			map[string]any{"role": "user", "content": "hello"},
+		}}},
+		{"dynamic duplicate with global", map[string]any{
+			"tools": []any{kvvFn("dup", "")},
+			"messages": []any{
+				map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", "")}},
+				map[string]any{"role": "user", "content": "hello"},
+			},
+		}},
+		{"tool role missing tool_call_id", map[string]any{"messages": []any{
+			map[string]any{"role": "tool", "content": "some tool result"},
+			map[string]any{"role": "user", "content": "hello"},
+		}}},
+	}
+	for _, item := range rejects {
+		if msg := k.step(item.name, kvvFastTimeout, item.payload, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+			return msg
+		}
+	}
+	return ""
+}
+
+func (k *kvvClient) thinking() string {
+	cases := []struct {
+		name     string
+		thinking map[string]any
+	}{
+		{"thinking enabled effort=high", map[string]any{"type": "enabled", "keep": "all", "effort": "high"}},
+		{"thinking effort omitted", map[string]any{"type": "enabled", "keep": "all"}},
+	}
+	for _, item := range cases {
+		if msg := k.step(item.name, kvvThinkTimeout, map[string]any{
+			"messages":   kvvUser(kvvChickenPrompt),
+			"max_tokens": kvvThinkTokens,
+			"thinking":   item.thinking,
+		}, false, kvvWantReasoning); msg != "" {
+			return msg
+		}
+	}
+	req := chatRequest{
+		Model:     k.model,
+		Messages:  []chatMessage{{Role: "user", Content: kvvChickenPrompt}},
+		MaxTokens: ptrInt(kvvThinkTokens),
+		Thinking:  map[string]any{"type": "enabled", "keep": "all", "effort": "high"},
+		Stream:    true,
+	}
+	res := streamChat(k.ctx, k.http, k.endpoint, k.apiKey, req, kvvThinkTimeout, nil)
+	if res.StatusCode != http.StatusOK || res.ErrorMessage != "" {
+		return kvvFail("thinking stream", "请求失败："+firstNonEmpty(res.ErrorMessage, fmt.Sprintf("HTTP %d", res.StatusCode)))
+	}
+	if res.Reasoning == "" {
+		return kvvFail("thinking stream", "流式响应没有 reasoning_content")
+	}
+	if res.Content == "" {
+		return kvvFail("thinking stream", "流式响应没有 content")
+	}
+	if res.FinishReason != "stop" {
+		return kvvFail("thinking stream", "finish_reason 不是 stop，实际为 "+res.FinishReason)
+	}
+	return ""
+}
+
+func (k *kvvClient) step(name string, timeout time.Duration, payload map[string]any, flaky bool, want func(int, []byte) string) string {
+	run := func() string {
+		if err := k.ctx.Err(); err != nil {
+			return kvvFail(name, "已取消："+err.Error())
+		}
+		status, body, err := k.post(timeout, payload)
+		if err != nil {
+			return kvvFail(name, "请求失败："+err.Error())
+		}
+		if msg := want(status, body); msg != "" {
+			return kvvFail(name, msg)
+		}
+		return ""
+	}
+	msg := run()
+	if msg != "" && flaky {
+		return run()
+	}
+	return msg
+}
+
+func (k *kvvClient) post(timeout time.Duration, payload map[string]any) (int, []byte, error) {
+	if timeout <= 0 {
+		timeout = kvvFastTimeout
+	}
+	body := make(map[string]any, len(payload)+1)
+	body["model"] = k.model
+	for key, value := range payload {
+		body[key] = value
+	}
+	if k.thinkingRequired {
+		if _, ok := body["thinking"]; !ok {
+			body["thinking"] = map[string]any{"type": "enabled", "keep": "all"}
+		}
+	}
+	raw, err := common.Marshal(body)
+	if err != nil {
+		return 0, nil, err
+	}
+	callCtx, cancel := context.WithTimeout(k.ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, k.endpoint, bytes.NewReader(raw))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if strings.TrimSpace(k.apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(k.apiKey))
+	}
+	resp, err := k.http.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, respBody, nil
+}
+
+func kvvParamPayload(name string, value any, withMax bool) map[string]any {
+	payload := map[string]any{
+		"messages": kvvUser(kvvOKPrompt),
+		"thinking": map[string]any{"type": "enabled", "keep": "all"},
+	}
+	if withMax {
+		payload["max_tokens"] = 16
+	}
+	if name != "" {
+		payload[name] = value
+	}
+	return payload
+}
+
+func kvvUser(text string) []any {
+	return []any{map[string]any{"role": "user", "content": text}}
+}
+
+func kvvDynTools(tool map[string]any) map[string]any {
+	return map[string]any{"messages": []any{
+		map[string]any{"role": "system", "content": "", "tools": []any{tool}},
+		map[string]any{"role": "user", "content": "hello"},
+	}}
+}
+
+func kvvWeatherTool() map[string]any {
+	return map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        "get_weather",
+			"description": "Get the weather of a city.",
+			"parameters": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"city": map[string]any{"type": "string"},
+				},
+				"required": []string{"city"},
+			},
+		},
+	}
+}
+
+func kvvFn(name, description string) map[string]any {
+	if description == "" {
+		description = "A tool."
+	}
+	return map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        name,
+			"description": description,
+			"parameters":  map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+	}
+}
+
+func kvvNestedTool() map[string]any {
+	return map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        "nested_tool",
+			"description": "A tool with a nested parameter schema.",
+			"parameters": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"location": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"lat": map[string]any{"type": "number"},
+							"lon": map[string]any{"type": "number"},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func kvvToolWithout(field string) map[string]any {
+	tool := map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        "good_tool",
+			"description": "A tool.",
+			"parameters":  map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+	}
+	if field == "name" || field == "parameters" {
+		delete(tool["function"].(map[string]any), field)
+		return tool
+	}
+	delete(tool, field)
+	return tool
+}
+
+func kvvFail(name, msg string) string {
+	return fmt.Sprintf("KVV [%s] %s", name, msg)
+}
+
+func kvvClip(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if len([]rune(text)) > 180 {
+		return string([]rune(text)[:180])
+	}
+	return text
+}
+
+func kvvWantStatus(want int) func(int, []byte) string {
+	return func(status int, body []byte) string {
+		if status != want {
+			return fmt.Sprintf("期望 HTTP %d，实际 %d：%s", want, status, kvvClip(body))
+		}
+		return ""
+	}
+}
+
+func kvvWantText(needContent bool) func(int, []byte) string {
+	return func(status int, body []byte) string {
+		if status != http.StatusOK {
+			return fmt.Sprintf("期望 HTTP 200，实际 %d：%s", status, kvvClip(body))
+		}
+		if gjson.GetBytes(body, "choices.0.finish_reason").String() != "stop" {
+			return "finish_reason 不是 stop"
+		}
+		if kvvHasTools(body) {
+			return "不应触发工具"
+		}
+		if needContent && strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.content").String()) == "" {
+			return "没有文本回复"
+		}
+		return ""
+	}
+}
+
+func kvvWantTool(name string, oneOf []string) func(int, []byte) string {
+	return func(status int, body []byte) string {
+		if status != http.StatusOK {
+			return fmt.Sprintf("期望 HTTP 200，实际 %d：%s", status, kvvClip(body))
+		}
+		if gjson.GetBytes(body, "choices.0.finish_reason").String() != "tool_calls" {
+			return "finish_reason 不是 tool_calls"
+		}
+		got := kvvToolNames(body)
+		if len(got) == 0 {
+			return "没有 tool_calls"
+		}
+		if name != "" && !kvvContains(got, name) {
+			return fmt.Sprintf("工具名期望 %s，实际 %s", name, strings.Join(got, ","))
+		}
+		if len(oneOf) > 0 && !kvvOverlaps(got, oneOf) {
+			return fmt.Sprintf("工具名 %s 不在候选内", strings.Join(got, ","))
+		}
+		return ""
+	}
+}
+
+func kvvWantJSON(types map[string]string, objectOnly bool) func(int, []byte) string {
+	return func(status int, body []byte) string {
+		if msg := kvvWantText(true)(status, body); msg != "" {
+			return msg
+		}
+		content := strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.content").String())
+		parsed := gjson.Parse(content)
+		if !parsed.IsObject() {
+			return "响应不是 JSON 对象"
+		}
+		if objectOnly {
+			return ""
+		}
+		if _, ok := types["city"]; !ok && !parsed.Get("city").Exists() {
+			return "JSON 缺少 city"
+		}
+		for key, kind := range types {
+			value := parsed.Get(key)
+			if !value.Exists() {
+				return "JSON 缺少 " + key
+			}
+			switch kind {
+			case "string":
+				if value.Type != gjson.String {
+					return key + " 不是字符串"
+				}
+			case "number":
+				if value.Type != gjson.Number {
+					return key + " 不是数字"
+				}
+			}
+		}
+		return ""
+	}
+}
+
+func kvvWantReasoning(status int, body []byte) string {
+	if status != http.StatusOK {
+		return fmt.Sprintf("期望 HTTP 200，实际 %d：%s", status, kvvClip(body))
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.reasoning_content").String()) == "" {
+		return "没有 reasoning_content"
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.content").String()) == "" {
+		return "没有 content"
+	}
+	return ""
+}
+
+func kvvHasTools(body []byte) bool {
+	calls := gjson.GetBytes(body, "choices.0.message.tool_calls")
+	return calls.Exists() && calls.IsArray() && len(calls.Array()) > 0
+}
+
+func kvvToolNames(body []byte) []string {
+	var names []string
+	for _, call := range gjson.GetBytes(body, "choices.0.message.tool_calls").Array() {
+		name := call.Get("function.name").String()
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func kvvContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func kvvOverlaps(got, oneOf []string) bool {
+	for _, value := range got {
+		if kvvContains(oneOf, value) {
+			return true
+		}
+	}
+	return false
+}

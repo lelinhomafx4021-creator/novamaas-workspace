@@ -27,6 +27,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TitledCard } from '@/components/ui/titled-card'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 
 import { fetchSupplierModels } from './api'
 import {
@@ -82,6 +83,7 @@ import type {
   TargetForm,
   VideoForm,
 } from './types'
+import { buildVideoRequestPayload } from './video-json'
 
 export { AssessmentTable } from './components/assessment-table'
 export { BasicPanel } from './components/basic-panel'
@@ -265,13 +267,19 @@ export function SupplierTest() {
         stream: stress.stream,
       },
       video: {
-        ...(module === 'video' && checks && checks.length > 0 ? { checks } : {}),
+        ...(module === 'video' && checks && checks.length > 0
+          ? { checks }
+          : {}),
         ...(video.taskId || run.videoMetrics?.task_id
           ? { task_id: (video.taskId || run.videoMetrics?.task_id)?.trim() }
           : {}),
-        ...(video.rawPayload && video.rawPayload.trim()
-          ? { raw_payload: video.rawPayload.trim() }
-          : {}),
+        ...(() => {
+          const edited = video.rawPayload?.trim() ?? ''
+          if (edited) return { raw_payload: edited }
+          if (module !== 'video') return {}
+          const preview = buildVideoRequestPayload(target.model, video)
+          return preview ? { raw_payload: JSON.stringify(preview) } : {}
+        })(),
         prompt: video.prompt.trim(),
         ...(video.hasImage
           ? {
@@ -444,7 +452,10 @@ export function SupplierTest() {
             toast.error(t('Please enter an end frame image URL'))
             return
           }
-          if (video.lastFrameMode === 'base64' && !video.lastFrameBase64.trim()) {
+          if (
+            video.lastFrameMode === 'base64' &&
+            !video.lastFrameBase64.trim()
+          ) {
             toast.error(
               t('Please select an end frame image file or provide Base64 data')
             )
@@ -557,21 +568,19 @@ export function SupplierTest() {
           variant='outline'
           disabled={busy || !hasReport}
           onClick={async () => {
-            try {
-              if (isVideoTab) {
-                await navigator.clipboard.writeText(
-                  buildVideoMarkdownReport(videoReportInput())
-                )
-                toast.success(t('Video report copied to clipboard'))
-              } else {
-                await navigator.clipboard.writeText(
-                  buildMarkdownReport(reportInput())
-                )
-                toast.success(t('Report copied to clipboard'))
-              }
-            } catch {
+            const report = isVideoTab
+              ? buildVideoMarkdownReport(videoReportInput())
+              : buildMarkdownReport(reportInput())
+            const ok = await copyToClipboard(report)
+            if (!ok) {
               toast.error(t('Failed to copy report'))
+              return
             }
+            toast.success(
+              isVideoTab
+                ? t('Video report copied to clipboard')
+                : t('Report copied to clipboard')
+            )
           }}
         >
           <Copy />

@@ -16,19 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { DEFAULT_VIDEO_PROMPT } from './constants'
 import type { VideoForm } from './types'
 
 export function buildVideoRequestPayload(
   model: string,
   video: VideoForm
-): Record<string, unknown> {
-  const content: Array<Record<string, unknown>> = [
-    {
+): Record<string, unknown> | null {
+  const content: Array<Record<string, unknown>> = []
+  const prompt = video.prompt.trim()
+  if (prompt) {
+    content.push({
       type: 'text',
-      text: video.prompt.trim() || DEFAULT_VIDEO_PROMPT,
-    },
-  ]
+      text: prompt,
+    })
+  }
 
   if (video.hasImage) {
     const role = video.role || 'reference_image'
@@ -54,7 +55,10 @@ export function buildVideoRequestPayload(
         image_url: { url: video.lastFrameUrl.trim() },
         role: 'last_frame',
       })
-    } else if (video.lastFrameMode === 'base64' && video.lastFrameBase64.trim()) {
+    } else if (
+      video.lastFrameMode === 'base64' &&
+      video.lastFrameBase64.trim()
+    ) {
       content.push({
         type: 'image_url',
         image_url: { url: video.lastFrameBase64.trim() },
@@ -63,10 +67,8 @@ export function buildVideoRequestPayload(
     }
   }
 
-  const payload: Record<string, unknown> = {
-    model: model.trim() || 'doubao-seedance-1-0-pro',
-    content,
-  }
+  const payload: Record<string, unknown> = {}
+  if (content.length > 0) payload.content = content
 
   if (video.hasResolution && video.resolution) {
     payload.resolution = video.resolution
@@ -104,6 +106,9 @@ export function buildVideoRequestPayload(
     }
   }
 
+  if (Object.keys(payload).length === 0) return null
+  const trimmedModel = model.trim()
+  if (trimmedModel) payload.model = trimmedModel
   return payload
 }
 
@@ -157,16 +162,20 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     for (const item of obj.content) {
       if (!item || typeof item !== 'object') continue
       const itemType = (item as Record<string, unknown>).type
-      if (itemType === 'text' && typeof (item as Record<string, unknown>).text === 'string') {
+      if (
+        itemType === 'text' &&
+        typeof (item as Record<string, unknown>).text === 'string'
+      ) {
         patch.prompt = String((item as Record<string, unknown>).text)
       } else if (itemType === 'image_url') {
         const imgObj = (item as Record<string, unknown>).image_url as
           | Record<string, unknown>
           | undefined
         const urlStr = typeof imgObj?.url === 'string' ? imgObj.url : ''
-        const roleStr = typeof (item as Record<string, unknown>).role === 'string'
-          ? String((item as Record<string, unknown>).role)
-          : ''
+        const roleStr =
+          typeof (item as Record<string, unknown>).role === 'string'
+            ? String((item as Record<string, unknown>).role)
+            : ''
 
         if (roleStr === 'last_frame') {
           patch.hasLastFrame = true

@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   group: cd-aliyun-${{ github.repository }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   GOWORK: 'off'

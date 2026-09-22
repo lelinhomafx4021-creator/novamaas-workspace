@@ -56,22 +56,22 @@ type StressConfig struct {
 }
 
 type VideoConfig struct {
-	Prompt          string  `json:"prompt"`
-	UploadMode      string  `json:"upload_mode,omitempty"`
-	ImageURL        string  `json:"image_url,omitempty"`
-	Base64Data      string  `json:"base64_data,omitempty"`
-	Role            *string `json:"role,omitempty"`
-	LastFrameMode   string  `json:"last_frame_mode,omitempty"`
-	LastFrameURL    string  `json:"last_frame_url,omitempty"`
-	LastFrameBase64 string  `json:"last_frame_base64,omitempty"`
-	Resolution      *string `json:"resolution,omitempty"`
-	Ratio           *string `json:"ratio,omitempty"`
-	Duration        *int    `json:"duration,omitempty"`
-	Watermark       *bool   `json:"watermark,omitempty"`
-	Seed            *int    `json:"seed,omitempty"`
-	GenerateAudio   *bool   `json:"generate_audio,omitempty"`
-	ReturnLastFrame *bool   `json:"return_last_frame,omitempty"`
-	CustomJSON      string  `json:"custom_json,omitempty"`
+	Prompt          string   `json:"prompt"`
+	UploadMode      string   `json:"upload_mode,omitempty"`
+	ImageURL        string   `json:"image_url,omitempty"`
+	Base64Data      string   `json:"base64_data,omitempty"`
+	Role            *string  `json:"role,omitempty"`
+	LastFrameMode   string   `json:"last_frame_mode,omitempty"`
+	LastFrameURL    string   `json:"last_frame_url,omitempty"`
+	LastFrameBase64 string   `json:"last_frame_base64,omitempty"`
+	Resolution      *string  `json:"resolution,omitempty"`
+	Ratio           *string  `json:"ratio,omitempty"`
+	Duration        *int     `json:"duration,omitempty"`
+	Watermark       *bool    `json:"watermark,omitempty"`
+	Seed            *int     `json:"seed,omitempty"`
+	GenerateAudio   *bool    `json:"generate_audio,omitempty"`
+	ReturnLastFrame *bool    `json:"return_last_frame,omitempty"`
+	CustomJSON      string   `json:"custom_json,omitempty"`
 	CustomPath      string   `json:"custom_path,omitempty"`
 	RawPayload      string   `json:"raw_payload,omitempty"`
 	TaskID          string   `json:"task_id,omitempty"`
@@ -646,68 +646,9 @@ func runStrictKimiKVV(
 	endpoint string,
 	apiKey string,
 	baseChat chatRequest,
-	vendor string,
+	_ string,
 ) (string, string) {
-	// 阶段 1：正向复合 Schema 严格校验
-	flightReq := baseChat
-	flightReq.Messages = kimiKVVMessages(kimiKVVFlightPrompt)
-	flightReq.Tools = kimiKVVTools()
-	if vendor == VendorKimi {
-		flightReq.ReasoningEffort = "low"
-	}
-	flightRes := streamChat(ctx, httpClient, endpoint, apiKey, flightReq, 60*time.Second, nil)
-	if (flightRes.StatusCode != http.StatusOK || flightRes.ErrorMessage != "") && flightReq.ReasoningEffort != "" {
-		fallbackReq := flightReq
-		fallbackReq.ReasoningEffort = ""
-		flightRes = streamChat(ctx, httpClient, endpoint, apiKey, fallbackReq, 60*time.Second, nil)
-	}
-	if status, msg := validateKimiKVVFlightResult(flightRes); status != "pass" {
-		return status, msg
-	}
-
-	// 阶段 2：负向对抗拒调校验 (防工具滥用与强调工具幻觉)
-	negReq := baseChat
-	negReq.Messages = kimiKVVMessages(kimiKVVNegativePrompt)
-	negReq.Tools = kimiKVVTools()
-	if flightRes.Reasoning != "" && vendor == VendorKimi {
-		negReq.ReasoningEffort = "low"
-	}
-	negRes := streamChat(ctx, httpClient, endpoint, apiKey, negReq, 60*time.Second, nil)
-	if (negRes.StatusCode != http.StatusOK || negRes.ErrorMessage != "") && negReq.ReasoningEffort != "" {
-		fallbackReq := negReq
-		fallbackReq.ReasoningEffort = ""
-		negRes = streamChat(ctx, httpClient, endpoint, apiKey, fallbackReq, 60*time.Second, nil)
-	}
-	if status, msg := validateKimiKVVNegativeResult(negRes); status != "pass" {
-		return status, msg
-	}
-
-	// 阶段 3：多工具歧义消解与精准路由校验
-	hotelReq := baseChat
-	hotelReq.Messages = kimiKVVMessages(kimiKVVHotelPrompt)
-	hotelReq.Tools = kimiKVVTools()
-	if flightRes.Reasoning != "" && vendor == VendorKimi {
-		hotelReq.ReasoningEffort = "low"
-	}
-	hotelRes := streamChat(ctx, httpClient, endpoint, apiKey, hotelReq, 60*time.Second, nil)
-	if (hotelRes.StatusCode != http.StatusOK || hotelRes.ErrorMessage != "") && hotelReq.ReasoningEffort != "" {
-		fallbackReq := hotelReq
-		fallbackReq.ReasoningEffort = ""
-		hotelRes = streamChat(ctx, httpClient, endpoint, apiKey, fallbackReq, 60*time.Second, nil)
-	}
-	if status, msg := validateKimiKVVHotelResult(hotelRes); status != "pass" {
-		return status, msg
-	}
-
-	fullMsg := "KVV 严苛认证全部通过 (4/4)：① ~3000 Token 企业上下文正向复合 Schema 100% 合规 (5必填项/整型/枚举/正则)；② 5工具长上下文负向拒调工具 0 幻觉 (finish_reason=stop)；③ 5大候选工具多工具歧义路由精准命中 book_hotel；④ 原厂协议合规"
-	if flightRes.Reasoning != "" || flightRes.ReasoningTokens > 0 {
-		if flightRes.ReasoningTokens > 0 {
-			fullMsg += fmt.Sprintf("，捕获 Moonshot 原生流式思维链 (%d tokens)", flightRes.ReasoningTokens)
-		} else {
-			fullMsg += "，包含 Moonshot 流式思维链"
-		}
-	}
-	return "pass", fullMsg
+	return runOfficialKimiKVV(ctx, httpClient, endpoint, apiKey, baseChat.Model)
 }
 
 func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req RunRequest, emit Emitter) {
@@ -1280,11 +1221,12 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			}
 			payloadBytes = b
 		} else {
-			contentSlice := []map[string]any{
-				{
+			contentSlice := make([]map[string]any, 0, 3)
+			if prompt := strings.TrimSpace(req.Video.Prompt); prompt != "" {
+				contentSlice = append(contentSlice, map[string]any{
 					"type": "text",
-					"text": req.Video.Prompt,
-				},
+					"text": prompt,
+				})
 			}
 
 			uploadMode := strings.ToLower(strings.TrimSpace(req.Video.UploadMode))
@@ -1390,8 +1332,10 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			}
 
 			payloadMap := map[string]any{
-				"model":   req.Model,
-				"content": contentSlice,
+				"model": req.Model,
+			}
+			if len(contentSlice) > 0 {
+				payloadMap["content"] = contentSlice
 			}
 			if req.Video.Resolution != nil && strings.TrimSpace(*req.Video.Resolution) != "" {
 				payloadMap["resolution"] = strings.TrimSpace(*req.Video.Resolution)
@@ -1416,10 +1360,20 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			}
 			if strings.TrimSpace(req.Video.CustomJSON) != "" {
 				var extra map[string]any
-				if err := common.Unmarshal([]byte(req.Video.CustomJSON), &extra); err == nil {
-					for k, v := range extra {
-						payloadMap[k] = v
-					}
+				if err := common.Unmarshal([]byte(req.Video.CustomJSON), &extra); err != nil {
+					emit(Event{
+						Type:    "check",
+						Module:  ModuleVideo,
+						CheckID: CheckVideoSubmit,
+						Status:  "fail",
+						Title:   "任务提交",
+						Message: "自定义参数 JSON 解析失败: " + err.Error(),
+						Video:   metrics,
+					})
+					return
+				}
+				for k, v := range extra {
+					payloadMap[k] = v
 				}
 			}
 

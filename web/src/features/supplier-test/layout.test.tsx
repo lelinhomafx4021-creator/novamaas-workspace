@@ -107,7 +107,7 @@ test('Kimi KVV check only displays when Kimi vendor is selected', async () => {
   const user = userEvent.setup()
 
   // Default vendor is generic, Kimi KVV should NOT be displayed
-  expect(screen.queryByText('Kimi KVV')).not.toBeInTheDocument()
+  expect(screen.queryByText('KVV preflight')).not.toBeInTheDocument()
 
   // Click vendor selector and choose Kimi
   const vendorTrigger = screen.getByText('Generic OpenAI-compatible')
@@ -115,11 +115,11 @@ test('Kimi KVV check only displays when Kimi vendor is selected', async () => {
   await user.click(screen.getByRole('option', { name: 'Kimi' }))
 
   // Now Kimi KVV should be visible in the table
-  expect(screen.getByText('Kimi KVV')).toBeInTheDocument()
+  expect(screen.getAllByText('KVV preflight').length).toBeGreaterThan(0)
 
   // Switch back to DeepSeek, Kimi KVV should disappear
   const kimiTrigger = screen.getByText('Kimi', { selector: '[data-slot="select-value"]' })
   await user.click(kimiTrigger)
   await user.click(screen.getByRole('option', { name: 'DeepSeek' }))
-  expect(screen.queryByText('Kimi KVV')).not.toBeInTheDocument()
+  expect(screen.queryByText('KVV preflight')).not.toBeInTheDocument()
 })

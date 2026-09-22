@@ -60,7 +60,7 @@ var basicCheckTitles = map[string]string{
 	CheckJSONMode:     "JSON mode",
 	CheckToolCall:     "Tool call",
 	CheckThinking:     "Thinking mode",
-	CheckKimiKVV:      "Kimi KVV",
+	CheckKimiKVV:      "KVV preflight",
 	CheckAuthError:    "Auth error",
 	CheckBadRequest:   "Bad request",
 }

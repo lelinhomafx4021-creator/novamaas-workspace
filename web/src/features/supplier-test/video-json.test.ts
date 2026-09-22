@@ -20,10 +20,7 @@ import { describe, expect, test } from 'vitest'
 
 import { DEFAULT_VIDEO_FORM } from './constants'
 import type { VideoForm } from './types'
-import {
-  buildVideoRequestPayload,
-  parseVideoPayloadToForm,
-} from './video-json'
+import { buildVideoRequestPayload, parseVideoPayloadToForm } from './video-json'
 
 describe('video-json helpers', () => {
   test('buildVideoRequestPayload builds standard Volcano Ark payload with only enabled fields', () => {
@@ -45,6 +42,8 @@ describe('video-json helpers', () => {
     }
 
     const payload = buildVideoRequestPayload('doubao-seedance-1-0-pro', video)
+    expect(payload).not.toBeNull()
+    if (!payload) return
     expect(payload.model).toBe('doubao-seedance-1-0-pro')
     expect(payload.resolution).toBe('1080p')
     expect(payload.ratio).toBe('16:9')
@@ -73,15 +72,21 @@ describe('video-json helpers', () => {
     }
 
     const payload = buildVideoRequestPayload('doubao-seedance-pro', video)
+    expect(payload).not.toBeNull()
+    if (!payload) return
     const content = payload.content as Array<Record<string, unknown>>
     expect(content).toHaveLength(3)
     expect(content[0]?.type).toBe('text')
     expect(content[1]?.type).toBe('image_url')
     expect(content[1]?.role).toBe('first_frame')
-    expect((content[1]?.image_url as Record<string, unknown>)?.url).toBe('https://example.com/first.png')
+    expect((content[1]?.image_url as Record<string, unknown>)?.url).toBe(
+      'https://example.com/first.png'
+    )
     expect(content[2]?.type).toBe('image_url')
     expect(content[2]?.role).toBe('last_frame')
-    expect((content[2]?.image_url as Record<string, unknown>)?.url).toBe('https://example.com/last.png')
+    expect((content[2]?.image_url as Record<string, unknown>)?.url).toBe(
+      'https://example.com/last.png'
+    )
   })
 
   test('parseVideoPayloadToForm extracts prompt, images, parameters and custom extra JSON', () => {
@@ -131,6 +136,13 @@ describe('video-json helpers', () => {
     expect(res.videoPatch?.returnLastFrame).toBe(true)
     expect(res.videoPatch?.hasCustomJson).toBe(true)
     expect(res.videoPatch?.customJson).toContain('extra_experimental_param')
+  })
+
+  test('buildVideoRequestPayload does not invent a default request body', () => {
+    expect(buildVideoRequestPayload('', DEFAULT_VIDEO_FORM)).toBeNull()
+    expect(
+      buildVideoRequestPayload('doubao-seedance-1-0-pro', DEFAULT_VIDEO_FORM)
+    ).toBeNull()
   })
 
   test('parseVideoPayloadToForm handles invalid JSON gracefully', () => {

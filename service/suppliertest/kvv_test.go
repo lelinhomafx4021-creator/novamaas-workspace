@@ -3,260 +3,240 @@ package suppliertest
 import (
 	"context"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
-func TestValidateKimiKVVFlightResult(t *testing.T) {
+var kvvTestName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,255}$`)
+
+func TestKimiKVVOfficialPreflightPasses(t *testing.T) {
 	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(kvvOfficialFixture))
+	defer upstream.Close()
 
-	t.Run("pass on valid schema and tool trigger", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Beijing","destination":"Shanghai","date":"2026-10-01","passengers":2,"seat_class":"business"}`,
-			FinishReason: "tool_calls",
-			Reasoning:    "Need to search flight",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "pass", status)
-		assert.Contains(t, msg, "阶段1 正向复合 Schema 校验通过")
-	})
-
-	t.Run("fail when finish_reason is not tool_calls", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Beijing","destination":"Shanghai","date":"2026-10-01","passengers":2,"seat_class":"business"}`,
-			FinishReason: "stop",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "finish_reason 不合规")
-	})
-
-	t.Run("fail when date format is invalid", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Beijing","destination":"Shanghai","date":"2026/10/01","passengers":2,"seat_class":"business"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "date 格式不合规")
-	})
-
-	t.Run("fail when no tool call was triggered", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode: http.StatusOK,
-			Content:    "Here are some flights from Beijing to Shanghai.",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "未触发工具调用")
-	})
-
-	t.Run("fail when wrong tool triggered", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "get_weather",
-			ToolArgs:     `{"city":"Beijing"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "非预期工具")
-	})
-
-	t.Run("fail on invalid JSON arguments", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{invalid json`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "无法解析为合法 JSON")
-	})
-
-	t.Run("fail on missing required fields", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Beijing","destination":"Shanghai"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "缺少必填字段")
-	})
-
-	t.Run("fail on type violation (passengers is string instead of integer)", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Beijing","destination":"Shanghai","date":"2026-10-01","passengers":"2","seat_class":"business"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "类型错误")
-	})
-
-	t.Run("fail on invalid enum value for seat_class", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Beijing","destination":"Shanghai","date":"2026-10-01","passengers":2,"seat_class":"vip"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVFlightResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "seat_class 枚举值不合规")
-	})
+	status, message := runKVVAgainst(t, upstream)
+	assert.Equal(t, "pass", status)
+	assert.Contains(t, message, "KVV 预检通过")
+	assert.Contains(t, message, "不是官方 Kimi KVV 认证")
+	assert.Contains(t, message, "未发送关闭思考")
 }
 
-func TestValidateKimiKVVNegativeResult(t *testing.T) {
+func TestKimiKVVDoesNotDisableThinking(t *testing.T) {
 	t.Parallel()
-
-	t.Run("pass on normal text without tool call", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			Content:      "Paris",
-			FinishReason: "stop",
-		}
-		status, msg := validateKimiKVVNegativeResult(res)
-		assert.Equal(t, "pass", status)
-		assert.Contains(t, msg, "负向对抗拒调通过")
-	})
-
-	t.Run("fail when tool call was hallucinated", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Paris"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVNegativeResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "错误触发了工具调用")
-	})
-
-	t.Run("fail when content is empty", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			FinishReason: "stop",
-		}
-		status, msg := validateKimiKVVNegativeResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "未输出任何文本回复")
-	})
-}
-
-func TestValidateKimiKVVHotelResult(t *testing.T) {
-	t.Parallel()
-
-	t.Run("pass on valid hotel booking", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "book_hotel",
-			ToolArgs:     `{"city":"Shanghai","nights":3,"room_type":"deluxe"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVHotelResult(res)
-		assert.Equal(t, "pass", status)
-		assert.Contains(t, msg, "多工具歧义路由校验通过")
-	})
-
-	t.Run("fail when flight tool was called instead of hotel", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "query_flight",
-			ToolArgs:     `{"origin":"Shanghai"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVHotelResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "路由歧义错误")
-	})
-
-	t.Run("fail when nights is not integer", func(t *testing.T) {
-		res := StreamResult{
-			StatusCode:   http.StatusOK,
-			ToolName:     "book_hotel",
-			ToolArgs:     `{"city":"Shanghai","nights":"3","room_type":"deluxe"}`,
-			FinishReason: "tool_calls",
-		}
-		status, msg := validateKimiKVVHotelResult(res)
-		assert.Equal(t, "fail", status)
-		assert.Contains(t, msg, "nights 类型错误")
-	})
-}
-
-func TestKimiKVVCheckAgainstFakeUpstream(t *testing.T) {
-	t.Parallel()
-
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		str := string(body)
-
-		w.Header().Set("Content-Type", "text/event-stream")
-		if strings.Contains(str, "capital of France") {
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-2","choices":[{"index":0,"delta":{"content":"Paris"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`+"\n\n")
-			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		body, _ := io.ReadAll(r.Body)
+		thinking := gjson.GetBytes(body, "thinking")
+		if !thinking.Exists() || thinking.Get("type").String() != "enabled" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"message":"该模型始终思考，不支持关闭思考","type":"invalid_request_error","param":"","code":"3000"}}`)
 			return
 		}
-		if strings.Contains(str, "book_hotel") && strings.Contains(str, "deluxe hotel") {
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-3","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_2","type":"function","function":{"name":"book_hotel","arguments":"{\"city\":\"Shanghai\",\"nights\":3,\"room_type\":\"deluxe\"}"}}]}}],"usage":{"prompt_tokens":10,"completion_tokens":15}}`+"\n\n")
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-3","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
-			_, _ = io.WriteString(w, "data: [DONE]\n\n")
-			return
-		}
-		if strings.Contains(str, "query_flight") && strings.Contains(str, "Beijing") {
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-1","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"query_flight","arguments":"{\"origin\":\"Beijing\",\"destination\":\"Shanghai\",\"date\":\"2026-10-01\",\"passengers\":2,\"seat_class\":\"business\"}"}}],"reasoning_content":"searching flight"}}],"usage":{"prompt_tokens":10,"completion_tokens":20}}`+"\n\n")
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-kvv-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
-			_, _ = io.WriteString(w, "data: [DONE]\n\n")
-			return
-		}
-
-		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-normal","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":5}}`+"\n\n")
-		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		kvvOfficialFixtureBody(w, body)
 	}))
 	defer upstream.Close()
 
-	var events []Event
+	status, message := runKVVAgainst(t, upstream)
+	assert.Equal(t, "pass", status, message)
+}
+
+func TestKimiKVVRejectsLooseSampling(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"OK"}}]}`)
+	}))
+	defer upstream.Close()
+
+	status, message := runKVVAgainst(t, upstream)
+	assert.Equal(t, "fail", status)
+	assert.Contains(t, message, "params reject temperature=1.1")
+	assert.Contains(t, message, "期望 HTTP 400")
+}
+
+func runKVVAgainst(t *testing.T, upstream *httptest.Server) (string, string) {
+	t.Helper()
+	var status, message string
 	err := Run(context.Background(), upstream.Client(), RunRequest{
 		BaseURL: upstream.URL,
 		APIKey:  "test-key",
-		Model:   "kimi-k2-chat",
+		Model:   "kimi-k3",
 		Vendor:  VendorKimi,
 		Modules: []string{ModuleBasic},
-		Basic: BasicConfig{
-			Checks: []string{CheckKimiKVV},
-		},
+		Basic:   BasicConfig{Checks: []string{CheckKimiKVV}},
 	}, func(e Event) {
-		events = append(events, e)
+		if e.CheckID == CheckKimiKVV && e.Status != "running" {
+			status = e.Status
+			message = e.Message
+		}
 	})
 	require.NoError(t, err)
+	require.NotEmpty(t, status)
+	return status, message
+}
 
-	var kvvCheck *Event
-	for i := range events {
-		if events[i].CheckID == CheckKimiKVV {
-			kvvCheck = &events[i]
+func kvvOfficialFixture(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	kvvOfficialFixtureBody(w, body)
+}
+
+func kvvOfficialFixtureBody(w http.ResponseWriter, body []byte) {
+	if code, ok := kvvFixtureReject(body); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		_, _ = io.WriteString(w, `{"error":{"message":"rejected"}}`)
+		return
+	}
+	if gjson.GetBytes(body, "stream").Bool() && strings.Contains(string(body), "鸡兔同笼") {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"reasoning_content":"设鸡x兔y"}}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"鸡23只，兔12只"}}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.WriteString(w, kvvFixtureOK(body))
+}
+
+func kvvFixtureReject(body []byte) (int, bool) {
+	if gjson.GetBytes(body, "temperature").Exists() {
+		value := gjson.GetBytes(body, "temperature").Float()
+		if value < 0 || value > 1 {
+			return http.StatusBadRequest, true
 		}
 	}
-	require.NotNil(t, kvvCheck)
-	assert.Equal(t, "pass", kvvCheck.Status)
-	assert.Contains(t, kvvCheck.Message, "KVV 严苛认证全部通过")
-	assert.Contains(t, kvvCheck.Message, "正向复合 Schema 100% 合规")
-	assert.Contains(t, kvvCheck.Message, "负向拒调工具 0 幻觉")
-	assert.Contains(t, kvvCheck.Message, "多工具歧义路由精准命中 book_hotel")
+	if gjson.GetBytes(body, "top_p").Exists() && math.Abs(gjson.GetBytes(body, "top_p").Float()-0.95) > 0.001 {
+		return http.StatusBadRequest, true
+	}
+	if gjson.GetBytes(body, "presence_penalty").Exists() && gjson.GetBytes(body, "presence_penalty").Float() != 0 {
+		return http.StatusBadRequest, true
+	}
+	if gjson.GetBytes(body, "frequency_penalty").Exists() && gjson.GetBytes(body, "frequency_penalty").Float() != 0 {
+		return http.StatusBadRequest, true
+	}
+	if gjson.GetBytes(body, "n").Exists() && gjson.GetBytes(body, "n").Float() != 1 {
+		return http.StatusBadRequest, true
+	}
+	format := gjson.GetBytes(body, "response_format")
+	if format.Exists() {
+		switch format.Get("type").String() {
+		case "bogus":
+			return http.StatusBadRequest, true
+		case "json_schema":
+			if !format.Get("json_schema.name").Exists() || !format.Get("json_schema.schema").Exists() {
+				return http.StatusBadRequest, true
+			}
+		}
+	}
+	if rejected := kvvFixtureTools(body); rejected {
+		return http.StatusBadRequest, true
+	}
+	choice := gjson.GetBytes(body, "tool_choice").String()
+	if choice == "bogus" || (choice == "required" && !kvvFixtureHasTools(body)) {
+		return http.StatusBadRequest, true
+	}
+	return 0, false
+}
+
+func kvvFixtureTools(body []byte) bool {
+	seen := map[string]bool{}
+	if tools := gjson.GetBytes(body, "tools"); tools.IsArray() {
+		for _, tool := range tools.Array() {
+			name := tool.Get("function.name").String()
+			if name != "" {
+				seen[name] = true
+			}
+		}
+	}
+	for _, msg := range gjson.GetBytes(body, "messages").Array() {
+		if msg.Get("role").String() == "tool" && !msg.Get("tool_call_id").Exists() {
+			return true
+		}
+		tools := msg.Get("tools")
+		if !tools.Exists() {
+			continue
+		}
+		if msg.Get("role").String() != "system" || strings.TrimSpace(msg.Get("content").String()) != "" || !tools.IsArray() {
+			return true
+		}
+		for _, tool := range tools.Array() {
+			if tool.Type == gjson.Null || !tool.IsObject() || !tool.Get("type").Exists() || !tool.Get("function").Exists() {
+				return true
+			}
+			if tool.Get("type").String() != "function" || !tool.Get("function.name").Exists() {
+				return true
+			}
+			name := tool.Get("function.name").String()
+			if !kvvTestName.MatchString(name) || seen[name] {
+				return true
+			}
+			seen[name] = true
+		}
+	}
+	return false
+}
+
+func kvvFixtureHasTools(body []byte) bool {
+	if tools := gjson.GetBytes(body, "tools"); tools.IsArray() && len(tools.Array()) > 0 {
+		return true
+	}
+	for _, msg := range gjson.GetBytes(body, "messages").Array() {
+		if msg.Get("role").String() == "system" && msg.Get("tools").IsArray() && len(msg.Get("tools").Array()) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func kvvFixtureOK(body []byte) string {
+	if strings.Contains(string(body), "鸡兔同笼") {
+		return `{"choices":[{"finish_reason":"stop","message":{"content":"鸡23只，兔12只","reasoning_content":"设鸡x兔y"}}]}`
+	}
+	format := gjson.GetBytes(body, "response_format.type").String()
+	switch format {
+	case "text":
+		return `{"choices":[{"finish_reason":"stop","message":{"content":"北京是中国的首都。"}}]}`
+	case "json_object":
+		return `{"choices":[{"finish_reason":"stop","message":{"content":"{\"city\":\"Beijing\"}"}}]}`
+	case "json_schema":
+		if gjson.GetBytes(body, "response_format.json_schema.strict").Bool() {
+			return `{"choices":[{"finish_reason":"stop","message":{"content":"{\"city\":\"Beijing\",\"temperature\":21}"}}]}`
+		}
+		return `{"choices":[{"finish_reason":"stop","message":{"content":"{\"city\":\"Beijing\"}"}}]}`
+	}
+	choice := gjson.GetBytes(body, "tool_choice").String()
+	text := string(body)
+	if choice == "none" || strings.Contains(text, "不应使用任何工具") || !kvvFixtureHasTools(body) {
+		return `{"choices":[{"finish_reason":"stop","message":{"content":"OK"}}]}`
+	}
+	name := "get_weather"
+	var names []string
+	collect := func(tools gjson.Result) {
+		for _, tool := range tools.Array() {
+			if got := tool.Get("function.name").String(); got != "" {
+				names = append(names, got)
+			}
+		}
+	}
+	collect(gjson.GetBytes(body, "tools"))
+	for _, msg := range gjson.GetBytes(body, "messages").Array() {
+		collect(msg.Get("tools"))
+	}
+	for _, got := range names {
+		if got == "get_weather" {
+			name = got
+			break
+		}
+		name = got
+	}
+	return `{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"` + name + `","arguments":"{}"}}]}}]}`
 }

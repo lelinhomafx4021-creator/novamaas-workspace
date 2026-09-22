@@ -29,6 +29,7 @@ import {
   Zap,
 } from 'lucide-react'
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -109,7 +110,20 @@ export function VideoPanel(props: {
     props.model || '',
     props.video
   )
-  const previewRequestJson = JSON.stringify(previewPayload, null, 2)
+  const previewRequestJson = previewPayload
+    ? JSON.stringify(previewPayload, null, 2)
+    : ''
+  const onVideoChange = props.onVideoChange
+  const handleEffectiveJsonChange = useCallback(
+    (next: string) => {
+      onVideoChange((current) =>
+        (current.rawPayload ?? '') === next
+          ? current
+          : { ...current, rawPayload: next }
+      )
+    },
+    [onVideoChange]
+  )
 
   // Effective latest Task ID
   const effectiveTaskId =
@@ -118,7 +132,6 @@ export function VideoPanel(props: {
   // Auto-sync Task ID from video metrics when new task_id is returned
   const lastMetricsTaskIdRef = useRef<string>('')
   const videoMetricsTaskId = props.videoMetrics?.task_id
-  const onVideoChange = props.onVideoChange
   useEffect(() => {
     const newTaskId = videoMetricsTaskId?.trim()
     if (newTaskId && newTaskId !== lastMetricsTaskIdRef.current) {
@@ -1105,6 +1118,7 @@ export function VideoPanel(props: {
             onActiveTabChange={setActiveJsonTab}
             onApplyToForm={handleApplyJsonToForm}
             onSendRawJson={props.onSendRawJson}
+            onEffectiveJsonChange={handleEffectiveJsonChange}
           />
         </div>
       </div>

@@ -105,6 +105,7 @@ export function RawJsonDialog(props: {
   onActiveTabChange?: (tab: 'request' | 'submit' | 'poll') => void
   onSendRawJson?: (rawJson: string) => void
   onApplyToForm?: (rawJson: string) => void
+  onEffectiveJsonChange?: (json: string) => void
 }) {
   const { t } = useTranslation()
   const [uncontrolledTab, setUncontrolledTab] = useState<
@@ -118,18 +119,19 @@ export function RawJsonDialog(props: {
   const [editMode, setEditMode] = useState(false)
   const [customText, setCustomText] = useState('')
 
-  const executedRequestJSON = formatJSON(props.videoMetrics?.raw_request_json)
-  const previewJSON = props.previewRequestJson || ''
-  const displayRequestJSON = executedRequestJSON || previewJSON
-  const isPreview = !executedRequestJSON
+  const displayRequestJSON = props.previewRequestJson || ''
 
   const submitJSON = formatJSON(props.videoMetrics?.raw_submit_response_json)
   const pollJSON = formatJSON(
     props.pollJsonOverride || props.videoMetrics?.raw_poll_response_json
   )
+  const onEffectiveJsonChange = props.onEffectiveJsonChange
   useEffect(() => {
     if (!editMode) setCustomText(displayRequestJSON)
   }, [editMode, displayRequestJSON])
+  useEffect(() => {
+    onEffectiveJsonChange?.(editMode ? customText.trim() : '')
+  }, [editMode, customText, onEffectiveJsonChange])
 
   const handleFormat = () => {
     try {
@@ -213,9 +215,7 @@ export function RawJsonDialog(props: {
           <div className='flex flex-wrap items-center justify-between gap-2 border-b pb-2'>
             <div className='flex items-center gap-2'>
               <span className='text-muted-foreground text-xs'>
-                {isPreview
-                  ? t('Live preview based on current form settings')
-                  : t('Executed upstream request payload')}
+                {t('Live preview based on current form settings')}
               </span>
             </div>
             <div className='flex items-center gap-1.5'>

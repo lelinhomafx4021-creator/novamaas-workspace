@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Check,
-  Code2,
   Copy,
   Edit3,
   Eye,
@@ -32,16 +31,9 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 
 import type { VideoMetrics } from '../types'
 import { parseVideoPayloadToForm } from '../video-json'
@@ -62,14 +54,14 @@ function JsonCodeViewer({ code, label }: { code: string; label: string }) {
 
   const handleCopy = async () => {
     if (!code) return
-    try {
-      await navigator.clipboard.writeText(code)
-      setCopied(true)
-      toast.success(t('JSON copied to clipboard'))
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
+    const ok = await copyToClipboard(code)
+    if (!ok) {
       toast.error(t('Failed to copy'))
+      return
     }
+    setCopied(true)
+    toast.success(t('JSON copied to clipboard'))
+    setTimeout(() => setCopied(false), 2000)
   }
 
   if (!code) {
@@ -89,11 +81,15 @@ function JsonCodeViewer({ code, label }: { code: string; label: string }) {
           className='h-7 gap-1 px-2 text-xs'
           onClick={handleCopy}
         >
-          {copied ? <Check className='size-3.5' /> : <Copy className='size-3.5' />}
+          {copied ? (
+            <Check className='size-3.5' />
+          ) : (
+            <Copy className='size-3.5' />
+          )}
           {copied ? t('Copied') : t('Copy JSON')}
         </Button>
       </div>
-      <pre className='bg-muted/60 max-h-96 overflow-auto rounded-lg border p-3.5 pt-8 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap'>
+      <pre className='bg-muted/60 max-h-[min(70vh,640px)] overflow-auto rounded-lg border p-3.5 pt-8 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap select-text'>
         {code}
       </pre>
     </div>
@@ -103,14 +99,22 @@ function JsonCodeViewer({ code, label }: { code: string; label: string }) {
 export function RawJsonDialog(props: {
   videoMetrics?: VideoMetrics | null
   previewRequestJson?: string
+  pollJsonOverride?: string
   busy?: boolean
-  disabled?: boolean
+  activeTab?: 'request' | 'submit' | 'poll'
+  onActiveTabChange?: (tab: 'request' | 'submit' | 'poll') => void
   onSendRawJson?: (rawJson: string) => void
   onApplyToForm?: (rawJson: string) => void
 }) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'request' | 'submit' | 'poll'>('request')
+  const [uncontrolledTab, setUncontrolledTab] = useState<
+    'request' | 'submit' | 'poll'
+  >('request')
+  const activeTab = props.activeTab ?? uncontrolledTab
+  const setActiveTab = (tab: 'request' | 'submit' | 'poll') => {
+    setUncontrolledTab(tab)
+    props.onActiveTabChange?.(tab)
+  }
   const [editMode, setEditMode] = useState(false)
   const [customText, setCustomText] = useState('')
 
@@ -120,13 +124,12 @@ export function RawJsonDialog(props: {
   const isPreview = !executedRequestJSON
 
   const submitJSON = formatJSON(props.videoMetrics?.raw_submit_response_json)
-  const pollJSON = formatJSON(props.videoMetrics?.raw_poll_response_json)
-
+  const pollJSON = formatJSON(
+    props.pollJsonOverride || props.videoMetrics?.raw_poll_response_json
+  )
   useEffect(() => {
-    if (open && !editMode) {
-      setCustomText(displayRequestJSON)
-    }
-  }, [open, editMode, displayRequestJSON])
+    if (!editMode) setCustomText(displayRequestJSON)
+  }, [editMode, displayRequestJSON])
 
   const handleFormat = () => {
     try {
@@ -148,11 +151,13 @@ export function RawJsonDialog(props: {
     if (!props.onApplyToForm) return
     const res = parseVideoPayloadToForm(customText)
     if (!res.success) {
-      toast.error(t('Failed to parse JSON: {{error}}', { error: res.error || '' }))
+      toast.error(
+        t('Failed to parse JSON: {{error}}', { error: res.error || '' })
+      )
       return
     }
     props.onApplyToForm(customText)
-    setOpen(false)
+    setEditMode(false)
     toast.success(t('Successfully parsed and applied JSON to form'))
   }
 
@@ -170,169 +175,149 @@ export function RawJsonDialog(props: {
       return
     }
     props.onSendRawJson(trimmed)
-    setOpen(false)
+    setEditMode(false)
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <Button
-            variant='outline'
-            size='sm'
-            disabled={props.disabled || props.busy}
-            className='gap-1.5'
-          >
-            <Code2 className='size-4' />
-            {t('View Raw Request & Response JSON')}
-            {props.videoMetrics && (
-              <Badge variant='secondary' className='h-4 px-1 text-[10px]'>
-                {t('Results Ready')}
-              </Badge>
-            )}
-          </Button>
+    <div className='bg-card rounded-xl border p-3 shadow-sm'>
+      <div className='mb-2 flex items-center justify-between gap-2'>
+        <div className='text-xs font-semibold'>
+          {t('Raw Request & Response JSON')}
+        </div>
+        {props.videoMetrics && (
+          <Badge variant='secondary' className='h-4 px-1 text-[10px]'>
+            {t('Results Ready')}
+          </Badge>
+        )}
+      </div>
+      <Tabs
+        value={activeTab}
+        onValueChange={(val) =>
+          setActiveTab(val as 'request' | 'submit' | 'poll')
         }
-      />
-      <DialogContent className='max-w-2xl sm:max-w-3xl'>
-        <DialogHeader>
-          <DialogTitle>{t('Raw Request & Response JSON')}</DialogTitle>
-          <DialogDescription>
-            {t(
-              'Inspect, edit, or paste Volcano Ark video generation request and response payloads.'
-            )}
-          </DialogDescription>
-        </DialogHeader>
+        className='w-full'
+      >
+        <TabsList className='grid w-full grid-cols-3'>
+          <TabsTrigger value='request' className='text-xs'>
+            {t('1. Submit Request Body')}
+          </TabsTrigger>
+          <TabsTrigger value='submit' className='text-xs'>
+            {t('2. Submit Response Body')}
+          </TabsTrigger>
+          <TabsTrigger value='poll' className='text-xs'>
+            {t('3. Final Poll Response')}
+          </TabsTrigger>
+        </TabsList>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(val) => setActiveTab(val as 'request' | 'submit' | 'poll')}
-          className='w-full'
-        >
-          <TabsList className='grid w-full grid-cols-3'>
-            <TabsTrigger value='request' className='text-xs'>
-              {t('1. Submit Request Body')}
-            </TabsTrigger>
-            <TabsTrigger value='submit' className='text-xs'>
-              {t('2. Submit Response Body')}
-            </TabsTrigger>
-            <TabsTrigger value='poll' className='text-xs'>
-              {t('3. Final Poll Response')}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value='request' className='mt-3 space-y-3'>
-            <div className='flex flex-wrap items-center justify-between gap-2 border-b pb-2'>
-              <div className='flex items-center gap-2'>
-                <span className='text-xs text-muted-foreground'>
-                  {isPreview
-                    ? t('Live preview based on current form settings')
-                    : t('Executed upstream request payload')}
-                </span>
-              </div>
-              <div className='flex items-center gap-1.5'>
-                <Button
-                  variant={editMode ? 'ghost' : 'secondary'}
-                  size='xs'
-                  className='h-7 gap-1 text-xs'
-                  onClick={() => setEditMode(false)}
-                >
-                  <Eye className='size-3.5' />
-                  {t('Preview')}
-                </Button>
-                <Button
-                  variant={editMode ? 'secondary' : 'ghost'}
-                  size='xs'
-                  className='h-7 gap-1 text-xs'
-                  onClick={() => {
-                    setEditMode(true)
-                    if (!customText.trim()) setCustomText(displayRequestJSON)
-                  }}
-                >
-                  <Edit3 className='size-3.5' />
-                  {t('Paste & Edit JSON')}
-                </Button>
-              </div>
+        <TabsContent value='request' className='mt-3 space-y-3'>
+          <div className='flex flex-wrap items-center justify-between gap-2 border-b pb-2'>
+            <div className='flex items-center gap-2'>
+              <span className='text-muted-foreground text-xs'>
+                {isPreview
+                  ? t('Live preview based on current form settings')
+                  : t('Executed upstream request payload')}
+              </span>
             </div>
+            <div className='flex items-center gap-1.5'>
+              <Button
+                variant={editMode ? 'ghost' : 'secondary'}
+                size='xs'
+                className='h-7 gap-1 text-xs'
+                onClick={() => setEditMode(false)}
+              >
+                <Eye className='size-3.5' />
+                {t('Preview')}
+              </Button>
+              <Button
+                variant={editMode ? 'secondary' : 'ghost'}
+                size='xs'
+                className='h-7 gap-1 text-xs'
+                onClick={() => {
+                  setEditMode(true)
+                  if (!customText.trim()) setCustomText(displayRequestJSON)
+                }}
+              >
+                <Edit3 className='size-3.5' />
+                {t('Paste & Edit JSON')}
+              </Button>
+            </div>
+          </div>
 
-            {!editMode ? (
-              <JsonCodeViewer
-                code={displayRequestJSON}
-                label={t('Submit Request Body')}
+          {!editMode ? (
+            <JsonCodeViewer
+              code={displayRequestJSON}
+              label={t('Submit Request Body')}
+            />
+          ) : (
+            <div className='space-y-3'>
+              <Textarea
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder='{\n  "model": "doubao-seedance-1-0-pro",\n  "content": [\n    {"type": "text", "text": "..."}\n  ]\n}'
+                rows={13}
+                className='font-mono text-xs leading-relaxed break-all whitespace-pre'
               />
-            ) : (
-              <div className='space-y-3'>
-                <Textarea
-                  value={customText}
-                  onChange={(e) => setCustomText(e.target.value)}
-                  placeholder='{\n  "model": "doubao-seedance-1-0-pro",\n  "content": [\n    {"type": "text", "text": "..."}\n  ]\n}'
-                  rows={13}
-                  className='font-mono text-xs leading-relaxed break-all whitespace-pre'
-                />
-                <div className='flex flex-wrap items-center justify-between gap-2 pt-1'>
-                  <div className='flex items-center gap-2'>
+              <div className='flex flex-wrap items-center justify-between gap-2 pt-1'>
+                <div className='flex items-center gap-2'>
+                  <Button
+                    variant='outline'
+                    size='xs'
+                    className='h-7 gap-1 text-xs'
+                    onClick={handleFormat}
+                  >
+                    <Sparkles className='size-3.5' />
+                    {t('Format JSON')}
+                  </Button>
+                  <Button
+                    variant='ghost'
+                    size='xs'
+                    className='text-muted-foreground h-7 gap-1 text-xs'
+                    onClick={handleResetToPreview}
+                  >
+                    <RotateCcw className='size-3.5' />
+                    {t('Reset to Form')}
+                  </Button>
+                </div>
+                <div className='flex items-center gap-2'>
+                  {props.onApplyToForm && (
                     <Button
                       variant='outline'
                       size='xs'
                       className='h-7 gap-1 text-xs'
-                      onClick={handleFormat}
+                      onClick={handleApplyToForm}
                     >
-                      <Sparkles className='size-3.5' />
-                      {t('Format JSON')}
+                      {t('Apply to Form')}
                     </Button>
+                  )}
+                  {props.onSendRawJson && (
                     <Button
-                      variant='ghost'
+                      variant='default'
                       size='xs'
-                      className='h-7 gap-1 text-xs text-muted-foreground'
-                      onClick={handleResetToPreview}
+                      className='h-7 gap-1 text-xs font-semibold'
+                      disabled={props.busy}
+                      onClick={handleSendDirectly}
                     >
-                      <RotateCcw className='size-3.5' />
-                      {t('Reset to Form')}
+                      <Play className='size-3.5 fill-current' />
+                      {t('Send This JSON Directly')}
                     </Button>
-                  </div>
-                  <div className='flex items-center gap-2'>
-                    {props.onApplyToForm && (
-                      <Button
-                        variant='outline'
-                        size='xs'
-                        className='h-7 gap-1 text-xs'
-                        onClick={handleApplyToForm}
-                      >
-                        {t('Apply to Form')}
-                      </Button>
-                    )}
-                    {props.onSendRawJson && (
-                      <Button
-                        variant='default'
-                        size='xs'
-                        className='h-7 gap-1 text-xs font-semibold'
-                        disabled={props.busy}
-                        onClick={handleSendDirectly}
-                      >
-                        <Play className='size-3.5 fill-current' />
-                        {t('Send This JSON Directly')}
-                      </Button>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
-            )}
-          </TabsContent>
+            </div>
+          )}
+        </TabsContent>
 
-          <TabsContent value='submit' className='mt-3'>
-            <JsonCodeViewer
-              code={submitJSON}
-              label={t('Submit Response Body')}
-            />
-          </TabsContent>
+        <TabsContent value='submit' className='mt-3'>
+          <JsonCodeViewer code={submitJSON} label={t('Submit Response Body')} />
+        </TabsContent>
 
-          <TabsContent value='poll' className='mt-3'>
-            <JsonCodeViewer
-              code={pollJSON}
-              label={t('Final Poll Response Body')}
-            />
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
+        <TabsContent value='poll' className='mt-3'>
+          <JsonCodeViewer
+            code={pollJSON}
+            label={t('Final Poll Response Body')}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
   )
 }

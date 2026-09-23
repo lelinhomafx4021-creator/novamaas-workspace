@@ -23,7 +23,7 @@ const (
 	kvvFastTimeout   = 30 * time.Second
 	kvvThinkTimeout  = 120 * time.Second
 	kvvThinkTokens   = 4096
-	kvvPassMessage   = "KVV 预检通过：按 K3 始终开启思考，核对了采样参数、tool_choice、response_format、动态工具和思考字段。未发送关闭思考的请求。不是官方 Kimi KVV 认证。"
+	kvvPassMessage   = "K3 KVV 预检通过：按 Kimi-K3 官方规范核对了不可变采样参数（temperature=1.0 严格约束）、关闭思考拦截、tool_choice、response_format、动态工具与思考流式协议。非官方 Kimi KVV 认证。"
 	kvvChickenPrompt = "鸡兔同笼，共有 35 个头，94 条腿。问鸡和兔各有多少只？请逐步推理。"
 	kvvOKPrompt      = "Say 'OK' and nothing else."
 )
@@ -101,6 +101,13 @@ func (k *kvvClient) params() string {
 		if msg := k.step(name, kvvFastTimeout, kvvParamPayload(param.name, param.value), false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
 			return msg
 		}
+	}
+	// K3 strictly rejects disabling thinking (code 3000: 该模型始终思考，不支持关闭思考)
+	if msg := k.step("k3 reject thinking disabled", kvvFastTimeout, map[string]any{
+		"messages": kvvUser(kvvOKPrompt),
+		"thinking": map[string]any{"type": "disabled"},
+	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
+		return msg
 	}
 	return ""
 }

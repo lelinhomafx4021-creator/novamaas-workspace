@@ -24,9 +24,8 @@ func TestKimiKVVOfficialPreflightPasses(t *testing.T) {
 
 	status, message := runKVVAgainst(t, upstream)
 	assert.Equal(t, "pass", status)
-	assert.Contains(t, message, "KVV 预检通过")
-	assert.Contains(t, message, "不是官方 Kimi KVV 认证")
-	assert.Contains(t, message, "未发送关闭思考")
+	assert.Contains(t, message, "K3 KVV 预检通过")
+	assert.Contains(t, message, "非官方 Kimi KVV 认证")
 }
 
 func TestKimiKVVDoesNotDisableThinking(t *testing.T) {
@@ -142,6 +141,9 @@ func kvvFixtureReject(body []byte) (int, bool) {
 	}
 	choice := gjson.GetBytes(body, "tool_choice").String()
 	if choice == "bogus" || (choice == "required" && !kvvFixtureHasTools(body)) {
+		return http.StatusBadRequest, true
+	}
+	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
 		return http.StatusBadRequest, true
 	}
 	return 0, false

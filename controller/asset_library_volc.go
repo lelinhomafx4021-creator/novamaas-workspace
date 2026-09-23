@@ -96,11 +96,12 @@ func HandleVolcAssetAction(c *gin.Context) {
 		volcAssetError(c, http.StatusRequestEntityTooLarge, action, version, "InvalidRequest", "request body exceeds the allowed size")
 		return
 	}
-	ownerUserID, err := assetService.AuthenticateVolcActionRequest(c.Request, body)
+	principal, err := assetService.AuthenticateVolcActionRequestPrincipal(c.Request, body)
 	if err != nil {
 		volcAssetError(c, http.StatusUnauthorized, action, version, "AuthFailure", "request authentication failed")
 		return
 	}
+	ownerUserID := principal.OwnerUserID
 	var input volcAssetActionRequest
 	if len(body) > 0 {
 		if err = common.Unmarshal(body, &input); err != nil {
@@ -143,6 +144,7 @@ func HandleVolcAssetAction(c *gin.Context) {
 		asset, err = assetService.CreateAssetFromURL(c.Request.Context(), ownerUserID, input.GroupID, input.Name, input.AssetType, input.URL)
 		if err == nil {
 			result = gin.H{"Id": asset.ID}
+			recordVolcAssetUploadAudit(c, principal, asset)
 		}
 	case "ListAssets":
 		result, err = listVolcAssets(c, ownerUserID, input)
@@ -171,6 +173,33 @@ func HandleVolcAssetAction(c *gin.Context) {
 		return
 	}
 	volcAssetSuccess(c, action, version, result)
+}
+
+func recordVolcAssetUploadAudit(c *gin.Context, principal *assetService.VolcActionPrincipal, asset *assetService.AssetView) {
+	params := map[string]interface{}{
+		"id":            asset.ID,
+		"name":          asset.Name,
+		"groupId":       asset.GroupID,
+		"assetType":     asset.Type,
+		"accessKeyId":   principal.AccessKeyID,
+		"accessKeyName": principal.AccessKeyName,
+	}
+	auditInfo := map[string]interface{}{
+		"method":      c.Request.Method,
+		"path":        c.Request.URL.Path,
+		"status":      http.StatusOK,
+		"success":     true,
+		"auth_method": "asset_access_key",
+	}
+	model.RecordOperationAuditLog(
+		principal.OwnerUserID,
+		auditContentEN("asset.upload_aksk", params),
+		c.ClientIP(),
+		"asset.upload_aksk",
+		params,
+		nil,
+		auditInfo,
+	)
 }
 
 func listVolcAssetGroups(ownerUserID int, input volcAssetActionRequest) (gin.H, error) {

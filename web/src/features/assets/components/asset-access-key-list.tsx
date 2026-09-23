@@ -58,7 +58,9 @@ export function CreatedAssetAccessKeyPanel(props: {
       </div>
       <dl className='grid gap-3 sm:grid-cols-2'>
         <div className='grid min-w-0 gap-1'>
-          <dt className='text-xs font-medium'>{t('Access Key ID')}</dt>
+          <dt className='text-xs font-medium'>
+            {t('Access Key ID (Access Key)')}
+          </dt>
           <dd className='flex min-w-0 items-center gap-1'>
             <code className='bg-background min-w-0 flex-1 truncate rounded-md border px-2 py-1.5 text-xs'>
               {props.accessKey.access_key_id}
@@ -70,7 +72,9 @@ export function CreatedAssetAccessKeyPanel(props: {
           </dd>
         </div>
         <div className='grid min-w-0 gap-1'>
-          <dt className='text-xs font-medium'>{t('Secret Access Key')}</dt>
+          <dt className='text-xs font-medium'>
+            {t('Secret Access Key (Secret Key)')}
+          </dt>
           <dd className='flex min-w-0 items-center gap-1'>
             <code className='bg-background min-w-0 flex-1 truncate rounded-md border px-2 py-1.5 text-xs'>
               {props.accessKey.secret_access_key}

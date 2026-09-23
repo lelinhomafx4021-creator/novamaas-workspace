@@ -27,46 +27,68 @@ type volcAuthorization struct {
 	Signature     string
 }
 
-func AuthenticateVolcActionRequest(request *http.Request, body []byte) (int, error) {
-	return authenticateVolcActionRequestAt(request, body, time.Now().UTC())
+type VolcActionPrincipal struct {
+	OwnerUserID   int
+	AccessKeyID   string
+	AccessKeyName string
 }
 
-func authenticateVolcActionRequestAt(request *http.Request, body []byte, now time.Time) (int, error) {
-	if request == nil || request.URL == nil {
-		return 0, errors.New("invalid signed request")
-	}
-	auth, err := parseVolcAuthorization(request.Header.Get("Authorization"))
+func AuthenticateVolcActionRequest(request *http.Request, body []byte) (int, error) {
+	principal, err := AuthenticateVolcActionRequestPrincipal(request, body)
 	if err != nil {
 		return 0, err
 	}
+	return principal.OwnerUserID, nil
+}
+
+func authenticateVolcActionRequestAt(request *http.Request, body []byte, now time.Time) (int, error) {
+	principal, err := authenticateVolcActionRequestPrincipalAt(request, body, now)
+	if err != nil {
+		return 0, err
+	}
+	return principal.OwnerUserID, nil
+}
+
+func AuthenticateVolcActionRequestPrincipal(request *http.Request, body []byte) (*VolcActionPrincipal, error) {
+	return authenticateVolcActionRequestPrincipalAt(request, body, time.Now().UTC())
+}
+
+func authenticateVolcActionRequestPrincipalAt(request *http.Request, body []byte, now time.Time) (*VolcActionPrincipal, error) {
+	if request == nil || request.URL == nil {
+		return nil, errors.New("invalid signed request")
+	}
+	auth, err := parseVolcAuthorization(request.Header.Get("Authorization"))
+	if err != nil {
+		return nil, err
+	}
 	if auth.Region != DefaultRegion || auth.Service != DefaultService {
-		return 0, errors.New("credential scope must use cn-beijing/ark")
+		return nil, errors.New("credential scope must use cn-beijing/ark")
 	}
 	xDate := strings.TrimSpace(request.Header.Get("X-Date"))
 	requestTime, err := time.Parse("20060102T150405Z", xDate)
 	if err != nil || auth.ShortDate != requestTime.UTC().Format("20060102") {
-		return 0, errors.New("invalid X-Date or credential date")
+		return nil, errors.New("invalid X-Date or credential date")
 	}
 	clockDifference := now.Sub(requestTime)
 	if clockDifference < -volcActionRequestClockSkew || clockDifference > volcActionRequestClockSkew {
-		return 0, errors.New("signed request time is outside the allowed window")
+		return nil, errors.New("signed request time is outside the allowed window")
 	}
 	payloadDigest := sha256.Sum256(body)
 	payloadHash := hex.EncodeToString(payloadDigest[:])
 	if !strings.EqualFold(payloadHash, strings.TrimSpace(request.Header.Get("X-Content-Sha256"))) {
-		return 0, errors.New("X-Content-Sha256 does not match the request body")
+		return nil, errors.New("X-Content-Sha256 does not match the request body")
 	}
 
 	var key model.AssetAccessKey
 	if err = model.DB.Where("access_key_id = ? AND status = ?", auth.AccessKeyID, model.AssetAccessKeyStatusEnabled).First(&key).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, errors.New("invalid access key")
+			return nil, errors.New("invalid access key")
 		}
-		return 0, err
+		return nil, err
 	}
 	secret, err := decryptAccessKeySecret(key.EncryptedSecret)
 	if err != nil {
-		return 0, fmt.Errorf("decrypt asset access key: %w", err)
+		return nil, fmt.Errorf("decrypt asset access key: %w", err)
 	}
 
 	host := strings.TrimSpace(request.Host)
@@ -79,7 +101,7 @@ func authenticateVolcActionRequestAt(request *http.Request, body []byte, now tim
 		canonicalHeaders = "content-type:" + strings.TrimSpace(request.Header.Get("Content-Type")) + "\n"
 	case "host;x-content-sha256;x-date":
 	default:
-		return 0, errors.New("unsupported signed headers")
+		return nil, errors.New("unsupported signed headers")
 	}
 	canonicalHeaders += "host:" + host + "\n" +
 		"x-content-sha256:" + payloadHash + "\n" +
@@ -102,21 +124,25 @@ func authenticateVolcActionRequestAt(request *http.Request, body []byte, now tim
 	expectedSignature := hmacSHA256(kSigning, []byte(stringToSign))
 	providedSignature, err := hex.DecodeString(auth.Signature)
 	if err != nil || !hmac.Equal(expectedSignature, providedSignature) {
-		return 0, errors.New("invalid request signature")
+		return nil, errors.New("invalid request signature")
 	}
 
 	user, err := model.GetUserCache(key.OwnerUserID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if user.Status != common.UserStatusEnabled {
-		return 0, errors.New("asset access key owner is unavailable")
+		return nil, errors.New("asset access key owner is unavailable")
 	}
 	usedAt := now.Unix()
 	_ = model.DB.Model(&model.AssetAccessKey{}).
 		Where("id = ? AND last_used_at < ?", key.ID, usedAt-60).
 		Updates(map[string]any{"last_used_at": usedAt, "updated_at": usedAt}).Error
-	return key.OwnerUserID, nil
+	return &VolcActionPrincipal{
+		OwnerUserID:   key.OwnerUserID,
+		AccessKeyID:   key.AccessKeyID,
+		AccessKeyName: key.Name,
+	}, nil
 }
 
 func parseVolcAuthorization(value string) (*volcAuthorization, error) {

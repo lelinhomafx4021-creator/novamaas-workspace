@@ -48,6 +48,11 @@ func TestAssetAccessKeyAuthenticatesOfficialVolcengineSignature(t *testing.T) {
 	ownerUserID, err := authenticateVolcActionRequestAt(request, body, fixedTime.Add(time.Minute))
 	require.NoError(t, err)
 	assert.Equal(t, user.Id, ownerUserID)
+	principal, err := authenticateVolcActionRequestPrincipalAt(request, body, fixedTime.Add(time.Minute))
+	require.NoError(t, err)
+	assert.Equal(t, user.Id, principal.OwnerUserID)
+	assert.Equal(t, created.AccessKeyID, principal.AccessKeyID)
+	assert.Equal(t, "automation", principal.AccessKeyName)
 
 	_, err = authenticateVolcActionRequestAt(request, append(body, ' '), fixedTime.Add(time.Minute))
 	require.Error(t, err)

@@ -89,6 +89,8 @@ describe('asset library downstream API access', () => {
     )
     expect(await screen.findByText('AKNMEXAMPLE')).toBeVisible()
     expect(screen.getByText('secret-once-only')).toBeVisible()
+    expect(screen.getByText('Access Key ID (Access Key)')).toBeVisible()
+    expect(screen.getByText('Secret Access Key (Secret Key)')).toBeVisible()
     expect(
       screen.queryByRole('button', { name: 'Close' })
     ).not.toBeInTheDocument()

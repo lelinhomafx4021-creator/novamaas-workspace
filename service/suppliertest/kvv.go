@@ -224,7 +224,7 @@ func (k *kvvClient) thinking() string {
 			"messages":   kvvUser(kvvChickenPrompt),
 			"max_tokens": kvvThinkTokens,
 			"thinking":   item.thinking,
-		}, false, kvvWantReasoning); msg != "" {
+		}, true, kvvWantReasoning); msg != "" {
 			return msg
 		}
 	}
@@ -239,7 +239,7 @@ func (k *kvvClient) thinking() string {
 	if res.StatusCode != http.StatusOK || res.ErrorMessage != "" {
 		return kvvFail("thinking stream", "请求失败："+firstNonEmpty(res.ErrorMessage, fmt.Sprintf("HTTP %d", res.StatusCode)))
 	}
-	if res.Reasoning == "" {
+	if res.Reasoning == "" && res.ReasoningTokens == 0 {
 		return kvvFail("thinking stream", "流式响应没有 reasoning_content")
 	}
 	if res.Content == "" {
@@ -453,6 +453,10 @@ func kvvWantJSON(types map[string]string, objectOnly bool) func(int, []byte) str
 			return msg
 		}
 		content := strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.content").String())
+		content = strings.TrimPrefix(content, "```json")
+		content = strings.TrimPrefix(content, "```")
+		content = strings.TrimSuffix(content, "```")
+		content = strings.TrimSpace(content)
 		parsed := gjson.Parse(content)
 		if !parsed.IsObject() {
 			return "响应不是 JSON 对象"
@@ -489,7 +493,14 @@ func kvvWantReasoning(status int, body []byte) string {
 	if status != http.StatusOK {
 		return fmt.Sprintf("期望 HTTP 200，实际 %d：%s", status, kvvClip(body))
 	}
-	if strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.reasoning_content").String()) == "" {
+	reasoning := gjson.GetBytes(body, "choices.0.message.reasoning_content").String()
+	if reasoning == "" {
+		reasoning = gjson.GetBytes(body, "choices.0.message.reasoning").String()
+	}
+	if reasoning == "" {
+		reasoning = gjson.GetBytes(body, "choices.0.message.thought").String()
+	}
+	if strings.TrimSpace(reasoning) == "" {
 		return "没有 reasoning_content"
 	}
 	if strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.content").String()) == "" {

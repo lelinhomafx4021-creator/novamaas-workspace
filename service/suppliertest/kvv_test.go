@@ -47,6 +47,23 @@ func TestKimiKVVDoesNotDisableThinking(t *testing.T) {
 	assert.Equal(t, "pass", status, message)
 }
 
+func TestKimiKVVNativeToolCallFallback(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if gjson.GetBytes(body, "tool_choice").String() == "required" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"call\n{\"api_name\": \"get_weather\", \"parameters\": {\"city\": \"Beijing\"}}"}}],"usage":{"prompt_tokens":10,"completion_tokens":20}}`)
+			return
+		}
+		kvvOfficialFixtureBody(w, body)
+	}))
+	defer upstream.Close()
+
+	status, message := runKVVAgainst(t, upstream)
+	assert.Equal(t, "pass", status, message)
+}
+
 func TestKimiKVVRejectsLooseSampling(t *testing.T) {
 	t.Parallel()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

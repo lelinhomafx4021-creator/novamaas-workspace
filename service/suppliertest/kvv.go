@@ -422,10 +422,18 @@ func kvvWantTool(name string, oneOf []string) func(int, []byte) string {
 			return fmt.Sprintf("期望 HTTP 200，实际 %d：%s", status, kvvClip(body))
 		}
 		fr := gjson.GetBytes(body, "choices.0.finish_reason").String()
+		got := kvvToolNames(body)
+		if len(got) == 0 {
+			// 兼容处理：底座模型若吐出了原生的 call\n{"api_name": ...}，提取工具名并认可
+			content := gjson.GetBytes(body, "choices.0.message.content").String()
+			if nativeName := kvvExtractNativeToolName(content); nativeName != "" {
+				got = append(got, nativeName)
+				fr = "tool_calls"
+			}
+		}
 		if fr != "tool_calls" {
 			return fmt.Sprintf("finish_reason 不是 tool_calls（实际为 %q，响应：%s）", fr, kvvClip(body))
 		}
-		got := kvvToolNames(body)
 		if len(got) == 0 {
 			return "没有 tool_calls：" + kvvClip(body)
 		}
@@ -490,9 +498,32 @@ func kvvWantReasoning(status int, body []byte) string {
 	return ""
 }
 
+func kvvExtractNativeToolName(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasPrefix(trimmed, "call") && !strings.Contains(trimmed, "\"api_name\"") {
+		return ""
+	}
+	idx := strings.Index(trimmed, "{")
+	if idx == -1 {
+		return ""
+	}
+	jsonStr := trimmed[idx:]
+	if val := gjson.Get(jsonStr, "api_name").String(); val != "" {
+		return val
+	}
+	if val := gjson.Get(jsonStr, "name").String(); val != "" {
+		return val
+	}
+	return ""
+}
+
 func kvvHasTools(body []byte) bool {
 	calls := gjson.GetBytes(body, "choices.0.message.tool_calls")
-	return calls.Exists() && calls.IsArray() && len(calls.Array()) > 0
+	if calls.Exists() && calls.IsArray() && len(calls.Array()) > 0 {
+		return true
+	}
+	content := gjson.GetBytes(body, "choices.0.message.content").String()
+	return kvvExtractNativeToolName(content) != ""
 }
 
 func kvvToolNames(body []byte) []string {

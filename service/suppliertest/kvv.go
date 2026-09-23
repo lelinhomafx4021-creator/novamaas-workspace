@@ -20,8 +20,8 @@ import (
 // upstream tests marked skip or flaky on reasoning length.
 
 const (
-	kvvFastTimeout   = 30 * time.Second
-	kvvThinkTimeout  = 120 * time.Second
+	kvvFastTimeout   = 90 * time.Second
+	kvvThinkTimeout  = 180 * time.Second
 	kvvThinkTokens   = 4096
 	kvvPassMessage   = "K3 KVV 预检通过：按 Kimi-K3 官方规范核对了不可变采样参数（temperature=1.0 严格约束）、关闭思考拦截、tool_choice、response_format、动态工具与思考流式协议。非官方 Kimi KVV 认证。"
 	kvvChickenPrompt = "鸡兔同笼，共有 35 个头，94 条腿。问鸡和兔各有多少只？请逐步推理。"
@@ -132,21 +132,21 @@ func (k *kvvClient) toolChoice() string {
 		"messages":    kvvUser("请简要回答：北京天气怎么样？"),
 		"tools":       weather,
 		"tool_choice": "required",
-	}, false, kvvWantTool("", nil)); msg != "" {
+	}, true, kvvWantTool("", nil)); msg != "" {
 		return msg
 	}
 	if msg := k.step("tool_choice none forbids call", kvvFastTimeout, map[string]any{
 		"messages":    kvvUser("请查一下北京的天气。"),
 		"tools":       weather,
 		"tool_choice": "none",
-	}, false, kvvWantText(false)); msg != "" {
+	}, true, kvvWantText(false)); msg != "" {
 		return msg
 	}
 	for _, choice := range []string{"none", "auto"} {
 		if msg := k.step("tool_choice "+choice+" without tools", kvvFastTimeout, map[string]any{
 			"messages":    kvvUser("你好。"),
 			"tool_choice": choice,
-		}, false, kvvWantText(true)); msg != "" {
+		}, true, kvvWantText(true)); msg != "" {
 			return msg
 		}
 	}
@@ -157,13 +157,13 @@ func (k *kvvClient) responseFormat() string {
 	if msg := k.step("response_format text", kvvFastTimeout, map[string]any{
 		"messages":        kvvUser("用一句话介绍北京。"),
 		"response_format": map[string]any{"type": "text"},
-	}, false, kvvWantText(true)); msg != "" {
+	}, true, kvvWantText(true)); msg != "" {
 		return msg
 	}
 	if msg := k.step("response_format json_object", kvvFastTimeout, map[string]any{
 		"messages":        kvvUser("Return the weather of Beijing as JSON. The response must contain a key named 'city'."),
 		"response_format": map[string]any{"type": "json_object"},
-	}, false, kvvWantJSON(nil, false)); msg != "" {
+	}, true, kvvWantJSON(nil, false)); msg != "" {
 		return msg
 	}
 	schema := map[string]any{
@@ -185,7 +185,7 @@ func (k *kvvClient) responseFormat() string {
 				"schema": schema,
 			},
 		},
-	}, false, kvvWantJSON(map[string]string{"city": "string", "temperature": "number"}, false)); msg != "" {
+	}, true, kvvWantJSON(map[string]string{"city": "string", "temperature": "number"}, false)); msg != "" {
 		return msg
 	}
 	if msg := k.step("response_format json_schema non-strict", kvvFastTimeout, map[string]any{
@@ -201,7 +201,7 @@ func (k *kvvClient) responseFormat() string {
 				},
 			},
 		},
-	}, false, kvvWantJSON(nil, true)); msg != "" {
+	}, true, kvvWantJSON(nil, true)); msg != "" {
 		return msg
 	}
 	return ""
@@ -215,7 +215,7 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+	}, true, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
 	if msg := k.step("dynamic tool later system", kvvFastTimeout, map[string]any{
@@ -227,7 +227,7 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+	}, true, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
 	if msg := k.step("dynamic tool last message", kvvFastTimeout, map[string]any{
@@ -236,7 +236,7 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "system", "content": "", "tools": []any{weather}},
 		},
 		"tool_choice": "required",
-	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+	}, true, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
 	if msg := k.step("dynamic three tools", kvvFastTimeout, map[string]any{
@@ -245,7 +245,7 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-	}, false, kvvWantTool("", []string{"get_weather", "get_time", "get_news"})); msg != "" {
+	}, true, kvvWantTool("", []string{"get_weather", "get_time", "get_news"})); msg != "" {
 		return msg
 	}
 	if msg := k.step("dynamic nested schema", kvvFastTimeout, map[string]any{
@@ -254,7 +254,7 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "use the tool"},
 		},
 		"tool_choice": "required",
-	}, false, kvvWantTool("nested_tool", nil)); msg != "" {
+	}, true, kvvWantTool("nested_tool", nil)); msg != "" {
 		return msg
 	}
 	if msg := k.step("dynamic two messages", kvvFastTimeout, map[string]any{
@@ -264,7 +264,7 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-	}, false, kvvWantTool("", []string{"get_weather", "get_time"})); msg != "" {
+	}, true, kvvWantTool("", []string{"get_weather", "get_time"})); msg != "" {
 		return msg
 	}
 	strictFalse := kvvWeatherTool()
@@ -275,7 +275,7 @@ func (k *kvvClient) dynamicTools() string {
 			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
 		},
 		"tool_choice": "required",
-	}, false, kvvWantTool("get_weather", nil)); msg != "" {
+	}, true, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
 	}
 	if msg := k.step("dynamic and global coexist", kvvFastTimeout, map[string]any{

@@ -88,3 +88,33 @@ func TestListAssetsPaginatesAndSearchesUploader(t *testing.T) {
 	require.Len(t, secondPage.Items, 1)
 	assert.Equal(t, "asset-alice-old", secondPage.Items[0].ID)
 }
+
+func TestListGroupsScopesMembersAndHydratesCreatorsForAdmins(t *testing.T) {
+	db := setupAssetLibraryTestDB(t)
+	alice := model.User{Username: "alice-groups", Password: "password", Status: common.UserStatusEnabled, AffCode: "groups-alice"}
+	bob := model.User{Username: "bob-groups", Password: "password", Status: common.UserStatusEnabled, AffCode: "groups-bob"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+	require.NoError(t, db.Create(&[]model.AssetGroup{
+		{PublicID: "group-alice", OwnerUserID: alice.Id, Name: "Campaign", Status: model.AssetStatusReady},
+		{PublicID: "group-bob", OwnerUserID: bob.Id, Name: "Campaign", Status: model.AssetStatusReady},
+	}).Error)
+
+	memberGroups, err := ListGroups(alice.Id, false)
+	require.NoError(t, err)
+	require.Len(t, memberGroups, 1)
+	assert.Equal(t, "group-alice", memberGroups[0].ID)
+	assert.Equal(t, "alice-groups", memberGroups[0].OwnerName)
+
+	adminGroups, err := ListGroups(alice.Id, true)
+	require.NoError(t, err)
+	require.Len(t, adminGroups, 2)
+	creators := make(map[string]string, len(adminGroups))
+	for _, group := range adminGroups {
+		creators[group.ID] = group.OwnerName
+	}
+	assert.Equal(t, map[string]string{
+		"group-alice": "alice-groups",
+		"group-bob":   "bob-groups",
+	}, creators)
+}

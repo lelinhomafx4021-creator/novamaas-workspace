@@ -177,7 +177,7 @@ export function AssetUploadDialog(props: {
                     <NativeSelect className='w-full' {...field}>
                       {props.groups.map((group) => (
                         <NativeSelectOption key={group.id} value={group.id}>
-                          {group.name}
+                          {group.name} · {t('ID')}: {group.id}
                         </NativeSelectOption>
                       ))}
                     </NativeSelect>

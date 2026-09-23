@@ -1390,6 +1390,7 @@
     "Creates a Pancake product in the saved store using this plan’s title and price. Requires Waffo Pancake to be fully configured in Payment settings first.": "Creates a Pancake product in the saved store using this plan’s title and price. Requires Waffo Pancake to be fully configured in Payment settings first.",
     "Creating...": "Creating...",
     "Creation failed": "Creation failed",
+    "Creator": "Creator",
     "Credential is required": "Credential is required",
     "Credential not configured": "Credential not configured",
     "Credential refreshed": "Credential refreshed",

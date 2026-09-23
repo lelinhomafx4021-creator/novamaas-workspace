@@ -45,6 +45,17 @@ type GroupInput struct {
 	Description string `json:"description"`
 }
 
+type GroupView struct {
+	ID          string `json:"id"`
+	OwnerUserID int    `json:"owner_user_id"`
+	OwnerName   string `json:"owner_name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
+}
+
 type AssetInput struct {
 	GroupPublicID string
 	Name          string
@@ -214,14 +225,32 @@ func DeleteGroup(publicID string, ownerUserID int, isAdmin bool) error {
 	return model.DB.Model(group).Updates(map[string]any{"status": model.AssetStatusDeleted, "updated_at": common.GetTimestamp()}).Error
 }
 
-func ListGroups(ownerUserID int, includeAllOwners bool) ([]model.AssetGroup, error) {
+func ListGroups(ownerUserID int, includeAllOwners bool) ([]GroupView, error) {
 	query := model.DB.Where("status <> ?", model.AssetStatusDeleted)
 	if !includeAllOwners {
 		query = query.Where("owner_user_id = ?", ownerUserID)
 	}
 	var groups []model.AssetGroup
-	err := query.Order("created_at desc").Find(&groups).Error
-	return groups, err
+	if err := query.Order("created_at desc").Order("id desc").Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	ownerIDs := make([]int, 0, len(groups))
+	for _, group := range groups {
+		ownerIDs = append(ownerIDs, group.OwnerUserID)
+	}
+	ownerNames, err := model.GetUsernamesByIDs(ownerIDs)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]GroupView, 0, len(groups))
+	for _, group := range groups {
+		views = append(views, GroupView{
+			ID: group.PublicID, OwnerUserID: group.OwnerUserID, OwnerName: ownerNames[group.OwnerUserID],
+			Name: group.Name, Description: group.Description, Status: group.Status,
+			CreatedAt: group.CreatedAt, UpdatedAt: group.UpdatedAt,
+		})
+	}
+	return views, nil
 }
 
 func CreateAsset(ctx context.Context, ownerUserID int, input AssetInput) (*AssetView, error) {

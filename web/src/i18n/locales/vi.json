@@ -1390,6 +1390,7 @@
     "Creates a Pancake product in the saved store using this plan’s title and price. Requires Waffo Pancake to be fully configured in Payment settings first.": "Tạo một sản phẩm Pancake trong cửa hàng đã lưu bằng tiêu đề và giá của gói này. Trước tiên cần cấu hình đầy đủ Waffo Pancake trong cài đặt Thanh toán.",
     "Creating...": "Đang tạo...",
     "Creation failed": "Tạo thất bại",
+    "Creator": "Người tạo",
     "Credential is required": "Bắt buộc nhập thông tin xác thực",
     "Credential not configured": "Chưa cấu hình thông tin xác thực",
     "Credential refreshed": "Đã làm mới thông tin xác thực",

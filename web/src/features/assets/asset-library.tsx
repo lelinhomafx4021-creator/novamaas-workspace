@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  Delete02Icon,
   FolderAddIcon,
   Image01Icon,
   Search01Icon,
@@ -60,7 +61,6 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Pagination,
   PaginationContent,
@@ -68,6 +68,7 @@ import {
 } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createAssetGroup,
@@ -84,6 +85,7 @@ import {
   AssetGroupDialog,
   type AssetGroupFormValues,
 } from './components/asset-group-dialog'
+import { AssetGroupSelect } from './components/asset-group-select'
 import { AssetUploadDialog } from './components/asset-upload-dialog'
 import type { MediaAsset } from './types'
 
@@ -94,6 +96,7 @@ const ASSET_PAGE_SIZE = 40
 export function AssetLibrary() {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
+  const currentUserId = useAuthStore((state) => state.auth.user?.id ?? 0)
   const queryClient = useQueryClient()
   const [selectedGroup, setSelectedGroup] = useState('')
   const [search, setSearch] = useState('')
@@ -103,6 +106,7 @@ export function AssetLibrary() {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<MediaAsset | null>(null)
+  const [deleteGroupDialogOpen, setDeleteGroupDialogOpen] = useState(false)
   const deferredSearch = useDeferredValue(search.trim())
 
   const groupsQuery = useQuery({
@@ -130,13 +134,30 @@ export function AssetLibrary() {
     placeholderData: keepPreviousData,
   })
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data])
+  const uploadGroups = useMemo(
+    () => groups.filter((group) => group.owner_user_id === currentUserId),
+    [currentUserId, groups]
+  )
   const assets = assetsQuery.data?.items ?? []
   const totalAssets = assetsQuery.data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(totalAssets / ASSET_PAGE_SIZE))
-  const groupNames = useMemo(
-    () => new Map(groups.map((group) => [group.id, group.name])),
-    [groups]
+  const groupLabels = useMemo(() => {
+    const labels = new Map<string, string>()
+    for (const group of groups) {
+      let label = `${group.name} · ${t('ID')}: ${group.id}`
+      if (isAdmin) {
+        label += ` · ${t('Creator')}: ${group.owner_name || `#${group.owner_user_id}`}`
+      }
+      labels.set(group.id, label)
+    }
+    return labels
+  }, [groups, isAdmin, t])
+  const selectedGroupInfo = groups.find((group) => group.id === selectedGroup)
+  const selectedUploadGroup = uploadGroups.some(
+    (group) => group.id === selectedGroup
   )
+    ? selectedGroup
+    : ''
   const invalidateGroups = () =>
     queryClient.invalidateQueries({ queryKey: GROUPS_QUERY_KEY })
   const invalidateAssets = () =>
@@ -186,6 +207,7 @@ export function AssetLibrary() {
       assertAssetSuccess(await deleteAssetGroup(id)),
     onSuccess: async () => {
       setSelectedGroup('')
+      setDeleteGroupDialogOpen(false)
       await Promise.all([invalidateGroups(), invalidateAssets()])
       toast.success(t('Asset group deleted'))
     },
@@ -194,12 +216,30 @@ export function AssetLibrary() {
 
   const loading = groupsQuery.isLoading || assetsQuery.isLoading
   const error = groupsQuery.error || assetsQuery.error
+  const canDeleteSelectedGroup = Boolean(
+    selectedGroupInfo &&
+    !deferredSearch &&
+    !assetsQuery.isFetching &&
+    !assetsQuery.error &&
+    totalAssets === 0
+  )
 
   return (
     <>
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Asset Library')}</SectionPageLayout.Title>
         <SectionPageLayout.Actions>
+          {canDeleteSelectedGroup && (
+            <Button
+              size='sm'
+              variant='destructive'
+              disabled={deleteGroupMutation.isPending}
+              onClick={() => setDeleteGroupDialogOpen(true)}
+            >
+              <HugeiconsIcon icon={Delete02Icon} data-icon='inline-start' />
+              {t('Delete group')}
+            </Button>
+          )}
           <Button
             size='sm'
             variant='outline'
@@ -218,7 +258,7 @@ export function AssetLibrary() {
           </Button>
           <Button
             size='sm'
-            disabled={groups.length === 0}
+            disabled={uploadGroups.length === 0}
             onClick={() => setUploadDialogOpen(true)}
           >
             <HugeiconsIcon icon={Upload01Icon} data-icon='inline-start' />
@@ -228,24 +268,16 @@ export function AssetLibrary() {
         <SectionPageLayout.Content>
           <div className='flex flex-col gap-4 pb-4'>
             <Card size='sm'>
-              <CardContent className='grid gap-3 py-3 md:grid-cols-[minmax(180px,240px)_minmax(220px,1fr)_auto] md:items-center'>
-                <NativeSelect
-                  aria-label={t('Asset group')}
+              <CardContent className='grid gap-3 py-3 md:grid-cols-[minmax(260px,380px)_minmax(220px,1fr)_auto] md:items-center'>
+                <AssetGroupSelect
+                  groups={groups}
                   value={selectedGroup}
-                  onChange={(event) => {
-                    setSelectedGroup(event.target.value)
+                  isAdmin={isAdmin}
+                  onValueChange={(value) => {
+                    setSelectedGroup(value)
                     setPage(1)
                   }}
-                >
-                  <NativeSelectOption value=''>
-                    {t('All groups')}
-                  </NativeSelectOption>
-                  {groups.map((group) => (
-                    <NativeSelectOption key={group.id} value={group.id}>
-                      {group.name}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                />
                 <InputGroup>
                   <InputGroupAddon>
                     <HugeiconsIcon icon={Search01Icon} />
@@ -336,7 +368,7 @@ export function AssetLibrary() {
                     key={asset.id}
                     asset={asset}
                     groupName={
-                      groupNames.get(asset.group_id) || t('Unknown group')
+                      groupLabels.get(asset.group_id) || t('Unknown group')
                     }
                     onDelete={setDeleteTarget}
                   />
@@ -381,20 +413,6 @@ export function AssetLibrary() {
                 </PaginationContent>
               </Pagination>
             )}
-
-            {groups.length > 0 &&
-              selectedGroup &&
-              totalAssets === 0 &&
-              !deferredSearch && (
-                <Button
-                  variant='ghost'
-                  className='text-destructive self-start'
-                  disabled={deleteGroupMutation.isPending}
-                  onClick={() => deleteGroupMutation.mutate(selectedGroup)}
-                >
-                  {t('Delete empty group')}
-                </Button>
-              )}
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
@@ -412,12 +430,42 @@ export function AssetLibrary() {
       <AssetUploadDialog
         open={uploadDialogOpen}
         onOpenChange={setUploadDialogOpen}
-        groups={groups}
-        selectedGroup={selectedGroup}
+        groups={uploadGroups}
+        selectedGroup={selectedUploadGroup}
         onSubmit={(values) => uploadMutation.mutate(values)}
         pending={uploadMutation.isPending}
         progress={uploadProgress}
       />
+      <AlertDialog
+        open={deleteGroupDialogOpen}
+        onOpenChange={(open) =>
+          !deleteGroupMutation.isPending && setDeleteGroupDialogOpen(open)
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('Delete group')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'Are you sure you want to delete group "{{name}}"? This action cannot be undone.',
+                { name: selectedGroupInfo?.name || '' }
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant='destructive'
+              disabled={deleteGroupMutation.isPending}
+              onClick={() =>
+                selectedGroup && deleteGroupMutation.mutate(selectedGroup)
+              }
+            >
+              {t('Delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && setDeleteTarget(null)}

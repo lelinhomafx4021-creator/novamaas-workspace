@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 export type AssetGroup = {
   id: string
   owner_user_id: number
+  owner_name?: string
   name: string
   description: string
   status: string

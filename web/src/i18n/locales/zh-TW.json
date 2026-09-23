@@ -1390,6 +1390,7 @@
     "Creates a Pancake product in the saved store using this plan’s title and price. Requires Waffo Pancake to be fully configured in Payment settings first.": "使用此套餐的標題和價格，在已儲存的店鋪中建立 Pancake 產品。需要先在支付設定中完整設定 Waffo Pancake。",
     "Creating...": "建立中...",
     "Creation failed": "建立失敗",
+    "Creator": "建立者",
     "Credential is required": "請輸入憑證",
     "Credential not configured": "尚未設定憑證",
     "Credential refreshed": "憑證已重新整理",

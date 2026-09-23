@@ -108,24 +108,42 @@ type VideoMetrics struct {
 }
 
 type StressMetrics struct {
-	Total            int     `json:"total"`
-	Succeeded        int     `json:"succeeded"`
-	Failed           int     `json:"failed"`
-	ErrorRate        float64 `json:"error_rate"`
-	ElapsedMS        float64 `json:"elapsed_ms"`
-	TokensPerSec     float64 `json:"tokens_per_sec"`
-	PromptTokens     int     `json:"prompt_tokens"`
-	CompletionTokens int     `json:"completion_tokens"`
-	TTFTAvgMS        float64 `json:"ttft_avg_ms"`
-	TTFTP50MS        float64 `json:"ttft_p50_ms"`
-	TTFTP90MS        float64 `json:"ttft_p90_ms"`
-	TTFTN            int     `json:"ttft_n"`
-	TPOTAvgMS        float64 `json:"tpot_avg_ms"`
-	TPOTP50MS        float64 `json:"tpot_p50_ms"`
-	TPOTP90MS        float64 `json:"tpot_p90_ms"`
-	TPOTN            int     `json:"tpot_n"`
-	RPM              float64 `json:"rpm"`
-	TPM              float64 `json:"tpm"`
+	Total               int           `json:"total"`
+	Attempted           int           `json:"attempted"`
+	NotRun              int           `json:"not_run"`
+	Succeeded           int           `json:"succeeded"`
+	Failed              int           `json:"failed"`
+	ErrorRate           float64       `json:"error_rate"`
+	ElapsedMS           float64       `json:"elapsed_ms"`
+	TokensPerSec        float64       `json:"tokens_per_sec"`
+	RequestTokensPerSec float64       `json:"request_tokens_per_sec"`
+	RequestAvgMS        float64       `json:"request_avg_ms"`
+	RequestP50MS        float64       `json:"request_p50_ms"`
+	RequestP90MS        float64       `json:"request_p90_ms"`
+	UsageN              int           `json:"usage_n"`
+	PromptTokens        int           `json:"prompt_tokens"`
+	CompletionTokens    int           `json:"completion_tokens"`
+	TTFTAvgMS           float64       `json:"ttft_avg_ms"`
+	TTFTP50MS           float64       `json:"ttft_p50_ms"`
+	TTFTP90MS           float64       `json:"ttft_p90_ms"`
+	TTFTN               int           `json:"ttft_n"`
+	TPOTAvgMS           float64       `json:"tpot_avg_ms"`
+	TPOTP50MS           float64       `json:"tpot_p50_ms"`
+	TPOTP90MS           float64       `json:"tpot_p90_ms"`
+	TPOTN               int           `json:"tpot_n"`
+	RPM                 float64       `json:"rpm"`
+	TPM                 float64       `json:"tpm"`
+	Issues              []StressIssue `json:"issues,omitempty"`
+	OtherIssueCount     int           `json:"other_issue_count,omitempty"`
+}
+
+type StressIssue struct {
+	StatusCode int     `json:"status_code"`
+	Message    string  `json:"message"`
+	Count      int     `json:"count"`
+	Worker     int     `json:"worker"`
+	Round      int     `json:"round"`
+	ElapsedMS  float64 `json:"elapsed_ms"`
 }
 
 type CacheMetrics struct {
@@ -190,6 +208,9 @@ func NormalizeRunRequest(req *RunRequest) error {
 	}
 	if req.Stress.Rounds < 1 || req.Stress.Rounds > maxRounds {
 		return fmt.Errorf("rounds must be between 1 and %d", maxRounds)
+	}
+	if req.Stress.Concurrency > maxStressRequests/req.Stress.Rounds {
+		return fmt.Errorf("concurrency × rounds must be at most %d requests", maxStressRequests)
 	}
 	if req.Stress.MaxTokens < 1 || req.Stress.MaxTokens > maxTokensCap {
 		return fmt.Errorf("max_tokens must be between 1 and %d", maxTokensCap)
@@ -417,7 +438,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 				}
 			}
 		}
-		connected = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, 60*time.Second, onDelta)
+		connected = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, basicChatTimeout, onDelta)
 		gotOutput := connected.Content != "" || connected.Reasoning != "" || connected.ToolName != ""
 		httpFailed := connected.StatusCode != http.StatusOK || connected.ErrorMessage != ""
 		if httpFailed {
@@ -486,7 +507,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		} else {
 			sampled := connected
 			if !needShared {
-				sampled = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, 60*time.Second, nil)
+				sampled = streamChat(ctx, httpClient, endpoint, req.APIKey, chat, basicChatTimeout, nil)
 			}
 			samplingNote := "供应商接受了当前 max_tokens"
 			if req.Basic.Temperature != nil || req.Basic.TopP != nil {
@@ -507,7 +528,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		jsonReq := chat
 		jsonReq.ResponseFormat = map[string]any{"type": "json_object"}
 		jsonReq.Messages = []chatMessage{{Role: "user", Content: "Return a JSON object with key ping and value pong."}}
-		jsonResult := streamChat(ctx, httpClient, endpoint, req.APIKey, jsonReq, 60*time.Second, nil)
+		jsonResult := streamChat(ctx, httpClient, endpoint, req.APIKey, jsonReq, basicChatTimeout, nil)
 		if jsonResult.StatusCode != http.StatusOK || jsonResult.ErrorMessage != "" {
 			emitCheck(CheckJSONMode, "skip", "供应商不接受 JSON 模式："+firstNonEmpty(jsonResult.ErrorMessage, fmt.Sprintf("HTTP %d", jsonResult.StatusCode)))
 		} else if looksLikeJSON(jsonResult.Content) {
@@ -542,7 +563,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 				},
 			},
 		}
-		toolResult := streamChat(ctx, httpClient, endpoint, req.APIKey, toolReq, 60*time.Second, nil)
+		toolResult := streamChat(ctx, httpClient, endpoint, req.APIKey, toolReq, basicChatTimeout, nil)
 		if toolResult.StatusCode != http.StatusOK || toolResult.ErrorMessage != "" {
 			emitCheck(CheckToolCall, "skip", "供应商不接受工具调用："+firstNonEmpty(toolResult.ErrorMessage, fmt.Sprintf("HTTP %d", toolResult.StatusCode)))
 		} else if toolResult.ToolName != "" {
@@ -561,12 +582,12 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emitCheck(CheckThinking, "running", "")
 		mustThink := thinkingRequired(profile.id)
 		thinkReq := applyThinking(chat, profile.id)
-		thinking := streamChat(ctx, httpClient, endpoint, req.APIKey, thinkReq, 60*time.Second, nil)
+		thinking := streamChat(ctx, httpClient, endpoint, req.APIKey, thinkReq, basicChatTimeout, nil)
 		if (thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "") && thinkReq.Thinking != nil {
 			fallbackReq := chat
 			fallbackReq.Messages = []chatMessage{{Role: "user", Content: "What is 17 times 19? Think step by step."}}
 			fallbackReq.Thinking = nil
-			thinking = streamChat(ctx, httpClient, endpoint, req.APIKey, fallbackReq, 60*time.Second, nil)
+			thinking = streamChat(ctx, httpClient, endpoint, req.APIKey, fallbackReq, basicChatTimeout, nil)
 		}
 		if thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "" {
 			status, message := checkStatus(
@@ -672,7 +693,7 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		Messages:  cacheMessages(profile, prefix, followUp, true),
 		MaxTokens: ptrInt(req.Cache.MaxTokens),
 	}, stream)
-	warm := streamChat(ctx, httpClient, endpoint, req.APIKey, warmReq, 180*time.Second, nil)
+	warm := streamChat(ctx, httpClient, endpoint, req.APIKey, warmReq, cacheChatTimeout, nil)
 	if warm.StatusCode != http.StatusOK || warm.ErrorMessage != "" {
 		msg := firstNonEmpty(warm.ErrorMessage, fmt.Sprintf("HTTP %d", warm.StatusCode))
 		emitCheck(CheckCacheWarm, "Cache warm", "fail", "预热失败："+msg)
@@ -724,7 +745,7 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		if req.Cache.Mode == CacheModeCumulative {
 			probeReq.Messages = probeMessages
 		}
-		probe := streamChat(ctx, httpClient, endpoint, req.APIKey, probeReq, 180*time.Second, nil)
+		probe := streamChat(ctx, httpClient, endpoint, req.APIKey, probeReq, cacheChatTimeout, nil)
 		if probe.StatusCode != http.StatusOK || probe.ErrorMessage != "" {
 			failedRound++
 			probeDetails = append(probeDetails, fmt.Sprintf("第%d轮失败：%s", i+1, firstNonEmpty(probe.ErrorMessage, fmt.Sprintf("HTTP %d", probe.StatusCode))))
@@ -873,14 +894,20 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 	stream := boolVal(req.Stress.Stream, true)
 
 	var (
-		completed atomic.Int64
-		succeeded atomic.Int64
-		failed    atomic.Int64
-		inTokens  atomic.Int64
-		outTokens atomic.Int64
-		ttftMu    sync.Mutex
-		ttfts     []float64
-		tpots     []float64
+		completed    atomic.Int64
+		succeeded    atomic.Int64
+		failed       atomic.Int64
+		inTokens     atomic.Int64
+		outTokens    atomic.Int64
+		usageCount   atomic.Int64
+		usageElapsed atomic.Int64
+		ttftMu       sync.Mutex
+		ttfts        []float64
+		tpots        []float64
+		requestTimes []float64
+		issueMu      sync.Mutex
+		issues       = make(map[string]*StressIssue)
+		otherIssues  int
 	)
 
 	stressPrompt := strings.TrimSpace(req.Stress.Prompt)
@@ -922,38 +949,52 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 						Content: cacheBustPrefix() + stressPrompt,
 					}}
 				}
-				result := streamChat(ctx, httpClient, endpoint, req.APIKey, stressReq, 180*time.Second, onDelta)
-				ok := result.StatusCode == http.StatusOK && result.ErrorMessage == "" && (result.Content != "" || result.Reasoning != "" || result.FinishReason != "")
+				result := streamChat(ctx, httpClient, endpoint, req.APIKey, stressReq, stressChatTimeout, onDelta)
+				ok := result.StatusCode == http.StatusOK && result.ErrorMessage == "" && (result.Content != "" || result.Reasoning != "")
 				if ok {
 					succeeded.Add(1)
-					if result.PromptTokens > 0 {
+					if result.HasUsage && result.PromptTokens > 0 && result.CompletionTokens > 0 {
+						usageCount.Add(1)
+						usageElapsed.Add(result.Elapsed.Nanoseconds())
 						inTokens.Add(int64(result.PromptTokens))
-					}
-					if result.CompletionTokens > 0 {
 						outTokens.Add(int64(result.CompletionTokens))
-					} else if result.Content != "" {
-						outTokens.Add(int64(max(1, len([]rune(result.Content))/2)))
 					}
-					if result.TTFT > 0 {
-						ttftMu.Lock()
+					ttftMu.Lock()
+					requestTimes = append(requestTimes, float64(result.Elapsed)/float64(time.Millisecond))
+					if stream && result.SSE && result.TTFT > 0 {
 						ttfts = append(ttfts, float64(result.TTFT)/float64(time.Millisecond))
 						if result.TPOT > 0 {
 							tpots = append(tpots, float64(result.TPOT)/float64(time.Millisecond))
 						}
-						ttftMu.Unlock()
 					}
+					ttftMu.Unlock()
 				} else {
 					failed.Add(1)
-					if workerID == 0 {
-						emit(Event{
-							Type:    "check",
-							Module:  ModuleStress,
-							CheckID: fmt.Sprintf("worker-%d-%d", workerID, round),
-							Title:   "Stress request",
-							Status:  "fail",
-							Message: firstNonEmpty(result.ErrorMessage, fmt.Sprintf("HTTP %d", result.StatusCode)),
-						})
+					failure := firstNonEmpty(result.ErrorMessage, fmt.Sprintf("HTTP %d", result.StatusCode))
+					if result.StatusCode == http.StatusOK && result.ErrorMessage == "" {
+						failure = "HTTP 200，但没有返回正文或思考内容"
 					}
+					failure = strings.Join(strings.Fields(failure), " ")
+					if chars := []rune(failure); len(chars) > 300 {
+						failure = string(chars[:300]) + "…"
+					}
+					key := fmt.Sprintf("%d\x00%s", result.StatusCode, failure)
+					issueMu.Lock()
+					if issue, found := issues[key]; found {
+						issue.Count++
+					} else if len(issues) < 50 {
+						issues[key] = &StressIssue{
+							StatusCode: result.StatusCode,
+							Message:    failure,
+							Count:      1,
+							Worker:     workerID + 1,
+							Round:      round + 1,
+							ElapsedMS:  float64(result.Elapsed) / float64(time.Millisecond),
+						}
+					} else {
+						otherIssues++
+					}
+					issueMu.Unlock()
 				}
 				done := int(completed.Add(1))
 				if done == total || done%max(1, total/20) == 0 {
@@ -971,24 +1012,48 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 	completionTotal := int(outTokens.Load())
 	metrics := &StressMetrics{
 		Total:            total,
+		Attempted:        int(completed.Load()),
+		NotRun:           total - int(completed.Load()),
 		Succeeded:        ok,
 		Failed:           bad,
-		ElapsedMS:        float64(elapsed.Milliseconds()),
+		ElapsedMS:        float64(elapsed) / float64(time.Millisecond),
 		PromptTokens:     promptTotal,
 		CompletionTokens: completionTotal,
+		UsageN:           int(usageCount.Load()),
 		TTFTN:            len(ttfts),
 		TPOTN:            len(tpots),
+		OtherIssueCount:  otherIssues,
 	}
-	if total > 0 {
-		metrics.ErrorRate = float64(bad) / float64(total)
+	for _, issue := range issues {
+		metrics.Issues = append(metrics.Issues, *issue)
 	}
-	if elapsed.Seconds() > 0 {
+	sort.Slice(metrics.Issues, func(i, j int) bool {
+		if metrics.Issues[i].Count != metrics.Issues[j].Count {
+			return metrics.Issues[i].Count > metrics.Issues[j].Count
+		}
+		if metrics.Issues[i].StatusCode != metrics.Issues[j].StatusCode {
+			return metrics.Issues[i].StatusCode < metrics.Issues[j].StatusCode
+		}
+		return metrics.Issues[i].Message < metrics.Issues[j].Message
+	})
+	if metrics.Attempted > 0 {
+		metrics.ErrorRate = float64(bad) / float64(metrics.Attempted)
+	}
+	if metrics.UsageN == ok && elapsed.Seconds() > 0 {
 		metrics.TokensPerSec = float64(completionTotal) / elapsed.Seconds()
+		if usageElapsed.Load() > 0 {
+			metrics.RequestTokensPerSec = float64(completionTotal) / (float64(usageElapsed.Load()) / float64(time.Second))
+		}
 	}
 	if elapsed.Minutes() > 0 {
 		metrics.RPM = float64(ok) / elapsed.Minutes()
-		metrics.TPM = float64(promptTotal+completionTotal) / elapsed.Minutes()
+		if metrics.UsageN == ok {
+			metrics.TPM = float64(promptTotal+completionTotal) / elapsed.Minutes()
+		}
 	}
+	metrics.RequestAvgMS = average(requestTimes)
+	metrics.RequestP50MS = percentile(requestTimes, 50)
+	metrics.RequestP90MS = percentile(requestTimes, 90)
 	metrics.TTFTAvgMS = average(ttfts)
 	metrics.TTFTP50MS = percentile(ttfts, 50)
 	metrics.TTFTP90MS = percentile(ttfts, 90)
@@ -1004,8 +1069,11 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 	if req.Stress.BreakCache {
 		cacheMode = "随机前缀（打断缓存）"
 	}
-	summary := fmt.Sprintf("%s压测结束（%s）：%d 并发 × %d 轮，共 %d 次，成功 %d，失败 %d，耗时 %.0f ms。",
-		mode, cacheMode, req.Stress.Concurrency, req.Stress.Rounds, metrics.Total, metrics.Succeeded, metrics.Failed, metrics.ElapsedMS)
+	summary := fmt.Sprintf("%s压测结束（%s）：%d 并发 × %d 轮，计划 %d 次，实际完成 %d 次，成功 %d，失败 %d，未执行 %d 次，整批耗时 %.0f ms。",
+		mode, cacheMode, req.Stress.Concurrency, req.Stress.Rounds, metrics.Total, metrics.Attempted, metrics.Succeeded, metrics.Failed, metrics.NotRun, metrics.ElapsedMS)
+	if metrics.RequestAvgMS > 0 {
+		summary += fmt.Sprintf(" 单请求总耗时: 均值 %.0f ms / P50 %.0f ms / P90 %.0f ms。", metrics.RequestAvgMS, metrics.RequestP50MS, metrics.RequestP90MS)
+	}
 	if metrics.TTFTAvgMS > 0 {
 		summary += fmt.Sprintf(" TTFT首字: 均值 %.0f ms / P50 %.0f ms / P90 %.0f ms（n=%d）。", metrics.TTFTAvgMS, metrics.TTFTP50MS, metrics.TTFTP90MS, metrics.TTFTN)
 	}
@@ -1013,12 +1081,24 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 		summary += fmt.Sprintf(" TPOT每Token: 均值 %.1f ms / P50 %.1f ms / P90 %.1f ms（n=%d）。", metrics.TPOTAvgMS, metrics.TPOTP50MS, metrics.TPOTP90MS, metrics.TPOTN)
 	}
 	if metrics.TokensPerSec > 0 {
-		summary += fmt.Sprintf(" 吞吐: 约 %.1f tok/s。", metrics.TokensPerSec)
+		summary += fmt.Sprintf(" 整批吞吐: %.1f tok/s；按耗时加权的单请求输出速率: %.1f tok/s。", metrics.TokensPerSec, metrics.RequestTokensPerSec)
+	} else if metrics.UsageN != ok {
+		summary += fmt.Sprintf(" Token 用量仅 %d/%d 条成功请求完整返回，Token 速率与 TPM 不计算。", metrics.UsageN, ok)
 	}
-	if metrics.RPM > 0 || metrics.TPM > 0 {
-		summary += fmt.Sprintf(" 短测推算 RPM %.0f，TPM %.0f。", metrics.RPM, metrics.TPM)
+	if metrics.RPM > 0 {
+		summary += fmt.Sprintf(" 短测推算 RPM %.0f。", metrics.RPM)
+		if metrics.UsageN == ok {
+			summary += fmt.Sprintf(" 短测推算 TPM %.0f。", metrics.TPM)
+		}
 	}
-	emit(Event{Type: "metrics", Module: ModuleStress, Completed: total, Total: total, Metrics: metrics, Summary: summary})
+	if bad > 0 {
+		summary += fmt.Sprintf(" 失败分为 %d 类", len(metrics.Issues))
+		if metrics.OtherIssueCount > 0 {
+			summary += fmt.Sprintf("，另有 %d 次失败未单独列出", metrics.OtherIssueCount)
+		}
+		summary += "；详细原因见下方问题汇总。"
+	}
+	emit(Event{Type: "metrics", Module: ModuleStress, Completed: metrics.Attempted, Total: total, Metrics: metrics, Summary: summary})
 	emit(Event{Type: "summary", Module: ModuleStress, Summary: summary})
 }
 

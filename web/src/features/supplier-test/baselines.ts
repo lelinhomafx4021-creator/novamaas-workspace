@@ -44,8 +44,10 @@ export type MetricRow = {
 
 export const INFORMATIONAL_ROW_IDS = new Set([
   'duration',
+  'request_duration',
   'tokens',
   'tps',
+  'request_tps',
   'rpm',
   'tpm',
   'cache_mode',
@@ -114,7 +116,12 @@ const STANDARD_NUMBER_KEYS = [
   'longInputTokens',
 ] as const
 
-function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+function clampNumber(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number {
   const next = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(next)) return fallback
   return Math.min(max, Math.max(min, next))
@@ -135,7 +142,12 @@ export function sanitizeStandard(
         ? raw.labelKey.trim()
         : 'Custom standard',
     errorSlow: clampNumber(raw?.errorSlow, base.errorSlow, 0, 1),
-    ttftShortOkMs: clampNumber(raw?.ttftShortOkMs, base.ttftShortOkMs, 1, 120000),
+    ttftShortOkMs: clampNumber(
+      raw?.ttftShortOkMs,
+      base.ttftShortOkMs,
+      1,
+      120000
+    ),
     ttftLongOkMs: clampNumber(raw?.ttftLongOkMs, base.ttftLongOkMs, 1, 180000),
     ttftP90AvgTimes: clampNumber(
       raw?.ttftP90AvgTimes,
@@ -170,7 +182,10 @@ export function matchingStandardId(standard: SupplierStandard): string | null {
   return found?.id ?? null
 }
 
-export type StandardNumberKey = Exclude<keyof SupplierStandard, 'id' | 'labelKey'>
+export type StandardNumberKey = Exclude<
+  keyof SupplierStandard,
+  'id' | 'labelKey'
+>
 
 export type StandardEditorField = {
   id: string
@@ -306,7 +321,7 @@ export type Assessment = {
   overall: Verdict
 }
 
-const NO_SAMPLE = 'No sample (enable stream)'
+const NO_SAMPLE = 'No sample'
 const TTFT_RULE = 'Normal ≤ {{seconds}}s; slower above that'
 const TTFT_P90 =
   'Normal ≤ {{seconds}}s and ≤ avg × {{times}}; slower above that'
@@ -329,9 +344,7 @@ export function assessmentGroup(
   assessment: Assessment,
   group: MetricGroup
 ): Assessment {
-  const rows = assessment.rows.filter(
-    (row) => (row.group ?? 'perf') === group
-  )
+  const rows = assessment.rows.filter((row) => (row.group ?? 'perf') === group)
   let overall = worstVerdict(rows.map((row) => row.verdict))
   if (group === 'perf') {
     const shallowRows = assessment.rows.filter((r) => r.group === 'shallow')
@@ -411,7 +424,11 @@ function latencyRow(input: {
   }
 }
 
-function ttftBand(ms: number, longInput: boolean, standard: SupplierStandard): Verdict {
+function ttftBand(
+  ms: number,
+  longInput: boolean,
+  standard: SupplierStandard
+): Verdict {
   if (!(ms > 0)) return 'na'
   const limit = longInput ? standard.ttftLongOkMs : standard.ttftShortOkMs
   if (ms <= limit) return 'ok'
@@ -475,14 +492,14 @@ export function assessStress(
     {
       id: 'success',
       label: 'Succeeded',
-      measured: `${metrics.succeeded}/${metrics.total}`,
+      measured: `${metrics.succeeded}/${metrics.attempted ?? metrics.total}`,
       threshold: SUCCESS_RULE,
       verdict: errorVerdict,
       group: 'shallow',
     },
     {
       id: 'duration',
-      label: 'Total duration',
+      label: 'Batch wall time',
       measured:
         metrics.elapsed_ms >= 1000
           ? `${(metrics.elapsed_ms / 1000).toFixed(2)} s`
@@ -490,6 +507,17 @@ export function assessStress(
       threshold: 'Wall time of this run',
       verdict: 'na',
       group: 'shallow',
+    },
+    {
+      id: 'request_duration',
+      label: 'Request duration avg / P50 / P90',
+      measured: metrics.request_avg_ms
+        ? `${formatMs(metrics.request_avg_ms)} / ${formatMs(metrics.request_p50_ms)} / ${formatMs(metrics.request_p90_ms)}`
+        : 'No sample',
+      threshold:
+        'Successful request wall time, including first output and completion',
+      verdict: 'na',
+      group: 'perf',
     },
   ]
 
@@ -569,16 +597,32 @@ export function assessStress(
     {
       id: 'tokens',
       label: 'Prompt / completion tokens',
-      measured: `${metrics.prompt_tokens} / ${metrics.completion_tokens}`,
+      measured: '{{prompt}} / {{completion}} (usage {{sampled}}/{{succeeded}})',
+      measuredValues: {
+        prompt: metrics.prompt_tokens,
+        completion: metrics.completion_tokens,
+        sampled: metrics.usage_n ?? metrics.succeeded,
+        succeeded: metrics.succeeded,
+      },
       threshold: TOKEN_RULE,
       verdict: 'na',
       group: 'perf',
     },
     {
       id: 'tps',
-      label: 'Throughput',
+      label: 'Batch output throughput',
       measured: sampleOr(formatCount(metrics.tokens_per_sec, 'tok/s')),
-      threshold: 'Observed completion tokens per second',
+      threshold:
+        'Completion tokens divided by batch wall time; requires usage on every success',
+      verdict: 'na',
+      group: 'perf',
+    },
+    {
+      id: 'request_tps',
+      label: 'Per-request output rate',
+      measured: sampleOr(formatCount(metrics.request_tokens_per_sec, 'tok/s')),
+      threshold:
+        'Completion tokens divided by summed successful request durations',
       verdict: 'na',
       group: 'perf',
     },

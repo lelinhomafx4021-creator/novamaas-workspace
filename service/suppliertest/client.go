@@ -128,6 +128,8 @@ type StreamResult struct {
 	TTFT               time.Duration
 	TPOT               time.Duration
 	Elapsed            time.Duration
+	lastOutput         time.Duration
+	requestStarted     time.Time
 	ErrorMessage       string
 	SSE                bool
 }
@@ -453,9 +455,10 @@ func streamChat(
 	defer resp.Body.Close()
 
 	result := StreamResult{
-		StatusCode: resp.StatusCode,
-		Header:     resp.Header.Clone(),
-		Elapsed:    time.Since(started),
+		StatusCode:     resp.StatusCode,
+		Header:         resp.Header.Clone(),
+		Elapsed:        time.Since(started),
+		requestStarted: started,
 	}
 
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
@@ -469,31 +472,64 @@ func streamChat(
 				noOptReq.StreamOptions = nil
 				retryResult := streamChat(ctx, httpClient, endpoint, apiKey, noOptReq, timeout, onDelta)
 				if retryResult.StatusCode == http.StatusOK && retryResult.ErrorMessage == "" {
+					retryResult.Elapsed = time.Since(started)
+					if retryResult.TTFT > 0 {
+						beforeRetry := retryResult.requestStarted.Sub(started)
+						retryResult.TTFT += beforeRetry
+						retryResult.lastOutput += beforeRetry
+					}
 					if tracker != nil {
 						tracker.Store(true)
 					}
 					return retryResult
 				}
+				result.ErrorMessage += "; retry without stream_options: " + firstNonEmpty(retryResult.ErrorMessage, fmt.Sprintf("HTTP %d", retryResult.StatusCode))
 			}
 		}
+		result.Elapsed = time.Since(started)
 		return result
 	}
 
-	if strings.Contains(contentType, "text/event-stream") || req.Stream {
+	if strings.Contains(contentType, "text/event-stream") {
 		result.SSE = true
 		parseSSE(resp.Body, started, &result, onDelta)
 		result.Elapsed = time.Since(started)
+		finalizeStreamTiming(&result)
 		return result
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		result.ErrorMessage = err.Error()
+		result.Elapsed = time.Since(started)
 		return result
 	}
-	applyChunk(raw, started, &result, onDelta)
+	var parsed streamChunk
+	if err := common.Unmarshal(raw, &parsed); err != nil {
+		result.ErrorMessage = "invalid JSON response: " + err.Error()
+		result.Elapsed = time.Since(started)
+		return result
+	}
+	applyChunk(raw, started, &result, nil)
+	// A complete JSON response has no observable first output token.
+	result.TTFT = 0
+	result.TPOT = 0
+	result.lastOutput = 0
 	result.Elapsed = time.Since(started)
 	return result
+}
+
+func finalizeStreamTiming(result *StreamResult) {
+	if result.TTFT <= 0 || result.lastOutput <= result.TTFT || result.CompletionTokens <= 1 {
+		return
+	}
+	visibleTokens := result.CompletionTokens
+	if result.ReasoningTokens > 0 && result.Reasoning == "" {
+		visibleTokens -= result.ReasoningTokens
+	}
+	if visibleTokens > 1 {
+		result.TPOT = (result.lastOutput - result.TTFT) / time.Duration(visibleTokens-1)
+	}
 }
 
 func parseSSE(body io.Reader, started time.Time, result *StreamResult, onDelta func(StreamDelta)) {
@@ -525,6 +561,9 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 	}
 	var chunk streamChunk
 	if err := common.Unmarshal(raw, &chunk); err != nil {
+		if result.ErrorMessage == "" {
+			result.ErrorMessage = "invalid JSON stream chunk: " + err.Error()
+		}
 		return
 	}
 	if chunk.ID != "" && result.ID == "" {
@@ -578,35 +617,24 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 			result.ToolArgs += call.Function.Arguments
 		}
 		if content != "" {
-			if result.Content == "" && result.Reasoning == "" {
+			if result.Content == "" && result.Reasoning == "" && result.TTFT == 0 {
 				result.TTFT = time.Since(started)
 			}
 			result.Content += content
 			delta.Content += content
+			result.lastOutput = time.Since(started)
 		}
 		if reasoning != "" {
-			if result.Content == "" && result.Reasoning == "" {
+			if result.Content == "" && result.Reasoning == "" && result.TTFT == 0 {
 				result.TTFT = time.Since(started)
 			}
 			result.Reasoning += reasoning
 			delta.Reasoning += reasoning
+			result.lastOutput = time.Since(started)
 		}
 	}
 	if (delta.Content != "" || delta.Reasoning != "") && onDelta != nil {
 		onDelta(delta)
-	}
-	tokens := result.CompletionTokens
-	if tokens <= 0 && result.Content != "" {
-		tokens = max(1, len([]rune(result.Content))/2)
-	}
-	if tokens <= 0 && result.Reasoning != "" {
-		tokens = max(1, len([]rune(result.Reasoning))/2)
-	}
-	if tokens > 1 && result.TTFT > 0 {
-		remain := time.Since(started) - result.TTFT
-		if remain > 0 {
-			result.TPOT = remain / time.Duration(tokens-1)
-		}
 	}
 }
 

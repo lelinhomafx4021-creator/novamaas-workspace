@@ -1,5 +1,7 @@
 package suppliertest
 
+import "time"
+
 const (
 	ModuleBasic  = "basic"
 	ModuleStress = "stress"
@@ -66,8 +68,14 @@ var basicCheckTitles = map[string]string{
 }
 
 const (
-	maxConcurrency = 1000
-	maxRounds      = 10000
-	maxTokensCap   = 256000
-	maxCacheRounds = 50
+	maxConcurrency    = 1000
+	maxRounds         = 10000
+	maxStressRequests = 10000
+	maxTokensCap      = 256000
+	maxCacheRounds    = 50
+	// Supplier models may spend more than a minute before returning the first
+	// token. These limits apply only to the isolated supplier-test client.
+	basicChatTimeout  = 2 * time.Minute
+	stressChatTimeout = 5 * time.Minute
+	cacheChatTimeout  = 5 * time.Minute
 )

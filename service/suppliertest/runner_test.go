@@ -178,6 +178,16 @@ func TestNormalizeRunRequest(t *testing.T) {
 		Stress:  StressConfig{Concurrency: 1001, Rounds: 1, MaxTokens: 16},
 	}
 	require.Error(t, NormalizeRunRequest(&tooWide))
+
+	tooMany := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress:  StressConfig{Concurrency: 101, Rounds: 100, MaxTokens: 16},
+	}
+	err := NormalizeRunRequest(&tooMany)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at most 10000 requests")
 }
 
 func TestChatRequestOmitsEmptySampling(t *testing.T) {
@@ -297,6 +307,146 @@ func TestStreamChatParsesSSE(t *testing.T) {
 	assert.Equal(t, "chatcmpl-1", requestIDFrom(result))
 	assert.Equal(t, "req-123", result.Header.Get("X-Request-Id"))
 	assert.Greater(t, result.TTFT, time.Duration(0))
+}
+
+func TestStreamChatJSONDoesNotReportFirstTokenTiming(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":31,"completion_tokens":64}}`)
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model: "glm-5.3-flash", Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.False(t, result.SSE)
+	assert.Equal(t, "pong", result.Content)
+	assert.Positive(t, result.Elapsed)
+	assert.Zero(t, result.TTFT)
+	assert.Zero(t, result.TPOT)
+}
+
+func TestStreamChatReportsMalformedSSEChunk(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {broken-json}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model: "glm-5.3-flash", Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.Contains(t, result.ErrorMessage, "invalid JSON stream chunk")
+}
+
+func TestFinalizeStreamTimingExcludesUsageTailAndUnstreamedReasoning(t *testing.T) {
+	t.Parallel()
+	result := StreamResult{
+		TTFT:             55 * time.Second,
+		lastOutput:       56 * time.Second,
+		Elapsed:          60 * time.Second,
+		CompletionTokens: 64,
+		ReasoningTokens:  14,
+	}
+	finalizeStreamTiming(&result)
+	assert.Equal(t, time.Second/49, result.TPOT)
+
+	result.Reasoning = "streamed reasoning"
+	result.TPOT = 0
+	finalizeStreamTiming(&result)
+	assert.Equal(t, time.Second/63, result.TPOT)
+}
+
+func TestRunStressReportsRequestDurationWithoutInventingTokens(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	var metrics *StressMetrics
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL, Model: "glm-5.3-flash", Modules: []string{ModuleStress},
+		Stress: StressConfig{Concurrency: 1, Rounds: 1, MaxTokens: 64},
+	}, func(event Event) {
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	assert.Equal(t, 1, metrics.Attempted)
+	assert.Equal(t, 1, metrics.Succeeded)
+	assert.Positive(t, metrics.RequestAvgMS)
+	assert.Zero(t, metrics.TTFTN)
+	assert.Zero(t, metrics.TPOTN)
+	assert.Zero(t, metrics.UsageN)
+	assert.Zero(t, metrics.CompletionTokens)
+	assert.Zero(t, metrics.TokensPerSec)
+	assert.Zero(t, metrics.RequestTokensPerSec)
+	assert.Zero(t, metrics.TPM)
+}
+
+func TestRunStressSummarizesFailuresFromEveryWorker(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"rate limit exceeded"}}`)
+	}))
+	defer server.Close()
+
+	var metrics *StressMetrics
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL, Model: "glm-5.3-flash", Modules: []string{ModuleStress},
+		Stress: StressConfig{Concurrency: 2, Rounds: 2, MaxTokens: 64},
+	}, func(event Event) {
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	assert.Equal(t, 4, metrics.Attempted)
+	assert.Equal(t, 4, metrics.Failed)
+	assert.Equal(t, 1.0, metrics.ErrorRate)
+	require.Len(t, metrics.Issues, 1)
+	assert.Equal(t, 4, metrics.Issues[0].Count)
+	assert.Equal(t, http.StatusTooManyRequests, metrics.Issues[0].StatusCode)
+	assert.Contains(t, metrics.Issues[0].Message, "rate limit exceeded")
+	assert.Contains(t, []int{1, 2}, metrics.Issues[0].Worker)
+	assert.Contains(t, []int{1, 2}, metrics.Issues[0].Round)
+	assert.Zero(t, metrics.OtherIssueCount)
+}
+
+func TestRunStressReportsMalformedJSONResponse(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":`)
+	}))
+	defer server.Close()
+
+	var metrics *StressMetrics
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL, Model: "glm-5.3-flash", Modules: []string{ModuleStress},
+		Stress: StressConfig{Concurrency: 1, Rounds: 1, MaxTokens: 64},
+	}, func(event Event) {
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	assert.Equal(t, 1, metrics.Failed)
+	require.Len(t, metrics.Issues, 1)
+	assert.Equal(t, http.StatusOK, metrics.Issues[0].StatusCode)
+	assert.Contains(t, metrics.Issues[0].Message, "invalid JSON response")
 }
 
 func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {

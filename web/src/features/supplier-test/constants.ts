@@ -323,6 +323,7 @@ export const CACHE_CHECKS: CheckResult[] = [
 
 export const MAX_CONCURRENCY = 1000
 export const MAX_ROUNDS = 10000
+export const MAX_STRESS_REQUESTS = 10000
 export const MAX_TOKENS_CAP = 256000
 export const MAX_CACHE_ROUNDS = 50
 export const MAX_CACHE_WAIT_SECONDS = 600

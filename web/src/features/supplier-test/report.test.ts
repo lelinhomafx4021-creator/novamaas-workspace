@@ -185,6 +185,54 @@ describe('supplier-test report', () => {
     }
   })
 
+  test('reports missing upstream token usage without showing a zero token rate', () => {
+    const input = makeTestInput()
+    if (!input.stressMetrics) throw new Error('missing stress fixture')
+    input.stressMetrics = {
+      ...input.stressMetrics,
+      usage_n: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      tokens_per_sec: 0,
+      request_tokens_per_sec: 0,
+      tpm: 0,
+    }
+    input.stressAssessment = assessStress(
+      input.stressMetrics,
+      getStandard('default')
+    )
+    const markdown = buildMarkdownReport(input)
+    const html = buildHtmlReport(input)
+    expect(markdown).toContain('Batch output throughput: —')
+    expect(markdown).toContain('Per-request output rate: —')
+    expect(html).not.toContain('0.0 tok/s')
+  })
+
+  test('exports grouped request errors with status and sample timing', () => {
+    const input = makeTestInput()
+    if (!input.stressMetrics) throw new Error('missing stress fixture')
+    input.stressMetrics = {
+      ...input.stressMetrics,
+      succeeded: 98,
+      failed: 2,
+      issues: [
+        {
+          status_code: 429,
+          message: 'rate <limit> exceeded',
+          count: 2,
+          worker: 2,
+          round: 1,
+          elapsed_ms: 1250,
+        },
+      ],
+    }
+    const markdown = buildMarkdownReport(input)
+    const html = buildHtmlReport(input)
+    expect(markdown).toContain('2 × 429: rate <limit> exceeded (W2/R1, 1.25 s)')
+    expect(html).toContain('rate &lt;limit&gt; exceeded')
+    expect(html).toContain('W2/R1, 1.25 s')
+  })
+
   test('buildMarkdownReport formats structured sections without Cannot compare in tables', () => {
     const input = makeTestInput()
     const md = buildMarkdownReport(input)

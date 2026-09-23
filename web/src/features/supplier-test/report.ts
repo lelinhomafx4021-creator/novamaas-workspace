@@ -98,13 +98,26 @@ export function exportPdfReport(input: ReportInput) {
   doc.write(html)
   doc.close()
 
-  iframe.contentWindow?.focus()
-  setTimeout(() => {
+  printReportFrame(iframe, doc)
+}
+
+function printReportFrame(iframe: HTMLIFrameElement, doc: Document) {
+  const print = () => {
+    iframe.contentWindow?.focus()
     iframe.contentWindow?.print()
     setTimeout(() => {
-      document.body.removeChild(iframe)
+      if (iframe.isConnected) document.body.removeChild(iframe)
     }, 1000)
-  }, 250)
+  }
+  const fontsReady = doc.fonts?.ready
+  if (fontsReady) {
+    void fontsReady.then(
+      () => setTimeout(print, 100),
+      () => setTimeout(print, 250)
+    )
+  } else {
+    setTimeout(print, 250)
+  }
 }
 
 function translate(
@@ -164,7 +177,6 @@ export function buildMarkdownReport(input: ReportInput): string {
     }
     return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
   })
-
   const lines = [
     `# ${t('Supplier Test Report')}`,
     '',
@@ -208,14 +220,88 @@ export function buildMarkdownReport(input: ReportInput): string {
     }
     if (input.stressMetrics) {
       const sm = input.stressMetrics
+      const completeUsage =
+        sm.usage_n === undefined || sm.usage_n === sm.succeeded
       lines.push(
         `- ${t('Success / failed')}: ${sm.succeeded} / ${sm.failed}`,
-        `- ${t('Total duration')}: ${(sm.elapsed_ms / 1000).toFixed(2)} s`,
-        `- ${t('Output throughput')}: ${sm.tokens_per_sec.toFixed(1)} tok/s`,
+        `- ${t('Requests completed / not run')}: ${sm.attempted ?? sm.total} / ${sm.not_run ?? 0}`,
+        `- ${t('Batch wall time')}: ${(sm.elapsed_ms / 1000).toFixed(2)} s`,
+        `- ${t('Batch output throughput')}: ${completeUsage ? `${sm.tokens_per_sec.toFixed(1)} tok/s` : '—'}`,
+        `- ${t('Per-request output rate')}: ${completeUsage && sm.request_tokens_per_sec ? `${sm.request_tokens_per_sec.toFixed(1)} tok/s` : '—'}`,
+        `- ${t('Request duration avg / P50 / P90')}: ${sm.request_avg_ms ? `${(sm.request_avg_ms / 1000).toFixed(2)} / ${((sm.request_p50_ms ?? 0) / 1000).toFixed(2)} / ${((sm.request_p90_ms ?? 0) / 1000).toFixed(2)} s` : '—'}`,
         `- ${t('Tokens (prompt / completion)')}: ${formatTokenCompact(sm.prompt_tokens)} / ${formatTokenCompact(sm.completion_tokens)}`,
-        `- ${t('Estimated capacity')}: ${Math.round(sm.rpm)} RPM / ${formatTokenCompact(sm.tpm)} TPM`,
+        `- ${t('Estimated capacity')}: ${Math.round(sm.rpm)} RPM / ${completeUsage ? formatTokenCompact(sm.tpm) : '—'} TPM`,
         ''
       )
+      const missingUsage = Math.max(
+        0,
+        sm.succeeded - (sm.usage_n ?? sm.succeeded)
+      )
+      const notRun =
+        sm.not_run ?? Math.max(0, sm.total - (sm.attempted ?? sm.total))
+      const missingTTFT = input.stressConfig?.stream
+        ? Math.max(0, sm.succeeded - sm.ttft_n)
+        : 0
+      const missingTPOT = input.stressConfig?.stream
+        ? Math.max(0, sm.ttft_n - sm.tpot_n)
+        : 0
+      const slowRows =
+        input.stressAssessment?.rows.filter(
+          (row) => row.verdict === 'slow' || row.verdict === 'abnormal'
+        ) ?? []
+      lines.push(`### ${t('Problems found')}`)
+      if (
+        sm.failed === 0 &&
+        notRun === 0 &&
+        missingUsage === 0 &&
+        missingTTFT === 0 &&
+        missingTPOT === 0 &&
+        slowRows.length === 0
+      ) {
+        lines.push(
+          t('No request errors or threshold violations were found in this run.')
+        )
+      }
+      for (const issue of sm.issues ?? []) {
+        const status = issue.status_code || t('No HTTP response')
+        lines.push(
+          `- ${issue.count} × ${status}: ${issue.message.replaceAll('|', '\\|')} (W${issue.worker}/R${issue.round}, ${(issue.elapsed_ms / 1000).toFixed(2)} s)`
+        )
+      }
+      if (sm.other_issue_count) {
+        lines.push(
+          `- ${t('{{count}} additional failures are included in the failed total but omitted from the detailed list.', { count: sm.other_issue_count })}`
+        )
+      }
+      if (sm.failed > 0 && !sm.issues?.length && !sm.other_issue_count) {
+        lines.push(`- ${t('Failure details are unavailable for this run.')}`)
+      }
+      if (missingUsage > 0) {
+        lines.push(
+          `- ${t('{{count}} successful requests had no complete token usage; token rates and TPM are unavailable.', { count: missingUsage })}`
+        )
+      }
+      if (notRun > 0) {
+        lines.push(
+          `- ${t('{{count}} planned requests were not started because the run stopped or was cancelled.', { count: notRun })}`
+        )
+      }
+      if (missingTTFT > 0) {
+        lines.push(
+          `- ${t('{{count}} successful stream requests had no observable first output; TTFT is unavailable for them.', { count: missingTTFT })}`
+        )
+      }
+      if (missingTPOT > 0) {
+        lines.push(
+          `- ${t('{{count}} streamed responses lacked enough timed output and token usage to calculate TPOT.', { count: missingTPOT })}`
+        )
+      }
+      for (const row of slowRows) {
+        lines.push(
+          `- ${t(row.label)}: ${displayMeasured(row, t)} · ${displayThreshold(row, t)}`
+        )
+      }
+      lines.push('')
     }
     if (input.stressAssessment) {
       lines.push(...markdownTable(input.stressAssessment, t))
@@ -358,6 +444,16 @@ export function buildHtmlReport(input: ReportInput): string {
     }
     return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
   })
+  const basicResults = [...shallowChecks, ...protocolChecks]
+  let basicBadge = 'All checks passed'
+  let basicBadgeClass = 'verdict-ok'
+  if (basicResults.some((check) => check.status === 'fail')) {
+    basicBadge = 'Checks have failures'
+    basicBadgeClass = 'verdict-abnormal'
+  } else if (basicResults.some((check) => check.status === 'skip')) {
+    basicBadge = 'Checks complete with skips'
+    basicBadgeClass = 'verdict-na'
+  }
 
   // Section 2: Stress test HTML
   let stressSection = ''
@@ -381,31 +477,115 @@ export function buildHtmlReport(input: ReportInput): string {
     }
 
     let statsGrid = ''
+    let problemsHtml = ''
     if (input.stressMetrics) {
       const sm = input.stressMetrics
       const durationSec = (sm.elapsed_ms / 1000).toFixed(2)
+      const completeUsage =
+        sm.usage_n === undefined || sm.usage_n === sm.succeeded
       statsGrid = `<div class="stats-grid">
 <div class="stat-card">
   <div class="stat-val">${sm.succeeded} / ${sm.failed}</div>
   <div class="stat-lbl">${escapeHtml(t('Success / failed'))}</div>
 </div>
 <div class="stat-card">
-  <div class="stat-val">${durationSec} s</div>
-  <div class="stat-lbl">${escapeHtml(t('Total duration'))}</div>
+  <div class="stat-val">${sm.attempted ?? sm.total} / ${sm.not_run ?? 0}</div>
+  <div class="stat-lbl">${escapeHtml(t('Requests completed / not run'))}</div>
 </div>
 <div class="stat-card">
-  <div class="stat-val">${sm.tokens_per_sec.toFixed(1)} tok/s</div>
-  <div class="stat-lbl">${escapeHtml(t('Output throughput'))}</div>
+  <div class="stat-val">${durationSec} s</div>
+  <div class="stat-lbl">${escapeHtml(t('Batch wall time'))}</div>
+</div>
+<div class="stat-card">
+  <div class="stat-val">${completeUsage ? `${sm.tokens_per_sec.toFixed(1)} tok/s` : '—'}</div>
+  <div class="stat-lbl">${escapeHtml(t('Batch output throughput'))}</div>
+</div>
+<div class="stat-card">
+  <div class="stat-val">${sm.request_avg_ms ? `${(sm.request_avg_ms / 1000).toFixed(2)} / ${((sm.request_p50_ms ?? 0) / 1000).toFixed(2)} / ${((sm.request_p90_ms ?? 0) / 1000).toFixed(2)} s` : '—'}</div>
+  <div class="stat-lbl">${escapeHtml(t('Request duration avg / P50 / P90'))}</div>
+</div>
+<div class="stat-card">
+  <div class="stat-val">${completeUsage && sm.request_tokens_per_sec ? `${sm.request_tokens_per_sec.toFixed(1)} tok/s` : '—'}</div>
+  <div class="stat-lbl">${escapeHtml(t('Per-request output rate'))}</div>
+</div>
+<div class="stat-card">
+  <div class="stat-val">${sm.ttft_n > 0 ? `${(sm.ttft_avg_ms / 1000).toFixed(2)} / ${(sm.ttft_p50_ms / 1000).toFixed(2)} / ${(sm.ttft_p90_ms / 1000).toFixed(2)} s` : '—'}</div>
+  <div class="stat-lbl">${escapeHtml(t('TTFT avg / P50 / P90'))}</div>
+</div>
+<div class="stat-card">
+  <div class="stat-val">${sm.tpot_n > 0 ? `${sm.tpot_avg_ms.toFixed(1)} / ${sm.tpot_p50_ms.toFixed(1)} / ${sm.tpot_p90_ms.toFixed(1)} ms` : '—'}</div>
+  <div class="stat-lbl">${escapeHtml(t('TPOT avg / P50 / P90'))}</div>
 </div>
 <div class="stat-card">
   <div class="stat-val">${formatTokenCompact(sm.prompt_tokens)} / ${formatTokenCompact(sm.completion_tokens)}</div>
   <div class="stat-lbl">${escapeHtml(t('Tokens (prompt / completion)'))}</div>
 </div>
 <div class="stat-card">
-  <div class="stat-val">${Math.round(sm.rpm)} / ${formatTokenCompact(sm.tpm)}</div>
+  <div class="stat-val">${Math.round(sm.rpm)} / ${completeUsage ? formatTokenCompact(sm.tpm) : '—'}</div>
   <div class="stat-lbl">${escapeHtml(t('Estimated capacity (RPM/TPM)'))}</div>
 </div>
 </div>`
+      const missingUsage = Math.max(
+        0,
+        sm.succeeded - (sm.usage_n ?? sm.succeeded)
+      )
+      const notRun =
+        sm.not_run ?? Math.max(0, sm.total - (sm.attempted ?? sm.total))
+      const missingTTFT = input.stressConfig?.stream
+        ? Math.max(0, sm.succeeded - sm.ttft_n)
+        : 0
+      const missingTPOT = input.stressConfig?.stream
+        ? Math.max(0, sm.ttft_n - sm.tpot_n)
+        : 0
+      const slowRows =
+        input.stressAssessment?.rows.filter(
+          (row) => row.verdict === 'slow' || row.verdict === 'abnormal'
+        ) ?? []
+      const issueLines = (sm.issues ?? []).map((issue) => {
+        const status = issue.status_code || t('No HTTP response')
+        return `<li>${issue.count} × ${escapeHtml(String(status))}: ${escapeHtml(issue.message)} (W${issue.worker}/R${issue.round}, ${(issue.elapsed_ms / 1000).toFixed(2)} s)</li>`
+      })
+      if (sm.other_issue_count) {
+        issueLines.push(
+          `<li>${escapeHtml(t('{{count}} additional failures are included in the failed total but omitted from the detailed list.', { count: sm.other_issue_count }))}</li>`
+        )
+      }
+      if (sm.failed > 0 && !sm.issues?.length && !sm.other_issue_count) {
+        issueLines.push(
+          `<li>${escapeHtml(t('Failure details are unavailable for this run.'))}</li>`
+        )
+      }
+      if (missingUsage > 0) {
+        issueLines.push(
+          `<li>${escapeHtml(t('{{count}} successful requests had no complete token usage; token rates and TPM are unavailable.', { count: missingUsage }))}</li>`
+        )
+      }
+      if (notRun > 0) {
+        issueLines.push(
+          `<li>${escapeHtml(t('{{count}} planned requests were not started because the run stopped or was cancelled.', { count: notRun }))}</li>`
+        )
+      }
+      if (missingTTFT > 0) {
+        issueLines.push(
+          `<li>${escapeHtml(t('{{count}} successful stream requests had no observable first output; TTFT is unavailable for them.', { count: missingTTFT }))}</li>`
+        )
+      }
+      if (missingTPOT > 0) {
+        issueLines.push(
+          `<li>${escapeHtml(t('{{count}} streamed responses lacked enough timed output and token usage to calculate TPOT.', { count: missingTPOT }))}</li>`
+        )
+      }
+      for (const row of slowRows) {
+        issueLines.push(
+          `<li>${escapeHtml(t(row.label))}: ${escapeHtml(displayMeasured(row, t))} · ${escapeHtml(displayThreshold(row, t))}</li>`
+        )
+      }
+      if (issueLines.length === 0) {
+        issueLines.push(
+          `<li>${escapeHtml(t('No request errors or threshold violations were found in this run.'))}</li>`
+        )
+      }
+      problemsHtml = `<div class="summary-text"><strong>${escapeHtml(t('Problems found'))}</strong><ul>${issueLines.join('')}</ul></div>`
     }
 
     const tableHtml = input.stressAssessment
@@ -422,6 +602,7 @@ export function buildHtmlReport(input: ReportInput): string {
 </div>
 ${configBar}
 ${statsGrid}
+${problemsHtml}
 ${tableHtml}
 ${summaryHtml}
 </div>`
@@ -709,7 +890,7 @@ body {
 /* Stat Cards */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 5px;
   margin-bottom: 5px;
 }
@@ -766,6 +947,32 @@ table.benchmark-table td.cell-threshold {
   margin-top: 5px;
   border-radius: 0 4px 4px 0;
 }
+.summary-text strong {
+  color: #334155;
+}
+.summary-text ul {
+  margin: 3px 0 0;
+  padding-left: 17px;
+}
+.summary-text li {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+thead {
+  display: table-header-group;
+}
+tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.report-footer {
+  border-top: 1px solid #e2e8f0;
+  color: #94a3b8;
+  font-size: 9px;
+  margin-top: 16px;
+  padding-top: 5px;
+  text-align: center;
+}
 </style>
 </head>
 <body>
@@ -791,7 +998,7 @@ table.benchmark-table td.cell-threshold {
 <div class="section page-break-avoid">
   <div class="section-header">
     <div class="section-title">一、${escapeHtml(t('Connectivity and protocol'))}</div>
-    <div class="verdict-badge verdict-ok">${escapeHtml(t('All checks passed'))}</div>
+    <div class="verdict-badge ${basicBadgeClass}">${escapeHtml(t(basicBadge))}</div>
   </div>
   ${shallowChecks.length > 0 ? `<div class="check-group-title">1. ${escapeHtml(t('Basic connectivity checks'))}</div>${renderCheckListHtml(shallowChecks, input, t)}` : ''}
   ${protocolChecks.length > 0 ? `<div class="check-group-title">2. ${escapeHtml(t('Advanced protocol capabilities'))}</div>${renderCheckListHtml(protocolChecks, input, t)}` : ''}
@@ -802,6 +1009,8 @@ ${stressSection}
 ${cacheSection}
 
 ${input.errorMessage ? `<div class="section page-break-avoid"><h2>${escapeHtml(t('Error'))}</h2><p style="color:#dc2626">${escapeHtml(input.errorMessage)}</p></div>` : ''}
+
+<div class="report-footer">${escapeHtml(t('Generated by Supplier Test'))} · ${escapeHtml(new Date().toLocaleString())}</div>
 
 </body>
 </html>
@@ -1189,11 +1398,5 @@ export function exportVideoPdfReport(input: VideoReportInput) {
   doc.write(html)
   doc.close()
 
-  iframe.contentWindow?.focus()
-  setTimeout(() => {
-    iframe.contentWindow?.print()
-    setTimeout(() => {
-      document.body.removeChild(iframe)
-    }, 1000)
-  }, 250)
+  printReportFrame(iframe, doc)
 }

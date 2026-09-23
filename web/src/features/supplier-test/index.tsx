@@ -54,6 +54,7 @@ import {
   MAX_CACHE_WAIT_SECONDS,
   MAX_CONCURRENCY,
   MAX_ROUNDS,
+  MAX_STRESS_REQUESTS,
   MAX_TOKENS_CAP,
   PROTOCOL_BASIC_IDS,
   resolveCorpusPrompt,
@@ -402,6 +403,14 @@ export function SupplierTest() {
         )
         return
       }
+      if (stress.concurrency * stress.rounds > MAX_STRESS_REQUESTS) {
+        toast.error(
+          t('Concurrency × rounds must be at most {{max}} requests', {
+            max: MAX_STRESS_REQUESTS,
+          })
+        )
+        return
+      }
       if (
         !Number.isInteger(stress.maxTokens) ||
         stress.maxTokens < 1 ||
@@ -725,6 +734,7 @@ export function SupplierTest() {
                 streamText={run.streamText}
                 stressSummary={run.summaries.stress}
                 stressAssessment={stressAssessment}
+                metrics={run.metrics}
                 onStressChange={setStress}
               />
 

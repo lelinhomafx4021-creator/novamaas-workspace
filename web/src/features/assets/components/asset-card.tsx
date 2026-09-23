@@ -24,6 +24,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
@@ -42,6 +43,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { formatTimestampToDate } from '@/lib/format'
 
 import { getMediaAssetPreview } from '../api'
 import { assertAssetSuccess, formatAssetBytes } from '../asset-utils'
@@ -49,15 +51,40 @@ import type { MediaAsset } from '../types'
 
 function AssetPreview(props: { asset: MediaAsset }) {
   const { t } = useTranslation()
+  const previewRef = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(
+    () => typeof IntersectionObserver === 'undefined'
+  )
+  useEffect(() => {
+    if (visible || typeof IntersectionObserver === 'undefined') return
+    const target = previewRef.current
+    if (!target) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '300px' }
+    )
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [visible])
   const previewQuery = useQuery({
     queryKey: ['asset-library', 'preview', props.asset.id],
     queryFn: async () =>
       assertAssetSuccess(await getMediaAssetPreview(props.asset.id)),
+    enabled: visible,
     staleTime: 5 * 60 * 1000,
   })
 
-  if (previewQuery.isLoading) {
-    return <Skeleton className='h-36 w-full rounded-none' />
+  if (!visible || previewQuery.isLoading) {
+    return (
+      <div ref={previewRef} className='h-36 w-full'>
+        <Skeleton className='h-full w-full rounded-none' />
+      </div>
+    )
   }
   if (!previewQuery.data?.url) {
     return (
@@ -151,6 +178,19 @@ export function AssetCard(props: {
         <p className='text-muted-foreground truncate text-xs'>
           {props.groupName} · {formatAssetBytes(props.asset.size)}
         </p>
+        <div className='text-muted-foreground grid gap-0.5 text-xs'>
+          <p className='truncate' title={props.asset.owner_name}>
+            {t('Uploader')}: {props.asset.owner_name || t('Unknown uploader')}
+          </p>
+          <p>
+            {t('Uploaded at')}:{' '}
+            <time
+              dateTime={new Date(props.asset.created_at * 1000).toISOString()}
+            >
+              {formatTimestampToDate(props.asset.created_at)}
+            </time>
+          </p>
+        </div>
       </CardHeader>
       <CardContent>
         <code className='bg-muted block truncate rounded-md px-2 py-1.5 text-[11px]'>

@@ -63,6 +63,10 @@ NovaMaaS 的核心目标不是增加孤立功能，而是将供应、产品、�
 
 配置顺序：先在“系统设置 → 存储 → 对象存储”创建并测试 OSS 配置，再启用“中转媒体临时存储”策略，最后在目标火山原生或 DoubaoVideo 渠道的高级设置中开启“Base64 媒体暂存”。阿里云侧最小权限需覆盖目标业务前缀以及 `temporary/relay-media/healthcheck/` 测试前缀的上传、签名读取和删除；接口行为参考[阿里云 OSS Go SDK V2 文档](https://help.aliyun.com/zh/oss/developer-reference/manual-for-go-sdk-v2/)、[V4 预签名下载文档](https://help.aliyun.com/en/oss/developer-reference/v2-presign-download)和[生命周期规则文档](https://help.aliyun.com/zh/oss/user-guide/lifecycle-rules-based-on-the-last-modified-time/)，火山请求格式参考[火山方舟原生内容生成接口](https://docs.volcengine.com/docs/82379/1520757?lang=zh)。
 
+### 素材库与下游 Action API
+
+平台素材库支持控制台直传、私有对象存储、渠道副本同步和请求时素材 ID 映射。下游客户还可使用平台签发并加密保存的 AK/SK，通过火山方舟同形态的 `POST /?Action=...&Version=2024-01-01` 管理素材组与素材；`CreateAsset` 会安全导入公网 URL，返回的平台素材 ID 可继续用于视频生成。素材列表采用服务端检索和每页 40 条分页，预览签名地址按可视区域延迟获取，并展示上传者和上传时间。完整接口、签名、部署与容量边界见[素材库与火山 Action API 兼容说明](docs/ASSET_LIBRARY_API.zh_CN.md)。
+
 ### 客户消费对账（一期）
 
 `/billing` 提供管理员与下游客户之间的服务消费对账；当前业务前提是管理员充值的钱包额度，不包含资金余额总账、订阅/赠送核算、发票、银行凭证或电子签章。
@@ -103,6 +107,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#37](https://github.com/yeruyi1024/novamaas-workspace/pull/37) | 2026-09-23 | `feat` | 素材库 / 下游兼容 API | 新增平台签发并加密保存的用户级素材库 AK/SK，在根路径和 `/api/v3/` 提供火山方舟同形态的 HMAC-SHA256 V4 Action API；支持公网 URL 安全导入、租户隔离、下游密钥自助管理和大规模素材分页检索。 | NovaMaaS 下游专属；上游当前没有面向下游客户的平台素材库 AK/SK、同路径 Action API、URL 导入与租户隔离组合实现。 |
 | [#36](https://github.com/yeruyi1024/novamaas-workspace/pull/36) | 2026-09-22 | `feat` | 素材库 / 对象存储 / 视频渠道 | 新增网关自有永久素材库、租户权限与签名预览，按渠道维护上游副本和同步任务；支持 Volcengine Action AK/SK、Bearer 及 YooFang REST Bearer SK，并在 DoubaoVideo 和火山原生请求中将我方素材 ID 实时翻译为对应渠道 ID。 | NovaMaaS 下游专属；上游当前没有等价的自有素材库、多渠道副本同步、加密渠道凭据与请求时 ID 映射组合实现。 |
 | [#35](https://github.com/yeruyi1024/novamaas-workspace/pull/35) | 2026-09-21 | `feat` | 渠道诊断 / 视频任务可观测性 | 新增复用渠道代理与 HTTP 配置的分阶段网络探测，并为 Doubao Video、火山原生和阿里百炼持久化请求体读取、请求准备、临时存储转换、上游请求及总耗时，在任务日志中分开展示。 | NovaMaaS 下游专属；上游当前没有等价的渠道 DNS/TCP/TLS/TTFB 探测与视频请求全链路指标组合实现。 |
 | [#34](https://github.com/yeruyi1024/novamaas-workspace/pull/34) | 2026-09-21 | `fix` | 计费 / 财务核算 | 按来源日志识别异步任务实时快照与历史回填快照，阻止重复成本凭证；汇总和明细以最早的不可变快照为准，历史更正继续使用追加式调整。 | #31 的 NovaMaaS 下游正确性修复；上游当前没有等价的渠道成本快照与历史回填核算能力。 |
@@ -174,6 +179,7 @@ docker run --rm -p 3000:3000 -v novamaas-data:/data novamaas:local
 | [UPSTREAM.md](UPSTREAM.md) | 上游基线、同步记录、来源提交与维护策略 |
 | [docs/BUILD.zh_CN.md](docs/BUILD.zh_CN.md) | 本地构建、CI、安装包、GHCR 与腾讯云 CCR 发布说明 |
 | [docs/VOLC_NATIVE.zh_CN.md](docs/VOLC_NATIVE.zh_CN.md) | 火山方舟原生 API 渠道、任务接口和兼容性边界 |
+| [docs/ASSET_LIBRARY_API.zh_CN.md](docs/ASSET_LIBRARY_API.zh_CN.md) | 素材库、下游 AK/SK、火山 Action API 兼容与大列表性能边界 |
 | [对账单一期实施说明](docs/design/BILLING_STATEMENTS_IMPLEMENTATION.zh_CN.md) | 实际交付范围、记账/归档机制、迁移和部署边界 |
 | [对账单验收指南](docs/design/BILLING_STATEMENTS_ACCEPTANCE.zh_CN.md) | 历史查询、正式记账、创建草稿、下发与客户确认操作 |
 | [历史核验与统计说明](docs/design/BILLING_HISTORY_REVIEW.zh_CN.md) | 历史导入确认边界、空单防护、MySQL 聚合与 PDF 固化 |

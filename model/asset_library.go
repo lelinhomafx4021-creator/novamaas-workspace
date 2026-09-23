@@ -34,6 +34,9 @@ const (
 
 	AssetChannelAuthAKSK   = "ak_sk"
 	AssetChannelAuthBearer = "bearer"
+
+	AssetAccessKeyStatusEnabled  = "enabled"
+	AssetAccessKeyStatusDisabled = "disabled"
 )
 
 // AssetGroup is the tenant-owned namespace exposed by this gateway. Upstream
@@ -87,6 +90,23 @@ type AssetChannelConfig struct {
 	AccessKeyHint        string `json:"access_key_hint" gorm:"type:varchar(16)"`
 	EncryptedCredential  string `json:"-" gorm:"type:text"`
 	CredentialKeyVersion string `json:"-" gorm:"type:varchar(32)"`
+	CreatedAt            int64  `json:"created_at" gorm:"bigint;index"`
+	UpdatedAt            int64  `json:"updated_at" gorm:"bigint"`
+}
+
+// AssetAccessKey authenticates downstream clients that use Volcengine's
+// HMAC-SHA256 Action API. The secret is encrypted at rest and is returned only
+// once when the key is created.
+type AssetAccessKey struct {
+	ID                   int64  `json:"id" gorm:"primaryKey"`
+	OwnerUserID          int    `json:"owner_user_id" gorm:"index:idx_asset_access_keys_owner_status,priority:1"`
+	Name                 string `json:"name" gorm:"type:varchar(64)"`
+	AccessKeyID          string `json:"access_key_id" gorm:"type:varchar(64);uniqueIndex"`
+	SecretHint           string `json:"secret_hint" gorm:"type:varchar(16)"`
+	EncryptedSecret      string `json:"-" gorm:"type:text"`
+	CredentialKeyVersion string `json:"-" gorm:"type:varchar(32)"`
+	Status               string `json:"status" gorm:"type:varchar(16);index:idx_asset_access_keys_owner_status,priority:2"`
+	LastUsedAt           int64  `json:"last_used_at" gorm:"bigint"`
 	CreatedAt            int64  `json:"created_at" gorm:"bigint;index"`
 	UpdatedAt            int64  `json:"updated_at" gorm:"bigint"`
 }
@@ -145,6 +165,11 @@ func (value *AssetChannelConfig) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+func (value *AssetAccessKey) BeforeCreate(_ *gorm.DB) error {
+	setAssetTimestamps(&value.CreatedAt, &value.UpdatedAt)
+	return nil
+}
+
 func (value *AssetGroupReplica) BeforeCreate(_ *gorm.DB) error {
 	setAssetTimestamps(&value.CreatedAt, &value.UpdatedAt)
 	return nil
@@ -162,6 +187,14 @@ func FindAssetGroup(publicID string, ownerUserID int, includeAllOwners bool) (*A
 	}
 	var group AssetGroup
 	if err := query.First(&group).Error; err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
+func FindAssetGroupByID(id int64) (*AssetGroup, error) {
+	var group AssetGroup
+	if err := DB.Where("id = ? AND status <> ?", id, AssetStatusDeleted).First(&group).Error; err != nil {
 		return nil, err
 	}
 	return &group, nil

@@ -293,6 +293,13 @@ func SetApiRouter(router *gin.Engine) {
 			assetLibraryRoute.GET("/assets/:id/preview", controller.GetMediaAssetPreview)
 			assetLibraryRoute.DELETE("/assets/:id", controller.DeleteMediaAsset)
 		}
+		assetAccessKeyRoute := apiRouter.Group("/asset-library/access-keys")
+		assetAccessKeyRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			assetAccessKeyRoute.GET("", controller.ListAssetAccessKeys)
+			assetAccessKeyRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetAccessKey)
+			assetAccessKeyRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetAccessKey)
+		}
 		assetLibraryAdminRoute := apiRouter.Group("/asset-library/admin")
 		assetLibraryAdminRoute.Use(middleware.RootAuth(), middleware.DisableCache())
 		{

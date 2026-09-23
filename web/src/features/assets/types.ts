@@ -29,6 +29,8 @@ export type AssetGroup = {
 export type MediaAsset = {
   id: string
   group_id: string
+  owner_user_id: number
+  owner_name: string
   name: string
   type: 'image' | 'video' | 'audio'
   content_type: string
@@ -37,6 +39,27 @@ export type MediaAsset = {
   status: string
   created_at: number
   updated_at: number
+}
+
+export type MediaAssetList = {
+  items: MediaAsset[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export type AssetAccessKey = {
+  id: number
+  name: string
+  access_key_id: string
+  secret_hint: string
+  status: string
+  last_used_at: number
+  created_at: number
+}
+
+export type CreatedAssetAccessKey = AssetAccessKey & {
+  secret_access_key: string
 }
 
 export type AssetSyncJob = {

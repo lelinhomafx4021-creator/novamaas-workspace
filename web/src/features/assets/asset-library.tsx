@@ -20,11 +20,17 @@ import {
   FolderAddIcon,
   Image01Icon,
   Search01Icon,
+  ShieldKeyIcon,
   Upload01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -55,7 +61,13 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useIsAdmin } from '@/hooks/use-admin'
 
 import {
   createAssetGroup,
@@ -66,6 +78,7 @@ import {
   uploadMediaAsset,
 } from './api'
 import { assertAssetSuccess, assetErrorMessage } from './asset-utils'
+import { AssetApiAccessDialog } from './components/asset-api-access-dialog'
 import { AssetCard } from './components/asset-card'
 import {
   AssetGroupDialog,
@@ -76,42 +89,54 @@ import type { MediaAsset } from './types'
 
 const GROUPS_QUERY_KEY = ['asset-library', 'groups'] as const
 const ASSETS_QUERY_KEY = ['asset-library', 'assets'] as const
+const ASSET_PAGE_SIZE = 40
 
 export function AssetLibrary() {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
   const [selectedGroup, setSelectedGroup] = useState('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [apiAccessDialogOpen, setApiAccessDialogOpen] = useState(false)
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<MediaAsset | null>(null)
+  const deferredSearch = useDeferredValue(search.trim())
 
   const groupsQuery = useQuery({
-    queryKey: GROUPS_QUERY_KEY,
-    queryFn: async () => assertAssetSuccess(await listAssetGroups()),
+    queryKey: [...GROUPS_QUERY_KEY, isAdmin],
+    queryFn: async () => assertAssetSuccess(await listAssetGroups(isAdmin)),
   })
   const assetsQuery = useQuery({
-    queryKey: [...ASSETS_QUERY_KEY, selectedGroup],
+    queryKey: [
+      ...ASSETS_QUERY_KEY,
+      selectedGroup,
+      deferredSearch,
+      page,
+      isAdmin,
+    ],
     queryFn: async () =>
-      assertAssetSuccess(await listMediaAssets(selectedGroup || undefined)),
+      assertAssetSuccess(
+        await listMediaAssets({
+          groupId: selectedGroup || undefined,
+          search: deferredSearch || undefined,
+          page,
+          pageSize: ASSET_PAGE_SIZE,
+          includeAllOwners: isAdmin,
+        })
+      ),
+    placeholderData: keepPreviousData,
   })
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data])
-  const assets = useMemo(() => assetsQuery.data ?? [], [assetsQuery.data])
+  const assets = assetsQuery.data?.items ?? []
+  const totalAssets = assetsQuery.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalAssets / ASSET_PAGE_SIZE))
   const groupNames = useMemo(
     () => new Map(groups.map((group) => [group.id, group.name])),
     [groups]
   )
-  const filteredAssets = useMemo(() => {
-    const keyword = search.trim().toLocaleLowerCase()
-    if (!keyword) return assets
-    return assets.filter((asset) =>
-      `${asset.name} ${asset.id} ${asset.content_type}`
-        .toLocaleLowerCase()
-        .includes(keyword)
-    )
-  }, [assets, search])
-
   const invalidateGroups = () =>
     queryClient.invalidateQueries({ queryKey: GROUPS_QUERY_KEY })
   const invalidateAssets = () =>
@@ -134,6 +159,7 @@ export function AssetLibrary() {
       )
     },
     onSuccess: async () => {
+      setPage(1)
       await invalidateAssets()
       setUploadDialogOpen(false)
       setUploadProgress(0)
@@ -149,6 +175,7 @@ export function AssetLibrary() {
       assertAssetSuccess(await deleteMediaAsset(id)),
     onSuccess: async () => {
       await invalidateAssets()
+      if (assets.length === 1 && page > 1) setPage(page - 1)
       setDeleteTarget(null)
       toast.success(t('Asset deletion queued'))
     },
@@ -176,6 +203,14 @@ export function AssetLibrary() {
           <Button
             size='sm'
             variant='outline'
+            onClick={() => setApiAccessDialogOpen(true)}
+          >
+            <HugeiconsIcon icon={ShieldKeyIcon} data-icon='inline-start' />
+            {t('AK/SK access')}
+          </Button>
+          <Button
+            size='sm'
+            variant='outline'
             onClick={() => setGroupDialogOpen(true)}
           >
             <HugeiconsIcon icon={FolderAddIcon} data-icon='inline-start' />
@@ -197,7 +232,10 @@ export function AssetLibrary() {
                 <NativeSelect
                   aria-label={t('Asset group')}
                   value={selectedGroup}
-                  onChange={(event) => setSelectedGroup(event.target.value)}
+                  onChange={(event) => {
+                    setSelectedGroup(event.target.value)
+                    setPage(1)
+                  }}
                 >
                   <NativeSelectOption value=''>
                     {t('All groups')}
@@ -215,12 +253,15 @@ export function AssetLibrary() {
                   <InputGroupInput
                     value={search}
                     aria-label={t('Search assets')}
-                    placeholder={t('Search by name or asset ID')}
-                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={t('Search by name, asset ID, or uploader')}
+                    onChange={(event) => {
+                      setSearch(event.target.value)
+                      setPage(1)
+                    }}
                   />
                 </InputGroup>
                 <span className='text-muted-foreground text-xs tabular-nums md:text-right'>
-                  {t('{{count}} assets', { count: filteredAssets.length })}
+                  {t('{{count}} assets', { count: totalAssets })}
                 </span>
               </CardContent>
             </Card>
@@ -243,7 +284,7 @@ export function AssetLibrary() {
                 {assetErrorMessage(error)}
               </div>
             )}
-            {!loading && !error && assets.length === 0 && (
+            {!loading && !error && totalAssets === 0 && !deferredSearch && (
               <Empty className='min-h-72 border'>
                 <EmptyHeader>
                   <EmptyMedia variant='icon'>
@@ -273,8 +314,8 @@ export function AssetLibrary() {
             )}
             {!loading &&
               !error &&
-              assets.length > 0 &&
-              filteredAssets.length === 0 && (
+              totalAssets === 0 &&
+              Boolean(deferredSearch) && (
                 <Empty className='min-h-56 border'>
                   <EmptyHeader>
                     <EmptyTitle>{t('No matching assets')}</EmptyTitle>
@@ -284,13 +325,13 @@ export function AssetLibrary() {
                   </EmptyHeader>
                 </Empty>
               )}
-            {filteredAssets.length > 0 && (
+            {assets.length > 0 && (
               <div
                 data-testid='asset-grid'
                 data-density='compact'
                 className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
               >
-                {filteredAssets.map((asset) => (
+                {assets.map((asset) => (
                   <AssetCard
                     key={asset.id}
                     asset={asset}
@@ -303,20 +344,65 @@ export function AssetLibrary() {
               </div>
             )}
 
-            {groups.length > 0 && selectedGroup && assets.length === 0 && (
-              <Button
-                variant='ghost'
-                className='text-destructive self-start'
-                disabled={deleteGroupMutation.isPending}
-                onClick={() => deleteGroupMutation.mutate(selectedGroup)}
-              >
-                {t('Delete empty group')}
-              </Button>
+            {totalPages > 1 && (
+              <Pagination aria-label={t('Asset pages')}>
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={page <= 1 || assetsQuery.isFetching}
+                      onClick={() => setPage((current) => current - 1)}
+                    >
+                      {t('Previous')}
+                    </Button>
+                  </PaginationItem>
+                  <PaginationItem>
+                    <span
+                      className='text-muted-foreground px-3 text-sm tabular-nums'
+                      aria-live='polite'
+                    >
+                      {t('Page {{page}} of {{total}}', {
+                        page,
+                        total: totalPages,
+                      })}
+                    </span>
+                  </PaginationItem>
+                  <PaginationItem>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={page >= totalPages || assetsQuery.isFetching}
+                      onClick={() => setPage((current) => current + 1)}
+                    >
+                      {t('Next')}
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             )}
+
+            {groups.length > 0 &&
+              selectedGroup &&
+              totalAssets === 0 &&
+              !deferredSearch && (
+                <Button
+                  variant='ghost'
+                  className='text-destructive self-start'
+                  disabled={deleteGroupMutation.isPending}
+                  onClick={() => deleteGroupMutation.mutate(selectedGroup)}
+                >
+                  {t('Delete empty group')}
+                </Button>
+              )}
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
+      <AssetApiAccessDialog
+        open={apiAccessDialogOpen}
+        onOpenChange={setApiAccessDialogOpen}
+      />
       <AssetGroupDialog
         open={groupDialogOpen}
         onOpenChange={setGroupDialogOpen}

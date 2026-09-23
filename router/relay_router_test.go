@@ -122,6 +122,20 @@ func TestMoonshotCompatibilityRoutesAreRegistered(t *testing.T) {
 	}
 }
 
+func TestVolcAssetActionCompatibilityRoutesAreRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	SetRelayRouter(engine)
+
+	routes := make(map[string]struct{})
+	for _, route := range engine.Routes() {
+		routes[route.Method+" "+route.Path] = struct{}{}
+	}
+
+	assert.Contains(t, routes, "POST /")
+	assert.Contains(t, routes, "POST /api/v3/")
+}
+
 func setupRelayRouterTestDB(t *testing.T) {
 	t.Helper()
 

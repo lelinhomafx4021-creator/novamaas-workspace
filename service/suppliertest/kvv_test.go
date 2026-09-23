@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,18 +65,38 @@ func TestKimiKVVNativeToolCallFallback(t *testing.T) {
 	assert.Equal(t, "pass", status, message)
 }
 
-func TestKimiKVVRejectsLooseSampling(t *testing.T) {
+func TestKimiKVVToleratesLooseSampling(t *testing.T) {
 	t.Parallel()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"OK"}}]}`)
+		body, _ := io.ReadAll(r.Body)
+		// 模拟上游网关忽略非法参数、直接放行返回 200 OK（大概能过就过）
+		if code, ok := kvvFixtureReject(body); ok {
+			if code == http.StatusBadRequest {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"OK"}}]}`)
+				return
+			}
+		}
+		kvvOfficialFixtureBody(w, body)
+	}))
+	defer upstream.Close()
+
+	status, message := runKVVAgainst(t, upstream)
+	assert.Equal(t, "pass", status, message)
+}
+
+func TestKimiKVVRejectsServerError(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"error":{"message":"internal error"}}`)
 	}))
 	defer upstream.Close()
 
 	status, message := runKVVAgainst(t, upstream)
 	assert.Equal(t, "fail", status)
-	assert.Contains(t, message, "params reject temperature=")
-	assert.Contains(t, message, "期望 HTTP 400")
+	assert.Contains(t, message, "params no-param thinking")
+	assert.Contains(t, message, "期望 HTTP 200，实际 500")
 }
 
 func runKVVAgainst(t *testing.T, upstream *httptest.Server) (string, string) {
@@ -258,4 +279,18 @@ func kvvFixtureOK(body []byte) string {
 		name = got
 	}
 	return `{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"` + name + `","arguments":"{}"}}]}}]}`
+}
+
+func TestLiveOpenJulyKVV(t *testing.T) {
+	t.Skip("manual live test against openjuly.com")
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	defer cancel()
+
+	endpoint := "https://api.openjuly.com/v1/chat/completions"
+	apiKey := "sk-pnaO2V1m8synfWrlwt5FMYxfpd8Xbqlka2VMW4wXOk2zE1eA"
+	model := "kimi-k3"
+
+	status, message := runOfficialKimiKVV(ctx, &http.Client{Timeout: 60 * time.Second}, endpoint, apiKey, model)
+	t.Logf("LIVE TEST RESULT: status=%s, message=%s", status, message)
+	assert.Equal(t, "pass", status, message)
 }

@@ -1,17 +1,14 @@
-# Personal CD: GitHub → Alibaba ACR → optional SSH restart.
-# Official merge-to-main packaging stays in build.yml (GHCR / Tencent CCR).
+# Personal CD: GitHub → GHCR (GitHub Packages) → optional SSH restart.
 #
 # Image:
-#   crpi-dgu2wsvv8dxj63i4.cn-shenzhen.personal.cr.aliyuncs.com/shilijiamaas/novamaas
+#   ghcr.io/<owner>/<repo>
 #
-# Fill GitHub Secrets before the first run (Settings → Secrets and variables → Actions):
-#   ALIYUN_ACR_USERNAME
-#   ALIYUN_ACR_PASSWORD
+# Optional GitHub Secrets (Settings → Secrets and variables → Actions):
 #   DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY   (only if you tick Deploy)
 #
 # Optional Variable:
 #   DEPLOY_PATH   server directory with docker-compose.yml (default /opt/novamaas)
-name: CD Alibaba ACR (with CI Gates)
+name: CD GHCR (with CI Gates)
 
 on:
   push:
@@ -25,16 +22,15 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
-  group: cd-aliyun-${{ github.repository }}
+  group: cd-ghcr-${{ github.repository }}
   cancel-in-progress: true
 
 env:
   GOWORK: 'off'
-  ACR_REGISTRY: crpi-dgu2wsvv8dxj63i4.cn-shenzhen.personal.cr.aliyuncs.com
-  ACR_NAMESPACE: shilijiamaas
-  ACR_REPOSITORY: novamaas
+  REGISTRY: ghcr.io
 
 jobs:
   backend-checks:
@@ -80,26 +76,13 @@ jobs:
       - run: bun run test -- --pool=threads src/features/supplier-test/baselines.test.ts src/features/supplier-test/vendors.test.ts src/features/supplier-test/layout.test.tsx
 
   publish:
-    name: Build and push ACR
+    name: Build and push GHCR
     needs: [backend-checks, frontend-checks]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     outputs:
       image: ${{ steps.meta.outputs.image }}
     steps:
-      - name: Require ACR login secrets
-        env:
-          USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-        run: |
-          missing=0
-          [ -n "$USERNAME" ] || { echo "Missing secret ALIYUN_ACR_USERNAME"; missing=1; }
-          [ -n "$PASSWORD" ] || { echo "Missing secret ALIYUN_ACR_PASSWORD"; missing=1; }
-          if [ "$missing" -ne 0 ]; then
-            echo "Open Settings → Secrets and variables → Actions → Secrets, then re-run."
-            exit 1
-          fi
-
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
@@ -107,8 +90,9 @@ jobs:
       - name: Resolve image name
         id: meta
         run: |
+          repo_lower=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
           tag="sha-${GITHUB_SHA:0:12}"
-          image="${ACR_REGISTRY}/${ACR_NAMESPACE}/${ACR_REPOSITORY}"
+          image="${REGISTRY}/${repo_lower}"
           echo "image=${image}:${tag}" >> "$GITHUB_OUTPUT"
           echo "IMAGE=${image}" >> "$GITHUB_ENV"
           echo "IMAGE_TAG=${tag}" >> "$GITHUB_ENV"
@@ -118,9 +102,9 @@ jobs:
 
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          registry: ${{ env.ACR_REGISTRY }}
-          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push linux/amd64
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -136,13 +120,13 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=aliyun-amd64
-          cache-to: type=gha,mode=min,scope=aliyun-amd64,ignore-error=true
+          cache-from: type=gha,scope=ghcr-amd64
+          cache-to: type=gha,mode=min,scope=ghcr-amd64,ignore-error=true
 
       - name: Write summary
         run: |
           {
-            echo "### Pushed ACR image"
+            echo "### Pushed GHCR image"
             echo
             echo "- \`${{ env.IMAGE }}:${{ env.IMAGE_TAG }}\`"
             echo "- \`${{ env.IMAGE }}:supplier-test\`"
@@ -150,7 +134,7 @@ jobs:
             echo "On the server:"
             echo
             echo "\`\`\`bash"
-            echo "docker login ${ACR_REGISTRY}"
+            echo "echo \"<GITHUB_PAT_OR_TOKEN>\" | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
             echo "docker pull ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}"
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -194,8 +178,8 @@ jobs:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           PATH_DIR: ${{ vars.DEPLOY_PATH != '' && vars.DEPLOY_PATH || '/opt/novamaas' }}
           IMAGE: ${{ needs.publish.outputs.image }}
-          ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           key_file="$RUNNER_TEMP/deploy_key"
@@ -226,12 +210,11 @@ jobs:
           ssh "${ssh_opts[@]}" "${USER}@${HOST}" \
             IMAGE="$IMAGE" \
             PATH_DIR="$PATH_DIR" \
-            ACR_REGISTRY="$ACR_REGISTRY" \
-            ACR_USERNAME="$ACR_USERNAME" \
-            ACR_PASSWORD="$ACR_PASSWORD" \
+            GH_ACTOR="$GH_ACTOR" \
+            GH_TOKEN="$GH_TOKEN" \
             'bash -s' <<'REMOTE'
           set -euo pipefail
-          echo "$ACR_PASSWORD" | docker login --username "$ACR_USERNAME" --password-stdin "$ACR_REGISTRY"
+          echo "$GH_TOKEN" | docker login --username "$GH_ACTOR" --password-stdin ghcr.io || true
           docker pull "$IMAGE"
           cd "$PATH_DIR"
           if [ ! -f .env ]; then

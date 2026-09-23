@@ -118,7 +118,7 @@ func (k *kvvClient) params() string {
 func (k *kvvClient) toolChoice() string {
 	weather := []any{kvvWeatherTool()}
 	if msg := k.step("tool_choice auto may call", kvvFastTimeout, map[string]any{
-		"messages":    kvvUser("北京今天天气怎么样？请查一下，你应当使用工具。"),
+		"messages":    kvvUser("北京今天天气怎么样？请务必调用工具 get_weather 查询，不要直接文字回答。"),
 		"tools":       weather,
 		"tool_choice": "auto",
 	}, true, kvvWantTool("get_weather", nil)); msg != "" {
@@ -265,9 +265,20 @@ func (k *kvvClient) step(name string, timeout time.Duration, payload map[string]
 		}
 		return ""
 	}
-	msg := run()
-	if msg != "" && flaky {
-		return run()
+	maxAttempts := 1
+	if flaky {
+		// 对标官方 Moonshot KVV 的 @pytest.mark.flaky(reruns=2, reruns_delay=1)
+		maxAttempts = 3
+	}
+	var msg string
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(1 * time.Second)
+		}
+		msg = run()
+		if msg == "" {
+			return ""
+		}
 	}
 	return msg
 }
@@ -391,11 +402,12 @@ func kvvWantText(needContent bool) func(int, []byte) string {
 		if status != http.StatusOK {
 			return fmt.Sprintf("期望 HTTP 200，实际 %d：%s", status, kvvClip(body))
 		}
-		if gjson.GetBytes(body, "choices.0.finish_reason").String() != "stop" {
-			return "finish_reason 不是 stop"
+		fr := gjson.GetBytes(body, "choices.0.finish_reason").String()
+		if fr != "stop" {
+			return fmt.Sprintf("finish_reason 不是 stop（实际为 %q，响应：%s）", fr, kvvClip(body))
 		}
 		if kvvHasTools(body) {
-			return "不应触发工具"
+			return "不应触发工具：" + kvvClip(body)
 		}
 		if needContent && strings.TrimSpace(gjson.GetBytes(body, "choices.0.message.content").String()) == "" {
 			return "没有文本回复"
@@ -409,12 +421,13 @@ func kvvWantTool(name string, oneOf []string) func(int, []byte) string {
 		if status != http.StatusOK {
 			return fmt.Sprintf("期望 HTTP 200，实际 %d：%s", status, kvvClip(body))
 		}
-		if gjson.GetBytes(body, "choices.0.finish_reason").String() != "tool_calls" {
-			return "finish_reason 不是 tool_calls"
+		fr := gjson.GetBytes(body, "choices.0.finish_reason").String()
+		if fr != "tool_calls" {
+			return fmt.Sprintf("finish_reason 不是 tool_calls（实际为 %q，响应：%s）", fr, kvvClip(body))
 		}
 		got := kvvToolNames(body)
 		if len(got) == 0 {
-			return "没有 tool_calls"
+			return "没有 tool_calls：" + kvvClip(body)
 		}
 		if name != "" && !kvvContains(got, name) {
 			return fmt.Sprintf("工具名期望 %s，实际 %s", name, strings.Join(got, ","))

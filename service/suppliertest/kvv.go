@@ -601,6 +601,9 @@ func kvvClip(body []byte) string {
 func kvvWantStatus(want int) func(int, []byte) string {
 	return func(status int, body []byte) string {
 		if status != want {
+			if want == http.StatusBadRequest && status == http.StatusOK {
+				return "期望 HTTP 400（官方规范要求对非法/矛盾参数拦截），实际 200（供应商未校验参数直接放行）"
+			}
 			return fmt.Sprintf("期望 HTTP %d，实际 %d：%s", want, status, kvvClip(body))
 		}
 		return ""

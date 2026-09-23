@@ -107,6 +107,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#37](https://github.com/yeruyi1024/novamaas-workspace/pull/37) | 2026-09-23 | `feat` | 素材库 / 下游兼容 API | 新增平台签发并加密保存的用户级素材库 AK/SK，在根路径和 `/api/v3/` 提供火山方舟同形态的 HMAC-SHA256 V4 Action API；支持公网 URL 安全导入、租户隔离、下游密钥自助管理和大规模素材分页检索。 | NovaMaaS 下游专属；上游当前没有面向下游客户的平台素材库 AK/SK、同路径 Action API、URL 导入与租户隔离组合实现。 |
 | [#36](https://github.com/yeruyi1024/novamaas-workspace/pull/36) | 2026-09-22 | `feat` | 素材库 / 对象存储 / 视频渠道 | 新增网关自有永久素材库、租户权限与签名预览，按渠道维护上游副本和同步任务；支持 Volcengine Action AK/SK、Bearer 及 YooFang REST Bearer SK，并在 DoubaoVideo 和火山原生请求中将我方素材 ID 实时翻译为对应渠道 ID。 | NovaMaaS 下游专属；上游当前没有等价的自有素材库、多渠道副本同步、加密渠道凭据与请求时 ID 映射组合实现。 |
 | [#35](https://github.com/yeruyi1024/novamaas-workspace/pull/35) | 2026-09-21 | `feat` | 渠道诊断 / 视频任务可观测性 | 新增复用渠道代理与 HTTP 配置的分阶段网络探测，并为 Doubao Video、火山原生和阿里百炼持久化请求体读取、请求准备、临时存储转换、上游请求及总耗时，在任务日志中分开展示。 | NovaMaaS 下游专属；上游当前没有等价的渠道 DNS/TCP/TLS/TTFB 探测与视频请求全链路指标组合实现。 |
 | [#34](https://github.com/yeruyi1024/novamaas-workspace/pull/34) | 2026-09-21 | `fix` | 计费 / 财务核算 | 按来源日志识别异步任务实时快照与历史回填快照，阻止重复成本凭证；汇总和明细以最早的不可变快照为准，历史更正继续使用追加式调整。 | #31 的 NovaMaaS 下游正确性修复；上游当前没有等价的渠道成本快照与历史回填核算能力。 |

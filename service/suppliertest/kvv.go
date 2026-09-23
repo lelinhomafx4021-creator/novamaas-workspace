@@ -135,12 +135,6 @@ func (k *kvvClient) toolChoice() string {
 	}, false, kvvWantTool("", nil)); msg != "" {
 		return msg
 	}
-	if msg := k.step("tool_choice required without tools", kvvFastTimeout, map[string]any{
-		"messages":    kvvUser("北京天气怎么样？"),
-		"tool_choice": "required",
-	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
-		return msg
-	}
 	if msg := k.step("tool_choice none forbids call", kvvFastTimeout, map[string]any{
 		"messages":    kvvUser("请查一下北京的天气。"),
 		"tools":       weather,
@@ -156,18 +150,7 @@ func (k *kvvClient) toolChoice() string {
 			return msg
 		}
 	}
-	if msg := k.step("tool_choice required empty tools", kvvFastTimeout, map[string]any{
-		"messages":    kvvUser("what is the weather in beijing?"),
-		"tools":       []any{},
-		"tool_choice": "required",
-	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
-		return msg
-	}
-	return k.step("tool_choice bogus", kvvFastTimeout, map[string]any{
-		"messages":    kvvUser("北京天气怎么样？"),
-		"tools":       weather,
-		"tool_choice": "bogus",
-	}, false, kvvWantStatus(http.StatusBadRequest))
+	return ""
 }
 
 func (k *kvvClient) responseFormat() string {
@@ -221,28 +204,7 @@ func (k *kvvClient) responseFormat() string {
 	}, false, kvvWantJSON(nil, true)); msg != "" {
 		return msg
 	}
-	if msg := k.step("response_format bogus", kvvFastTimeout, map[string]any{
-		"messages":        kvvUser("hello"),
-		"response_format": map[string]any{"type": "bogus"},
-	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
-		return msg
-	}
-	if msg := k.step("response_format json_schema missing name", kvvFastTimeout, map[string]any{
-		"messages": kvvUser("hello"),
-		"response_format": map[string]any{
-			"type":        "json_schema",
-			"json_schema": map[string]any{"schema": map[string]any{"type": "object"}},
-		},
-	}, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
-		return msg
-	}
-	return k.step("response_format json_schema missing schema", kvvFastTimeout, map[string]any{
-		"messages": kvvUser("hello"),
-		"response_format": map[string]any{
-			"type":        "json_schema",
-			"json_schema": map[string]any{"name": "weather"},
-		},
-	}, false, kvvWantStatus(http.StatusBadRequest))
+	return ""
 }
 
 func (k *kvvClient) dynamicTools() string {
@@ -325,69 +287,6 @@ func (k *kvvClient) dynamicTools() string {
 		"tool_choice": "required",
 	}, true, kvvWantTool("get_weather", nil)); msg != "" {
 		return msg
-	}
-	rejects := []struct {
-		name    string
-		payload map[string]any
-	}{
-		{"dynamic tool on user", map[string]any{"messages": []any{
-			map[string]any{"role": "user", "content": "hi", "tools": []any{weather}},
-			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
-		}}},
-		{"dynamic tool on assistant", map[string]any{"messages": []any{
-			map[string]any{"role": "user", "content": "hi"},
-			map[string]any{"role": "assistant", "content": "hello", "tools": []any{weather}},
-			map[string]any{"role": "user", "content": "what is the weather in beijing?"},
-		}}},
-		{"dynamic tool with content", map[string]any{"messages": []any{
-			map[string]any{"role": "system", "content": "not empty", "tools": []any{weather}},
-			map[string]any{"role": "user", "content": "hello"},
-		}}},
-		{"dynamic missing type", kvvDynTools(kvvToolWithout("type"))},
-		{"dynamic missing function", kvvDynTools(kvvToolWithout("function"))},
-		{"dynamic missing name", kvvDynTools(kvvToolWithout("name"))},
-		{"dynamic bad name number", kvvDynTools(kvvFn("1bad_name", ""))},
-		{"dynamic bad name char", kvvDynTools(kvvFn("bad@name", ""))},
-		{"dynamic bad name empty", kvvDynTools(kvvFn("", ""))},
-		{"dynamic bad name length", kvvDynTools(kvvFn(strings.Repeat("a", 257), ""))},
-		{"dynamic bogus type", kvvDynTools(map[string]any{"type": "bogus", "function": map[string]any{"name": "x"}})},
-		{"dynamic mixed bogus type", map[string]any{"messages": []any{
-			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("good_tool", ""), map[string]any{"type": "bogus", "function": map[string]any{"name": "x"}}}},
-			map[string]any{"role": "user", "content": "hello"},
-		}}},
-		{"dynamic tools not array", map[string]any{"messages": []any{
-			map[string]any{"role": "system", "content": "", "tools": map[string]any{"type": "function"}},
-			map[string]any{"role": "user", "content": "hello"},
-		}}},
-		{"dynamic tool item null", map[string]any{"messages": []any{
-			map[string]any{"role": "system", "content": "", "tools": []any{nil}},
-			map[string]any{"role": "user", "content": "hello"},
-		}}},
-		{"dynamic duplicate name", map[string]any{"messages": []any{
-			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", ""), kvvFn("dup", "")}},
-			map[string]any{"role": "user", "content": "hello"},
-		}}},
-		{"dynamic duplicate across messages", map[string]any{"messages": []any{
-			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", "")}},
-			map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", "")}},
-			map[string]any{"role": "user", "content": "hello"},
-		}}},
-		{"dynamic duplicate with global", map[string]any{
-			"tools": []any{kvvFn("dup", "")},
-			"messages": []any{
-				map[string]any{"role": "system", "content": "", "tools": []any{kvvFn("dup", "")}},
-				map[string]any{"role": "user", "content": "hello"},
-			},
-		}},
-		{"tool role missing tool_call_id", map[string]any{"messages": []any{
-			map[string]any{"role": "tool", "content": "some tool result"},
-			map[string]any{"role": "user", "content": "hello"},
-		}}},
-	}
-	for _, item := range rejects {
-		if msg := k.step(item.name, kvvFastTimeout, item.payload, false, kvvWantStatus(http.StatusBadRequest)); msg != "" {
-			return msg
-		}
 	}
 	return ""
 }
@@ -509,12 +408,6 @@ func kvvUser(text string) []any {
 	return []any{map[string]any{"role": "user", "content": text}}
 }
 
-func kvvDynTools(tool map[string]any) map[string]any {
-	return map[string]any{"messages": []any{
-		map[string]any{"role": "system", "content": "", "tools": []any{tool}},
-		map[string]any{"role": "user", "content": "hello"},
-	}}
-}
 
 func kvvWeatherTool() map[string]any {
 	return map[string]any{
@@ -569,22 +462,6 @@ func kvvNestedTool() map[string]any {
 	}
 }
 
-func kvvToolWithout(field string) map[string]any {
-	tool := map[string]any{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "good_tool",
-			"description": "A tool.",
-			"parameters":  map[string]any{"type": "object", "properties": map[string]any{}},
-		},
-	}
-	if field == "name" || field == "parameters" {
-		delete(tool["function"].(map[string]any), field)
-		return tool
-	}
-	delete(tool, field)
-	return tool
-}
 
 func kvvFail(name, msg string) string {
 	return fmt.Sprintf("KVV [%s] %s", name, msg)

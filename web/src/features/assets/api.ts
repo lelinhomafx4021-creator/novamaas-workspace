@@ -19,12 +19,38 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  AssetAccessKey,
   AssetGroup,
   AssetLibraryResponse,
   AssetSyncJobList,
+  CreatedAssetAccessKey,
   MediaAsset,
   MediaAssetList,
 } from './types'
+
+export async function listAssetAccessKeys() {
+  const response = await api.get<AssetLibraryResponse<AssetAccessKey[]>>(
+    '/api/asset-library/access-keys'
+  )
+  return response.data
+}
+
+export async function createAssetAccessKey(name: string) {
+  const response = await api.post<AssetLibraryResponse<CreatedAssetAccessKey>>(
+    '/api/asset-library/access-keys',
+    { name },
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function deleteAssetAccessKey(id: number) {
+  const response = await api.delete<AssetLibraryResponse>(
+    `/api/asset-library/access-keys/${id}`,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
 
 export async function listAssetGroups(includeAllOwners = false) {
   const response = await api.get<AssetLibraryResponse<AssetGroup[]>>(

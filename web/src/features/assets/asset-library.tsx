@@ -20,6 +20,7 @@ import {
   FolderAddIcon,
   Image01Icon,
   Search01Icon,
+  ShieldKeyIcon,
   Upload01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -77,6 +78,7 @@ import {
   uploadMediaAsset,
 } from './api'
 import { assertAssetSuccess, assetErrorMessage } from './asset-utils'
+import { AssetApiAccessDialog } from './components/asset-api-access-dialog'
 import { AssetCard } from './components/asset-card'
 import {
   AssetGroupDialog,
@@ -96,6 +98,7 @@ export function AssetLibrary() {
   const [selectedGroup, setSelectedGroup] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [apiAccessDialogOpen, setApiAccessDialogOpen] = useState(false)
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -197,6 +200,14 @@ export function AssetLibrary() {
       <SectionPageLayout>
         <SectionPageLayout.Title>{t('Asset Library')}</SectionPageLayout.Title>
         <SectionPageLayout.Actions>
+          <Button
+            size='sm'
+            variant='outline'
+            onClick={() => setApiAccessDialogOpen(true)}
+          >
+            <HugeiconsIcon icon={ShieldKeyIcon} data-icon='inline-start' />
+            {t('AK/SK access')}
+          </Button>
           <Button
             size='sm'
             variant='outline'
@@ -388,6 +399,10 @@ export function AssetLibrary() {
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
+      <AssetApiAccessDialog
+        open={apiAccessDialogOpen}
+        onOpenChange={setApiAccessDialogOpen}
+      />
       <AssetGroupDialog
         open={groupDialogOpen}
         onOpenChange={setGroupDialogOpen}

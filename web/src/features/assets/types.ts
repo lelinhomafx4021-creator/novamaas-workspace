@@ -48,6 +48,20 @@ export type MediaAssetList = {
   page_size: number
 }
 
+export type AssetAccessKey = {
+  id: number
+  name: string
+  access_key_id: string
+  secret_hint: string
+  status: string
+  last_used_at: number
+  created_at: number
+}
+
+export type CreatedAssetAccessKey = AssetAccessKey & {
+  secret_access_key: string
+}
+
 export type AssetSyncJob = {
   id: number
   asset_id: string

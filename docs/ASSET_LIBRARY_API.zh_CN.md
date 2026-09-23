@@ -4,7 +4,11 @@
 
 ## 下游 AK/SK
 
-用户登录控制台后可通过以下接口管理素材库访问密钥：
+用户登录控制台后，进入「素材库」，点击页面右上角的「API 接入」即可创建和吊销下游 AK/SK。弹窗会同时展示当前站点的官方 SDK Endpoint、`/api/v3/` 兼容请求地址、签名参数和已支持的 Action，便于直接交付给下游客户。
+
+创建时只需填写密钥用途名称。创建成功后必须立即复制 Access Key ID 和 Secret Access Key；Secret Access Key 只显示一次，关闭提示后无法再次查看。如有遗失，应吊销旧密钥并重新创建，不应要求管理员从数据库中导出密文。
+
+也可以通过以下控制台接口自动化管理素材库访问密钥：
 
 - `GET /api/asset-library/access-keys`
 - `POST /api/asset-library/access-keys`，请求体为 `{"name":"automation"}`

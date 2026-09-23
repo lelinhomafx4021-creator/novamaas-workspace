@@ -26,9 +26,12 @@ import { AssetUploadDialog } from '../components/asset-upload-dialog'
 
 vi.mock('../api', () => ({
   createAssetGroup: vi.fn(),
+  createAssetAccessKey: vi.fn(),
+  deleteAssetAccessKey: vi.fn(),
   deleteAssetGroup: vi.fn(),
   deleteMediaAsset: vi.fn(),
   getMediaAssetPreview: vi.fn(),
+  listAssetAccessKeys: vi.fn(),
   listAssetGroups: vi.fn(),
   listMediaAssets: vi.fn(),
   uploadMediaAsset: vi.fn(),
@@ -127,6 +130,7 @@ describe('asset library business layout', () => {
     ).not.toBeInTheDocument()
     expect(screen.getByText(/asset-owner/)).toBeVisible()
     expect(screen.getByText(/Uploaded at/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'AK/SK access' })).toBeVisible()
   })
 
   test('keeps the grid bounded with server pagination', async () => {

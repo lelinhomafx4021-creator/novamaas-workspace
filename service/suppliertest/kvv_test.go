@@ -26,7 +26,7 @@ func TestKimiKVVOfficialPreflightPasses(t *testing.T) {
 
 	status, message := runKVVAgainst(t, upstream)
 	assert.Equal(t, "pass", status)
-	assert.Contains(t, message, "K3 KVV 预检通过")
+	assert.Contains(t, message, "通过 13/13")
 	assert.Contains(t, message, "非官方 Kimi KVV 认证")
 }
 
@@ -83,6 +83,27 @@ func TestKimiKVVToleratesLooseSampling(t *testing.T) {
 
 	status, message := runKVVAgainst(t, upstream)
 	assert.Equal(t, "pass", status, message)
+}
+
+func TestKimiKVVPassesWithPartialFeatureSupport(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if gjson.GetBytes(body, "response_format").Exists() {
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = io.WriteString(w, `{"error":{"message":"response format unsupported"}}`)
+			return
+		}
+		kvvOfficialFixtureBody(w, body)
+	}))
+	defer upstream.Close()
+
+	status, message := runKVVAgainst(t, upstream)
+	assert.Equal(t, "pass", status, message)
+	assert.Contains(t, message, "通过 9/13")
+	assert.Contains(t, message, "69.2%")
+	assert.Contains(t, message, "response_format text")
 }
 
 func TestKimiKVVRejectsServerError(t *testing.T) {

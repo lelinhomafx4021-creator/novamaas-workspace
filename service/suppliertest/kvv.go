@@ -23,7 +23,7 @@ const (
 	kvvFastTimeout   = 90 * time.Second
 	kvvThinkTimeout  = 180 * time.Second
 	kvvThinkTokens   = 4096
-	kvvPassMessage   = "K3 KVV 预检通过：按 Kimi-K3 官方规范核对了低档 reasoning_effort、未发送不支持的 thinking 字段、tool_choice 标准工具调用、response_format 结构化输出与思考流式协议。非官方 Kimi KVV 认证。"
+	kvvPassRate      = 60
 	kvvChickenPrompt = "鸡兔同笼，共有 35 个头，94 条腿。问鸡和兔各有多少只？请逐步推理。"
 	kvvOKPrompt      = "Say 'OK' and nothing else."
 )
@@ -34,6 +34,9 @@ type kvvClient struct {
 	endpoint string
 	apiKey   string
 	model    string
+	passed   int
+	total    int
+	failures []string
 }
 
 func runOfficialKimiKVV(ctx context.Context, httpClient *http.Client, endpoint, apiKey, model string) (string, string) {
@@ -41,85 +44,104 @@ func runOfficialKimiKVV(ctx context.Context, httpClient *http.Client, endpoint, 
 	if strings.TrimSpace(model) == "" {
 		return "fail", "KVV 缺少模型名"
 	}
-	for _, run := range []func() string{
-		k.params,
-		k.toolChoice,
-		k.responseFormat,
-		// dynamicTools is intentionally omitted for broad gateway compatibility:
-		// Moonshot's proprietary syntax of declaring tools inside messages.system
-		// is dropped by standard OpenAI proxy gateways (OneAPI/NewAPI/LiteLLM).
-		// Standard top-level tools are already fully covered by k.toolChoice.
-		k.thinking,
-	} {
-		if msg := run(); msg != "" {
-			return "fail", msg
-		}
+	// dynamicTools is intentionally omitted for broad gateway compatibility:
+	// Moonshot's proprietary syntax of declaring tools inside messages.system
+	// is dropped by standard OpenAI proxy gateways (OneAPI/NewAPI/LiteLLM).
+	// Standard top-level tools are already fully covered by k.toolChoice.
+	k.params()
+	k.toolChoice()
+	k.responseFormat()
+	k.thinking()
+	return k.result()
+}
+
+func (k *kvvClient) result() (string, string) {
+	if k.total == 0 {
+		return "fail", "KVV 没有可执行的检查项"
 	}
-	return "pass", kvvPassMessage
+	rate := float64(k.passed) / float64(k.total) * 100
+	status := "fail"
+	if rate >= kvvPassRate {
+		status = "pass"
+	}
+	message := fmt.Sprintf("K3 KVV 预检：通过 %d/%d（%.1f%%），通过门槛 %d%%。", k.passed, k.total, rate, kvvPassRate)
+	if status == "pass" {
+		message += "非官方 Kimi KVV 认证。"
+	}
+	if len(k.failures) > 0 {
+		message += " 失败项：" + strings.Join(k.failures, "；")
+	}
+	return status, message
+}
+
+func (k *kvvClient) record(name, message string) string {
+	k.total++
+	if message == "" {
+		k.passed++
+		return ""
+	}
+	message = strings.TrimPrefix(message, fmt.Sprintf("KVV [%s] ", name))
+	k.failures = append(k.failures, fmt.Sprintf("%s：%s", name, message))
+	return message
+}
+
+func (k *kvvClient) check(name string, timeout time.Duration, payload map[string]any, flaky bool, want func(int, []byte) string) string {
+	return k.record(name, k.step(name, timeout, payload, flaky, want))
+}
+
+func rememberFirst(first *string, message string) {
+	if *first == "" && message != "" {
+		*first = message
+	}
 }
 
 func (k *kvvClient) params() string {
 	// 验证 K3 顶层 reasoning_effort 请求协议与基础连通性。
-	if msg := k.step("params K3 low-effort thinking", kvvFastTimeout, kvvParamPayload("", nil), false, kvvWantStatus(http.StatusOK)); msg != "" {
-		return msg
-	}
-	return ""
+	return k.check("params K3 low-effort thinking", kvvFastTimeout, kvvParamPayload("", nil), false, kvvWantStatus(http.StatusOK))
 }
 
 func (k *kvvClient) toolChoice() string {
 	weather := []any{kvvWeatherTool()}
-	if msg := k.step("tool_choice auto may call", kvvFastTimeout, map[string]any{
+	var first string
+	rememberFirst(&first, k.check("tool_choice auto may call", kvvFastTimeout, map[string]any{
 		"messages":    kvvUser("北京今天天气怎么样？请务必调用工具 get_weather 查询，不要直接文字回答。"),
 		"tools":       weather,
 		"tool_choice": "auto",
-	}, true, kvvWantTool("get_weather", nil)); msg != "" {
-		return msg
-	}
-	if msg := k.step("tool_choice auto may not call", kvvFastTimeout, map[string]any{
+	}, true, kvvWantTool("get_weather", nil)))
+	rememberFirst(&first, k.check("tool_choice auto may not call", kvvFastTimeout, map[string]any{
 		"messages":    kvvUser("你好，请简单介绍一下你自己。你不应使用任何工具。"),
 		"tools":       weather,
 		"tool_choice": "auto",
-	}, true, kvvWantText(true)); msg != "" {
-		return msg
-	}
-	if msg := k.step("tool_choice required forces call", kvvFastTimeout, map[string]any{
+	}, true, kvvWantText(true)))
+	rememberFirst(&first, k.check("tool_choice required forces call", kvvFastTimeout, map[string]any{
 		"messages":    kvvUser("请简要回答：北京天气怎么样？"),
 		"tools":       weather,
 		"tool_choice": "required",
-	}, true, kvvWantTool("", nil)); msg != "" {
-		return msg
-	}
-	if msg := k.step("tool_choice none forbids call", kvvFastTimeout, map[string]any{
+	}, true, kvvWantTool("", nil)))
+	rememberFirst(&first, k.check("tool_choice none forbids call", kvvFastTimeout, map[string]any{
 		"messages":    kvvUser("请查一下北京的天气。"),
 		"tools":       weather,
 		"tool_choice": "none",
-	}, true, kvvWantText(false)); msg != "" {
-		return msg
-	}
+	}, true, kvvWantText(false)))
 	for _, choice := range []string{"none", "auto"} {
-		if msg := k.step("tool_choice "+choice+" without tools", kvvFastTimeout, map[string]any{
+		rememberFirst(&first, k.check("tool_choice "+choice+" without tools", kvvFastTimeout, map[string]any{
 			"messages":    kvvUser("你好。"),
 			"tool_choice": choice,
-		}, true, kvvWantText(true)); msg != "" {
-			return msg
-		}
+		}, true, kvvWantText(true)))
 	}
-	return ""
+	return first
 }
 
 func (k *kvvClient) responseFormat() string {
-	if msg := k.step("response_format text", kvvFastTimeout, map[string]any{
+	var first string
+	rememberFirst(&first, k.check("response_format text", kvvFastTimeout, map[string]any{
 		"messages":        kvvUser("用一句话介绍北京。"),
 		"response_format": map[string]any{"type": "text"},
-	}, true, kvvWantText(true)); msg != "" {
-		return msg
-	}
-	if msg := k.step("response_format json_object", kvvFastTimeout, map[string]any{
+	}, true, kvvWantText(true)))
+	rememberFirst(&first, k.check("response_format json_object", kvvFastTimeout, map[string]any{
 		"messages":        kvvUser("Return a JSON object with key 'city' (value 'Beijing'). Output ONLY the JSON object."),
 		"response_format": map[string]any{"type": "json_object"},
-	}, true, kvvWantJSON(nil, false)); msg != "" {
-		return msg
-	}
+	}, true, kvvWantJSON(nil, false)))
 	schema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -129,7 +151,7 @@ func (k *kvvClient) responseFormat() string {
 		"required":             []string{"city", "temperature"},
 		"additionalProperties": false,
 	}
-	if msg := k.step("response_format json_schema strict", kvvFastTimeout, map[string]any{
+	rememberFirst(&first, k.check("response_format json_schema strict", kvvFastTimeout, map[string]any{
 		"messages": kvvUser("Please generate a JSON object with city set to Beijing and a hypothetical temperature number like 21. Output ONLY the JSON object."),
 		"response_format": map[string]any{
 			"type": "json_schema",
@@ -139,10 +161,8 @@ func (k *kvvClient) responseFormat() string {
 				"schema": schema,
 			},
 		},
-	}, true, kvvWantJSON(map[string]string{"city": "string", "temperature": "number"}, false)); msg != "" {
-		return msg
-	}
-	if msg := k.step("response_format json_schema non-strict", kvvFastTimeout, map[string]any{
+	}, true, kvvWantJSON(map[string]string{"city": "string", "temperature": "number"}, false)))
+	rememberFirst(&first, k.check("response_format json_schema non-strict", kvvFastTimeout, map[string]any{
 		"messages": kvvUser("Please generate a JSON object with key 'city' set to Beijing. Output ONLY the JSON object."),
 		"response_format": map[string]any{
 			"type": "json_schema",
@@ -155,20 +175,17 @@ func (k *kvvClient) responseFormat() string {
 				},
 			},
 		},
-	}, true, kvvWantJSON(nil, true)); msg != "" {
-		return msg
-	}
-	return ""
+	}, true, kvvWantJSON(nil, true)))
+	return first
 }
 
 func (k *kvvClient) thinking() string {
-	if msg := k.step("reasoning_effort low", kvvThinkTimeout, map[string]any{
+	var first string
+	rememberFirst(&first, k.check("reasoning_effort low", kvvThinkTimeout, map[string]any{
 		"messages":         kvvUser(kvvChickenPrompt),
 		"max_tokens":       kvvThinkTokens,
 		"reasoning_effort": "low",
-	}, true, kvvWantReasoning); msg != "" {
-		return msg
-	}
+	}, true, kvvWantReasoning))
 	req := chatRequest{
 		Model:           k.model,
 		Messages:        []chatMessage{{Role: "user", Content: kvvChickenPrompt}},
@@ -177,34 +194,35 @@ func (k *kvvClient) thinking() string {
 		Stream:          true,
 	}
 	res := streamChat(k.ctx, k.http, k.endpoint, k.apiKey, req, kvvThinkTimeout, nil)
+	streamMessage := ""
 	if res.StatusCode != http.StatusOK || res.ErrorMessage != "" {
-		return kvvFail("thinking stream", "请求失败："+firstNonEmpty(res.ErrorMessage, fmt.Sprintf("HTTP %d", res.StatusCode)))
+		streamMessage = "请求失败：" + firstNonEmpty(res.ErrorMessage, fmt.Sprintf("HTTP %d", res.StatusCode))
+	} else if res.Reasoning == "" && res.ReasoningTokens == 0 {
+		streamMessage = "流式响应没有 reasoning_content"
+	} else if res.Content == "" {
+		streamMessage = "流式响应没有 content"
+	} else if res.FinishReason != "stop" {
+		streamMessage = "finish_reason 不是 stop，实际为 " + res.FinishReason
 	}
-	if res.Reasoning == "" && res.ReasoningTokens == 0 {
-		return kvvFail("thinking stream", "流式响应没有 reasoning_content")
-	}
-	if res.Content == "" {
-		return kvvFail("thinking stream", "流式响应没有 content")
-	}
-	if res.FinishReason != "stop" {
-		return kvvFail("thinking stream", "finish_reason 不是 stop，实际为 "+res.FinishReason)
-	}
-	return ""
+	rememberFirst(&first, k.record("thinking stream", streamMessage))
+	return first
 }
 
 func (k *kvvClient) step(name string, timeout time.Duration, payload map[string]any, flaky bool, want func(int, []byte) string) string {
-	run := func() string {
+	run := func() (string, bool) {
 		if err := k.ctx.Err(); err != nil {
-			return kvvFail(name, "已取消："+err.Error())
+			return kvvFail(name, "已取消："+err.Error()), false
 		}
 		status, body, err := k.post(timeout, payload)
 		if err != nil {
-			return kvvFail(name, "请求失败："+err.Error())
+			return kvvFail(name, "请求失败："+err.Error()), true
 		}
 		if msg := want(status, body); msg != "" {
-			return kvvFail(name, msg)
+			// 只对 HTTP 200 下的内容/格式波动重试；不支持参数、鉴权、服务端错误
+			// 等确定性 HTTP 错误直接计为失败，避免 KVV 放大无效请求。
+			return kvvFail(name, msg), status == http.StatusOK
 		}
-		return ""
+		return "", false
 	}
 	maxAttempts := 1
 	if flaky {
@@ -214,11 +232,23 @@ func (k *kvvClient) step(name string, timeout time.Duration, payload map[string]
 	var msg string
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt > 1 {
-			time.Sleep(1 * time.Second)
+			timer := time.NewTimer(time.Second)
+			select {
+			case <-timer.C:
+			case <-k.ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return kvvFail(name, "已取消："+k.ctx.Err().Error())
+			}
 		}
-		msg = run()
+		var retry bool
+		msg, retry = run()
 		if msg == "" {
 			return ""
+		}
+		if !retry {
+			return msg
 		}
 	}
 	return msg

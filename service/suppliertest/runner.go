@@ -631,7 +631,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emitCheck(CheckKimiKVV, "running", "")
 		status, message := "skip", "KVV 预检只适用于 Kimi K3"
 		if profile.id == VendorKimi && strings.Contains(modelKey(req.Model), "kimik3") {
-			status, message = runStrictKimiKVV(ctx, httpClient, endpoint, req.APIKey, chat)
+			status, message = runKimiKVV(ctx, httpClient, endpoint, req.APIKey, chat)
 		}
 		emitCheck(CheckKimiKVV, status, message)
 	}
@@ -673,7 +673,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 	})
 }
 
-func runStrictKimiKVV(
+func runKimiKVV(
 	ctx context.Context,
 	httpClient *http.Client,
 	endpoint string,

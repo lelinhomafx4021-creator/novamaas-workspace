@@ -530,7 +530,12 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		jsonReq.Messages = []chatMessage{{Role: "user", Content: "Return a JSON object with key ping and value pong."}}
 		jsonResult := streamChat(ctx, httpClient, endpoint, req.APIKey, jsonReq, basicChatTimeout, nil)
 		if jsonResult.StatusCode != http.StatusOK || jsonResult.ErrorMessage != "" {
-			emitCheck(CheckJSONMode, "skip", "供应商不接受 JSON 模式："+firstNonEmpty(jsonResult.ErrorMessage, fmt.Sprintf("HTTP %d", jsonResult.StatusCode)))
+			status, message := checkStatus(
+				profile.requireJSON,
+				"供应商不接受 JSON 模式："+firstNonEmpty(jsonResult.ErrorMessage, fmt.Sprintf("HTTP %d", jsonResult.StatusCode)),
+				vendorTitle(profile.id)+" 文档标注支持 JSON 模式，但请求失败："+firstNonEmpty(jsonResult.ErrorMessage, fmt.Sprintf("HTTP %d", jsonResult.StatusCode)),
+			)
+			emitCheck(CheckJSONMode, status, message)
 		} else if looksLikeJSON(jsonResult.Content) {
 			emitCheck(CheckJSONMode, "pass", "返回内容可以解析成 JSON")
 		} else {
@@ -565,7 +570,12 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		}
 		toolResult := streamChat(ctx, httpClient, endpoint, req.APIKey, toolReq, basicChatTimeout, nil)
 		if toolResult.StatusCode != http.StatusOK || toolResult.ErrorMessage != "" {
-			emitCheck(CheckToolCall, "skip", "供应商不接受工具调用："+firstNonEmpty(toolResult.ErrorMessage, fmt.Sprintf("HTTP %d", toolResult.StatusCode)))
+			status, message := checkStatus(
+				profile.requireTools,
+				"供应商不接受工具调用："+firstNonEmpty(toolResult.ErrorMessage, fmt.Sprintf("HTTP %d", toolResult.StatusCode)),
+				vendorTitle(profile.id)+" 文档标注支持工具调用，但请求失败："+firstNonEmpty(toolResult.ErrorMessage, fmt.Sprintf("HTTP %d", toolResult.StatusCode)),
+			)
+			emitCheck(CheckToolCall, status, message)
 		} else if toolResult.ToolName != "" {
 			emitCheck(CheckToolCall, "pass", "调用了工具 "+toolResult.ToolName)
 		} else {
@@ -580,19 +590,20 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 
 	if wanted[CheckThinking] {
 		emitCheck(CheckThinking, "running", "")
-		mustThink := thinkingRequired(profile.id)
+		mustThink := thinkingRequired(profile.id, req.Model)
 		thinkReq := applyThinking(chat, profile.id)
 		thinking := streamChat(ctx, httpClient, endpoint, req.APIKey, thinkReq, basicChatTimeout, nil)
-		if (thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "") && thinkReq.Thinking != nil {
+		if (thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "") && (thinkReq.Thinking != nil || thinkReq.ReasoningEffort != "") {
 			fallbackReq := chat
 			fallbackReq.Messages = []chatMessage{{Role: "user", Content: "What is 17 times 19? Think step by step."}}
 			fallbackReq.Thinking = nil
+			fallbackReq.ReasoningEffort = ""
 			thinking = streamChat(ctx, httpClient, endpoint, req.APIKey, fallbackReq, basicChatTimeout, nil)
 		}
 		if thinking.StatusCode != http.StatusOK || thinking.ErrorMessage != "" {
 			status, message := checkStatus(
 				mustThink,
-				"供应商不接受 thinking 参数："+firstNonEmpty(thinking.ErrorMessage, fmt.Sprintf("HTTP %d", thinking.StatusCode)),
+				"供应商不接受思考控制参数："+firstNonEmpty(thinking.ErrorMessage, fmt.Sprintf("HTTP %d", thinking.StatusCode)),
 				vendorTitle(profile.id)+" 该模型应按文档返回思考内容，请求失败："+firstNonEmpty(thinking.ErrorMessage, fmt.Sprintf("HTTP %d", thinking.StatusCode)),
 			)
 			emitCheck(CheckThinking, status, message)
@@ -616,10 +627,9 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 
 	if wanted[CheckKimiKVV] {
 		emitCheck(CheckKimiKVV, "running", "")
-		status, message := runStrictKimiKVV(ctx, httpClient, endpoint, req.APIKey, chat, profile.id)
-		if profile.id != VendorKimi && status != "pass" {
-			status = "skip"
-			message = "非 Kimi 供应商未通过 KVV 严格认证（已跳过）：" + message
+		status, message := "skip", "KVV 预检只适用于 Kimi K3"
+		if profile.id == VendorKimi && strings.Contains(modelKey(req.Model), "kimik3") {
+			status, message = runStrictKimiKVV(ctx, httpClient, endpoint, req.APIKey, chat)
 		}
 		emitCheck(CheckKimiKVV, status, message)
 	}
@@ -667,7 +677,6 @@ func runStrictKimiKVV(
 	endpoint string,
 	apiKey string,
 	baseChat chatRequest,
-	_ string,
 ) (string, string) {
 	return runOfficialKimiKVV(ctx, httpClient, endpoint, apiKey, baseChat.Model)
 }

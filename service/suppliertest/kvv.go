@@ -14,8 +14,8 @@ import (
 )
 
 // Official preflight from MoonshotAI/Kimi-Vendor-Verifier.
-// Covered: tests/params, tests/k3_features tool_choice, response_format,
-// dynamic tools, and the non-skipped thinking presence checks.
+// Covered: K3 request controls, tests/k3_features tool_choice and response_format,
+// plus non-streaming and streaming reasoning_content checks.
 // Not covered: OCRBench, MMMU, BEAM, DeepSWE, prompt-token cases, and the
 // upstream tests marked skip or flaky on reasoning length.
 
@@ -23,22 +23,21 @@ const (
 	kvvFastTimeout   = 90 * time.Second
 	kvvThinkTimeout  = 180 * time.Second
 	kvvThinkTokens   = 4096
-	kvvPassMessage   = "K3 KVV 预检通过：按 Kimi-K3 官方规范核对了不可变采样参数（temperature=1.0 严格约束）、关闭思考拦截、tool_choice 标准工具调用、response_format 结构化输出与思考流式协议。非官方 Kimi KVV 认证。"
+	kvvPassMessage   = "K3 KVV 预检通过：按 Kimi-K3 官方规范核对了低档 reasoning_effort、未发送不支持的 thinking 字段、tool_choice 标准工具调用、response_format 结构化输出与思考流式协议。非官方 Kimi KVV 认证。"
 	kvvChickenPrompt = "鸡兔同笼，共有 35 个头，94 条腿。问鸡和兔各有多少只？请逐步推理。"
 	kvvOKPrompt      = "Say 'OK' and nothing else."
 )
 
 type kvvClient struct {
-	ctx              context.Context
-	http             *http.Client
-	endpoint         string
-	apiKey           string
-	model            string
-	thinkingRequired bool
+	ctx      context.Context
+	http     *http.Client
+	endpoint string
+	apiKey   string
+	model    string
 }
 
 func runOfficialKimiKVV(ctx context.Context, httpClient *http.Client, endpoint, apiKey, model string) (string, string) {
-	k := &kvvClient{ctx: ctx, http: httpClient, endpoint: endpoint, apiKey: apiKey, model: model, thinkingRequired: true}
+	k := &kvvClient{ctx: ctx, http: httpClient, endpoint: endpoint, apiKey: apiKey, model: model}
 	if strings.TrimSpace(model) == "" {
 		return "fail", "KVV 缺少模型名"
 	}
@@ -60,8 +59,8 @@ func runOfficialKimiKVV(ctx context.Context, httpClient *http.Client, endpoint, 
 }
 
 func (k *kvvClient) params() string {
-	// 验证基础连通性与思考功能（遵循大概能过就过原则，聚焦模型核心能力，不进行繁冗的负向参数试探）
-	if msg := k.step("params no-param thinking", kvvFastTimeout, kvvParamPayload("", nil), false, kvvWantStatus(http.StatusOK)); msg != "" {
+	// 验证 K3 顶层 reasoning_effort 请求协议与基础连通性。
+	if msg := k.step("params K3 low-effort thinking", kvvFastTimeout, kvvParamPayload("", nil), false, kvvWantStatus(http.StatusOK)); msg != "" {
 		return msg
 	}
 	return ""
@@ -162,30 +161,20 @@ func (k *kvvClient) responseFormat() string {
 	return ""
 }
 
-
 func (k *kvvClient) thinking() string {
-	cases := []struct {
-		name     string
-		thinking map[string]any
-	}{
-		{"thinking enabled effort=high", map[string]any{"type": "enabled", "effort": "high"}},
-		{"thinking effort omitted", map[string]any{"type": "enabled"}},
-	}
-	for _, item := range cases {
-		if msg := k.step(item.name, kvvThinkTimeout, map[string]any{
-			"messages":   kvvUser(kvvChickenPrompt),
-			"max_tokens": kvvThinkTokens,
-			"thinking":   item.thinking,
-		}, true, kvvWantReasoning); msg != "" {
-			return msg
-		}
+	if msg := k.step("reasoning_effort low", kvvThinkTimeout, map[string]any{
+		"messages":         kvvUser(kvvChickenPrompt),
+		"max_tokens":       kvvThinkTokens,
+		"reasoning_effort": "low",
+	}, true, kvvWantReasoning); msg != "" {
+		return msg
 	}
 	req := chatRequest{
-		Model:     k.model,
-		Messages:  []chatMessage{{Role: "user", Content: kvvChickenPrompt}},
-		MaxTokens: ptrInt(kvvThinkTokens),
-		Thinking:  map[string]any{"type": "enabled", "effort": "high"},
-		Stream:    true,
+		Model:           k.model,
+		Messages:        []chatMessage{{Role: "user", Content: kvvChickenPrompt}},
+		MaxTokens:       ptrInt(kvvThinkTokens),
+		ReasoningEffort: "low",
+		Stream:          true,
 	}
 	res := streamChat(k.ctx, k.http, k.endpoint, k.apiKey, req, kvvThinkTimeout, nil)
 	if res.StatusCode != http.StatusOK || res.ErrorMessage != "" {
@@ -244,10 +233,8 @@ func (k *kvvClient) post(timeout time.Duration, payload map[string]any) (int, []
 	for key, value := range payload {
 		body[key] = value
 	}
-	if k.thinkingRequired {
-		if _, ok := body["thinking"]; !ok {
-			body["thinking"] = map[string]any{"type": "enabled"}
-		}
+	if _, ok := body["reasoning_effort"]; !ok {
+		body["reasoning_effort"] = "low"
 	}
 	raw, err := common.Marshal(body)
 	if err != nil {
@@ -279,7 +266,6 @@ func (k *kvvClient) post(timeout time.Duration, payload map[string]any) (int, []
 func kvvParamPayload(name string, value any) map[string]any {
 	payload := map[string]any{
 		"messages": kvvUser(kvvOKPrompt),
-		"thinking": map[string]any{"type": "enabled"},
 	}
 	if name != "" {
 		payload[name] = value
@@ -290,7 +276,6 @@ func kvvParamPayload(name string, value any) map[string]any {
 func kvvUser(text string) []any {
 	return []any{map[string]any{"role": "user", "content": text}}
 }
-
 
 func kvvWeatherTool() map[string]any {
 	return map[string]any{
@@ -322,8 +307,6 @@ func kvvFn(name, description string) map[string]any {
 		},
 	}
 }
-
-
 
 func kvvFail(name, msg string) string {
 	return fmt.Sprintf("KVV [%s] %s", name, msg)

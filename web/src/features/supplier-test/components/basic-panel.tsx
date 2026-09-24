@@ -83,7 +83,10 @@ export function BasicPanel(props: {
           step={0.1}
           placeholder={t('Leave empty to omit')}
           onChange={(value) =>
-            props.onBasicChange((current) => ({ ...current, temperature: value }))
+            props.onBasicChange((current) => ({
+              ...current,
+              temperature: value,
+            }))
           }
         />
         <OptionalNumberField
@@ -147,9 +150,7 @@ export function BasicPanel(props: {
           />
         </div>
         <div>
-          <p className='mb-2 text-sm font-medium'>
-            {t('Deep · protocol')}
-          </p>
+          <p className='mb-2 text-sm font-medium'>{t('Deep · protocol')}</p>
           <p className='text-muted-foreground mb-2 text-sm'>
             {t(
               'Protocol checks are skipped when the vendor has no matching API. That is incomplete protocol, not a broken supplier.'
@@ -160,7 +161,9 @@ export function BasicPanel(props: {
               if (check.id === 'kimi_kvv' && props.vendor !== 'kimi') {
                 return false
               }
-              return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+              return (PROTOCOL_BASIC_IDS as readonly string[]).includes(
+                check.id
+              )
             })}
             busy={props.busy}
             onRun={props.onRunCheck}
@@ -174,42 +177,77 @@ export function BasicPanel(props: {
                     {t('KVV preflight')}
                   </span>
                 </div>
-                <Badge variant='outline' className='border-amber-500/40 text-[10px] text-amber-600'>
+                <Badge
+                  variant='outline'
+                  className='border-amber-500/40 text-[10px] text-amber-600'
+                >
                   {t('Not official certification')}
                 </Badge>
               </div>
               <p className='text-muted-foreground text-[11px] leading-relaxed'>
                 {t(
-                  'In-product preflight for sampling parameters, tool_choice, response_format, dynamic tools, and thinking fields. A pass is not official Kimi KVV certification.'
+                  'Kimi K3-only preflight for request compatibility, tool_choice, response_format, and reasoning_content. A pass is not official Kimi KVV certification.'
                 )}
               </p>
               <div className='grid gap-1.5 pt-1 text-[11px] sm:grid-cols-2'>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[1]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [1]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Immutable parameters')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('Official defaults of temperature, top_p, presence_penalty, frequency_penalty, and n are accepted. Other values are rejected.')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('K3 request protocol')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'reasoning_effort=low is accepted and the unsupported thinking field is never sent.'
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[2]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [2]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('tool_choice contract')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('auto, none, and required. required without tools is rejected. none does not call a tool.')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('tool_choice contract')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'auto, none, and required are checked. none does not call a tool; required does.'
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[3]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [3]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('response_format and dynamic tools')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('text, json_object, and json_schema. Dynamic tools belong on system messages.')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('response_format contract')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'text, json_object, and strict or non-strict json_schema responses are checked.'
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[4]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [4]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Thinking contract')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('thinking enabled with keep=all returns reasoning_content, including streamed chunks.')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('Thinking contract')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'K3 returns reasoning_content with reasoning_effort=low, including streamed chunks.'
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

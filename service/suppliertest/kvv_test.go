@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,15 +30,14 @@ func TestKimiKVVOfficialPreflightPasses(t *testing.T) {
 	assert.Contains(t, message, "非官方 Kimi KVV 认证")
 }
 
-func TestKimiKVVDoesNotDisableThinking(t *testing.T) {
+func TestKimiKVVUsesK3ThinkingProtocol(t *testing.T) {
 	t.Parallel()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		thinking := gjson.GetBytes(body, "thinking")
-		if !thinking.Exists() || thinking.Get("type").String() != "enabled" {
+		if gjson.GetBytes(body, "thinking").Exists() || gjson.GetBytes(body, "reasoning_effort").String() != "low" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"error":{"message":"该模型始终思考，不支持关闭思考","type":"invalid_request_error","param":"","code":"3000"}}`)
+			_, _ = io.WriteString(w, `{"error":{"message":"K3 仅接受顶层 reasoning_effort，不接受 thinking","type":"invalid_request_error","param":"thinking","code":"3000"}}`)
 			return
 		}
 		kvvOfficialFixtureBody(w, body)
@@ -95,8 +95,38 @@ func TestKimiKVVRejectsServerError(t *testing.T) {
 
 	status, message := runKVVAgainst(t, upstream)
 	assert.Equal(t, "fail", status)
-	assert.Contains(t, message, "params no-param thinking")
+	assert.Contains(t, message, "params K3 low-effort thinking")
 	assert.Contains(t, message, "期望 HTTP 200，实际 500")
+}
+
+func TestKimiKVVSkipsNonK3WithoutCallingUpstream(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer upstream.Close()
+
+	var status, message string
+	err := Run(context.Background(), upstream.Client(), RunRequest{
+		BaseURL: upstream.URL,
+		APIKey:  "test-key",
+		Model:   "kimi-k2.6",
+		Vendor:  VendorKimi,
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{CheckKimiKVV}},
+	}, func(e Event) {
+		if e.CheckID == CheckKimiKVV && e.Status != "running" {
+			status = e.Status
+			message = e.Message
+		}
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "skip", status)
+	assert.Contains(t, message, "只适用于 Kimi K3")
+	assert.Zero(t, calls)
 }
 
 func runKVVAgainst(t *testing.T, upstream *httptest.Server) (string, string) {
@@ -182,6 +212,12 @@ func kvvFixtureReject(body []byte) (int, bool) {
 		return http.StatusBadRequest, true
 	}
 	if gjson.GetBytes(body, "thinking.type").String() == "disabled" {
+		return http.StatusBadRequest, true
+	}
+	if gjson.GetBytes(body, "thinking").Exists() {
+		return http.StatusBadRequest, true
+	}
+	if effort := gjson.GetBytes(body, "reasoning_effort"); effort.Exists() && effort.String() != "low" && effort.String() != "high" && effort.String() != "max" {
 		return http.StatusBadRequest, true
 	}
 	return 0, false
@@ -281,13 +317,18 @@ func kvvFixtureOK(body []byte) string {
 	return `{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"` + name + `","arguments":"{}"}}]}}]}`
 }
 
-func TestLiveOpenJulyKVV(t *testing.T) {
-	t.Skip("manual live test against openjuly.com")
+func TestLiveKimiK3KVV(t *testing.T) {
+	apiKey := strings.TrimSpace(os.Getenv("KIMI_TEST_API_KEY"))
+	if apiKey == "" {
+		t.Skip("set KIMI_TEST_API_KEY to run the manual live test")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	endpoint := "https://api.openjuly.com/v1/chat/completions"
-	apiKey := "sk-pnaO2V1m8synfWrlwt5FMYxfpd8Xbqlka2VMW4wXOk2zE1eA"
+	endpoint := strings.TrimSpace(os.Getenv("KIMI_TEST_ENDPOINT"))
+	if endpoint == "" {
+		endpoint = "https://api.moonshot.ai/v1/chat/completions"
+	}
 	model := "kimi-k3"
 
 	status, message := runOfficialKimiKVV(ctx, &http.Client{Timeout: 60 * time.Second}, endpoint, apiKey, model)

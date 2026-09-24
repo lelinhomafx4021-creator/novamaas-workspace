@@ -79,10 +79,36 @@ func vendorTitle(vendor string) string {
 	}
 }
 
-func thinkingRequired(vendor string) bool {
+func modelKey(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	replacer := strings.NewReplacer("-", "", "_", "", ".", "", "/", "")
+	return replacer.Replace(model)
+}
+
+func thinkingRequired(vendor, model string) bool {
+	model = modelKey(model)
 	switch vendor {
-	case VendorGLM, VendorKimi, VendorDeepSeek:
-		return true
+	case VendorGLM:
+		return strings.Contains(model, "thinking") ||
+			strings.Contains(model, "glm53") ||
+			strings.Contains(model, "glm52") ||
+			strings.Contains(model, "glm51") ||
+			strings.Contains(model, "glm50") ||
+			strings.Contains(model, "glm5") ||
+			strings.Contains(model, "glm47") ||
+			strings.Contains(model, "glm46") ||
+			strings.Contains(model, "glm45")
+	case VendorKimi:
+		return strings.Contains(model, "kimik3") ||
+			strings.Contains(model, "kimik27") ||
+			strings.Contains(model, "kimik26") ||
+			strings.Contains(model, "thinking")
+	case VendorDeepSeek:
+		return strings.Contains(model, "deepseekflash") ||
+			strings.Contains(model, "deepseekv4") ||
+			strings.Contains(model, "reasoner") ||
+			strings.Contains(model, "deepseekr1") ||
+			strings.HasPrefix(model, "r1")
 	default:
 		return false
 	}
@@ -90,19 +116,33 @@ func thinkingRequired(vendor string) bool {
 
 func applyThinking(req chatRequest, vendor string) chatRequest {
 	req.Messages = []chatMessage{{Role: "user", Content: "What is 17 times 19? Think step by step."}}
+	req.Thinking = nil
+	req.ReasoningEffort = ""
+	model := modelKey(req.Model)
 	switch vendor {
 	case VendorDeepSeek:
-		// DeepSeek (如 DeepSeek-V3/V4, R1 等) 原生自带推理，严禁传 thinking 参数 (传了会报 400)
-		req.Thinking = nil
+		// DeepSeek V4 的 OpenAI Chat Completions 协议支持显式 thinking 和 reasoning_effort。
+		// 旧版 reasoner/R1 本身就是思考模型，额外参数在部分兼容端点会被拒绝。
+		if strings.Contains(model, "deepseekflash") || strings.Contains(model, "deepseekv4") {
+			req.Thinking = map[string]any{"type": "enabled"}
+			req.ReasoningEffort = "low"
+		}
 		return req
 	case VendorKimi:
-		// Kimi 新一代模型 (如 K3, K2 等) 遵循 reasoning_effort 规范
-		req.Thinking = nil
-		req.ReasoningEffort = "low"
+		// K3 只接受 reasoning_effort；K2.7 不应传思考控制参数；K2.6 接受 thinking.type。
+		switch {
+		case strings.Contains(model, "kimik3"):
+			req.ReasoningEffort = "low"
+		case strings.Contains(model, "kimik26"):
+			req.Thinking = map[string]any{"type": "enabled"}
+		}
 		return req
 	case VendorGLM:
-		// 智谱 GLM 思考协议
+		// GLM 思考协议；5.3 系列支持 reasoning_effort，测试使用 low 控制耗时。
 		req.Thinking = map[string]any{"type": "enabled"}
+		if strings.Contains(model, "glm53") {
+			req.ReasoningEffort = "low"
+		}
 		return req
 	default:
 		req.Thinking = map[string]any{"type": "enabled"}

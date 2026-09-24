@@ -20,8 +20,8 @@ import (
 // upstream tests marked skip or flaky on reasoning length.
 
 const (
-	kvvFastTimeout   = 90 * time.Second
-	kvvThinkTimeout  = 180 * time.Second
+	kvvFastTimeout   = 2 * time.Minute
+	kvvThinkTimeout  = 4 * time.Minute
 	kvvThinkTokens   = 4096
 	kvvPassRate      = 60
 	kvvChickenPrompt = "鸡兔同笼，共有 35 个头，94 条腿。问鸡和兔各有多少只？请逐步推理。"

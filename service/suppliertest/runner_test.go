@@ -1023,6 +1023,10 @@ func TestStreamChatReadsVendorCacheAliases(t *testing.T) {
 func TestLooksLikeJSON(t *testing.T) {
 	t.Parallel()
 	assert.True(t, looksLikeJSON(`{"ping":"pong"}`))
+	assert.True(t, looksLikeJSON(`{}`))
+	assert.False(t, looksLikeJSON(`[]`))
+	assert.False(t, looksLikeJSON(`"pong"`))
+	assert.False(t, looksLikeJSON(`null`))
 	assert.False(t, looksLikeJSON("not json"))
 	assert.False(t, looksLikeJSON(""))
 }

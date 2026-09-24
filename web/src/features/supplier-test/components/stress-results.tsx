@@ -83,7 +83,7 @@ export function StressResults(props: {
         <h3 className='text-sm font-semibold'>{t('Timing and throughput')}</h3>
         <p className='text-muted-foreground text-xs'>
           {t(
-            'Batch duration spans all workers. Request duration and first output are measured per successful request.'
+            'Batch duration spans all workers. Request duration includes every attempted request; first output uses successful streamed requests.'
           )}
         </p>
         <div className='grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3'>

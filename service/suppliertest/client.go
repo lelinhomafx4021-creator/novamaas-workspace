@@ -242,6 +242,8 @@ func CreateVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, c
 	if err != nil {
 		return 0, nil, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, videoSubmitTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return 0, nil, err
@@ -271,6 +273,8 @@ func GetVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, cust
 	if err != nil {
 		return 0, nil, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, videoPollRequestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return 0, nil, err

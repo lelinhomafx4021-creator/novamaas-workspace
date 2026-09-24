@@ -1145,8 +1145,8 @@ func looksLikeJSON(raw string) bool {
 	if trimmed == "" {
 		return false
 	}
-	var value any
-	return common.Unmarshal([]byte(trimmed), &value) == nil
+	var value map[string]any
+	return common.Unmarshal([]byte(trimmed), &value) == nil && value != nil
 }
 
 func average(values []float64) float64 {
@@ -1517,6 +1517,7 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		metrics.EndpointURL = endpoint
 
 		status, submitResp, err := CreateVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, payloadBytes)
+		metrics.ElapsedMS = float64(time.Since(started).Milliseconds())
 		metrics.RawSubmitResponseJSON = string(submitResp)
 		if err != nil {
 			emit(Event{
@@ -1598,8 +1599,20 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		})
 	}
 
+	pollCtx, cancelPoll := context.WithTimeout(ctx, videoPollTotalTimeout)
+	defer cancelPoll()
+	emitPollFailure := func(message string) {
+		metrics.ElapsedMS = float64(time.Since(started).Milliseconds())
+		if runPoll {
+			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoPoll, Status: "fail", Title: "状态轮询", Message: message, Video: metrics})
+		}
+		if runResult {
+			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoResult, Status: "fail", Title: "视频结果", Message: message, Video: metrics})
+		}
+	}
+
 	queryTask := func() (done bool) {
-		pollStatus, pollResp, pollErr := GetVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, taskID)
+		pollStatus, pollResp, pollErr := GetVideoTaskRaw(pollCtx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, taskID)
 		metrics.RawPollResponseJSON = string(pollResp)
 		elapsed := time.Since(started)
 		metrics.ElapsedMS = float64(elapsed.Milliseconds())
@@ -1612,6 +1625,9 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		}
 
 		if pollErr != nil {
+			if pollCtx.Err() != nil {
+				return false
+			}
 			emit(Event{
 				Type:    "progress",
 				Module:  ModuleVideo,
@@ -1625,6 +1641,11 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		}
 
 		if pollStatus != http.StatusOK {
+			if pollStatus >= http.StatusBadRequest && pollStatus < http.StatusInternalServerError && pollStatus != http.StatusRequestTimeout && pollStatus != http.StatusTooManyRequests {
+				message := fmt.Sprintf("轮询失败 (HTTP %d): %s", pollStatus, ExtractAPIError(pollResp, http.StatusText(pollStatus)))
+				emitPollFailure(message)
+				return true
+			}
 			emit(Event{
 				Type:    "progress",
 				Module:  ModuleVideo,
@@ -1751,38 +1772,18 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	pollTimeout := time.After(1800 * time.Second)
-
-	timeoutCheckID := CheckVideoPoll
-	timeoutTitle := "状态轮询"
-	if !runPoll && runResult {
-		timeoutCheckID = CheckVideoResult
-		timeoutTitle = "视频结果"
-	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: timeoutCheckID,
-				Status:  "fail",
-				Title:   timeoutTitle,
-				Message: "测试已手动取消",
-				Video:   metrics,
-			})
+			emitPollFailure("测试已取消或请求已超时")
 			return
-		case <-pollTimeout:
-			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: timeoutCheckID,
-				Status:  "fail",
-				Title:   timeoutTitle,
-				Message: "任务轮询超时（超过 30 分钟），上游未在预期时间内完成",
-				Video:   metrics,
-			})
+		case <-pollCtx.Done():
+			message := "任务轮询超时（超过 40 分钟），上游未在预期时间内完成"
+			if ctx.Err() != nil {
+				message = "测试已取消或请求已超时"
+			}
+			emitPollFailure(message)
 			return
 		case <-ticker.C:
 			if queryTask() {

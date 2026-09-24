@@ -367,3 +367,39 @@ func TestApplyUsageCachedTokensExtraction(t *testing.T) {
 	assert.True(t, inputDetailsRes.HasCachedTokens)
 	assert.Equal(t, 888, inputDetailsRes.CachedTokens)
 }
+
+func TestApplyUsageTracksZeroTokenFieldsAsPresent(t *testing.T) {
+	t.Parallel()
+
+	var result StreamResult
+	zero := 0.0
+	applyUsage(&usageFields{PromptTokens: &zero, CompletionTokens: &zero}, &result)
+
+	assert.True(t, result.HasUsage)
+	assert.True(t, result.HasPromptTokens)
+	assert.True(t, result.HasCompletionTokens)
+	assert.Zero(t, result.PromptTokens)
+	assert.Zero(t, result.CompletionTokens)
+}
+
+func TestStreamOptionsDoesNotRetryUnrelatedBadRequest(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"message":"invalid response_format"}}`)
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model:         "demo",
+		Stream:        true,
+		StreamOptions: &streamOptions{IncludeUsage: true},
+	}, 5*time.Second, nil)
+
+	assert.Equal(t, http.StatusBadRequest, result.StatusCode)
+	assert.Equal(t, 1, calls)
+	assert.Contains(t, result.ErrorMessage, "invalid response_format")
+}

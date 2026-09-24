@@ -191,6 +191,9 @@ func NormalizeRunRequest(req *RunRequest) error {
 		return fmt.Errorf("select at least one module")
 	}
 	req.Modules = normalized
+	hasBasic := seen[ModuleBasic]
+	hasStress := seen[ModuleStress]
+	hasCache := seen[ModuleCache]
 	if strings.TrimSpace(req.Video.Prompt) == "" {
 		req.Video.Prompt = DefaultVideoPrompt
 	}
@@ -203,17 +206,19 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.Stress.MaxTokens == 0 {
 		req.Stress.MaxTokens = 256
 	}
-	if req.Stress.Concurrency < 1 || req.Stress.Concurrency > maxConcurrency {
-		return fmt.Errorf("concurrency must be between 1 and %d", maxConcurrency)
-	}
-	if req.Stress.Rounds < 1 || req.Stress.Rounds > maxRounds {
-		return fmt.Errorf("rounds must be between 1 and %d", maxRounds)
-	}
-	if req.Stress.Concurrency > maxStressRequests/req.Stress.Rounds {
-		return fmt.Errorf("concurrency × rounds must be at most %d requests", maxStressRequests)
-	}
-	if req.Stress.MaxTokens < 1 || req.Stress.MaxTokens > maxTokensCap {
-		return fmt.Errorf("max_tokens must be between 1 and %d", maxTokensCap)
+	if hasStress {
+		if req.Stress.Concurrency < 1 || req.Stress.Concurrency > maxConcurrency {
+			return fmt.Errorf("concurrency must be between 1 and %d", maxConcurrency)
+		}
+		if req.Stress.Rounds < 1 || req.Stress.Rounds > maxRounds {
+			return fmt.Errorf("rounds must be between 1 and %d", maxRounds)
+		}
+		if req.Stress.Concurrency > maxStressRequests/req.Stress.Rounds {
+			return fmt.Errorf("concurrency × rounds must be at most %d requests", maxStressRequests)
+		}
+		if req.Stress.MaxTokens < 1 || req.Stress.MaxTokens > maxTokensCap {
+			return fmt.Errorf("max_tokens must be between 1 and %d", maxTokensCap)
+		}
 	}
 	if strings.TrimSpace(req.Stress.Prompt) == "" {
 		req.Stress.Prompt = DefaultStressPrompt
@@ -227,18 +232,11 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.Basic.MaxTokens == 0 {
 		req.Basic.MaxTokens = 64
 	}
-	if req.Basic.MaxTokens < 1 || req.Basic.MaxTokens > maxTokensCap {
+	if hasBasic && (req.Basic.MaxTokens < 1 || req.Basic.MaxTokens > maxTokensCap) {
 		return fmt.Errorf("basic max_tokens must be between 1 and %d", maxTokensCap)
 	}
 	if req.Basic.Stream == nil {
 		req.Basic.Stream = ptrBool(true)
-	}
-	hasBasic := false
-	for _, m := range req.Modules {
-		if m == ModuleBasic {
-			hasBasic = true
-			break
-		}
 	}
 	if hasBasic {
 		checks, err := filterBasicChecks(req.Basic.Checks)
@@ -262,14 +260,16 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.Cache.Rounds == 0 {
 		req.Cache.Rounds = 5
 	}
-	if req.Cache.WaitSeconds < 0 || req.Cache.WaitSeconds > 600 {
-		return fmt.Errorf("cache wait must be between 0 and 600 seconds")
-	}
-	if req.Cache.MaxTokens < 1 || req.Cache.MaxTokens > maxTokensCap {
-		return fmt.Errorf("cache max_tokens must be between 1 and %d", maxTokensCap)
-	}
-	if req.Cache.Rounds < 1 || req.Cache.Rounds > maxCacheRounds {
-		return fmt.Errorf("cache rounds must be between 1 and %d", maxCacheRounds)
+	if hasCache {
+		if req.Cache.WaitSeconds < 0 || req.Cache.WaitSeconds > 600 {
+			return fmt.Errorf("cache wait must be between 0 and 600 seconds")
+		}
+		if req.Cache.MaxTokens < 1 || req.Cache.MaxTokens > maxTokensCap {
+			return fmt.Errorf("cache max_tokens must be between 1 and %d", maxTokensCap)
+		}
+		if req.Cache.Rounds < 1 || req.Cache.Rounds > maxCacheRounds {
+			return fmt.Errorf("cache rounds must be between 1 and %d", maxCacheRounds)
+		}
 	}
 	if strings.TrimSpace(req.Cache.FollowUp) == "" {
 		req.Cache.FollowUp = DefaultCacheFollowUp
@@ -277,13 +277,15 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.Cache.Stream == nil {
 		req.Cache.Stream = ptrBool(true)
 	}
-	cacheMode := strings.ToLower(strings.TrimSpace(req.Cache.Mode))
-	if cacheMode == "" || cacheMode == CacheModeStatic {
-		req.Cache.Mode = CacheModeStatic
-	} else if cacheMode == CacheModeCumulative {
-		req.Cache.Mode = CacheModeCumulative
-	} else {
-		return fmt.Errorf("invalid cache mode %q", req.Cache.Mode)
+	if hasCache {
+		cacheMode := strings.ToLower(strings.TrimSpace(req.Cache.Mode))
+		if cacheMode == "" || cacheMode == CacheModeStatic {
+			req.Cache.Mode = CacheModeStatic
+		} else if cacheMode == CacheModeCumulative {
+			req.Cache.Mode = CacheModeCumulative
+		} else {
+			return fmt.Errorf("invalid cache mode %q", req.Cache.Mode)
+		}
 	}
 	vendor, err := ResolveVendor(req.Vendor)
 	if err != nil {
@@ -472,7 +474,7 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 				}
 			}
 			if wanted[CheckUsage] {
-				if connected.HasUsage {
+				if connected.HasUsage && connected.HasPromptTokens && connected.HasCompletionTokens {
 					msg := fmt.Sprintf("prompt=%d，completion=%d", connected.PromptTokens, connected.CompletionTokens)
 					if connected.HasReasoningTokens || connected.ReasoningTokens > 0 {
 						msg += fmt.Sprintf("（reasoning=%d）", connected.ReasoningTokens)
@@ -484,8 +486,8 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 				} else {
 					status, message := checkStatus(
 						profile.requireUsage,
-						"供应商没返回 usage，已跳过",
-						vendorTitle(profile.id)+" 文档要求返回 usage，这次没有",
+						"供应商返回的 usage 缺少 prompt_tokens 或 completion_tokens，已跳过",
+						vendorTitle(profile.id)+" 文档要求返回完整 usage（prompt_tokens 和 completion_tokens），这次没有",
 					)
 					emitCheck(CheckUsage, status, message)
 				}
@@ -823,7 +825,13 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emit(Event{Type: "summary", Module: ModuleCache, Summary: fmt.Sprintf("缓存测试失败：探测 %d 轮全部失败。", rounds)})
 		return
 	}
-	emitCheck(CheckCacheProbe, "Cache probe", "pass", fmt.Sprintf("探测 %d 轮完成。%s", rounds, strings.Join(probeDetails, "，")))
+	probeStatus := "pass"
+	probeMessage := fmt.Sprintf("探测 %d 轮完成。%s", rounds, strings.Join(probeDetails, "，"))
+	if failedRound > 0 {
+		probeStatus = "fail"
+		probeMessage = fmt.Sprintf("探测 %d 轮：成功 %d，失败 %d。%s", rounds, rounds-failedRound, failedRound, strings.Join(probeDetails, "，"))
+	}
+	emitCheck(CheckCacheProbe, "Cache probe", probeStatus, probeMessage)
 
 	if !sawCached {
 		status, message := checkStatus(
@@ -835,10 +843,14 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emitCheck(CheckCacheHitRate, "Cache hit rate", "skip", "没有 cached_tokens，算不出命中率")
 		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "没有 cached_tokens，不能判定缓存存活")
 		emitCache(0, 0, 0, 0)
+		summary := fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。供应商没返回 cached_tokens，只能确认请求成功，不能确认缓存命中。", rounds)
+		if failedRound > 0 {
+			summary += fmt.Sprintf(" 另有 %d 轮探测失败。", failedRound)
+		}
 		emit(Event{
 			Type:    "summary",
 			Module:  ModuleCache,
-			Summary: fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。供应商没返回 cached_tokens，只能确认请求成功，不能确认缓存命中。", rounds),
+			Summary: summary,
 		})
 		return
 	}
@@ -847,7 +859,11 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emitCheck(CheckCacheHitRate, "Cache hit rate", "skip", "prompt_tokens 缺失，算不出命中率")
 		emitCheck(CheckCacheTTL, "Cache TTL", "skip", "没有命中率，不能判定缓存存活")
 		emitCache(0, 0, 0, 0)
-		emit(Event{Type: "summary", Module: ModuleCache, Summary: fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。有 cached_tokens=%d，但没有 prompt_tokens。", rounds, lastCached)})
+		summary := fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。有 cached_tokens=%d，但没有 prompt_tokens。", rounds, lastCached)
+		if failedRound > 0 {
+			summary += fmt.Sprintf(" 另有 %d 轮探测失败。", failedRound)
+		}
+		emit(Event{Type: "summary", Module: ModuleCache, Summary: summary})
 		return
 	}
 	avgHit := average(hitRates)
@@ -890,10 +906,14 @@ func runCache(ctx context.Context, httpClient *http.Client, endpoint string, req
 		emitCheck(CheckCacheTTL, "Cache TTL", "pass", fmt.Sprintf("等待 %ds 后平均命中率 %.1f%%。是否达标看页面尺子。", req.Cache.WaitSeconds, avgHit*100))
 	}
 	emitCache(avgHit, minHit, hitCount, avgDepth)
+	summary := fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。[%s] 命中频次 %d/%d 轮 (%.1f%%)，平均命中率 %.1f%%。", rounds, modeLabel, hitCount, len(hitRates), float64(hitCount)/float64(len(hitRates))*100, avgHit*100)
+	if failedRound > 0 {
+		summary += fmt.Sprintf(" 另有 %d 轮探测失败。", failedRound)
+	}
 	emit(Event{
 		Type:    "summary",
 		Module:  ModuleCache,
-		Summary: fmt.Sprintf("缓存测试结束：预热 1 次，探测 %d 轮。[%s] 命中频次 %d/%d 轮 (%.1f%%)，平均命中率 %.1f%%。", rounds, modeLabel, hitCount, len(hitRates), float64(hitCount)/float64(len(hitRates))*100, avgHit*100),
+		Summary: summary,
 	})
 }
 
@@ -959,17 +979,19 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 					}}
 				}
 				result := streamChat(ctx, httpClient, endpoint, req.APIKey, stressReq, stressChatTimeout, onDelta)
+				ttftMu.Lock()
+				requestTimes = append(requestTimes, float64(result.Elapsed)/float64(time.Millisecond))
+				ttftMu.Unlock()
 				ok := result.StatusCode == http.StatusOK && result.ErrorMessage == "" && (result.Content != "" || result.Reasoning != "")
 				if ok {
 					succeeded.Add(1)
-					if result.HasUsage && result.PromptTokens > 0 && result.CompletionTokens > 0 {
+					if result.HasUsage && result.HasPromptTokens && result.HasCompletionTokens {
 						usageCount.Add(1)
 						usageElapsed.Add(result.Elapsed.Nanoseconds())
 						inTokens.Add(int64(result.PromptTokens))
 						outTokens.Add(int64(result.CompletionTokens))
 					}
 					ttftMu.Lock()
-					requestTimes = append(requestTimes, float64(result.Elapsed)/float64(time.Millisecond))
 					if stream && result.SSE && result.TTFT > 0 {
 						ttfts = append(ttfts, float64(result.TTFT)/float64(time.Millisecond))
 						if result.TPOT > 0 {

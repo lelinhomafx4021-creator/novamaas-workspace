@@ -188,6 +188,16 @@ func TestNormalizeRunRequest(t *testing.T) {
 	err := NormalizeRunRequest(&tooMany)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at most 10000 requests")
+
+	ignoredModuleConfig := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{MaxTokens: 8},
+		Stress:  StressConfig{Concurrency: maxConcurrency + 1, Rounds: 0, MaxTokens: maxTokensCap + 1},
+		Cache:   CacheConfig{WaitSeconds: -1, Rounds: maxCacheRounds + 1, Mode: "invalid"},
+	}
+	require.NoError(t, NormalizeRunRequest(&ignoredModuleConfig))
 }
 
 func TestChatRequestOmitsEmptySampling(t *testing.T) {
@@ -395,6 +405,7 @@ func TestRunStressReportsRequestDurationWithoutInventingTokens(t *testing.T) {
 func TestRunStressSummarizesFailuresFromEveryWorker(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(2 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = io.WriteString(w, `{"error":{"message":"rate limit exceeded"}}`)
@@ -414,6 +425,7 @@ func TestRunStressSummarizesFailuresFromEveryWorker(t *testing.T) {
 	require.NotNil(t, metrics)
 	assert.Equal(t, 4, metrics.Attempted)
 	assert.Equal(t, 4, metrics.Failed)
+	assert.Greater(t, metrics.RequestAvgMS, 0.0)
 	assert.Equal(t, 1.0, metrics.ErrorRate)
 	require.Len(t, metrics.Issues, 1)
 	assert.Equal(t, 4, metrics.Issues[0].Count)
@@ -653,6 +665,44 @@ func TestBasicSkipsVendorSpecificFields(t *testing.T) {
 	assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
 }
 
+func TestBasicRejectsIncompleteVendorUsage(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "glm-5.3-flash",
+		Vendor:  VendorGLM,
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{CheckConnectivity, CheckUsage}},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	var usageMessage string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+			if event.CheckID == CheckUsage {
+				usageMessage = event.Message
+			}
+		}
+	}
+	assert.Equal(t, "pass", statusByCheck[CheckConnectivity])
+	assert.Equal(t, "fail", statusByCheck[CheckUsage])
+	assert.Contains(t, usageMessage, "完整 usage")
+}
+
 func TestBasicRunsOnlyRequestedChecks(t *testing.T) {
 	t.Parallel()
 
@@ -770,6 +820,51 @@ func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
 	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
 	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
 	assert.Contains(t, summary, "探测 3 轮")
+}
+
+func TestCacheReportsPartialProbeFailure(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 2 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, `{"error":{"message":"probe unavailable"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1,\"cached_tokens\":16}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleCache},
+		Cache:   CacheConfig{Prompt: "cache-corpus", WaitSeconds: 0, MaxTokens: 8, Rounds: 2},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 3, calls)
+
+	statusByCheck := map[string]string{}
+	var metrics *CacheMetrics
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+		if event.Type == "metrics" {
+			metrics = event.Cache
+		}
+	}
+	assert.Equal(t, "fail", statusByCheck[CheckCacheProbe])
+	require.NotNil(t, metrics)
+	assert.Equal(t, 1, metrics.HitCount)
 }
 
 func TestCacheHitRateDoesNotFailOnLowHit(t *testing.T) {

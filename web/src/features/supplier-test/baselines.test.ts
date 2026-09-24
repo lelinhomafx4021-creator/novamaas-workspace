@@ -59,6 +59,38 @@ function stress(partial: Partial<StressMetrics>): StressMetrics {
 }
 
 describe('supplier-test verdicts', () => {
+  test('separates batch throughput, request rate, and non-stream timing samples', () => {
+    const assessment = assessStress(
+      stress({
+        attempted: 2,
+        succeeded: 2,
+        request_avg_ms: 56000,
+        request_p50_ms: 56000,
+        request_p90_ms: 56000,
+        request_tokens_per_sec: 1.1,
+        tokens_per_sec: 2.2,
+        usage_n: 2,
+        ttft_avg_ms: 0,
+        tpot_avg_ms: 0,
+      })
+    )
+    expect(
+      assessment.rows.find((row) => row.id === 'request_duration')?.measured
+    ).toContain('56000 ms')
+    expect(assessment.rows.find((row) => row.id === 'tps')?.measured).toBe(
+      '2.2 tok/s'
+    )
+    expect(
+      assessment.rows.find((row) => row.id === 'request_tps')?.measured
+    ).toBe('1.1 tok/s')
+    expect(assessment.rows.find((row) => row.id === 'ttft_avg')?.measured).toBe(
+      'No sample'
+    )
+    expect(assessment.rows.find((row) => row.id === 'tpot_avg')?.measured).toBe(
+      'No sample'
+    )
+  })
+
   test('a slightly slower vendor is still normal', () => {
     const assessment = assessStress(
       stress({
@@ -108,8 +140,12 @@ describe('supplier-test verdicts', () => {
     )
     expect(assessment.overall).toBe('abnormal')
     expect(overallLabel(assessment.overall)).toBe('Overall: abnormal')
-    expect(assessment.rows.find((row) => row.id === 'error_rate')?.verdict).toBe('abnormal')
-    expect(assessment.rows.find((row) => row.id === 'success')?.verdict).toBe('abnormal')
+    expect(
+      assessment.rows.find((row) => row.id === 'error_rate')?.verdict
+    ).toBe('abnormal')
+    expect(assessment.rows.find((row) => row.id === 'success')?.verdict).toBe(
+      'abnormal'
+    )
     // Deep performance should be 'na' (cannot compare) when shallow failed with abnormal error rate
     const perf = assessmentGroup(assessment, 'perf')
     expect(perf.overall).toBe('na')
@@ -159,13 +195,15 @@ describe('supplier-test verdicts', () => {
     expect(custom.ttftShortOkMs).toBe(4500)
     expect(custom.cacheHitOk).toBe(0.65)
     expect(matchingStandardId(custom)).toBeNull()
-    expect(
-      matchingStandardId(sanitizeStandard(getStandard('default')))
-    ).toBe('default')
+    expect(matchingStandardId(sanitizeStandard(getStandard('default')))).toBe(
+      'default'
+    )
   })
 
   test('editor percent and seconds round-trip on the standard form', () => {
-    const errorField = STANDARD_EDITOR_FIELDS.find((item) => item.key === 'errorSlow')
+    const errorField = STANDARD_EDITOR_FIELDS.find(
+      (item) => item.key === 'errorSlow'
+    )
     const ttftField = STANDARD_EDITOR_FIELDS.find(
       (item) => item.key === 'ttftShortOkMs'
     )
@@ -195,9 +233,9 @@ describe('supplier-test verdicts', () => {
     ])
     expect(perf.rows.some((row) => row.id === 'ttft_avg')).toBe(true)
     expect(perf.rows.some((row) => row.id === 'tokens')).toBe(true)
-    expect(assessment.rows.find((row) => row.id === 'ttft_p90')?.threshold).toBe(
-      'Normal ≤ {{seconds}}s and ≤ avg × {{times}}; slower above that'
-    )
+    expect(
+      assessment.rows.find((row) => row.id === 'ttft_p90')?.threshold
+    ).toBe('Normal ≤ {{seconds}}s and ≤ avg × {{times}}; slower above that')
   })
 
   test('a 20% cache hit is abnormal on the default ruler, not a failed check', () => {
@@ -211,7 +249,9 @@ describe('supplier-test verdicts', () => {
       rounds: 1,
       has_cached_tokens: true,
     })
-    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('abnormal')
+    expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe(
+      'abnormal'
+    )
     expect(assessment.overall).toBe('abnormal')
   })
 
@@ -268,7 +308,9 @@ describe('supplier-test verdicts', () => {
 
   test('filters informational rows so SLA benchmark tables have zero Cannot compare verdicts', () => {
     const stressAss = assessStress(stress({}))
-    const benchmarkRows = stressAss.rows.filter((row) => !isInformationalRow(row))
+    const benchmarkRows = stressAss.rows.filter(
+      (row) => !isInformationalRow(row)
+    )
     expect(benchmarkRows.every((row) => row.verdict !== 'na')).toBe(true)
     expect(benchmarkRows.map((r) => r.id)).toEqual([
       'error_rate',

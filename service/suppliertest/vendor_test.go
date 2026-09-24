@@ -37,27 +37,87 @@ func TestResolveVendor(t *testing.T) {
 
 func TestThinkingRequired(t *testing.T) {
 	t.Parallel()
-	assert.True(t, thinkingRequired(VendorGLM))
-	assert.True(t, thinkingRequired(VendorKimi))
-	assert.True(t, thinkingRequired(VendorDeepSeek))
-	assert.False(t, thinkingRequired(VendorGeneric))
+	assert.True(t, thinkingRequired(VendorGLM, "glm-5.3-flash"))
+	assert.True(t, thinkingRequired(VendorKimi, "kimi-k2.7-code"))
+	assert.True(t, thinkingRequired(VendorDeepSeek, "deepseek-v4-pro"))
+	assert.True(t, thinkingRequired(VendorDeepSeek, "deepseek-reasoner"))
+	assert.False(t, thinkingRequired(VendorGLM, "glm-4-flash"))
+	assert.False(t, thinkingRequired(VendorKimi, "moonshot-v1-8k"))
+	assert.False(t, thinkingRequired(VendorDeepSeek, "deepseek-chat"))
+	assert.False(t, thinkingRequired(VendorGeneric, "glm-5.3"))
 }
 
 func TestApplyThinkingVendorBased(t *testing.T) {
 	t.Parallel()
-	// Kimi 不论具体模型名 (如 kimik3, kimi-latest 等)，均遵循 reasoning_effort
+
+	// Kimi K3 只使用 reasoning_effort。
 	got := applyThinking(chatRequest{Model: "kimik3"}, VendorKimi)
 	assert.Nil(t, got.Thinking)
 	assert.Equal(t, "low", got.ReasoningEffort)
 
-	// GLM 不论模型名 (如 glm5.3 等)，传 thinking enabled
-	got = applyThinking(chatRequest{Model: "glm5.3"}, VendorGLM)
+	// Kimi K2.7 始终思考，不发送额外控制字段。
+	got = applyThinking(chatRequest{Model: "kimi-k2.7-code"}, VendorKimi)
+	assert.Nil(t, got.Thinking)
+	assert.Empty(t, got.ReasoningEffort)
+
+	// Kimi K2.6 通过 thinking.type 显式开启，不支持 reasoning_effort。
+	got = applyThinking(chatRequest{Model: "kimi-k2.6"}, VendorKimi)
 	require.NotNil(t, got.Thinking)
 	assert.Equal(t, "enabled", got.Thinking["type"])
+	assert.Empty(t, got.ReasoningEffort)
 
-	// DeepSeek 不论模型名 (如 deepseekv4, deepseek-chat 等)，原生思考不外发 thinking 字段
-	got = applyThinking(chatRequest{Model: "deepseekv4"}, VendorDeepSeek)
+	// GLM 5.3 使用 thinking enabled，并用 low 档控制测试耗时。
+	got = applyThinking(chatRequest{Model: "glm-5.3-flash"}, VendorGLM)
+	require.NotNil(t, got.Thinking)
+	assert.Equal(t, "enabled", got.Thinking["type"])
+	assert.Equal(t, "low", got.ReasoningEffort)
+
+	// DeepSeek V4 支持显式 thinking 与 reasoning_effort。
+	got = applyThinking(chatRequest{Model: "deepseek-v4-pro"}, VendorDeepSeek)
+	require.NotNil(t, got.Thinking)
+	assert.Equal(t, "enabled", got.Thinking["type"])
+	assert.Equal(t, "low", got.ReasoningEffort)
+
+	// 旧版 DeepSeek reasoner 本身就是思考模型，兼容请求不附加控制字段。
+	got = applyThinking(chatRequest{Model: "deepseek-reasoner"}, VendorDeepSeek)
 	assert.Nil(t, got.Thinking)
+	assert.Empty(t, got.ReasoningEffort)
+}
+
+func TestRequiredVendorCapabilityRejectionFails(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"message":"unsupported field"}}`)
+	}))
+	defer server.Close()
+
+	for _, checkID := range []string{CheckJSONMode, CheckToolCall} {
+		checkID := checkID
+		t.Run(checkID, func(t *testing.T) {
+			statusFor := func(vendor string) string {
+				var status string
+				err := Run(context.Background(), server.Client(), RunRequest{
+					BaseURL: server.URL,
+					APIKey:  "any",
+					Model:   "vendor-model",
+					Vendor:  vendor,
+					Modules: []string{ModuleBasic},
+					Basic:   BasicConfig{Checks: []string{checkID}},
+				}, func(event Event) {
+					if event.Type == "check" && event.CheckID == checkID && event.Status != "running" {
+						status = event.Status
+					}
+				})
+				require.NoError(t, err)
+				return status
+			}
+
+			assert.Equal(t, "fail", statusFor(VendorGLM))
+			assert.Equal(t, "skip", statusFor(VendorGeneric))
+		})
+	}
 }
 
 func TestCacheMessagesSystemPrefix(t *testing.T) {
@@ -306,4 +366,40 @@ func TestApplyUsageCachedTokensExtraction(t *testing.T) {
 	}, &inputDetailsRes)
 	assert.True(t, inputDetailsRes.HasCachedTokens)
 	assert.Equal(t, 888, inputDetailsRes.CachedTokens)
+}
+
+func TestApplyUsageTracksZeroTokenFieldsAsPresent(t *testing.T) {
+	t.Parallel()
+
+	var result StreamResult
+	zero := 0.0
+	applyUsage(&usageFields{PromptTokens: &zero, CompletionTokens: &zero}, &result)
+
+	assert.True(t, result.HasUsage)
+	assert.True(t, result.HasPromptTokens)
+	assert.True(t, result.HasCompletionTokens)
+	assert.Zero(t, result.PromptTokens)
+	assert.Zero(t, result.CompletionTokens)
+}
+
+func TestStreamOptionsDoesNotRetryUnrelatedBadRequest(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"message":"invalid response_format"}}`)
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model:         "demo",
+		Stream:        true,
+		StreamOptions: &streamOptions{IncludeUsage: true},
+	}, 5*time.Second, nil)
+
+	assert.Equal(t, http.StatusBadRequest, result.StatusCode)
+	assert.Equal(t, 1, calls)
+	assert.Contains(t, result.ErrorMessage, "invalid response_format")
 }

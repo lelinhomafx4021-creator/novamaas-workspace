@@ -110,26 +110,30 @@ type StreamDelta struct {
 }
 
 type StreamResult struct {
-	StatusCode         int
-	Header             http.Header
-	ID                 string
-	Content            string
-	Reasoning          string
-	FinishReason       string
-	ToolName           string
-	ToolArgs           string
-	PromptTokens       int
-	CompletionTokens   int
-	CachedTokens       int
-	ReasoningTokens    int
-	HasUsage           bool
-	HasCachedTokens    bool
-	HasReasoningTokens bool
-	TTFT               time.Duration
-	TPOT               time.Duration
-	Elapsed            time.Duration
-	ErrorMessage       string
-	SSE                bool
+	StatusCode          int
+	Header              http.Header
+	ID                  string
+	Content             string
+	Reasoning           string
+	FinishReason        string
+	ToolName            string
+	ToolArgs            string
+	PromptTokens        int
+	CompletionTokens    int
+	CachedTokens        int
+	ReasoningTokens     int
+	HasUsage            bool
+	HasPromptTokens     bool
+	HasCompletionTokens bool
+	HasCachedTokens     bool
+	HasReasoningTokens  bool
+	TTFT                time.Duration
+	TPOT                time.Duration
+	Elapsed             time.Duration
+	lastOutput          time.Duration
+	requestStarted      time.Time
+	ErrorMessage        string
+	SSE                 bool
 }
 
 func NewHTTPClient(base *http.Client) *http.Client {
@@ -238,6 +242,8 @@ func CreateVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, c
 	if err != nil {
 		return 0, nil, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, videoSubmitTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return 0, nil, err
@@ -267,6 +273,8 @@ func GetVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, cust
 	if err != nil {
 		return 0, nil, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, videoPollRequestTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return 0, nil, err
@@ -435,12 +443,16 @@ func streamChat(
 		return StreamResult{ErrorMessage: err.Error()}
 	}
 
-	httpReq, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, strings.NewReader(string(body)))
+	httpReq, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return StreamResult{ErrorMessage: err.Error()}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
+	accept := "application/json"
+	if req.Stream {
+		accept = "text/event-stream"
+	}
+	httpReq.Header.Set("Accept", accept)
 	if strings.TrimSpace(apiKey) != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
@@ -453,47 +465,78 @@ func streamChat(
 	defer resp.Body.Close()
 
 	result := StreamResult{
-		StatusCode: resp.StatusCode,
-		Header:     resp.Header.Clone(),
-		Elapsed:    time.Since(started),
+		StatusCode:     resp.StatusCode,
+		Header:         resp.Header.Clone(),
+		Elapsed:        time.Since(started),
+		requestStarted: started,
 	}
 
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
 		result.ErrorMessage = ExtractAPIError(raw, resp.Status)
-		if req.StreamOptions != nil && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) {
-			errMsg := strings.ToLower(result.ErrorMessage)
-			if !strings.Contains(errMsg, "thinking") && !strings.Contains(errMsg, "model") && !strings.Contains(errMsg, "messages") {
-				noOptReq := req
-				noOptReq.StreamOptions = nil
-				retryResult := streamChat(ctx, httpClient, endpoint, apiKey, noOptReq, timeout, onDelta)
-				if retryResult.StatusCode == http.StatusOK && retryResult.ErrorMessage == "" {
-					if tracker != nil {
-						tracker.Store(true)
-					}
-					return retryResult
+		if req.StreamOptions != nil && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && streamOptionsUnsupported(result.ErrorMessage) {
+			noOptReq := req
+			noOptReq.StreamOptions = nil
+			retryResult := streamChat(ctx, httpClient, endpoint, apiKey, noOptReq, timeout, onDelta)
+			if retryResult.StatusCode == http.StatusOK && retryResult.ErrorMessage == "" {
+				retryResult.Elapsed = time.Since(started)
+				if retryResult.TTFT > 0 {
+					beforeRetry := retryResult.requestStarted.Sub(started)
+					retryResult.TTFT += beforeRetry
+					retryResult.lastOutput += beforeRetry
 				}
+				if tracker != nil {
+					tracker.Store(true)
+				}
+				return retryResult
 			}
+			result.ErrorMessage += "; retry without stream_options: " + firstNonEmpty(retryResult.ErrorMessage, fmt.Sprintf("HTTP %d", retryResult.StatusCode))
 		}
+		result.Elapsed = time.Since(started)
 		return result
 	}
 
-	if strings.Contains(contentType, "text/event-stream") || req.Stream {
+	if strings.Contains(contentType, "text/event-stream") {
 		result.SSE = true
 		parseSSE(resp.Body, started, &result, onDelta)
 		result.Elapsed = time.Since(started)
+		finalizeStreamTiming(&result)
 		return result
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		result.ErrorMessage = err.Error()
+		result.Elapsed = time.Since(started)
 		return result
 	}
-	applyChunk(raw, started, &result, onDelta)
+	var parsed streamChunk
+	if err := common.Unmarshal(raw, &parsed); err != nil {
+		result.ErrorMessage = "invalid JSON response: " + err.Error()
+		result.Elapsed = time.Since(started)
+		return result
+	}
+	applyChunk(raw, started, &result, nil)
+	// A complete JSON response has no observable first output token.
+	result.TTFT = 0
+	result.TPOT = 0
+	result.lastOutput = 0
 	result.Elapsed = time.Since(started)
 	return result
+}
+
+func finalizeStreamTiming(result *StreamResult) {
+	if result.TTFT <= 0 || result.lastOutput <= result.TTFT || result.CompletionTokens <= 1 {
+		return
+	}
+	visibleTokens := result.CompletionTokens
+	if result.ReasoningTokens > 0 && result.Reasoning == "" {
+		visibleTokens -= result.ReasoningTokens
+	}
+	if visibleTokens > 1 {
+		result.TPOT = (result.lastOutput - result.TTFT) / time.Duration(visibleTokens-1)
+	}
 }
 
 func parseSSE(body io.Reader, started time.Time, result *StreamResult, onDelta func(StreamDelta)) {
@@ -525,6 +568,9 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 	}
 	var chunk streamChunk
 	if err := common.Unmarshal(raw, &chunk); err != nil {
+		if result.ErrorMessage == "" {
+			result.ErrorMessage = "invalid JSON stream chunk: " + err.Error()
+		}
 		return
 	}
 	if chunk.ID != "" && result.ID == "" {
@@ -578,35 +624,24 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 			result.ToolArgs += call.Function.Arguments
 		}
 		if content != "" {
-			if result.Content == "" && result.Reasoning == "" {
+			if result.Content == "" && result.Reasoning == "" && result.TTFT == 0 {
 				result.TTFT = time.Since(started)
 			}
 			result.Content += content
 			delta.Content += content
+			result.lastOutput = time.Since(started)
 		}
 		if reasoning != "" {
-			if result.Content == "" && result.Reasoning == "" {
+			if result.Content == "" && result.Reasoning == "" && result.TTFT == 0 {
 				result.TTFT = time.Since(started)
 			}
 			result.Reasoning += reasoning
 			delta.Reasoning += reasoning
+			result.lastOutput = time.Since(started)
 		}
 	}
 	if (delta.Content != "" || delta.Reasoning != "") && onDelta != nil {
 		onDelta(delta)
-	}
-	tokens := result.CompletionTokens
-	if tokens <= 0 && result.Content != "" {
-		tokens = max(1, len([]rune(result.Content))/2)
-	}
-	if tokens <= 0 && result.Reasoning != "" {
-		tokens = max(1, len([]rune(result.Reasoning))/2)
-	}
-	if tokens > 1 && result.TTFT > 0 {
-		remain := time.Since(started) - result.TTFT
-		if remain > 0 {
-			result.TPOT = remain / time.Duration(tokens-1)
-		}
 	}
 }
 
@@ -615,20 +650,19 @@ func applyUsage(usage *usageFields, result *StreamResult) {
 		return
 	}
 	result.HasUsage = true
-	prompt := 0
-	if usage.PromptTokens != nil && *usage.PromptTokens > 0 {
-		prompt = int(*usage.PromptTokens)
-	} else if usage.InputTokens != nil && *usage.InputTokens > 0 {
-		prompt = int(*usage.InputTokens)
+	if usage.PromptTokens != nil {
+		result.HasPromptTokens = true
+		result.PromptTokens = nonNegativeTokenCount(*usage.PromptTokens)
+	} else if usage.InputTokens != nil {
+		result.HasPromptTokens = true
+		result.PromptTokens = nonNegativeTokenCount(*usage.InputTokens)
 	}
-	if prompt > 0 {
-		result.PromptTokens = prompt
-	}
-
-	if usage.CompletionTokens != nil && *usage.CompletionTokens > 0 {
-		result.CompletionTokens = int(*usage.CompletionTokens)
-	} else if usage.OutputTokens != nil && *usage.OutputTokens > 0 {
-		result.CompletionTokens = int(*usage.OutputTokens)
+	if usage.CompletionTokens != nil {
+		result.HasCompletionTokens = true
+		result.CompletionTokens = nonNegativeTokenCount(*usage.CompletionTokens)
+	} else if usage.OutputTokens != nil {
+		result.HasCompletionTokens = true
+		result.CompletionTokens = nonNegativeTokenCount(*usage.OutputTokens)
 	}
 
 	// 缓存 Token 提取：多路探测，优先取 > 0 的有效值，防止空值或 0 覆盖真实命中数
@@ -692,6 +726,21 @@ func applyUsage(usage *usageFields, result *StreamResult) {
 			}
 		}
 	}
+}
+
+func nonNegativeTokenCount(value float64) int {
+	if value <= 0 {
+		return 0
+	}
+	return int(value)
+}
+
+func streamOptionsUnsupported(message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "stream_options") ||
+		strings.Contains(lower, "include_usage") ||
+		(strings.Contains(lower, "unknown field") && strings.Contains(lower, "stream")) ||
+		(strings.Contains(lower, "unrecognized request argument") && strings.Contains(lower, "stream"))
 }
 
 func ExtractAPIError(raw []byte, fallback string) string {

@@ -29,16 +29,14 @@ import {
   LOAD_PRESETS,
   MAX_CONCURRENCY,
   MAX_ROUNDS,
+  MAX_STRESS_REQUESTS,
   MAX_TOKENS_CAP,
   STRESS_WARN_TOTAL,
 } from '../constants'
-import type { StressForm } from '../types'
+import type { StressForm, StressMetrics } from '../types'
 import { AssessmentTable } from './assessment-table'
-import {
-  CorpusPicker,
-  NumberField,
-  StreamSwitch,
-} from './form-controls'
+import { CorpusPicker, NumberField, StreamSwitch } from './form-controls'
+import { StressResults } from './stress-results'
 
 export function StressPanel(props: {
   stress: StressForm
@@ -49,6 +47,7 @@ export function StressPanel(props: {
   streamText: string
   stressSummary: string
   stressAssessment: Assessment | null
+  metrics: StressMetrics | null
   onStressChange: Dispatch<SetStateAction<StressForm>>
 }) {
   const { t } = useTranslation()
@@ -59,6 +58,11 @@ export function StressPanel(props: {
       <p className='text-muted-foreground text-sm'>
         {t(
           'Corpus is sent as-is. Allow cache reuses it; break cache puts a random prefix in front of each request. Max tokens only caps the reply.'
+        )}
+      </p>
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'Timing is measured by this server. First output is the first streamed content or reasoning chunk; request duration ends when response parsing finishes. Network and gateway buffering can differ from upstream logs.'
         )}
       </p>
       <div className='flex flex-wrap gap-2'>
@@ -89,7 +93,10 @@ export function StressPanel(props: {
           size='sm'
           disabled={props.busy}
           onClick={() =>
-            props.onStressChange((current) => ({ ...current, breakCache: false }))
+            props.onStressChange((current) => ({
+              ...current,
+              breakCache: false,
+            }))
           }
         >
           {t('Allow prompt cache')}
@@ -100,7 +107,10 @@ export function StressPanel(props: {
           size='sm'
           disabled={props.busy}
           onClick={() =>
-            props.onStressChange((current) => ({ ...current, breakCache: true }))
+            props.onStressChange((current) => ({
+              ...current,
+              breakCache: true,
+            }))
           }
         >
           {t('Break prompt cache')}
@@ -122,7 +132,10 @@ export function StressPanel(props: {
             { label: '50', value: 50 },
           ]}
           onChange={(value) =>
-            props.onStressChange((current) => ({ ...current, concurrency: value }))
+            props.onStressChange((current) => ({
+              ...current,
+              concurrency: value,
+            }))
           }
         />
         <NumberField
@@ -157,7 +170,10 @@ export function StressPanel(props: {
             { label: '4k', value: 4096 },
           ]}
           onChange={(value) =>
-            props.onStressChange((current) => ({ ...current, maxTokens: value }))
+            props.onStressChange((current) => ({
+              ...current,
+              maxTokens: value,
+            }))
           }
         />
         <StreamSwitch
@@ -193,6 +209,12 @@ export function StressPanel(props: {
           </AlertDescription>
         </Alert>
       ) : null}
+      <p className='text-muted-foreground text-xs'>
+        {t(
+          'The stress test is capped at {{max}} requests per run to avoid accidental upstream load.',
+          { max: MAX_STRESS_REQUESTS }
+        )}
+      </p>
       {props.runningModule === 'stress' && props.progress.total > 0 ? (
         <div className='mt-4 space-y-2'>
           <div className='text-muted-foreground text-sm'>
@@ -210,6 +232,13 @@ export function StressPanel(props: {
         <p className='text-muted-foreground mt-4 text-sm'>
           {props.stressSummary}
         </p>
+      ) : null}
+      {props.metrics ? (
+        <StressResults
+          metrics={props.metrics}
+          assessment={props.stressAssessment}
+          stream={props.stress.stream}
+        />
       ) : null}
       {props.stressAssessment ? (
         <AssessmentTable

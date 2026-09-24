@@ -442,6 +442,7 @@ func TestRunVideo_SingleCheckSubmit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			submitCalled = true
+			time.Sleep(10 * time.Millisecond)
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"id":"cgt-single-submit-id","status":"queued"}`))
 			return
@@ -485,7 +486,44 @@ func TestRunVideo_SingleCheckSubmit(t *testing.T) {
 	}
 	require.NotNil(t, submitEvent)
 	assert.Equal(t, "cgt-single-submit-id", submitEvent.Video.TaskID)
+	assert.Greater(t, submitEvent.Video.ElapsedMS, float64(0))
 	assert.Nil(t, pollEvent, "when only running submit check, poll should not be executed")
+}
+
+func TestRunVideo_PermanentPollErrorFailsBothChecks(t *testing.T) {
+	pollCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"task-1"}`))
+			return
+		}
+		pollCalls++
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid token"}}`))
+	}))
+	defer server.Close()
+
+	req := RunRequest{
+		BaseURL: server.URL, APIKey: "bad-key", Model: "test-model", Modules: []string{ModuleVideo},
+		Video: VideoConfig{Prompt: "test", Checks: []string{CheckVideoSubmit, CheckVideoPoll, CheckVideoResult}},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var events []Event
+	require.NoError(t, Run(ctx, server.Client(), req, func(e Event) { events = append(events, e) }))
+	assert.Equal(t, 1, pollCalls)
+	for _, checkID := range []string{CheckVideoPoll, CheckVideoResult} {
+		var failed *Event
+		for i := range events {
+			if events[i].CheckID == checkID && events[i].Status == "fail" {
+				failed = &events[i]
+			}
+		}
+		require.NotNil(t, failed, "check %s must fail", checkID)
+		assert.Contains(t, failed.Message, "HTTP 401")
+		assert.Contains(t, failed.Message, "invalid token")
+	}
 }
 
 func TestRunVideo_SingleCheckPoll(t *testing.T) {
@@ -667,6 +705,3 @@ func TestExtractTaskID_AndState(t *testing.T) {
 	assert.Equal(t, "failed", state2)
 	assert.Equal(t, "Resource exhausted", fail2)
 }
-
-
-

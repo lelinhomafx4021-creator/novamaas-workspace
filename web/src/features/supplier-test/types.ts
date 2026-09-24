@@ -36,11 +36,18 @@ export type VideoMetrics = {
 
 export type StressMetrics = {
   total: number
+  attempted?: number
+  not_run?: number
   succeeded: number
   failed: number
   error_rate: number
   elapsed_ms: number
   tokens_per_sec: number
+  request_tokens_per_sec?: number
+  request_avg_ms?: number
+  request_p50_ms?: number
+  request_p90_ms?: number
+  usage_n?: number
   prompt_tokens: number
   completion_tokens: number
   ttft_avg_ms: number
@@ -53,6 +60,17 @@ export type StressMetrics = {
   tpot_n: number
   rpm: number
   tpm: number
+  issues?: StressIssue[]
+  other_issue_count?: number
+}
+
+export type StressIssue = {
+  status_code: number
+  message: string
+  count: number
+  worker: number
+  round: number
+  elapsed_ms: number
 }
 
 export type CacheMode = 'static' | 'cumulative'
@@ -72,7 +90,14 @@ export type CacheMetrics = {
 }
 
 export type SupplierTestEvent = {
-  type: 'check' | 'progress' | 'stream' | 'metrics' | 'summary' | 'done' | 'error'
+  type:
+    | 'check'
+    | 'progress'
+    | 'stream'
+    | 'metrics'
+    | 'summary'
+    | 'done'
+    | 'error'
   module?: SupplierTestModule
   check_id?: string
   status?: CheckStatus

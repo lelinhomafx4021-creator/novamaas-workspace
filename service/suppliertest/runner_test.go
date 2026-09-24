@@ -178,6 +178,26 @@ func TestNormalizeRunRequest(t *testing.T) {
 		Stress:  StressConfig{Concurrency: 1001, Rounds: 1, MaxTokens: 16},
 	}
 	require.Error(t, NormalizeRunRequest(&tooWide))
+
+	tooMany := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleStress},
+		Stress:  StressConfig{Concurrency: 101, Rounds: 100, MaxTokens: 16},
+	}
+	err := NormalizeRunRequest(&tooMany)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at most 10000 requests")
+
+	ignoredModuleConfig := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "demo",
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{MaxTokens: 8},
+		Stress:  StressConfig{Concurrency: maxConcurrency + 1, Rounds: 0, MaxTokens: maxTokensCap + 1},
+		Cache:   CacheConfig{WaitSeconds: -1, Rounds: maxCacheRounds + 1, Mode: "invalid"},
+	}
+	require.NoError(t, NormalizeRunRequest(&ignoredModuleConfig))
 }
 
 func TestChatRequestOmitsEmptySampling(t *testing.T) {
@@ -299,6 +319,148 @@ func TestStreamChatParsesSSE(t *testing.T) {
 	assert.Greater(t, result.TTFT, time.Duration(0))
 }
 
+func TestStreamChatJSONDoesNotReportFirstTokenTiming(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":31,"completion_tokens":64}}`)
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model: "glm-5.3-flash", Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.False(t, result.SSE)
+	assert.Equal(t, "pong", result.Content)
+	assert.Positive(t, result.Elapsed)
+	assert.Zero(t, result.TTFT)
+	assert.Zero(t, result.TPOT)
+}
+
+func TestStreamChatReportsMalformedSSEChunk(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {broken-json}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model: "glm-5.3-flash", Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.Contains(t, result.ErrorMessage, "invalid JSON stream chunk")
+}
+
+func TestFinalizeStreamTimingExcludesUsageTailAndUnstreamedReasoning(t *testing.T) {
+	t.Parallel()
+	result := StreamResult{
+		TTFT:             55 * time.Second,
+		lastOutput:       56 * time.Second,
+		Elapsed:          60 * time.Second,
+		CompletionTokens: 64,
+		ReasoningTokens:  14,
+	}
+	finalizeStreamTiming(&result)
+	assert.Equal(t, time.Second/49, result.TPOT)
+
+	result.Reasoning = "streamed reasoning"
+	result.TPOT = 0
+	finalizeStreamTiming(&result)
+	assert.Equal(t, time.Second/63, result.TPOT)
+}
+
+func TestRunStressReportsRequestDurationWithoutInventingTokens(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	var metrics *StressMetrics
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL, Model: "glm-5.3-flash", Modules: []string{ModuleStress},
+		Stress: StressConfig{Concurrency: 1, Rounds: 1, MaxTokens: 64},
+	}, func(event Event) {
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	assert.Equal(t, 1, metrics.Attempted)
+	assert.Equal(t, 1, metrics.Succeeded)
+	assert.Positive(t, metrics.RequestAvgMS)
+	assert.Zero(t, metrics.TTFTN)
+	assert.Zero(t, metrics.TPOTN)
+	assert.Zero(t, metrics.UsageN)
+	assert.Zero(t, metrics.CompletionTokens)
+	assert.Zero(t, metrics.TokensPerSec)
+	assert.Zero(t, metrics.RequestTokensPerSec)
+	assert.Zero(t, metrics.TPM)
+}
+
+func TestRunStressSummarizesFailuresFromEveryWorker(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(2 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"rate limit exceeded"}}`)
+	}))
+	defer server.Close()
+
+	var metrics *StressMetrics
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL, Model: "glm-5.3-flash", Modules: []string{ModuleStress},
+		Stress: StressConfig{Concurrency: 2, Rounds: 2, MaxTokens: 64},
+	}, func(event Event) {
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	assert.Equal(t, 4, metrics.Attempted)
+	assert.Equal(t, 4, metrics.Failed)
+	assert.Greater(t, metrics.RequestAvgMS, 0.0)
+	assert.Equal(t, 1.0, metrics.ErrorRate)
+	require.Len(t, metrics.Issues, 1)
+	assert.Equal(t, 4, metrics.Issues[0].Count)
+	assert.Equal(t, http.StatusTooManyRequests, metrics.Issues[0].StatusCode)
+	assert.Contains(t, metrics.Issues[0].Message, "rate limit exceeded")
+	assert.Contains(t, []int{1, 2}, metrics.Issues[0].Worker)
+	assert.Contains(t, []int{1, 2}, metrics.Issues[0].Round)
+	assert.Zero(t, metrics.OtherIssueCount)
+}
+
+func TestRunStressReportsMalformedJSONResponse(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":`)
+	}))
+	defer server.Close()
+
+	var metrics *StressMetrics
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL, Model: "glm-5.3-flash", Modules: []string{ModuleStress},
+		Stress: StressConfig{Concurrency: 1, Rounds: 1, MaxTokens: 64},
+	}, func(event Event) {
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	assert.Equal(t, 1, metrics.Failed)
+	require.Len(t, metrics.Issues, 1)
+	assert.Equal(t, http.StatusOK, metrics.Issues[0].StatusCode)
+	assert.Contains(t, metrics.Issues[0].Message, "invalid JSON response")
+}
+
 func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
 	t.Parallel()
 
@@ -392,6 +554,57 @@ func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
 	assert.Greater(t, metrics.TPM, 0.0)
 	assert.True(t, sawStream)
 	assert.True(t, sawDone)
+}
+
+func TestRunBasicJSONModeUsesNonStreamingContract(t *testing.T) {
+	t.Parallel()
+
+	var (
+		requestMu   sync.Mutex
+		requestBody []byte
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		if strings.Contains(string(body), `"response_format":{"type":"json_object"}`) {
+			requestMu.Lock()
+			requestBody = append([]byte(nil), body...)
+			requestMu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"json","choices":[{"message":{"content":"{\"ping\":\"pong\"}"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "good-key",
+		Model:   "kimi-k3",
+		Vendor:  VendorKimi,
+		Modules: []string{ModuleBasic},
+		Basic: BasicConfig{
+			Checks: []string{CheckJSONMode},
+			Stream: ptrBool(true),
+		},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	status := ""
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID == CheckJSONMode && event.Status != "running" {
+			status = event.Status
+		}
+	}
+	assert.Equal(t, "pass", status)
+
+	requestMu.Lock()
+	body := string(requestBody)
+	requestMu.Unlock()
+	assert.Contains(t, body, `"stream":false`)
+	assert.NotContains(t, body, `"stream_options"`)
 }
 
 func TestRunStressSendsCorpusAsIs(t *testing.T) {
@@ -501,6 +714,44 @@ func TestBasicSkipsVendorSpecificFields(t *testing.T) {
 	assert.Equal(t, "skip", statusByCheck[CheckThinking])
 	assert.Equal(t, "skip", statusByCheck[CheckAuthError])
 	assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
+}
+
+func TestBasicRejectsIncompleteVendorUsage(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "glm-5.3-flash",
+		Vendor:  VendorGLM,
+		Modules: []string{ModuleBasic},
+		Basic:   BasicConfig{Checks: []string{CheckConnectivity, CheckUsage}},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	statusByCheck := map[string]string{}
+	var usageMessage string
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+			if event.CheckID == CheckUsage {
+				usageMessage = event.Message
+			}
+		}
+	}
+	assert.Equal(t, "pass", statusByCheck[CheckConnectivity])
+	assert.Equal(t, "fail", statusByCheck[CheckUsage])
+	assert.Contains(t, usageMessage, "完整 usage")
 }
 
 func TestBasicRunsOnlyRequestedChecks(t *testing.T) {
@@ -622,6 +873,51 @@ func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
 	assert.Contains(t, summary, "探测 3 轮")
 }
 
+func TestCacheReportsPartialProbeFailure(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 2 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, `{"error":{"message":"probe unavailable"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":1,\"cached_tokens\":16}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "any",
+		Model:   "demo",
+		Modules: []string{ModuleCache},
+		Cache:   CacheConfig{Prompt: "cache-corpus", WaitSeconds: 0, MaxTokens: 8, Rounds: 2},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 3, calls)
+
+	statusByCheck := map[string]string{}
+	var metrics *CacheMetrics
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			statusByCheck[event.CheckID] = event.Status
+		}
+		if event.Type == "metrics" {
+			metrics = event.Cache
+		}
+	}
+	assert.Equal(t, "fail", statusByCheck[CheckCacheProbe])
+	require.NotNil(t, metrics)
+	assert.Equal(t, 1, metrics.HitCount)
+}
+
 func TestCacheHitRateDoesNotFailOnLowHit(t *testing.T) {
 	t.Parallel()
 
@@ -727,6 +1023,10 @@ func TestStreamChatReadsVendorCacheAliases(t *testing.T) {
 func TestLooksLikeJSON(t *testing.T) {
 	t.Parallel()
 	assert.True(t, looksLikeJSON(`{"ping":"pong"}`))
+	assert.True(t, looksLikeJSON(`{}`))
+	assert.False(t, looksLikeJSON(`[]`))
+	assert.False(t, looksLikeJSON(`"pong"`))
+	assert.False(t, looksLikeJSON(`null`))
 	assert.False(t, looksLikeJSON("not json"))
 	assert.False(t, looksLikeJSON(""))
 }

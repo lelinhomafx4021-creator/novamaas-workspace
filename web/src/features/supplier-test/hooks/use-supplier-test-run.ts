@@ -18,13 +18,18 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SSE } from 'sse.js'
 import { toast } from 'sonner'
+import { SSE } from 'sse.js'
 
 import { getFreshAuthHeaders } from '@/lib/api'
 
-import { API_ENDPOINTS, BASIC_CHECKS, CACHE_CHECKS, VIDEO_CHECKS } from '../constants'
 import type { QueryVideoTaskResult } from '../api'
+import {
+  API_ENDPOINTS,
+  BASIC_CHECKS,
+  CACHE_CHECKS,
+  VIDEO_CHECKS,
+} from '../constants'
 import type {
   CacheMetrics,
   CheckResult,
@@ -59,12 +64,12 @@ function errorMessageFromStream(
       const parsed = JSON.parse(text) as { message?: string; type?: string }
       if (parsed.message) return parsed.message
     } catch {
-      const line = text
-        .split('\n')
-        .find((entry) => entry.startsWith('data:'))
+      const line = text.split('\n').find((entry) => entry.startsWith('data:'))
       if (line) {
         try {
-          const parsed = JSON.parse(line.slice(5).trim()) as { message?: string }
+          const parsed = JSON.parse(line.slice(5).trim()) as {
+            message?: string
+          }
           if (parsed.message) return parsed.message
         } catch {
           // keep looking
@@ -88,6 +93,7 @@ function resetChecks(current: CheckResult[], ids?: string[]): CheckResult[] {
 export function useSupplierTestRun() {
   const { t } = useTranslation()
   const sourceRef = useRef<StreamHandle | null>(null)
+  const runIdRef = useRef(0)
   const [runningModule, setRunningModule] = useState<SupplierTestModule | null>(
     null
   )
@@ -108,15 +114,19 @@ export function useSupplierTestRun() {
   const [errorMessage, setErrorMessage] = useState('')
 
   const stop = useCallback(() => {
-    sourceRef.current?.close()
+    runIdRef.current += 1
+    const source = sourceRef.current
     sourceRef.current = null
+    source?.close()
     setRunningModule(null)
   }, [])
 
   const start = useCallback(
     async (payload: SupplierTestRunRequest) => {
-      sourceRef.current?.close()
+      const runId = ++runIdRef.current
+      const previousSource = sourceRef.current
       sourceRef.current = null
+      previousSource?.close()
       const module = payload.modules[0] ?? null
       setRunningModule(module)
       setErrorMessage('')
@@ -127,7 +137,9 @@ export function useSupplierTestRun() {
         setSummaries((current) => ({ ...current, basic: '' }))
       }
       if (module === 'cache') {
-        setCacheChecks(CACHE_CHECKS.map((check) => ({ ...check, status: 'idle' })))
+        setCacheChecks(
+          CACHE_CHECKS.map((check) => ({ ...check, status: 'idle' }))
+        )
         setCacheMetrics(null)
         setSummaries((current) => ({ ...current, cache: '' }))
       }
@@ -148,12 +160,14 @@ export function useSupplierTestRun() {
       try {
         headers = await getFreshAuthHeaders()
       } catch (error) {
+        if (runIdRef.current !== runId) return
         setRunningModule(null)
         toast.error(
           error instanceof Error ? error.message : t('Failed to start test')
         )
         return
       }
+      if (runIdRef.current !== runId) return
 
       const source = new SSE(API_ENDPOINTS.RUNS, {
         headers: {
@@ -166,13 +180,13 @@ export function useSupplierTestRun() {
         start: false,
       }) as StreamHandle
       sourceRef.current = source
+      let completed = false
 
       const finish = () => {
+        if (runIdRef.current !== runId || sourceRef.current !== source) return
         setRunningModule(null)
+        sourceRef.current = null
         source.close()
-        if (sourceRef.current === source) {
-          sourceRef.current = null
-        }
       }
 
       const handleError = (message: string) => {
@@ -182,8 +196,10 @@ export function useSupplierTestRun() {
       }
 
       source.addEventListener('message', (event) => {
+        if (runIdRef.current !== runId || sourceRef.current !== source) return
         const data = event.data ?? ''
         if (data.trim() === '[DONE]') {
+          completed = true
           finish()
           return
         }
@@ -297,24 +313,26 @@ export function useSupplierTestRun() {
           return
         }
         if (parsed.type === 'done') {
+          completed = true
           setRunningModule(null)
         }
       })
 
       source.addEventListener('abort', () => {
-        if (sourceRef.current !== source) return
-        finish()
+        if (runIdRef.current !== runId || sourceRef.current !== source) return
+        if (completed) finish()
+        else handleError(t('Test stream ended unexpectedly'))
       })
 
       source.addEventListener('error', (event) => {
-        if (sourceRef.current !== source) return
-        if (source.readyState === 2) {
+        if (runIdRef.current !== runId || sourceRef.current !== source) return
+        if (completed) {
           finish()
           return
         }
         const code = event.responseCode ?? source.xhr?.status ?? 0
         if (code >= 200 && code < 300) {
-          finish()
+          handleError(t('Test stream ended unexpectedly'))
           return
         }
         handleError(
@@ -342,15 +360,14 @@ export function useSupplierTestRun() {
       if (result.status) {
         const normalized = result.status.toLowerCase()
         const isSuccess = normalized === 'succeeded' || normalized === 'success'
-        const isFailed = [
-          'failed',
-          'failure',
-          'cancelled',
-          'expired',
-        ].includes(normalized)
+        const isFailed = ['failed', 'failure', 'cancelled', 'expired'].includes(
+          normalized
+        )
 
         let pollStatus: CheckResult['status'] = 'running'
-        let pollMessage = t('Current status: {{status}}', { status: result.status })
+        let pollMessage = t('Current status: {{status}}', {
+          status: result.status,
+        })
         if (isSuccess) {
           pollStatus = 'pass'
           pollMessage = t('Manual query: task completed')

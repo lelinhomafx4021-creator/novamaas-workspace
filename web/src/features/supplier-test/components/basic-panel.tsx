@@ -83,7 +83,10 @@ export function BasicPanel(props: {
           step={0.1}
           placeholder={t('Leave empty to omit')}
           onChange={(value) =>
-            props.onBasicChange((current) => ({ ...current, temperature: value }))
+            props.onBasicChange((current) => ({
+              ...current,
+              temperature: value,
+            }))
           }
         />
         <OptionalNumberField
@@ -147,9 +150,7 @@ export function BasicPanel(props: {
           />
         </div>
         <div>
-          <p className='mb-2 text-sm font-medium'>
-            {t('Deep · protocol')}
-          </p>
+          <p className='mb-2 text-sm font-medium'>{t('Deep · protocol')}</p>
           <p className='text-muted-foreground mb-2 text-sm'>
             {t(
               'Protocol checks are skipped when the vendor has no matching API. That is incomplete protocol, not a broken supplier.'
@@ -160,7 +161,9 @@ export function BasicPanel(props: {
               if (check.id === 'kimi_kvv' && props.vendor !== 'kimi') {
                 return false
               }
-              return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
+              return (PROTOCOL_BASIC_IDS as readonly string[]).includes(
+                check.id
+              )
             })}
             busy={props.busy}
             onRun={props.onRunCheck}
@@ -171,45 +174,80 @@ export function BasicPanel(props: {
                 <div className='flex items-center gap-1.5'>
                   <ShieldCheck className='size-4 text-amber-500' />
                   <span className='text-xs font-semibold text-amber-700 dark:text-amber-400'>
-                    {t('Kimi KVV (Kimi Vendor Verifier) Official Verification Standard')}
+                    {t('KVV preflight')}
                   </span>
                 </div>
-                <Badge variant='outline' className='border-amber-500/40 text-[10px] text-amber-600'>
-                  {t('Moonshot Certified')}
+                <Badge
+                  variant='outline'
+                  className='border-amber-500/40 text-[10px] text-amber-600'
+                >
+                  {t('Not official certification')}
                 </Badge>
               </div>
               <p className='text-muted-foreground text-[11px] leading-relaxed'>
                 {t(
-                  'Aligned with Moonshot AI open-source KVV specification. Designed for third-party upstream admission, running 4-phase closed-loop synthetic probes in seconds to detect model forgery, schema degradation, and tool hallucinations.'
+                  'Kimi K3-only preflight for request compatibility, tool_choice, response_format, and reasoning_content. A pass is not official Kimi KVV certification.'
                 )}
               </p>
               <div className='grid gap-1.5 pt-1 text-[11px] sm:grid-cols-2'>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[1]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [1]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Positive Schema Conformance')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('query_flight 5 required fields, integer types, business enum, YYYY-MM-DD regex')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('K3 request protocol')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'reasoning_effort=low is accepted and the unsupported thinking field is never sent.'
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[2]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [2]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Negative Anti-Hallucination')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('Common sense queries with tools attached: 0 tool invocation hallucination, finish_reason=stop')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('tool_choice contract')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'auto, none, and required are checked. none does not call a tool; required does.'
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[3]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [3]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Multi-Tool Disambiguation')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('Flight & hotel candidate interference: accurate routing to book_hotel, strict parameter extraction')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('response_format contract')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'text, json_object, and strict or non-strict json_schema responses are checked.'
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className='flex items-start gap-1.5 rounded border border-muted bg-background/60 p-2'>
-                  <span className='font-mono font-semibold text-primary'>[4]</span>
+                <div className='border-muted bg-background/60 flex items-start gap-1.5 rounded border p-2'>
+                  <span className='text-primary font-mono font-semibold'>
+                    [4]
+                  </span>
                   <div>
-                    <div className='font-medium text-foreground'>{t('Thinking & CoT Protocol')}</div>
-                    <div className='text-muted-foreground text-[10px]'>{t('Moonshot reasoning_effort low probe: captures native streaming thinking tokens')}</div>
+                    <div className='text-foreground font-medium'>
+                      {t('Thinking contract')}
+                    </div>
+                    <div className='text-muted-foreground text-[10px]'>
+                      {t(
+                        'K3 returns reasoning_content with reasoning_effort=low, including streamed chunks.'
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -17,9 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
-  Check,
-  Code,
-  Copy,
   Download,
   ExternalLink,
   Network,
@@ -32,6 +29,7 @@ import {
   Zap,
 } from 'lucide-react'
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -44,7 +42,7 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -56,7 +54,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
 import { querySupplierVideoTask, type QueryVideoTaskResult } from '../api'
@@ -74,16 +72,6 @@ import {
 } from '../video-json'
 import { CheckTable } from './check-table'
 import { RawJsonDialog } from './raw-json-dialog'
-
-function taskStatusBadgeVariant(
-  status?: string
-): 'default' | 'destructive' | 'outline' | 'secondary' {
-  if (!status) return 'outline'
-  const s = status.toLowerCase()
-  if (s === 'succeeded' || s === 'success') return 'default'
-  if (s === 'failed' || s === 'failure' || s === 'cancelled') return 'destructive'
-  return 'secondary'
-}
 
 export function VideoPanel(props: {
   video: VideoForm
@@ -104,10 +92,11 @@ export function VideoPanel(props: {
   const firstFileInputRef = useRef<HTMLInputElement>(null)
   const lastFileInputRef = useRef<HTMLInputElement>(null)
 
-  const [activeJsonTab, setActiveJsonTab] = useState<'request' | 'poll' | 'submit'>('request')
+  const [activeJsonTab, setActiveJsonTab] = useState<
+    'request' | 'poll' | 'submit'
+  >('request')
   const [manualPollJson, setManualPollJson] = useState<string>('')
   const [isManualQuerying, setIsManualQuerying] = useState(false)
-  const [copiedTab, setCopiedTab] = useState<string | null>(null)
 
   const busy = props.busy
   useEffect(() => {
@@ -121,15 +110,28 @@ export function VideoPanel(props: {
     props.model || '',
     props.video
   )
-  const previewRequestJson = JSON.stringify(previewPayload, null, 2)
+  const previewRequestJson = previewPayload
+    ? JSON.stringify(previewPayload, null, 2)
+    : ''
+  const onVideoChange = props.onVideoChange
+  const handleEffectiveJsonChange = useCallback(
+    (next: string) => {
+      onVideoChange((current) =>
+        (current.rawPayload ?? '') === next
+          ? current
+          : { ...current, rawPayload: next }
+      )
+    },
+    [onVideoChange]
+  )
 
   // Effective latest Task ID
-  const effectiveTaskId = props.video.taskId?.trim() || props.videoMetrics?.task_id?.trim() || ''
+  const effectiveTaskId =
+    props.video.taskId?.trim() || props.videoMetrics?.task_id?.trim() || ''
 
   // Auto-sync Task ID from video metrics when new task_id is returned
   const lastMetricsTaskIdRef = useRef<string>('')
   const videoMetricsTaskId = props.videoMetrics?.task_id
-  const onVideoChange = props.onVideoChange
   useEffect(() => {
     const newTaskId = videoMetricsTaskId?.trim()
     if (newTaskId && newTaskId !== lastMetricsTaskIdRef.current) {
@@ -140,42 +142,6 @@ export function VideoPanel(props: {
       }))
     }
   }, [videoMetricsTaskId, onVideoChange])
-
-  // Latest poll JSON (prioritizes manual query, falls back to metrics stream)
-  const latestPollJson =
-    manualPollJson ||
-    (props.videoMetrics?.raw_poll_response_json
-      ? (() => {
-          try {
-            return JSON.stringify(JSON.parse(props.videoMetrics.raw_poll_response_json), null, 2)
-          } catch {
-            return props.videoMetrics.raw_poll_response_json
-          }
-        })()
-      : '')
-
-  // Submit response JSON
-  const submitResponseJson = props.videoMetrics?.raw_submit_response_json
-    ? (() => {
-        try {
-          return JSON.stringify(JSON.parse(props.videoMetrics.raw_submit_response_json), null, 2)
-        } catch {
-          return props.videoMetrics.raw_submit_response_json
-        }
-      })()
-    : ''
-
-  const handleCopyText = async (text: string, tab: string) => {
-    if (!text.trim()) return
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedTab(tab)
-      setTimeout(() => setCopiedTab(null), 1800)
-      toast.success(t('Copied to clipboard'))
-    } catch {
-      toast.error(t('Failed to copy'))
-    }
-  }
 
   const handleApplyJsonToForm = (rawJson: string) => {
     const res = parseVideoPayloadToForm(rawJson)
@@ -267,7 +233,9 @@ export function VideoPanel(props: {
       })
       if (res.raw_response) {
         try {
-          setManualPollJson(JSON.stringify(JSON.parse(res.raw_response), null, 2))
+          setManualPollJson(
+            JSON.stringify(JSON.parse(res.raw_response), null, 2)
+          )
         } catch {
           setManualPollJson(res.raw_response)
         }
@@ -284,14 +252,19 @@ export function VideoPanel(props: {
         toast.error(res.message)
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('Failed to query task'))
+      toast.error(
+        err instanceof Error ? err.message : t('Failed to query task')
+      )
     } finally {
       setIsManualQuerying(false)
     }
   }
 
   const handleRunSingleCheck = (checkId: string) => {
-    if ((checkId === 'video_poll' || checkId === 'video_result') && !effectiveTaskId) {
+    if (
+      (checkId === 'video_poll' || checkId === 'video_result') &&
+      !effectiveTaskId
+    ) {
       toast.error(t('Please submit task first or provide a Task ID'))
       return
     }
@@ -360,7 +333,9 @@ export function VideoPanel(props: {
             </div>
             <div className='grid gap-2 sm:grid-cols-2'>
               <div className='space-y-1'>
-                <Label className='text-muted-foreground text-[11px]'>{t('Quick Path Preset')}</Label>
+                <Label className='text-muted-foreground text-[11px]'>
+                  {t('Quick Path Preset')}
+                </Label>
                 <Select
                   value={props.video.customPath || '__auto__'}
                   disabled={props.busy}
@@ -388,7 +363,9 @@ export function VideoPanel(props: {
                 </Select>
               </div>
               <div className='space-y-1'>
-                <Label className='text-muted-foreground text-[11px]'>{t('Custom Path String')}</Label>
+                <Label className='text-muted-foreground text-[11px]'>
+                  {t('Custom Path String')}
+                </Label>
                 <Input
                   placeholder='/api/v3/contents/generations/tasks'
                   value={props.video.customPath}
@@ -512,16 +489,24 @@ export function VideoPanel(props: {
                       {t('Select Local Image')}
                     </Button>
                     <span className='text-muted-foreground truncate text-[11px]'>
-                      {props.video.base64Data ? t('Image loaded') : t('No image selected')}
+                      {props.video.base64Data
+                        ? t('Image loaded')
+                        : t('No image selected')}
                     </span>
                   </div>
                 )}
 
                 {/* Inline Compact Preview */}
-                {(props.video.uploadMode === 'url' ? props.video.imageUrl : props.video.base64Data) && (
+                {(props.video.uploadMode === 'url'
+                  ? props.video.imageUrl
+                  : props.video.base64Data) && (
                   <div className='bg-muted/30 flex items-center gap-2 rounded border p-1'>
                     <img
-                      src={props.video.uploadMode === 'url' ? props.video.imageUrl : props.video.base64Data}
+                      src={
+                        props.video.uploadMode === 'url'
+                          ? props.video.imageUrl
+                          : props.video.base64Data
+                      }
                       alt='Preview'
                       className='size-7 rounded object-cover'
                       onError={(e) => {
@@ -529,7 +514,9 @@ export function VideoPanel(props: {
                       }}
                     />
                     <span className='text-muted-foreground flex-1 truncate font-mono text-[11px]'>
-                      {props.video.uploadMode === 'url' ? props.video.imageUrl : 'data:image/...;base64'}
+                      {props.video.uploadMode === 'url'
+                        ? props.video.imageUrl
+                        : 'data:image/...;base64'}
                     </span>
                     <Button
                       type='button'
@@ -631,7 +618,9 @@ export function VideoPanel(props: {
                       {t('Select End Frame')}
                     </Button>
                     <span className='text-muted-foreground truncate text-[11px]'>
-                      {props.video.lastFrameBase64 ? t('Image loaded') : t('No image selected')}
+                      {props.video.lastFrameBase64
+                        ? t('Image loaded')
+                        : t('No image selected')}
                     </span>
                   </div>
                 )}
@@ -665,7 +654,10 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-resolution' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-resolution'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Resolution')}
                   </Label>
                 </div>
@@ -707,7 +699,10 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-ratio' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-ratio'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Ratio')}
                   </Label>
                 </div>
@@ -749,7 +744,10 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-duration' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-duration'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Duration (s)')}
                   </Label>
                 </div>
@@ -785,7 +783,10 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-watermark' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-watermark'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Watermark')}
                   </Label>
                 </div>
@@ -823,7 +824,10 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-seed' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-seed'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Seed')}
                   </Label>
                 </div>
@@ -833,7 +837,10 @@ export function VideoPanel(props: {
                     value={props.video.seed}
                     disabled={props.busy}
                     onChange={(e) =>
-                      props.onVideoChange((c) => ({ ...c, seed: e.target.value }))
+                      props.onVideoChange((c) => ({
+                        ...c,
+                        seed: e.target.value,
+                      }))
                     }
                     className='h-6 text-[11px]'
                   />
@@ -854,7 +861,10 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-audio' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-audio'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Generate Audio')}
                   </Label>
                 </div>
@@ -892,14 +902,19 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-return-last' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-return-last'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Return Last Frame')}
                   </Label>
                 </div>
                 {props.video.hasReturnLastFrame && (
                   <div className='flex items-center justify-between pt-0.5'>
                     <span className='text-muted-foreground text-[10px]'>
-                      {props.video.returnLastFrame ? t('Enabled') : t('Disabled')}
+                      {props.video.returnLastFrame
+                        ? t('Enabled')
+                        : t('Disabled')}
                     </span>
                     <Switch
                       checked={props.video.returnLastFrame}
@@ -930,7 +945,10 @@ export function VideoPanel(props: {
                       }))
                     }
                   />
-                  <Label htmlFor='opt-custom-json' className='cursor-pointer text-[11px] font-medium'>
+                  <Label
+                    htmlFor='opt-custom-json'
+                    className='cursor-pointer text-[11px] font-medium'
+                  >
                     {t('Custom Extra Parameters (Merged into top-level JSON)')}
                   </Label>
                 </div>
@@ -1017,14 +1035,6 @@ export function VideoPanel(props: {
                 </div>
 
                 <div className='flex items-center gap-2'>
-                  <RawJsonDialog
-                    videoMetrics={props.videoMetrics}
-                    previewRequestJson={previewRequestJson}
-                    busy={props.busy}
-                    onApplyToForm={handleApplyJsonToForm}
-                    onSendRawJson={props.onSendRawJson}
-                  />
-
                   <Button
                     type='button'
                     size='sm'
@@ -1042,7 +1052,9 @@ export function VideoPanel(props: {
 
           {/* Step Checks Table */}
           <div className='space-y-1.5'>
-            <p className='text-xs font-medium'>{t('Task Execution Pipeline')}</p>
+            <p className='text-xs font-medium'>
+              {t('Task Execution Pipeline')}
+            </p>
             <CheckTable
               checks={props.videoChecks}
               busy={props.busy}
@@ -1096,127 +1108,18 @@ export function VideoPanel(props: {
           )}
         </div>
 
-        {/* Right Column: Real-time Live JSON Echo Panel */}
-        <div className='space-y-2 lg:sticky lg:top-4 lg:col-span-5'>
-          <Card className='border-muted-foreground/20 shadow-sm'>
-            <CardHeader className='p-3 pb-2'>
-              <div className='flex items-center justify-between'>
-                <div className='flex items-center gap-1.5'>
-                  <Code className='text-primary size-4' />
-                  <CardTitle className='text-xs font-semibold'>
-                    {t('Live JSON Echo')}
-                  </CardTitle>
-                </div>
-                {props.videoMetrics?.status && (
-                  <Badge variant={taskStatusBadgeVariant(props.videoMetrics.status)} className='text-[10px]'>
-                    {props.videoMetrics.status}
-                  </Badge>
-                )}
-              </div>
-
-              {/* Sub-Tabs for JSON types */}
-              <Tabs
-                value={activeJsonTab}
-                onValueChange={(v) => setActiveJsonTab(v as 'request' | 'poll' | 'submit')}
-                className='mt-2 w-full'
-              >
-                <TabsList className='grid h-7 w-full grid-cols-3 p-0.5 text-xs'>
-                  <TabsTrigger value='request' className='text-[11px]'>
-                    {t('Request JSON')}
-                  </TabsTrigger>
-                  <TabsTrigger value='poll' className='text-[11px]'>
-                    {t('Poll Response')}
-                  </TabsTrigger>
-                  <TabsTrigger value='submit' className='text-[11px]'>
-                    {t('Submit Response')}
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </CardHeader>
-
-            <CardContent className='p-3 pt-0'>
-              {/* Toolbar in Right Panel */}
-              <div className='mb-2 flex items-center justify-between border-b pb-1.5 text-xs'>
-                <span className='text-muted-foreground text-[11px]'>
-                  {activeJsonTab === 'request' && t('Real-time sync with left form')}
-                  {activeJsonTab === 'poll' && (latestPollJson ? t('Latest task poll data') : t('Awaiting poll query'))}
-                  {activeJsonTab === 'submit' && (submitResponseJson ? t('Task creation response') : t('Awaiting submission'))}
-                </span>
-
-                <div className='flex items-center gap-1'>
-                  {activeJsonTab === 'poll' && (
-                    <Button
-                      type='button'
-                      variant='ghost'
-                      size='sm'
-                      disabled={props.busy || isManualQuerying || !effectiveTaskId}
-                      className='h-6 gap-1 px-1.5 text-[11px]'
-                      onClick={handleManualQuery}
-                    >
-                      <Zap className='size-3 text-amber-500' />
-                      {t('Query Now')}
-                    </Button>
-                  )}
-
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    size='sm'
-                    className='h-6 gap-1 px-1.5 text-[11px]'
-                    onClick={() => {
-                      let textToCopy = previewRequestJson
-                      if (activeJsonTab === 'poll') {
-                        textToCopy = latestPollJson
-                      } else if (activeJsonTab === 'submit') {
-                        textToCopy = submitResponseJson
-                      }
-                      void handleCopyText(textToCopy, activeJsonTab)
-                    }}
-                  >
-                    {copiedTab === activeJsonTab ? (
-                      <Check className='size-3 text-emerald-500' />
-                    ) : (
-                      <Copy className='size-3' />
-                    )}
-                    {copiedTab === activeJsonTab ? t('Copied') : t('Copy')}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Code Container */}
-              <div className='h-[420px] max-h-[65vh] overflow-auto rounded border bg-zinc-950 p-2.5 font-mono text-[11px] text-zinc-100 dark:bg-zinc-900'>
-                {activeJsonTab === 'request' && (
-                  <pre className='whitespace-pre-wrap break-all'>{previewRequestJson}</pre>
-                )}
-
-                {activeJsonTab === 'poll' && (
-                  latestPollJson ? (
-                    <pre className='whitespace-pre-wrap break-all'>{latestPollJson}</pre>
-                  ) : (
-                    <div className='flex h-full flex-col items-center justify-center space-y-2 text-center text-zinc-400'>
-                      <RefreshCw className='size-6 animate-pulse opacity-40' />
-                      <p className='text-xs'>
-                        {t('No poll data yet. Click "Query Status Now" or start test.')}
-                      </p>
-                    </div>
-                  )
-                )}
-
-                {activeJsonTab === 'submit' && (
-                  submitResponseJson ? (
-                    <pre className='whitespace-pre-wrap break-all'>{submitResponseJson}</pre>
-                  ) : (
-                    <div className='flex h-full flex-col items-center justify-center space-y-2 text-center text-zinc-400'>
-                      <Send className='size-6 opacity-40' />
-                      <p className='text-xs'>
-                        {t('No submit response yet. Click "Submit Only" or start test.')}
-                      </p>
-                    </div>
-                  )
-                )}
-              </div>
-            </CardContent>
-          </Card>
+        <div className='lg:sticky lg:top-4 lg:col-span-5'>
+          <RawJsonDialog
+            videoMetrics={props.videoMetrics}
+            previewRequestJson={previewRequestJson}
+            pollJsonOverride={manualPollJson}
+            busy={props.busy}
+            activeTab={activeJsonTab}
+            onActiveTabChange={setActiveJsonTab}
+            onApplyToForm={handleApplyJsonToForm}
+            onSendRawJson={props.onSendRawJson}
+            onEffectiveJsonChange={handleEffectiveJsonChange}
+          />
         </div>
       </div>
     </TabsContent>

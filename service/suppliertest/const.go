@@ -1,5 +1,7 @@
 package suppliertest
 
+import "time"
+
 const (
 	ModuleBasic  = "basic"
 	ModuleStress = "stress"
@@ -60,14 +62,23 @@ var basicCheckTitles = map[string]string{
 	CheckJSONMode:     "JSON mode",
 	CheckToolCall:     "Tool call",
 	CheckThinking:     "Thinking mode",
-	CheckKimiKVV:      "Kimi KVV",
+	CheckKimiKVV:      "KVV preflight",
 	CheckAuthError:    "Auth error",
 	CheckBadRequest:   "Bad request",
 }
 
 const (
-	maxConcurrency = 1000
-	maxRounds      = 10000
-	maxTokensCap   = 256000
-	maxCacheRounds = 50
+	maxConcurrency    = 1000
+	maxRounds         = 10000
+	maxStressRequests = 10000
+	maxTokensCap      = 256000
+	maxCacheRounds    = 50
+	// Supplier models may spend more than a minute before returning the first
+	// token. These limits apply only to the isolated supplier-test client.
+	basicChatTimeout        = 3 * time.Minute
+	stressChatTimeout       = 6 * time.Minute
+	cacheChatTimeout        = 6 * time.Minute
+	videoSubmitTimeout      = 5 * time.Minute
+	videoPollRequestTimeout = 3 * time.Minute
+	videoPollTotalTimeout   = 40 * time.Minute
 )

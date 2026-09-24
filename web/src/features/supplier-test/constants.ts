@@ -1,3 +1,9 @@
+import threeKText from './corpora/3k.txt?raw'
+import longText from './corpora/long.txt?raw'
+import mediumText from './corpora/medium.txt?raw'
+import minQpsText from './corpora/min-qps.txt?raw'
+import shortText from './corpora/short.txt?raw'
+import veryLongText from './corpora/very-long.txt?raw'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -16,13 +22,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { BasicForm, CacheForm, CacheMode, CheckResult, StressForm, VideoForm } from './types'
-import longText from './corpora/long.txt?raw'
-import mediumText from './corpora/medium.txt?raw'
-import minQpsText from './corpora/min-qps.txt?raw'
-import shortText from './corpora/short.txt?raw'
-import threeKText from './corpora/3k.txt?raw'
-import veryLongText from './corpora/very-long.txt?raw'
+import type {
+  BasicForm,
+  CacheForm,
+  CacheMode,
+  CheckResult,
+  StressForm,
+  VideoForm,
+} from './types'
 
 export const API_ENDPOINTS = {
   MODELS: '/api/supplier-test/models',
@@ -70,9 +77,7 @@ export const CORPORA: Array<{
 ].map((item) => ({ ...item, tokens: estimateTokens(item.prompt) }))
 
 export function thisPlatformBaseURL(): string {
-  const fromEnv = String(
-    import.meta.env.VITE_REACT_APP_SERVER_URL ?? ''
-  )
+  const fromEnv = String(import.meta.env.VITE_REACT_APP_SERVER_URL ?? '')
     .trim()
     .replace(/\/$/, '')
   if (fromEnv) return fromEnv
@@ -112,9 +117,27 @@ export const LOAD_PRESETS: Array<{
   rounds: number
   maxTokens: number
 }> = [
-  { id: 'light', labelKey: 'Light load', concurrency: 1, rounds: 1, maxTokens: 8 },
-  { id: 'standard', labelKey: 'Standard load', concurrency: 10, rounds: 1, maxTokens: 64 },
-  { id: 'heavy', labelKey: 'Heavy load', concurrency: 20, rounds: 2, maxTokens: 256 },
+  {
+    id: 'light',
+    labelKey: 'Light load',
+    concurrency: 1,
+    rounds: 1,
+    maxTokens: 8,
+  },
+  {
+    id: 'standard',
+    labelKey: 'Standard load',
+    concurrency: 10,
+    rounds: 1,
+    maxTokens: 64,
+  },
+  {
+    id: 'heavy',
+    labelKey: 'Heavy load',
+    concurrency: 20,
+    rounds: 2,
+    maxTokens: 256,
+  },
 ]
 
 export const CACHE_WAIT_PRESETS = [0, 5, 30, 60]
@@ -130,8 +153,7 @@ export const DEFAULT_BASIC_FORM: BasicForm = {
   stream: true,
 }
 
-export const DEFAULT_CACHE_FOLLOW_UP =
-  '根据前面的内容，只用一个词回复：pong'
+export const DEFAULT_CACHE_FOLLOW_UP = '根据前面的内容，只用一个词回复：pong'
 
 export const DEFAULT_CACHE_MODE: CacheMode = 'static'
 
@@ -237,10 +259,10 @@ export const BASIC_CHECKS: CheckResult[] = [
   },
   {
     id: 'kimi_kvv',
-    title: 'Kimi KVV',
+    title: 'KVV preflight',
     status: 'idle',
     hintKey:
-      'Moonshot KVV official conformance: tests tool trigger similarity, schema accuracy, and stream spec.',
+      'KVV preflight only. A pass is not official Kimi KVV certification.',
   },
 ]
 
@@ -301,6 +323,7 @@ export const CACHE_CHECKS: CheckResult[] = [
 
 export const MAX_CONCURRENCY = 1000
 export const MAX_ROUNDS = 10000
+export const MAX_STRESS_REQUESTS = 10000
 export const MAX_TOKENS_CAP = 256000
 export const MAX_CACHE_ROUNDS = 50
 export const MAX_CACHE_WAIT_SECONDS = 600
@@ -310,7 +333,7 @@ export const DEFAULT_VIDEO_PROMPT =
   '镜头缓慢向前推进，画面中的人物在雨夜霓虹街道穿梭，4K高清，电影级光影'
 
 export const DEFAULT_VIDEO_FORM: VideoForm = {
-  prompt: DEFAULT_VIDEO_PROMPT,
+  prompt: '',
   hasImage: false,
   uploadMode: 'url',
   imageUrl: '',
@@ -351,7 +374,8 @@ export const VIDEO_CHECKS: CheckResult[] = [
     id: 'video_poll',
     title: 'Status polling',
     status: 'idle',
-    hintKey: 'GET /api/v3/contents/generations/tasks/{id}: polls status until completed.',
+    hintKey:
+      'GET /api/v3/contents/generations/tasks/{id}: polls status until completed.',
   },
   {
     id: 'video_result',
@@ -362,7 +386,15 @@ export const VIDEO_CHECKS: CheckResult[] = [
 ]
 
 export const VIDEO_RESOLUTIONS = ['720p', '1080p', '480p', '4k'] as const
-export const VIDEO_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'] as const
+export const VIDEO_RATIOS = [
+  '16:9',
+  '9:16',
+  '1:1',
+  '4:3',
+  '3:4',
+  '21:9',
+  'adaptive',
+] as const
 export const VIDEO_ROLES = [
   { value: 'first_frame', label: 'First frame (首帧)' },
   { value: 'reference_image', label: 'Reference image (参考图)' },

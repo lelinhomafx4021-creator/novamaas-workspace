@@ -28,6 +28,7 @@ import (
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	assetLibraryService "github.com/QuantumNous/new-api/service/assetlibrary"
 	"github.com/QuantumNous/new-api/service/authz"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
@@ -153,6 +154,7 @@ func main() {
 	service.StartSystemTaskRunner()
 	service.StartBillingStatementWorker()
 	storageService.StartCleanupTask()
+	assetLibraryService.StartSyncTask()
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true

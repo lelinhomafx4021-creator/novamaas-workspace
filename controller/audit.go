@@ -34,6 +34,7 @@ var auditContentTemplates = map[string]string{
 	"storage.profile_delete": "Archived storage profile (ID: ${id})",
 	"storage.profile_test":   "Tested storage profile (ID: ${id})",
 	"storage.policy_update":  "Updated storage policy ${key}",
+	"asset.upload_aksk":      "Uploaded asset ${name} via AK/SK access key ${accessKeyName} (ID: ${id})",
 
 	"channel.create":             "Created channel ${name} (type ${type}, count ${count})",
 	"channel.update":             "Updated channel ${name} (ID: ${id})",

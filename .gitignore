@@ -10,6 +10,11 @@ build
 logs
 web/dist
 web/node_modules
+miniapp/dist
+miniapp/node_modules
+miniapp/project.private.config.json
+miniapp/.swc
+project.private.config.json
 .env
 one-api
 new-api

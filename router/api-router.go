@@ -59,6 +59,24 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 
+		miniAuthRoute := apiRouter.Group("/mini/auth")
+		miniAuthRoute.Use(middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit)
+		{
+			miniAuthRoute.POST("/login", controller.MiniAppLogin)
+			miniAuthRoute.POST("/bind", controller.MiniAppBind)
+			miniAuthRoute.POST("/register", controller.MiniAppRegister)
+			miniAuthRoute.POST("/verification", middleware.EmailVerificationRateLimit(), controller.MiniAppSendEmailVerification)
+			miniAuthRoute.POST("/refresh", controller.MiniAppRefresh)
+			miniAuthRoute.POST("/logout", controller.MiniAppLogout)
+		}
+
+		miniProtectedRoute := apiRouter.Group("/mini")
+		miniProtectedRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			miniProtectedRoute.POST("/security/verify", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.MiniAppVerifySecurity)
+			miniProtectedRoute.POST("/token/:id/key", middleware.CriticalRateLimit(), controller.MiniAppGetTokenKey)
+		}
+
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
 		apiRouter.POST("/waffo/webhook", anonymousRequestBodyLimit, controller.WaffoWebhook)
@@ -263,6 +281,37 @@ func SetApiRouter(router *gin.Engine) {
 			storageRoute.POST("/profiles/:id/test", controller.TestSavedStorageProfile)
 			storageRoute.GET("/policies/relay-media-temp", controller.GetRelayMediaStoragePolicy)
 			storageRoute.PUT("/policies/relay-media-temp", controller.UpdateRelayMediaStoragePolicy)
+			storageRoute.GET("/policies/asset-library", controller.GetAssetLibraryStoragePolicy)
+			storageRoute.PUT("/policies/asset-library", controller.UpdateAssetLibraryStoragePolicy)
+		}
+		assetLibraryRoute := apiRouter.Group("/asset-library")
+		assetLibraryRoute.Use(middleware.TokenOrUserAuth(), middleware.DisableCache())
+		{
+			assetLibraryRoute.GET("/groups", controller.ListAssetGroups)
+			assetLibraryRoute.POST("/groups", controller.CreateAssetGroup)
+			assetLibraryRoute.PUT("/groups/:id", controller.UpdateAssetGroup)
+			assetLibraryRoute.DELETE("/groups/:id", controller.DeleteAssetGroup)
+			assetLibraryRoute.GET("/assets", controller.ListMediaAssets)
+			assetLibraryRoute.POST("/assets", controller.UploadMediaAsset)
+			assetLibraryRoute.GET("/assets/:id/preview", controller.GetMediaAssetPreview)
+			assetLibraryRoute.DELETE("/assets/:id", controller.DeleteMediaAsset)
+		}
+		assetAccessKeyRoute := apiRouter.Group("/asset-library/access-keys")
+		assetAccessKeyRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			assetAccessKeyRoute.GET("", controller.ListAssetAccessKeys)
+			assetAccessKeyRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetAccessKey)
+			assetAccessKeyRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetAccessKey)
+		}
+		assetLibraryAdminRoute := apiRouter.Group("/asset-library/admin")
+		assetLibraryAdminRoute.Use(middleware.RootAuth(), middleware.DisableCache())
+		{
+			assetLibraryAdminRoute.GET("/channels", controller.ListAssetChannelConfigs)
+			assetLibraryAdminRoute.PUT("/channels/:channel_id", controller.UpdateAssetChannelConfig)
+			assetLibraryAdminRoute.POST("/channels/:channel_id/test", controller.TestAssetChannelConfig)
+			assetLibraryAdminRoute.POST("/channels/:channel_id/sync", controller.SyncAssetChannel)
+			assetLibraryAdminRoute.GET("/sync-jobs", controller.ListAssetSyncJobs)
+			assetLibraryAdminRoute.POST("/sync-jobs/:id/retry", controller.RetryAssetSyncJob)
 		}
 		performanceRoute := apiRouter.Group("/performance")
 		performanceRoute.Use(middleware.RootAuth())

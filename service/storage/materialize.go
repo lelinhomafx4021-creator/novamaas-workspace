@@ -127,7 +127,7 @@ func MaterializeVideoTaskBase64(ctx context.Context, body []byte, userID int, re
 			cleanupCreatedObjects("request materialization failed")
 			return nil, 0, &RequestError{StatusCode: http.StatusBadGateway, Err: fmt.Errorf("upload temporary media: %w", err)}
 		}
-		if err = model.MarkStorageObjectUploaded(objectID, etag); err != nil {
+		if err = model.MarkStorageObjectUploaded(objectID, etag, candidate.hash); err != nil {
 			_ = model.MarkStorageObjectForDeletion(objectID, common.GetTimestamp(), "persist upload state failed")
 			cleanupCreatedObjects("request materialization failed")
 			return nil, 0, &RequestError{StatusCode: http.StatusInternalServerError, Err: fmt.Errorf("persist temporary media upload: %w", err)}

@@ -118,6 +118,64 @@ func TestCostAccountingSnapshotsAggregateRevenueCostProfitAndAdjustments(t *test
 	assert.Equal(t, "supplier reconciliation", storedAdjustments[0].Reason)
 }
 
+func TestCostAccountingTotalsIgnoreLaterDuplicateForSameSourceLog(t *testing.T) {
+	truncateTables(t)
+	log := &Log{
+		Id: 21, UserId: 7, ModelName: "task-model", ChannelId: 3, Group: "default",
+		Type: LogTypeConsume, CreatedAt: 100, Quota: 1000, RequestId: "request-duplicate",
+	}
+	original, err := BuildCostAccountingSnapshot(log, &CostAccountingInput{
+		EventKey:       "task:duplicate:initial",
+		CostBasisQuota: "1000",
+		CostQuota:      1000,
+		Source:         CostSnapshotSourceRealtime,
+	})
+	require.NoError(t, err)
+	duplicate, err := BuildCostAccountingSnapshot(log, &CostAccountingInput{
+		CostBasisQuota: "1000",
+		CostDiscount:   "0.8",
+		CostQuota:      800,
+		Source:         CostSnapshotSourceBackfill,
+	})
+	require.NoError(t, err)
+	require.NoError(t, DB.Create(original).Error)
+	require.NoError(t, DB.Create(duplicate).Error)
+
+	totals, err := SumCostAccounting(CostAccountingFilter{UserID: 7})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totals.Records)
+	assert.Equal(t, int64(1), totals.LinkedRecords)
+	assert.Equal(t, int64(1000), totals.RevenueQuota)
+	assert.Equal(t, int64(1000), totals.CostQuota)
+	assert.Zero(t, totals.ProfitQuota)
+
+	views, total, err := ListCostAccountingSnapshots(CostAccountingFilter{UserID: 7}, 0, 20)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, views, 1)
+	assert.Equal(t, original.ID, views[0].ID)
+}
+
+func TestExistingCostSnapshotLogIndexesMatchesLogsWithoutDatabaseIDs(t *testing.T) {
+	truncateTables(t)
+	log := Log{
+		UserId: 7, ModelName: "task-model", ChannelId: 3, Group: "default",
+		Type: LogTypeConsume, CreatedAt: 100, Quota: 1000, RequestId: "request-without-id",
+	}
+	snapshot, err := BuildCostAccountingSnapshot(&log, &CostAccountingInput{
+		EventKey:       "task:without-id:initial",
+		CostBasisQuota: "1000",
+		CostQuota:      1000,
+		Source:         CostSnapshotSourceRealtime,
+	})
+	require.NoError(t, err)
+	require.NoError(t, DB.Create(snapshot).Error)
+
+	existing, err := ExistingCostSnapshotLogIndexes([]Log{log})
+	require.NoError(t, err)
+	assert.Contains(t, existing, 0)
+}
+
 func TestReconcileCostAccountingTotalsUsesLogTurnoverAsProfitBasis(t *testing.T) {
 	totals := ReconcileCostAccountingTotals(
 		LogStatistics{Quota: 1000, RefundQuota: 200, RevenueQuota: 999, Records: 2},

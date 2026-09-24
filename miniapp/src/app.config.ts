@@ -1,0 +1,37 @@
+export default defineAppConfig({
+  pages: [
+    'pages/home/index',
+    'pages/models/index',
+    'pages/playground/index',
+    'pages/usage/index',
+    'pages/profile/index',
+    'pages/legal/index',
+    'pages/model-detail/index',
+    'pages/keys/index',
+    'pages/billing-detail/index',
+    'pages/wallet/index',
+    'pages/account/index',
+    'pages/sessions/index',
+    'pages/benefits/index',
+    'pages/privacy/index',
+  ],
+  window: {
+    backgroundTextStyle: 'light',
+    navigationBarBackgroundColor: '#f7f8fc',
+    navigationBarTitleText: 'Home',
+    navigationBarTextStyle: 'black',
+  },
+  tabBar: {
+    color: '#687086',
+    selectedColor: '#4f46e5',
+    backgroundColor: '#ffffff',
+    borderStyle: 'white',
+    list: [
+      { pagePath: 'pages/home/index', text: 'Home' },
+      { pagePath: 'pages/models/index', text: 'Models' },
+      { pagePath: 'pages/playground/index', text: 'Playground' },
+      { pagePath: 'pages/usage/index', text: 'Usage' },
+      { pagePath: 'pages/profile/index', text: 'Profile' },
+    ],
+  },
+})

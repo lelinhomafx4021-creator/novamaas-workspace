@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
+	assetLibraryService "github.com/QuantumNous/new-api/service/assetlibrary"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 
 	"github.com/gin-gonic/gin"
@@ -219,12 +220,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			}
 		} else {
 			var convertedCount int
-			data, convertedCount, err = storageService.MaterializeVideoTaskBase64(
-				c.Request.Context(),
+			data, convertedCount, err = taskcommon.MaterializeVideoTaskBase64(
+				c,
 				data,
-				info.UserId,
-				info.RequestId,
-				info.PublicTaskID,
+				info,
 				policyKey,
 				storageService.Base64StagingSourceDoubaoVideo,
 			)
@@ -235,6 +234,10 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			common.SetContextKey(c, constant.ContextKeyTemporaryMediaConvertedCount, convertedCount)
 			common.SetContextKey(c, constant.ContextKeyTemporaryMediaConverted, convertedCount > 0)
 		}
+	}
+	data, _, err = assetLibraryService.ResolveRequestAssetIDs(data, info.UserId, info.GetChannelID())
+	if err != nil {
+		return nil, err
 	}
 	data, err = helper.ApplyModelMappingToJSONBody(info, data)
 	if err != nil {

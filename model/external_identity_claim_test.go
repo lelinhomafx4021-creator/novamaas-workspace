@@ -89,3 +89,35 @@ func TestInitializeExternalIdentityClaimsRejectsAmbiguousLegacyBindings(t *testi
 	require.NoError(t, DB.Model(&ExternalIdentityClaim{}).Count(&count).Error)
 	assert.Zero(t, count)
 }
+
+func TestScopedExternalIdentitySeparatesWeChatAppIds(t *testing.T) {
+	truncateTables(t)
+
+	first := User{Username: "miniapp-owner-one", Password: "password", AffCode: "miniapp-owner-one"}
+	second := User{Username: "miniapp-owner-two", Password: "password", AffCode: "miniapp-owner-two"}
+	require.NoError(t, DB.Create(&first).Error)
+	require.NoError(t, DB.Create(&second).Error)
+
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return ClaimScopedExternalIdentityWithTx(tx, ExternalIdentityProviderWeChatMiniApp, "wx-app-one", "openid-shared", first.Id)
+	}))
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return ClaimScopedExternalIdentityWithTx(tx, ExternalIdentityProviderWeChatMiniApp, "wx-app-two", "openid-shared", second.Id)
+	}))
+
+	firstOwner, err := GetUserIdByScopedExternalIdentity(ExternalIdentityProviderWeChatMiniApp, "wx-app-one", "openid-shared")
+	require.NoError(t, err)
+	secondOwner, err := GetUserIdByScopedExternalIdentity(ExternalIdentityProviderWeChatMiniApp, "wx-app-two", "openid-shared")
+	require.NoError(t, err)
+	assert.Equal(t, first.Id, firstOwner)
+	assert.Equal(t, second.Id, secondOwner)
+
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		return ClaimScopedExternalIdentityWithTx(tx, ExternalIdentityProviderWeChatMiniApp, "wx-app-one", "openid-shared", second.Id)
+	})
+	assert.ErrorIs(t, err, ErrExternalIdentityAlreadyClaimed)
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		return ClaimScopedExternalIdentityWithTx(tx, ExternalIdentityProviderWeChatMiniApp, "wx-app-one", "openid-other", first.Id)
+	})
+	assert.ErrorIs(t, err, ErrExternalIdentityAlreadyClaimed)
+}

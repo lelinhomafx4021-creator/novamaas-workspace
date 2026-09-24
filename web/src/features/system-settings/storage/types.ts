@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 export const STORAGE_PROVIDER_ALIYUN_OSS = 'aliyun_oss'
 export const STORAGE_AUTH_STATIC = 'static_access_key'
 export const STORAGE_AUTH_ENVIRONMENT = 'environment'
+export const ASSET_PROTOCOL_VOLC_ACTION = 'volc_action'
+export const ASSET_PROTOCOL_YOUFANG_REST = 'youfang_rest'
 
 export type StorageProfile = {
   id: number
@@ -75,4 +77,36 @@ export type StorageAPIResponse<T = undefined> = {
   success: boolean
   message?: string
   data: T
+}
+
+export type AssetChannelConfig = {
+  channel_id: number
+  channel_name: string
+  channel_type: number
+  enabled: boolean
+  protocol: 'volc_action' | 'youfang_rest'
+  auth_type: 'ak_sk' | 'bearer'
+  base_url: string
+  region: string
+  service: string
+  api_version: string
+  project_name: string
+  qpm: number
+  access_key_hint: string
+  credential_configured: boolean
+  updated_at: number
+}
+
+export type AssetChannelConfigInput = {
+  enabled: boolean
+  protocol: 'volc_action' | 'youfang_rest'
+  auth_type: 'ak_sk' | 'bearer'
+  base_url: string
+  region: string
+  service: string
+  api_version: string
+  project_name: string
+  qpm: number
+  access_key_id: string
+  credential: string
 }

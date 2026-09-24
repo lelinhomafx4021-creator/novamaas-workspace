@@ -556,6 +556,57 @@ func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
 	assert.True(t, sawDone)
 }
 
+func TestRunBasicJSONModeUsesNonStreamingContract(t *testing.T) {
+	t.Parallel()
+
+	var (
+		requestMu   sync.Mutex
+		requestBody []byte
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		if strings.Contains(string(body), `"response_format":{"type":"json_object"}`) {
+			requestMu.Lock()
+			requestBody = append([]byte(nil), body...)
+			requestMu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"json","choices":[{"message":{"content":"{\"ping\":\"pong\"}"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	var events []Event
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL,
+		APIKey:  "good-key",
+		Model:   "kimi-k3",
+		Vendor:  VendorKimi,
+		Modules: []string{ModuleBasic},
+		Basic: BasicConfig{
+			Checks: []string{CheckJSONMode},
+			Stream: ptrBool(true),
+		},
+	}, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+
+	status := ""
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID == CheckJSONMode && event.Status != "running" {
+			status = event.Status
+		}
+	}
+	assert.Equal(t, "pass", status)
+
+	requestMu.Lock()
+	body := string(requestBody)
+	requestMu.Unlock()
+	assert.Contains(t, body, `"stream":false`)
+	assert.NotContains(t, body, `"stream_options"`)
+}
+
 func TestRunStressSendsCorpusAsIs(t *testing.T) {
 	t.Parallel()
 

@@ -528,6 +528,13 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 	if wanted[CheckJSONMode] {
 		emitCheck(CheckJSONMode, "running", "")
 		jsonReq := chat
+		// JSON mode is a response-format contract check, not a streaming check.
+		// Keep it non-streaming so providers such as Kimi are compared against
+		// their documented JSON response behavior without inheriting the basic
+		// stream_options/include_usage fields. Streaming is covered separately by
+		// CheckStream.
+		jsonReq.Stream = false
+		jsonReq.StreamOptions = nil
 		jsonReq.ResponseFormat = map[string]any{"type": "json_object"}
 		jsonReq.Messages = []chatMessage{{Role: "user", Content: "Return a JSON object with key ping and value pong."}}
 		jsonResult := streamChat(ctx, httpClient, endpoint, req.APIKey, jsonReq, basicChatTimeout, nil)

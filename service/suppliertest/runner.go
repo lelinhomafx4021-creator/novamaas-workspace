@@ -168,9 +168,6 @@ func NormalizeRunRequest(req *RunRequest) error {
 	if req.BaseURL == "" {
 		return fmt.Errorf("base URL is required")
 	}
-	if req.Model == "" {
-		return fmt.Errorf("model is required")
-	}
 	if len(req.Modules) == 0 {
 		req.Modules = []string{ModuleBasic}
 	}
@@ -191,6 +188,28 @@ func NormalizeRunRequest(req *RunRequest) error {
 		return fmt.Errorf("select at least one module")
 	}
 	req.Modules = normalized
+	queryOnlyVideo := len(normalized) == 1 && seen[ModuleVideo] && len(req.Video.Checks) > 0
+	if seen[ModuleVideo] && len(req.Video.Checks) > 0 {
+		seenChecks := make(map[string]bool, len(req.Video.Checks))
+		checks := make([]string, 0, len(req.Video.Checks))
+		for _, check := range req.Video.Checks {
+			check = strings.TrimSpace(check)
+			if check != CheckVideoSubmit && check != CheckVideoPoll && check != CheckVideoResult {
+				return fmt.Errorf("unknown video check %q", check)
+			}
+			if !seenChecks[check] {
+				seenChecks[check] = true
+				checks = append(checks, check)
+			}
+			if check == CheckVideoSubmit {
+				queryOnlyVideo = false
+			}
+		}
+		req.Video.Checks = checks
+	}
+	if req.Model == "" && !queryOnlyVideo {
+		return fmt.Errorf("model is required")
+	}
 	hasBasic := seen[ModuleBasic]
 	hasStress := seen[ModuleStress]
 	hasCache := seen[ModuleCache]
@@ -1317,6 +1336,18 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 					Status:  "fail",
 					Title:   "任务提交",
 					Message: "原生请求 JSON 解析失败: " + err.Error(),
+					Video:   metrics,
+				})
+				return
+			}
+			if rawMap == nil {
+				emit(Event{
+					Type:    "check",
+					Module:  ModuleVideo,
+					CheckID: CheckVideoSubmit,
+					Status:  "fail",
+					Title:   "任务提交",
+					Message: "原生请求 JSON 必须是对象",
 					Video:   metrics,
 				})
 				return

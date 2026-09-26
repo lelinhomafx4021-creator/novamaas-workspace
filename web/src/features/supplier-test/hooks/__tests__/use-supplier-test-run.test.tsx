@@ -26,6 +26,7 @@ import { useSupplierTestRun } from '../use-supplier-test-run'
 
 const mockStream = vi.hoisted(() => ({
   created: 0,
+  closed: 0,
   listeners: new Map<
     string,
     (event: Event & { responseCode?: number }) => void
@@ -45,7 +46,9 @@ vi.mock('sse.js', () => ({
     ) {
       mockStream.listeners.set(type, listener)
     }
-    close() {}
+    close() {
+      mockStream.closed += 1
+    }
     stream() {}
   },
 }))
@@ -57,7 +60,21 @@ const payload = {
 
 beforeEach(() => {
   mockStream.created = 0
+  mockStream.closed = 0
   mockStream.listeners.clear()
+})
+
+test('leaving the page closes an active supplier test stream', async () => {
+  vi.mocked(getFreshAuthHeaders).mockResolvedValue({})
+  const { result, unmount } = renderHook(() => useSupplierTestRun())
+
+  await act(async () => {
+    await result.current.start(payload)
+  })
+  expect(mockStream.created).toBe(1)
+
+  unmount()
+  expect(mockStream.closed).toBe(1)
 })
 
 test('stop before authentication completes prevents starting the stream', async () => {

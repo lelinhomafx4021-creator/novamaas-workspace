@@ -200,6 +200,40 @@ func TestNormalizeRunRequest(t *testing.T) {
 	require.NoError(t, NormalizeRunRequest(&ignoredModuleConfig))
 }
 
+func TestNormalizeRunRequestVideoChecks(t *testing.T) {
+	t.Parallel()
+
+	query := RunRequest{
+		BaseURL: "https://api.example.com",
+		Modules: []string{ModuleVideo},
+		Video: VideoConfig{
+			TaskID: "existing-task",
+			Checks: []string{CheckVideoPoll, CheckVideoResult},
+		},
+	}
+	require.NoError(t, NormalizeRunRequest(&query))
+	assert.Empty(t, query.Model, "querying an existing task does not submit a model")
+
+	unknown := RunRequest{
+		BaseURL: "https://api.example.com",
+		Model:   "video-model",
+		Modules: []string{ModuleVideo},
+		Video:   VideoConfig{Checks: []string{"unknown-check"}},
+	}
+	err := NormalizeRunRequest(&unknown)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown video check")
+
+	submit := RunRequest{
+		BaseURL: "https://api.example.com",
+		Modules: []string{ModuleVideo},
+		Video:   VideoConfig{Checks: []string{CheckVideoSubmit}},
+	}
+	err = NormalizeRunRequest(&submit)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model is required")
+}
+
 func TestChatRequestOmitsEmptySampling(t *testing.T) {
 	t.Parallel()
 
@@ -351,6 +385,25 @@ func TestStreamChatReportsMalformedSSEChunk(t *testing.T) {
 	}, 5*time.Second, nil)
 	require.Equal(t, http.StatusOK, result.StatusCode)
 	assert.Contains(t, result.ErrorMessage, "invalid JSON stream chunk")
+}
+
+func TestStreamChatParsesMultilineSSEEvent(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[\n")
+		_, _ = io.WriteString(w, "data: {\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model: "demo", Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.Empty(t, result.ErrorMessage)
+	assert.Equal(t, "hello", result.Content)
+	assert.Equal(t, "stop", result.FinishReason)
 }
 
 func TestFinalizeStreamTimingExcludesUsageTailAndUnstreamedReasoning(t *testing.T) {

@@ -108,6 +108,36 @@ func TestVideoURLs(t *testing.T) {
 	assert.Equal(t, "https://custom-vendor.com/contents/generations/tasks/cgt-custom-999", customGetURL)
 }
 
+func TestVideoNullRawPayloadFailsWithoutSending(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	req := RunRequest{
+		BaseURL: server.URL,
+		Model:   "video-model",
+		Modules: []string{ModuleVideo},
+		Video:   VideoConfig{RawPayload: "null"},
+	}
+	var events []Event
+	err := Run(context.Background(), server.Client(), req, func(event Event) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	assert.Zero(t, requests)
+	var failed bool
+	for _, event := range events {
+		if event.CheckID == CheckVideoSubmit && event.Status == "fail" {
+			failed = true
+		}
+	}
+	assert.True(t, failed, "an invalid raw request should report a failed submit check")
+}
+
 func TestRunVideo_PublicURL(t *testing.T) {
 	pollCount := 0
 	var receivedSubmitBody string

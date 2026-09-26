@@ -207,12 +207,12 @@ export function SupplierTest() {
     },
   })
 
-  const validateTarget = () => {
+  const validateTarget = (requireModel = true) => {
     if (!target.baseUrl.trim()) {
       toast.error(t('Enter a base URL first'))
       return false
     }
-    if (!target.model.trim()) {
+    if (requireModel && !target.model.trim()) {
       toast.error(t('Select a model first'))
       return false
     }
@@ -333,7 +333,11 @@ export function SupplierTest() {
   }
 
   const startModule = (module: SupplierTestModule, checks?: string[]) => {
-    if (!validateTarget()) return
+    const isQueryOnlyVideo =
+      module === 'video' &&
+      Boolean(checks?.length) &&
+      !checks?.includes('video_submit')
+    if (!validateTarget(!isQueryOnlyVideo)) return
     if (module === 'basic') {
       if (
         !Number.isInteger(basic.maxTokens) ||
@@ -423,11 +427,7 @@ export function SupplierTest() {
       }
     }
     if (module === 'video') {
-      const isQueryOnly =
-        checks &&
-        (checks.includes('video_poll') || checks.includes('video_result')) &&
-        !checks.includes('video_submit')
-      if (isQueryOnly) {
+      if (isQueryOnlyVideo) {
         const currentTaskId =
           video.taskId?.trim() || run.videoMetrics?.task_id?.trim()
         if (!currentTaskId) {

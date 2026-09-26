@@ -541,21 +541,38 @@ func finalizeStreamTiming(result *StreamResult) {
 
 func parseSSE(body io.Reader, started time.Time, result *StreamResult, onDelta func(StreamDelta)) {
 	reader := bufio.NewReaderSize(body, 1<<20)
+	var data []string
+	dispatch := func() bool {
+		if len(data) == 0 {
+			return false
+		}
+		payload := strings.Join(data, "\n")
+		data = data[:0]
+		if strings.TrimSpace(payload) == "[DONE]" {
+			return true
+		}
+		applyChunk([]byte(payload), started, result, onDelta)
+		return false
+	}
 	for {
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "data:") {
-				payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-				if payload == "[DONE]" {
+			trimmed := strings.TrimRight(line, "\r\n")
+			if trimmed == "" {
+				if dispatch() {
 					return
 				}
-				applyChunk([]byte(payload), started, result, onDelta)
+			} else if strings.HasPrefix(trimmed, "data:") {
+				value := strings.TrimPrefix(trimmed, "data:")
+				data = append(data, strings.TrimPrefix(value, " "))
 			}
 		}
 		if err != nil {
 			if err != io.EOF && result.ErrorMessage == "" {
 				result.ErrorMessage = err.Error()
+			}
+			if err == io.EOF {
+				dispatch()
 			}
 			return
 		}

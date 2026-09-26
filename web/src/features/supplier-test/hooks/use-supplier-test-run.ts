@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { SSE } from 'sse.js'
@@ -112,6 +112,15 @@ export function useSupplierTestRun() {
     stress: '',
   })
   const [errorMessage, setErrorMessage] = useState('')
+
+  useEffect(
+    () => () => {
+      runIdRef.current += 1
+      sourceRef.current?.close()
+      sourceRef.current = null
+    },
+    []
+  )
 
   const stop = useCallback(() => {
     runIdRef.current += 1

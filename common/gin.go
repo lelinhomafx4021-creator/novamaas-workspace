@@ -48,11 +48,14 @@ func GetRequestBody(c *gin.Context) (io.Seeker, error) {
 	cached, exists := c.Get(KeyRequestBody)
 	if exists && cached != nil {
 		if b, ok := cached.([]byte); ok {
+			startedAt := time.Now()
 			bs, err := CreateBodyStorage(b)
 			if err != nil {
 				return nil, err
 			}
 			c.Set(KeyBodyStorage, bs)
+			SetContextKey(c, constant.ContextKeyRequestBodyBytes, bs.Size())
+			SetContextKey(c, constant.ContextKeyRequestBodyReadMilliseconds, time.Since(startedAt).Milliseconds())
 			return bs, nil
 		}
 	}
@@ -66,6 +69,7 @@ func GetRequestBody(c *gin.Context) (io.Seeker, error) {
 	contentLength := c.Request.ContentLength
 
 	// 使用新的存储系统
+	startedAt := time.Now()
 	storage, err := CreateBodyStorageFromReader(c.Request.Body, contentLength, maxBytes)
 	_ = c.Request.Body.Close()
 
@@ -78,6 +82,8 @@ func GetRequestBody(c *gin.Context) (io.Seeker, error) {
 
 	// 缓存存储对象
 	c.Set(KeyBodyStorage, storage)
+	SetContextKey(c, constant.ContextKeyRequestBodyBytes, storage.Size())
+	SetContextKey(c, constant.ContextKeyRequestBodyReadMilliseconds, time.Since(startedAt).Milliseconds())
 
 	return storage, nil
 }

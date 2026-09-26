@@ -3,10 +3,13 @@ package taskcommon
 import (
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	storageService "github.com/QuantumNous/new-api/service/storage"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -64,6 +67,26 @@ func DecodeLocalTaskID(id string) (string, error) {
 // e.g., "https://your-server.com/v1/videos/task_xxxx/content"
 func BuildProxyURL(taskID string) string {
 	return fmt.Sprintf("%s/v1/videos/%s/content", system_setting.ServerAddress, taskID)
+}
+
+// MaterializeVideoTaskBase64 stages inline media and accumulates only the
+// temporary-storage portion of the request preparation time.
+func MaterializeVideoTaskBase64(c *gin.Context, body []byte, info *relaycommon.RelayInfo, policyKey string, source string) ([]byte, int, error) {
+	startedAt := time.Now()
+	materialized, convertedCount, err := storageService.MaterializeVideoTaskBase64(
+		c.Request.Context(),
+		body,
+		info.UserId,
+		info.RequestId,
+		info.PublicTaskID,
+		policyKey,
+		source,
+	)
+	if convertedCount > 0 || err != nil {
+		previousDuration, _ := common.GetContextKeyType[int64](c, constant.ContextKeyTemporaryMediaMilliseconds)
+		common.SetContextKey(c, constant.ContextKeyTemporaryMediaMilliseconds, previousDuration+time.Since(startedAt).Milliseconds())
+	}
+	return materialized, convertedCount, err
 }
 
 // Status-to-progress mapping constants for polling updates.

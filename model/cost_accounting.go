@@ -126,6 +126,17 @@ type CostAccountingSnapshotView struct {
 	ProfitQuota            int64 `json:"profit_quota"`
 }
 
+type costSnapshotFallbackKey struct {
+	RequestID    string
+	LogType      int
+	OccurredAt   int64
+	RevenueQuota int64
+	UserID       int
+	ChannelID    int
+	ModelName    string
+	GroupName    string
+}
+
 func NormalizeCostDiscount(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -231,17 +242,89 @@ func InsertCostAccountingSnapshots(snapshots []CostAccountingSnapshot) (int64, e
 	return result.RowsAffected, result.Error
 }
 
-func ExistingCostSnapshotEventKeys(eventKeys []string) (map[string]struct{}, error) {
-	result := make(map[string]struct{})
-	if len(eventKeys) == 0 {
+// ExistingCostSnapshotLogIndexes identifies logs that already have immutable
+// cost evidence, even when realtime task billing used a task-scoped event key.
+func ExistingCostSnapshotLogIndexes(logs []Log) (map[int]struct{}, error) {
+	result := make(map[int]struct{})
+	if len(logs) == 0 {
 		return result, nil
 	}
-	var keys []string
-	if err := DB.Model(&CostAccountingSnapshot{}).Where("event_key IN ?", eventKeys).Pluck("event_key", &keys).Error; err != nil {
+	eventKeys := make([]string, 0, len(logs))
+	sourceLogIDs := make([]int64, 0, len(logs))
+	requestIDs := make([]string, 0, len(logs))
+	for i := range logs {
+		eventKeys = append(eventKeys, CostSnapshotEventKey(&logs[i]))
+		if logs[i].Id > 0 {
+			sourceLogIDs = append(sourceLogIDs, int64(logs[i].Id))
+		}
+		if logs[i].RequestId != "" {
+			requestIDs = append(requestIDs, logs[i].RequestId)
+		}
+	}
+
+	query := DB.Model(&CostAccountingSnapshot{}).Where("event_key IN ?", eventKeys)
+	if len(sourceLogIDs) > 0 {
+		query = query.Or("source_log_id IN ?", sourceLogIDs)
+	}
+	if len(requestIDs) > 0 {
+		query = query.Or("request_id IN ?", requestIDs)
+	}
+	var snapshots []CostAccountingSnapshot
+	if err := query.Find(&snapshots).Error; err != nil {
 		return nil, err
 	}
-	for _, key := range keys {
-		result[key] = struct{}{}
+
+	existingEventKeys := make(map[string]struct{}, len(snapshots))
+	existingSourceLogIDs := make(map[int64]struct{}, len(snapshots))
+	existingFallbackKeys := make(map[costSnapshotFallbackKey]struct{}, len(snapshots))
+	for i := range snapshots {
+		existingEventKeys[snapshots[i].EventKey] = struct{}{}
+		if snapshots[i].SourceLogID > 0 {
+			existingSourceLogIDs[snapshots[i].SourceLogID] = struct{}{}
+		}
+		if snapshots[i].RequestID != "" {
+			existingFallbackKeys[costSnapshotFallbackKey{
+				RequestID:    snapshots[i].RequestID,
+				LogType:      snapshots[i].LogType,
+				OccurredAt:   snapshots[i].OccurredAt,
+				RevenueQuota: snapshots[i].RevenueQuota,
+				UserID:       snapshots[i].UserID,
+				ChannelID:    snapshots[i].ChannelID,
+				ModelName:    snapshots[i].ModelName,
+				GroupName:    snapshots[i].GroupName,
+			}] = struct{}{}
+		}
+	}
+	for i := range logs {
+		if _, ok := existingEventKeys[CostSnapshotEventKey(&logs[i])]; ok {
+			result[i] = struct{}{}
+			continue
+		}
+		if logs[i].Id > 0 {
+			if _, ok := existingSourceLogIDs[int64(logs[i].Id)]; ok {
+				result[i] = struct{}{}
+				continue
+			}
+		}
+		revenueQuota := int64(logs[i].Quota)
+		if logs[i].Type == LogTypeRefund {
+			revenueQuota = -revenueQuota
+		}
+		if logs[i].RequestId != "" {
+			fallbackKey := costSnapshotFallbackKey{
+				RequestID:    logs[i].RequestId,
+				LogType:      logs[i].Type,
+				OccurredAt:   logs[i].CreatedAt,
+				RevenueQuota: revenueQuota,
+				UserID:       logs[i].UserId,
+				ChannelID:    logs[i].ChannelId,
+				ModelName:    logs[i].ModelName,
+				GroupName:    logs[i].Group,
+			}
+			if _, ok := existingFallbackKeys[fallbackKey]; ok {
+				result[i] = struct{}{}
+			}
+		}
 	}
 	return result, nil
 }
@@ -335,8 +418,16 @@ func costAccountingQuery(filter CostAccountingFilter) (*gorm.DB, error) {
 	adjustments := DB.Model(&CostAccountingAdjustment{}).
 		Select("snapshot_id, SUM(delta_cost_quota) AS adjustment_quota").
 		Group("snapshot_id")
+	// The first snapshot is the immutable evidence for a source log. Historical
+	// corrections belong in adjustments; a later duplicate snapshot must never
+	// inflate revenue or cost totals.
 	query := DB.Table("cost_accounting_snapshots AS snapshots").
-		Joins("LEFT JOIN (?) AS adjustments ON adjustments.snapshot_id = snapshots.id", adjustments)
+		Joins("LEFT JOIN (?) AS adjustments ON adjustments.snapshot_id = snapshots.id", adjustments).
+		Where(`snapshots.source_log_id <= 0 OR NOT EXISTS (
+			SELECT 1 FROM cost_accounting_snapshots AS earlier
+			WHERE earlier.id < snapshots.id
+			AND earlier.source_log_id = snapshots.source_log_id
+		)`)
 	return applyCostAccountingFilter(query, filter)
 }
 
@@ -496,7 +587,7 @@ func ListCostAccountingSnapshots(filter CostAccountingFilter, offset, limit int)
 		return nil, 0, errors.New("invalid cost accounting snapshot page")
 	}
 	var total int64
-	countQuery, err := applyCostAccountingFilter(DB.Table("cost_accounting_snapshots AS snapshots"), filter)
+	countQuery, err := costAccountingQuery(filter)
 	if err != nil {
 		return nil, 0, err
 	}

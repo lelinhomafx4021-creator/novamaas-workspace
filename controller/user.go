@@ -130,6 +130,8 @@ func loginMethodFromContext(c *gin.Context) string {
 		return "wechat"
 	case "/api/oauth/telegram/login":
 		return "telegram"
+	case "/api/mini/auth/login", "/api/mini/auth/bind", "/api/mini/auth/register":
+		return "wechat_miniapp"
 	case "/api/oauth/:provider":
 		if provider := c.Param("provider"); provider != "" {
 			return "oauth:" + provider

@@ -200,6 +200,27 @@ export interface ChannelTestResponse {
   }
 }
 
+export interface ChannelNetworkTestData {
+  target_url: string
+  resolved_addresses?: string[]
+  remote_address?: string
+  dns_ms?: number
+  connect_ms?: number
+  tls_ms?: number
+  ttfb_ms?: number
+  total_ms: number
+  http_status?: number
+  protocol?: string
+  connection_reused: boolean
+  via_proxy: boolean
+}
+
+export interface ChannelNetworkTestResponse {
+  success: boolean
+  message?: string
+  data?: ChannelNetworkTestData
+}
+
 export interface ChannelBalanceResponse {
   success: boolean
   message?: string

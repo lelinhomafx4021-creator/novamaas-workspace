@@ -16,6 +16,11 @@ func SetRelayRouter(router *gin.Engine) {
 	router.Use(middleware.DecompressRequestMiddleware())
 	router.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	router.Use(middleware.StatsMiddleware())
+	assetActionRouter := router.Group("")
+	assetActionRouter.Use(middleware.RouteTag("relay"))
+	assetActionRouter.Use(middleware.SystemPerformanceCheck())
+	assetActionRouter.POST("/", controller.HandleVolcAssetAction)
+	assetActionRouter.POST("/api/v3/", controller.HandleVolcAssetAction)
 	// https://platform.openai.com/docs/api-reference/introduction
 	modelsRouter := router.Group("/v1/models")
 	modelsRouter.Use(middleware.RouteTag("relay"))

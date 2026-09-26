@@ -1,0 +1,60 @@
+.settings-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.settings-summary__value {
+  display: block;
+  color: #111827;
+  font-size: 34rpx;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.settings-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 180rpx;
+}
+
+.settings-label {
+  display: block;
+  margin-bottom: 10rpx;
+  color: #4b5563;
+  font-size: 24rpx;
+  font-weight: 650;
+}
+
+.settings-code {
+  display: block;
+  padding: 18rpx 20rpx;
+  color: #312e81;
+  background: #eef2ff;
+  border-radius: 16rpx;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 25rpx;
+  overflow-wrap: anywhere;
+}
+
+.settings-danger {
+  border-color: #fecaca;
+  background: #fffafa;
+}
+
+.settings-progress {
+  height: 12rpx;
+  margin-top: 16rpx;
+  overflow: hidden;
+  background: #e5e7eb;
+  border-radius: 999rpx;
+}
+
+.settings-progress__bar {
+  height: 100%;
+  background: #6366f1;
+  border-radius: inherit;
+}
+
+.settings-user-agent {
+  overflow-wrap: anywhere;
+}

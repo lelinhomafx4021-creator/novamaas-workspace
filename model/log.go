@@ -641,6 +641,7 @@ type LogStatistics struct {
 	RefundQuota  int64 `json:"refund_quota"`
 	RevenueQuota int64 `json:"revenue_quota"`
 	Records      int64 `json:"records"`
+	Requests     int64 `json:"requests"`
 	Rpm          int   `json:"rpm"`
 	Tpm          int   `json:"tpm"`
 }
@@ -695,8 +696,9 @@ func sumLogFinancialStatistics(filter CostAccountingFilter) (LogStatistics, erro
 	if err := totalsQuery.Select(`
 		COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS quota,
 		COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS refund_quota,
-		COALESCE(SUM(CASE WHEN type IN (?, ?) THEN 1 ELSE 0 END), 0) AS records`,
-		LogTypeConsume, LogTypeRefund, LogTypeConsume, LogTypeRefund,
+		COALESCE(SUM(CASE WHEN type IN (?, ?) THEN 1 ELSE 0 END), 0) AS records,
+		COALESCE(SUM(CASE WHEN type = ? THEN 1 ELSE 0 END), 0) AS requests`,
+		LogTypeConsume, LogTypeRefund, LogTypeConsume, LogTypeRefund, LogTypeConsume,
 	).Scan(&statistics).Error; err != nil {
 		common.SysError("failed to query log stat: " + err.Error())
 		return statistics, errors.New("查询统计数据失败")

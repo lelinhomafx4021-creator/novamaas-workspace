@@ -28,6 +28,7 @@ import (
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	assetLibraryService "github.com/QuantumNous/new-api/service/assetlibrary"
 	"github.com/QuantumNous/new-api/service/authz"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
@@ -153,6 +154,8 @@ func main() {
 	service.StartSystemTaskRunner()
 	service.StartBillingStatementWorker()
 	storageService.StartCleanupTask()
+	assetLibraryService.StartAssetRequestLogWriter()
+	assetLibraryService.StartSyncTask()
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true
@@ -233,6 +236,9 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(fmt.Sprintf("server forced to shutdown: %v", err))
+	}
+	if err := assetLibraryService.StopAssetRequestLogWriter(ctx); err != nil {
+		common.SysError(fmt.Sprintf("asset request log writer shutdown: %v", err))
 	}
 	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
 	if common.DataExportEnabled {

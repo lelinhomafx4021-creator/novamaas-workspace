@@ -26,11 +26,14 @@ const (
 	StorageCredentialAuthStatic      = "static_access_key"
 	StorageCredentialAuthEnvironment = "environment"
 
-	StoragePolicyRelayMediaTemp = "relay_media_temp"
-	RelayMediaAllowedMIMETypes  = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
-	legacyRelayMediaMIMETypes   = "image/jpeg,image/png,image/webp"
+	StoragePolicyRelayMediaTemp  = "relay_media_temp"
+	StoragePolicyAssetLibrary    = "asset_library"
+	RelayMediaAllowedMIMETypes   = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+	AssetLibraryAllowedMIMETypes = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg"
+	legacyRelayMediaMIMETypes    = "image/jpeg,image/png,image/webp"
 
 	StorageObjectPurposeRelayMediaTemp = "relay_media_temp"
+	StorageObjectPurposeAssetLibrary   = "asset_library"
 	StorageObjectPurposeBillingArchive = "billing_archive"
 	StorageObjectStatusUploading       = "uploading"
 	StorageObjectStatusUploaded        = "uploaded"
@@ -176,6 +179,22 @@ func DefaultRelayMediaStoragePolicy() *StoragePolicy {
 	}
 }
 
+func DefaultAssetLibraryStoragePolicy() *StoragePolicy {
+	return &StoragePolicy{
+		Key:                 StoragePolicyAssetLibrary,
+		Name:                "Asset library permanent storage",
+		Purpose:             StorageObjectPurposeAssetLibrary,
+		ObjectPrefix:        "assets/library",
+		SignedURLTTLSeconds: 24 * 60 * 60,
+		RetentionSeconds:    0,
+		MaxFileBytes:        512 * 1024 * 1024,
+		MaxTotalBytes:       512 * 1024 * 1024,
+		MaxFiles:            100,
+		AllowedMIMETypes:    AssetLibraryAllowedMIMETypes,
+		Enabled:             false,
+	}
+}
+
 func migrateRelayMediaPolicyAllowedMIMETypes() error {
 	return DB.Model(&StoragePolicy{}).
 		Where(map[string]any{"key": StoragePolicyRelayMediaTemp}).
@@ -245,13 +264,32 @@ func CreateStorageObject(object *StorageObject) error {
 	return DB.Create(object).Error
 }
 
-func MarkStorageObjectUploaded(id int64, etag string) error {
+// ensureStorageObjectUploadMetadataColumns upgrades storage ledgers created by
+// versions that predate upload checksums. Field names are passed through the
+// GORM migrator so acronym mapping (ETag -> e_tag) stays dialect-independent.
+func ensureStorageObjectUploadMetadataColumns(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable(&StorageObject{}) {
+		return nil
+	}
+	for _, field := range []string{"ETag", "SHA256"} {
+		if db.Migrator().HasColumn(&StorageObject{}, field) {
+			continue
+		}
+		if err := db.Migrator().AddColumn(&StorageObject{}, field); err != nil {
+			return fmt.Errorf("failed to add storage_objects.%s: %w", field, err)
+		}
+	}
+	return nil
+}
+
+func MarkStorageObjectUploaded(id int64, etag string, sha256 string) error {
 	return DB.Model(&StorageObject{}).
 		Where("id = ? AND status = ?", id, StorageObjectStatusUploading).
-		Select("Status", "ETag", "UpdatedAt").
+		Select("Status", "ETag", "SHA256", "UpdatedAt").
 		Updates(&StorageObject{
 			Status:    StorageObjectStatusUploaded,
 			ETag:      etag,
+			SHA256:    sha256,
 			UpdatedAt: common.GetTimestamp(),
 		}).Error
 }

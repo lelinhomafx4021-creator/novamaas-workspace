@@ -19,13 +19,25 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 
 export const STORAGE_DEFAULT_SECTION = 'object-storage'
-export const STORAGE_SECTION_IDS = [STORAGE_DEFAULT_SECTION] as const
+export const STORAGE_SECTION_IDS = [
+  STORAGE_DEFAULT_SECTION,
+  'asset-library',
+  'asset-sync',
+] as const
 
 export function getStorageSectionNavItems(t: TFunction) {
   return [
     {
       title: t('Object Storage'),
       url: `/system-settings/storage/${STORAGE_DEFAULT_SECTION}`,
+    },
+    {
+      title: t('Asset Library'),
+      url: '/system-settings/storage/asset-library',
+    },
+    {
+      title: t('Asset synchronization'),
+      url: '/system-settings/storage/asset-sync',
     },
   ]
 }

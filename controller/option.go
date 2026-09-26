@@ -186,6 +186,36 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "wechat_miniapp.enabled":
+		settings := system_setting.GetWeChatMiniAppSettings()
+		if option.Value == "true" && !settings.HasEffectiveCredentials() {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "无法启用微信小程序登录，请先配置 AppID 和 AppSecret",
+			})
+			return
+		}
+	case "wechat_miniapp.app_id":
+		value := strings.TrimSpace(option.Value.(string))
+		if value == "" || len(value) > 64 {
+			common.ApiErrorMsg(c, "微信小程序 AppID 无效")
+			return
+		}
+		option.Value = value
+	case "wechat_miniapp.app_secret":
+		value := strings.TrimSpace(option.Value.(string))
+		if value == "" || len(value) > 128 {
+			common.ApiErrorMsg(c, "微信小程序 AppSecret 无效")
+			return
+		}
+		option.Value = value
+	case "wechat_miniapp.request_timeout_seconds":
+		value, parseErr := strconv.Atoi(strings.TrimSpace(option.Value.(string)))
+		if parseErr != nil || value < 1 || value > 15 {
+			common.ApiErrorMsg(c, "微信小程序请求超时必须在 1 到 15 秒之间")
+			return
+		}
+		option.Value = strconv.Itoa(value)
 	case "EmailDomainRestrictionEnabled":
 		if option.Value == "true" && len(common.EmailDomainWhitelist) == 0 {
 			c.JSON(http.StatusOK, gin.H{

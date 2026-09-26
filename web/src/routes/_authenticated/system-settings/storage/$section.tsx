@@ -18,7 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { StorageManagement } from '@/features/system-settings/storage'
+import {
+  AssetLibrarySettings,
+  AssetSyncManagement,
+  StorageManagement,
+} from '@/features/system-settings/storage'
 import {
   STORAGE_DEFAULT_SECTION,
   STORAGE_SECTION_IDS,
@@ -35,5 +39,12 @@ export const Route = createFileRoute(
       })
     }
   },
-  component: StorageManagement,
+  component: StorageSection,
 })
+
+function StorageSection() {
+  const { section } = Route.useParams()
+  if (section === 'asset-library') return <AssetLibrarySettings />
+  if (section === 'asset-sync') return <AssetSyncManagement />
+  return <StorageManagement />
+}

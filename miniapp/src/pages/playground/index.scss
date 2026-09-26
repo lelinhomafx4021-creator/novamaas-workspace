@@ -1,0 +1,46 @@
+.playground-options {
+  display: grid;
+  gap: 14rpx;
+}
+
+.playground-chat {
+  box-sizing: border-box;
+  height: 720rpx;
+  padding: 24rpx;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1rpx solid #e1e5ee;
+  border-radius: 26rpx;
+}
+
+.playground-message {
+  max-width: 88%;
+  margin-bottom: 22rpx;
+  padding: 22rpx;
+  background: #f1f5f9;
+  border-radius: 20rpx 20rpx 20rpx 4rpx;
+}
+
+.playground-message--user {
+  margin-left: auto;
+  color: #fff;
+  background: #4f46e5;
+  border-radius: 20rpx 20rpx 4rpx;
+}
+
+.playground-message__role,
+.playground-message__content {
+  display: block;
+}
+
+.playground-message__role {
+  margin-bottom: 8rpx;
+  font-size: 21rpx;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.playground-message__content {
+  font-size: 27rpx;
+  line-height: 1.62;
+  white-space: pre-wrap;
+}

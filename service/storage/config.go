@@ -306,6 +306,41 @@ func SaveRelayMediaPolicy(input PolicyInput) (*model.StoragePolicy, error) {
 	return policy, nil
 }
 
+func GetAssetLibraryPolicy() (*model.StoragePolicy, error) {
+	policy, err := model.GetStoragePolicyByKey(model.StoragePolicyAssetLibrary)
+	if err != nil {
+		return nil, err
+	}
+	if policy == nil {
+		return model.DefaultAssetLibraryStoragePolicy(), nil
+	}
+	return policy, nil
+}
+
+func SaveAssetLibraryPolicy(input PolicyInput) (*model.StoragePolicy, error) {
+	policy := &model.StoragePolicy{
+		Key:                 model.StoragePolicyAssetLibrary,
+		Name:                "Asset library permanent storage",
+		Purpose:             model.StorageObjectPurposeAssetLibrary,
+		StorageProfileID:    input.StorageProfileID,
+		ObjectPrefix:        strings.Trim(strings.TrimSpace(input.ObjectPrefix), "/"),
+		SignedURLTTLSeconds: input.SignedURLTTLSeconds,
+		RetentionSeconds:    0,
+		MaxFileBytes:        input.MaxFileBytes,
+		MaxTotalBytes:       input.MaxTotalBytes,
+		MaxFiles:            input.MaxFiles,
+		AllowedMIMETypes:    normalizeMIMETypes(input.AllowedMIMETypes),
+		Enabled:             input.Enabled,
+	}
+	if err := validateAssetLibraryPolicy(policy); err != nil {
+		return nil, err
+	}
+	if err := model.SaveStoragePolicy(policy); err != nil {
+		return nil, err
+	}
+	return policy, nil
+}
+
 func validateProfileInput(profile *model.StorageProfile, authType string) error {
 	if profile.Name == "" || len(profile.Name) > 128 {
 		return errors.New("storage profile name is required and must not exceed 128 characters")
@@ -409,6 +444,50 @@ func validatePolicy(policy *model.StoragePolicy) error {
 	for _, mimeType := range strings.Split(policy.AllowedMIMETypes, ",") {
 		if _, supported := mediaExtension(mimeType); !supported {
 			return fmt.Errorf("unsupported storage policy MIME type: %s", mimeType)
+		}
+	}
+	return nil
+}
+
+func validateAssetLibraryPolicy(policy *model.StoragePolicy) error {
+	if policy.StorageProfileID <= 0 {
+		if policy.Enabled {
+			return errors.New("an enabled asset library policy requires a storage profile")
+		}
+	} else {
+		profile, err := model.GetStorageProfileByID(policy.StorageProfileID)
+		if err != nil {
+			return err
+		}
+		if profile == nil || profile.Status == model.StorageProfileStatusArchived {
+			return errors.New("storage profile does not exist")
+		}
+		if policy.Enabled && profile.Status != model.StorageProfileStatusEnabled {
+			return errors.New("storage profile must be enabled before enabling the asset library")
+		}
+	}
+	if policy.ObjectPrefix == "" || strings.Contains(policy.ObjectPrefix, "..") || strings.ContainsAny(policy.ObjectPrefix, "\\\x00") {
+		return errors.New("invalid asset library object prefix")
+	}
+	if policy.SignedURLTTLSeconds < minSignedURLTTLSeconds || policy.SignedURLTTLSeconds > maxSignedURLTTLSeconds {
+		return fmt.Errorf("signed URL TTL must be between %d and %d seconds", minSignedURLTTLSeconds, maxSignedURLTTLSeconds)
+	}
+	if policy.MaxFileBytes <= 0 || policy.MaxFileBytes > maxStorageBytes {
+		return errors.New("invalid asset library per-file size limit")
+	}
+	if policy.MaxFiles <= 0 || policy.MaxFiles > maxStorageFiles {
+		return errors.New("asset library file count limit must be between 1 and 100")
+	}
+	if policy.AllowedMIMETypes == "" {
+		return errors.New("at least one allowed MIME type is required")
+	}
+	allowed := map[string]struct{}{}
+	for _, mimeType := range strings.Split(model.AssetLibraryAllowedMIMETypes, ",") {
+		allowed[mimeType] = struct{}{}
+	}
+	for _, mimeType := range strings.Split(policy.AllowedMIMETypes, ",") {
+		if _, supported := allowed[mimeType]; !supported {
+			return fmt.Errorf("unsupported asset library MIME type: %s", mimeType)
 		}
 	}
 	return nil

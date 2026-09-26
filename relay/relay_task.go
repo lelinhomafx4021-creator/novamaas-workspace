@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -143,6 +144,10 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 // 构建/发送/解析上游请求 → 提交后计费调整(AdjustBillingOnSubmit)。
 // 控制器负责 defer Refund 和成功后 Settle。
 func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitResult, *dto.TaskError) {
+	preparationStartedAt := time.Now()
+	if info.TaskRelayInfo != nil {
+		info.RequestMetrics.Attempts++
+	}
 	info.InitChannelMeta(c)
 
 	// 1. 确定 platform → 创建适配器 → 验证请求
@@ -215,17 +220,39 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 8. 构建请求体
 	requestBody, err := adaptor.BuildRequestBody(c, info)
+	if info.TaskRelayInfo != nil {
+		temporaryStorageMilliseconds, _ := common.GetContextKeyType[int64](c, constant.ContextKeyTemporaryMediaMilliseconds)
+		newTemporaryStorageMilliseconds := temporaryStorageMilliseconds - info.RequestMetrics.TemporaryStorageMilliseconds
+		if newTemporaryStorageMilliseconds < 0 {
+			newTemporaryStorageMilliseconds = 0
+		}
+		preparationMilliseconds := time.Since(preparationStartedAt).Milliseconds() - newTemporaryStorageMilliseconds
+		if preparationMilliseconds < 0 {
+			preparationMilliseconds = 0
+		}
+		info.RequestMetrics.RequestPreparationMilliseconds += preparationMilliseconds
+		info.RequestMetrics.TemporaryStorageMilliseconds = temporaryStorageMilliseconds
+		info.RequestMetrics.UpstreamBodyBytes = int64(len(common.GetContextKeyString(c, constant.ContextKeyVideoTaskUpstreamRequestBody)))
+	}
 	if err != nil {
 		statusCode := http.StatusInternalServerError
+		code := "build_request_failed"
 		var statusError interface{ HTTPStatusCode() int }
 		if errors.As(err, &statusError) {
 			statusCode = statusError.HTTPStatusCode()
 		}
-		return nil, service.TaskErrorWrapperLocal(err, "build_request_failed", statusCode)
+		var codedError interface{ ErrorCode() string }
+		if errors.As(err, &codedError) && codedError.ErrorCode() != "" {
+			code = codedError.ErrorCode()
+		}
+		return nil, service.TaskErrorWrapperLocal(err, code, statusCode)
 	}
-
 	// 9. 发送请求
+	upstreamStartedAt := time.Now()
 	resp, err := adaptor.DoRequest(c, info, requestBody)
+	if info.TaskRelayInfo != nil {
+		info.RequestMetrics.UpstreamRequestMilliseconds += time.Since(upstreamStartedAt).Milliseconds()
+	}
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
@@ -587,6 +614,10 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	properties := task.Properties
 	properties.RequestBody = nil
+	modelName := properties.OriginModelName
+	if modelName == "" {
+		modelName = properties.UpstreamModelName
+	}
 	return &dto.TaskDto{
 		ID:                   task.ID,
 		CreatedAt:            task.CreatedAt,
@@ -607,7 +638,9 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Progress:             task.Progress,
 		Properties:           properties,
 		RequestBodyAvailable: task.RequestBodyAvailable || len(task.Properties.RequestBody) > 0,
+		RequestMetrics:       task.Properties.RequestMetrics,
 		Username:             task.Username,
+		ModelName:            modelName,
 		Data:                 task.Data,
 	}
 }

@@ -50,6 +50,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 			other["temporary_media_converted_count"] = count
 		}
 	}
+	if info.TaskRelayInfo != nil && info.RequestMetrics.HasData() {
+		other["request_metrics"] = info.RequestMetrics
+	}
 	other["request_path"] = c.Request.URL.Path
 	other["model_price"] = info.PriceData.ModelPrice
 	if info.PriceData.ModelRatio > 0 {

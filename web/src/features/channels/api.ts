@@ -26,6 +26,7 @@ import type {
   Channel,
   ChannelBalanceResponse,
   ChannelOpsResponse,
+  ChannelNetworkTestResponse,
   ChannelTestResponse,
   CopyChannelParams,
   CopyChannelResponse,
@@ -217,6 +218,16 @@ export async function testChannel(
   const res = await api.get(
     `/api/channel/test/${id}`,
     channelActionConfig({ params })
+  )
+  return res.data
+}
+
+export async function testChannelNetwork(
+  id: number
+): Promise<ChannelNetworkTestResponse> {
+  const res = await api.get(
+    `/api/channel/network-test/${id}`,
+    channelActionConfig()
   )
   return res.data
 }

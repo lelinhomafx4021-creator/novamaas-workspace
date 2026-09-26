@@ -103,9 +103,11 @@ func GetLogsStat(c *gin.Context) {
 		return
 	}
 	data := gin.H{
-		"quota": stat.Quota,
-		"rpm":   stat.Rpm,
-		"tpm":   stat.Tpm,
+		"quota":    stat.Quota,
+		"records":  stat.Records,
+		"requests": stat.Requests,
+		"rpm":      stat.Rpm,
+		"tpm":      stat.Tpm,
 	}
 	if canViewFinancialAccounting(c) {
 		accounting, accountingErr := model.SumCostAccounting(filter)
@@ -136,9 +138,11 @@ func GetLogsSelfStat(c *gin.Context) {
 		return
 	}
 	data := gin.H{
-		"quota": statistics.Quota,
-		"rpm":   statistics.Rpm,
-		"tpm":   statistics.Tpm,
+		"quota":    statistics.Quota,
+		"records":  statistics.Records,
+		"requests": statistics.Requests,
+		"rpm":      statistics.Rpm,
+		"tpm":      statistics.Tpm,
 	}
 	if canViewFinancialAccounting(c) {
 		accounting, accountingErr := model.SumCostAccounting(filter)

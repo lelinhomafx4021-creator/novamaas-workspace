@@ -28,11 +28,15 @@ func SetWebRouter(router *gin.Engine, assets WebAssets) {
 	router.Use(static.Serve("/", frontendFS))
 	router.NoRoute(func(c *gin.Context) {
 		c.Set(middleware.RouteTagKey, "web")
-		if strings.HasPrefix(c.Request.RequestURI, "/v1") || strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/assets") {
+		if isBackendRoute(c.Request.URL.Path) {
 			controller.RelayNotFound(c)
 			return
 		}
 		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", assets.IndexPage)
 	})
+}
+
+func isBackendRoute(path string) bool {
+	return path == "/v1" || strings.HasPrefix(path, "/v1/") || path == "/api" || strings.HasPrefix(path, "/api/")
 }

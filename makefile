@@ -1,6 +1,11 @@
 WEB_DIR = ./web
+MINIAPP_DIR = ./miniapp
 API_DIR = .
 DEV_WEB_PORT ?= 5173
+DEV_WEB_HOST ?= 127.0.0.1
+DEV_API_PORT ?= 3000
+DEV_API_BASE_URL ?= http://127.0.0.1:$(DEV_API_PORT)
+MINIAPP_API_BASE_URL ?= $(DEV_API_BASE_URL)
 DEV_COMPOSE_FILE = docker-compose.dev.yml
 DEV_POSTGRES_SERVICE = postgres
 DEV_API_SERVICE = new-api
@@ -8,9 +13,26 @@ DEV_POSTGRES_DB = new-api
 DEV_POSTGRES_USER = root
 DEV_SQLITE_PATH ?= one-api.db
 
-.PHONY: all build-web build-all-web start-api dev dev-api dev-api-rebuild dev-web reset-setup test
+.PHONY: all app server web build-web build-all-web start-api dev dev-api dev-api-rebuild dev-web reset-setup test
 
 all: build-all-web start-api
+
+app:
+	@echo "Starting WeChat mini program compiler..."
+	@echo "Mini program API: $(MINIAPP_API_BASE_URL)"
+	@cd $(MINIAPP_DIR) && bun install --frozen-lockfile
+	@cd $(MINIAPP_DIR) && MINIAPP_API_BASE_URL='$(MINIAPP_API_BASE_URL)' bun run dev:weapp -- --no-check
+
+server:
+	@echo "Starting backend: http://127.0.0.1:$(DEV_API_PORT)"
+	@echo "Loading backend configuration from system environment and root .env..."
+	@cd $(API_DIR) && GOWORK=off go run . --port $(DEV_API_PORT)
+
+web:
+	@echo "Starting web frontend: http://$(DEV_WEB_HOST):$(DEV_WEB_PORT)"
+	@echo "Web API proxy: $(DEV_API_BASE_URL)"
+	@cd $(WEB_DIR) && bun install --frozen-lockfile
+	@cd $(WEB_DIR) && VITE_REACT_APP_SERVER_URL='$(DEV_API_BASE_URL)' bun run dev -- --host $(DEV_WEB_HOST) --port $(DEV_WEB_PORT)
 
 build-web:
 	@echo "Building web frontend..."

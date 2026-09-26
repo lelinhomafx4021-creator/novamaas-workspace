@@ -68,6 +68,8 @@ export interface DrawingLogFilters extends CommonFilters {
  */
 export interface TaskLogFilters extends CommonFilters {
   taskId?: string
+  username?: string
+  model?: string
 }
 
 /**
@@ -239,6 +241,7 @@ export interface LogOtherData {
   request_body?: unknown
   temporary_media_converted?: boolean
   temporary_media_converted_count?: number
+  request_metrics?: TaskRequestMetrics
   reason?: string
   // Subscription billing fields
   subscription_plan_id?: string
@@ -295,10 +298,22 @@ export interface MidjourneyLog {
 // Task Logs Types
 // ============================================================================
 
+export interface TaskRequestMetrics {
+  request_body_bytes: number
+  upstream_body_bytes: number
+  body_read_ms: number
+  request_preparation_ms: number
+  temporary_storage_ms: number
+  upstream_request_ms: number
+  total_ms: number
+  attempts: number
+}
+
 export interface TaskLog {
   id: number
   user_id: number
   username?: string
+  model_name?: string
   platform: string // suno, kling, runway, etc.
   task_id: string
   action: string // MUSIC, LYRICS, GENERATE, TEXT_GENERATE, etc.
@@ -312,6 +327,7 @@ export interface TaskLog {
   result_url?: string
   status: string // NOT_START, SUBMITTED, IN_PROGRESS, SUCCESS, FAILURE, QUEUED, UNKNOWN
   request_body_available?: boolean
+  request_metrics?: TaskRequestMetrics
   other?: string
   created_at?: number
   updated_at?: number
@@ -388,6 +404,8 @@ export interface GetTaskLogsParams {
   page_size?: number
   channel_id?: string
   task_id?: string
+  username?: string
+  model_name?: string
   start_timestamp?: number
   end_timestamp?: number
 }

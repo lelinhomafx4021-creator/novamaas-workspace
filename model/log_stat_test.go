@@ -35,6 +35,7 @@ func TestSumLogStatisticsUsesNetRevenueAndConsistentFilters(t *testing.T) {
 	assert.Equal(t, int64(2345), stat.RefundQuota)
 	assert.Equal(t, int64(10000), stat.RevenueQuota)
 	assert.Equal(t, int64(2), stat.Records)
+	assert.Equal(t, int64(1), stat.Requests)
 	assert.Equal(t, 1, stat.Rpm)
 	assert.Equal(t, 120, stat.Tpm)
 
@@ -48,6 +49,7 @@ func TestSumLogStatisticsUsesNetRevenueAndConsistentFilters(t *testing.T) {
 	assert.Zero(t, consumeOnly.RefundQuota)
 	assert.Equal(t, int64(12345), consumeOnly.RevenueQuota)
 	assert.Equal(t, int64(1), consumeOnly.Records)
+	assert.Equal(t, int64(1), consumeOnly.Requests)
 
 	refundOnly, err := SumLogStatistics(CostAccountingFilter{
 		Username:          "regular-user",
@@ -59,4 +61,5 @@ func TestSumLogStatisticsUsesNetRevenueAndConsistentFilters(t *testing.T) {
 	assert.Equal(t, int64(2345), refundOnly.RefundQuota)
 	assert.Equal(t, int64(-2345), refundOnly.RevenueQuota)
 	assert.Equal(t, int64(1), refundOnly.Records)
+	assert.Zero(t, refundOnly.Requests)
 }

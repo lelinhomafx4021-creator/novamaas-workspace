@@ -420,6 +420,8 @@ export function formatDuration(
  */
 const AUDIT_TEMPLATES: Record<string, string> = {
   login: 'Logged in successfully via {{method}}',
+  'asset.upload_aksk':
+    'Uploaded asset {{name}} via AK/SK access key {{accessKeyName}} (ID: {{id}})',
   // User management
   'user.create': 'Created user {{username}} (role {{role}})',
   'user.update': 'Updated user {{username}} (ID: {{id}})',

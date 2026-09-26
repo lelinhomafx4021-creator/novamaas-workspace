@@ -23,6 +23,7 @@ import {
   FileText,
   ClipboardCheck,
   FlaskConical,
+  Images,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -85,6 +86,11 @@ export function useSidebarData(): SidebarData {
             title: t('API Keys'),
             url: '/keys',
             icon: Key,
+          },
+          {
+            title: t('Asset Library'),
+            url: '/assets',
+            icon: Images,
           },
           {
             title: t('Usage Logs'),

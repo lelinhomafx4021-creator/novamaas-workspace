@@ -1,0 +1,15 @@
+.models-filters {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14rpx;
+}
+
+.model-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 240rpx;
+}
+
+.model-card__arrow {
+  color: #6366f1;
+  font-size: 42rpx;
+}

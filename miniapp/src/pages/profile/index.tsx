@@ -7,7 +7,8 @@ import { useTranslation } from 'react-i18next'
 import { ApiRequestError } from '@/api/request'
 import {
   bindMiniAppAccount,
-  loginWithWeChat,
+  loginWithPassword,
+  loginWithWeChatPhone,
   logoutMiniApp,
   registerMiniAppAccount,
   sendMiniAppEmailVerification,
@@ -37,6 +38,9 @@ const authErrorKeys: Record<string, string> = {
   MINI_AUTH_REGISTRATION_DISABLED: 'auth.error.registrationDisabled',
   MINI_AUTH_ACCOUNT_UNAVAILABLE: 'auth.error.accountUnavailable',
   MINI_AUTH_PASSWORD_LOGIN_DISABLED: 'auth.error.passwordLoginDisabled',
+  MINI_AUTH_PHONE_CODE_INVALID: 'auth.error.phoneCodeInvalid',
+  MINI_AUTH_PHONE_CONFLICT: 'auth.error.phoneConflict',
+  MINI_AUTH_PHONE_REQUIRED: 'auth.error.phoneRequired',
 }
 
 export default function ProfilePage() {
@@ -45,6 +49,7 @@ export default function ProfilePage() {
     getMiniAuthSession()
   )
   const [binding, setBinding] = useState<MiniBindingRequiredData | null>(null)
+  const [accountLoginOpen, setAccountLoginOpen] = useState(false)
   const [mode, setMode] = useState<'bind' | 'register'>('bind')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -72,18 +77,44 @@ export default function ProfilePage() {
     setErrorKey('auth.error.generic')
   }
 
-  const startLogin = async () => {
+  const finishLogin = (result: Awaited<ReturnType<typeof loginWithWeChatPhone>>) => {
+    if (result.kind === 'authenticated') {
+      setSession(result.session)
+      setBinding(null)
+      setAccountLoginOpen(false)
+    } else {
+      setBinding(result.binding)
+      setMode(result.binding.password_login_enabled ? 'bind' : 'register')
+    }
+  }
+
+  const startPhoneLogin = async (phoneCode?: string) => {
+    if (!phoneCode) {
+      setAccountLoginOpen(true)
+      setErrorKey('auth.error.phoneUnavailable')
+      return
+    }
     setBusy(true)
     setErrorKey('')
     try {
-      const result = await loginWithWeChat()
-      if (result.kind === 'authenticated') {
-        setSession(result.session)
-        setBinding(null)
-      } else {
-        setBinding(result.binding)
-        setMode(result.binding.password_login_enabled ? 'bind' : 'register')
-      }
+      finishLogin(await loginWithWeChatPhone(phoneCode))
+    } catch (error) {
+      setAccountLoginOpen(true)
+      showError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submitAccountLogin = async () => {
+    setBusy(true)
+    setErrorKey('')
+    try {
+      const authenticated = await loginWithPassword({ username, password, twoFactorCode })
+      setSession(authenticated)
+      setAccountLoginOpen(false)
+      setPassword('')
+      setTwoFactorCode('')
     } catch (error) {
       showError(error)
     } finally {
@@ -202,6 +233,54 @@ export default function ProfilePage() {
     )
   }
 
+  if (accountLoginOpen && !binding) {
+    return (
+      <PageShell
+        eyebrow={t('auth.eyebrow')}
+        title={t('auth.accountLoginTitle')}
+        description={t('auth.accountLoginDescription')}
+      >
+        <View className='profile-card profile-form'>
+          <Input
+            className='profile-input'
+            value={username}
+            maxlength={50}
+            placeholder={t('auth.username')}
+            onInput={(event) => setUsername(event.detail.value)}
+          />
+          <Input
+            className='profile-input'
+            value={password}
+            password
+            maxlength={128}
+            placeholder={t('auth.password')}
+            onInput={(event) => setPassword(event.detail.value)}
+          />
+          {twoFactorRequired ? (
+            <Input
+              className='profile-input'
+              value={twoFactorCode}
+              maxlength={32}
+              placeholder={t('auth.twoFactorCode')}
+              onInput={(event) => setTwoFactorCode(event.detail.value)}
+            />
+          ) : null}
+          {errorKey ? <Text className='profile-card__error'>{t(errorKey)}</Text> : null}
+          <Button
+            className='profile-button'
+            disabled={busy || !username.trim() || !password}
+            onClick={submitAccountLogin}
+          >
+            {busy ? t('auth.busy') : t('auth.accountLoginSubmit')}
+          </Button>
+          <Button className='profile-link' onClick={() => { setAccountLoginOpen(false); setErrorKey('') }}>
+            {t('auth.accountLoginBack')}
+          </Button>
+        </View>
+      </PageShell>
+    )
+  }
+
   if (!binding) {
     return (
       <PageShell
@@ -213,8 +292,16 @@ export default function ProfilePage() {
           {errorKey ? (
             <Text className='profile-card__error'>{t(errorKey)}</Text>
           ) : null}
-          <Button className='profile-button' disabled={busy} onClick={startLogin}>
-            {busy ? t('auth.signingIn') : t('auth.wechatLogin')}
+          <Button
+            className='profile-button'
+            disabled={busy}
+            openType='getPhoneNumber'
+            onGetPhoneNumber={(event) => startPhoneLogin(event.detail.code)}
+          >
+            {busy ? t('auth.signingIn') : t('auth.wechatPhoneLogin')}
+          </Button>
+          <Button className='profile-button profile-button--secondary' disabled={busy} onClick={() => { setAccountLoginOpen(true); setErrorKey('') }}>
+            {t('auth.existingWeChatLogin')}
           </Button>
         </View>
       </PageShell>

@@ -62,6 +62,17 @@ func IsTwoFAEnabled(userId int) (bool, error) {
 	return twoFA != nil && twoFA.IsEnabled, nil
 }
 
+func IsTwoFAEnabledWithTx(tx *gorm.DB, userId int) (bool, error) {
+	if tx == nil || userId <= 0 {
+		return false, errors.New("invalid two-factor lookup")
+	}
+	var count int64
+	if err := tx.Model(&TwoFA{}).Where("user_id = ? AND is_enabled = ?", userId, true).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // CreatePendingTwoFASetup stores a disabled factor while the user completes
 // enrollment. Enabling a factor must use EnableWithAuthVersion.
 func (t *TwoFA) CreatePendingTwoFASetup() error {

@@ -29,8 +29,8 @@ type Loadable<T> =
   | { phase: 'ready'; data: T }
 
 type ConnectionState =
-  | { phase: 'loading' | 'not-configured' | 'error' }
-  | { phase: 'ready'; data: PlatformStatus }
+  | { phase: 'loading' | 'not-configured' | 'error'; apiBaseUrl?: string }
+  | { phase: 'ready'; apiBaseUrl: string; data: PlatformStatus }
 
 export default function HomePage() {
   const { t } = useTranslation()
@@ -59,7 +59,7 @@ export default function HomePage() {
       return
     }
 
-    setConnection({ phase: 'loading' })
+    setConnection({ phase: 'loading', apiBaseUrl })
     setNotice({ phase: 'loading' })
     if (signedIn) {
       setAccount({ phase: 'loading' })
@@ -83,8 +83,8 @@ export default function HomePage() {
     const statusResult = results[0]
     setConnection(
       statusResult.status === 'fulfilled'
-        ? { phase: 'ready', data: statusResult.value as PlatformStatus }
-        : { phase: 'error' }
+        ? { phase: 'ready', apiBaseUrl, data: statusResult.value as PlatformStatus }
+        : { phase: 'error', apiBaseUrl }
     )
     const noticeResult = results[1]
     setNotice(
@@ -171,6 +171,11 @@ export default function HomePage() {
           <View className={statusClassName} />
         </View>
         <Text className='home-status__message'>{statusText}</Text>
+        {connection.apiBaseUrl && connection.phase !== 'loading' ? (
+          <Text className='home-status__endpoint'>
+            {t('home.backendAddress', { address: connection.apiBaseUrl })}
+          </Text>
+        ) : null}
         {connection.phase === 'error' ? (
           <Button className='home-status__button' onClick={() => setReloadCount((count) => count + 1)}>
             {t('common.retry')}

@@ -22,6 +22,7 @@ import { getMiniAuthSession } from '@/auth/session'
 import { PageShell } from '@/components/page-shell'
 import { useQuotaDisplay } from '@/currency/context'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { buildMediaPreviewRoute } from '@/usage/media-preview-route'
 import {
   getCacheTokens,
   getDrawingDuration,
@@ -489,7 +490,8 @@ export default function UsagePage() {
     }
     try {
       const result = await Taro.downloadFile(await getTaskResultDownloadOptions(asset.url))
-      await Taro.previewMedia({ sources: [{ url: result.tempFilePath, type: asset.kind }] })
+      if (result.statusCode < 200 || result.statusCode >= 300) throw new Error('MEDIA_DOWNLOAD_FAILED')
+      await Taro.navigateTo({ url: buildMediaPreviewRoute(asset.kind, result.tempFilePath) })
     } catch {
       setError(true)
     }

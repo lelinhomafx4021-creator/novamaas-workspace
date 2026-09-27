@@ -24,6 +24,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { MiniappMediaCard } from './miniapp-media-card'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
@@ -64,6 +65,11 @@ const MODELS_SECTIONS = [
         }}
       />
     ),
+  },
+  {
+    id: 'miniapp-media',
+    titleKey: 'Mini Program Media',
+    build: (settings: ModelSettings) => <MiniappMediaCard value={settings['miniapp.playground_media']} />,
   },
   {
     id: 'routing-reliability',

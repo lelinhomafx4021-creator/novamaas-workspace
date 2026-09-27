@@ -35,22 +35,25 @@ func Playground(c *gin.Context) {
 		return
 	}
 
-	userId := c.GetInt("id")
-
-	// Write user context to ensure acceptUnsetRatio is available
-	userCache, err := model.GetUserCache(userId)
-	if err != nil {
+	if err := setupPlaygroundToken(c, relayInfo.UsingGroup); err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		return
 	}
-	userCache.WriteContext(c)
-
-	tempToken := &model.Token{
-		UserId: userId,
-		Name:   fmt.Sprintf("playground-%s", relayInfo.UsingGroup),
-		Group:  relayInfo.UsingGroup,
-	}
-	_ = middleware.SetupContextForToken(c, tempToken)
 
 	Relay(c, types.RelayFormatOpenAI)
+}
+
+func setupPlaygroundToken(c *gin.Context, group string) error {
+	userId := c.GetInt("id")
+	userCache, err := model.GetUserCache(userId)
+	if err != nil {
+		return err
+	}
+	userCache.WriteContext(c)
+	tempToken := &model.Token{
+		UserId: userId,
+		Name:   fmt.Sprintf("playground-%s", group),
+		Group:  group,
+	}
+	return middleware.SetupContextForToken(c, tempToken)
 }

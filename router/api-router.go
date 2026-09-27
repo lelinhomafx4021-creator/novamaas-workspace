@@ -60,6 +60,8 @@ func SetApiRouter(router *gin.Engine) {
 		miniAuthRoute.Use(middleware.CriticalRateLimit(), middleware.DisableCache(), anonymousRequestBodyLimit)
 		{
 			miniAuthRoute.POST("/login", controller.MiniAppLogin)
+			miniAuthRoute.POST("/password", controller.MiniAppPasswordLogin)
+			miniAuthRoute.POST("/phone", controller.MiniAppPhoneLogin)
 			miniAuthRoute.POST("/bind", controller.MiniAppBind)
 			miniAuthRoute.POST("/register", controller.MiniAppRegister)
 			miniAuthRoute.POST("/verification", middleware.EmailVerificationRateLimit(), controller.MiniAppSendEmailVerification)
@@ -139,6 +141,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.GET("/models", controller.GetUserModels)
+				selfRoute.GET("/playground/media", controller.GetPlaygroundMedia)
 				selfRoute.PUT("/self", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateSelf)
 				selfRoute.DELETE("/self", controller.DeleteSelf)
 				selfRoute.GET("/token", middleware.CriticalRateLimit(), middleware.UserCriticalRateLimit("access-token"), middleware.DisableCache(), controller.GenerateAccessToken)

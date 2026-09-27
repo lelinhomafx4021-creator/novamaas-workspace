@@ -107,6 +107,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#41](https://github.com/yeruyi1024/novamaas-workspace/pull/41) | 2026-09-27 | `feat` | 微信小程序 / 登录认证 / 多媒体对话 | 增加经微信服务端验证的手机号归属与系统分配号码过渡、独立账号密码及 2FA 登录回退；图片输入、语音转写和合成经后台模型能力配置、用户鉴权与现有渠道计费链处理。 | NovaMaaS 下游专属；上游当前没有等价的小程序手机号安全归属、独立移动登录回退和受控多媒体对话组合实现。 |
 | [#39](https://github.com/yeruyi1024/novamaas-workspace/pull/39) | 2026-09-24 | `feat` | 素材库 / 渠道请求日志 / 任务日志 | 素材组搜索分页、素材预览下载和上游审核拒绝后的不可用状态及视频请求反馈；渠道测试与同步请求采用有界异步 MySQL 日志及脱敏详情，任务日志支持用户名和模型检索。 | NovaMaaS 下游专属；上游当前没有等价的素材审核状态联动、渠道请求诊断及此任务日志检索组合实现。 |
 | [#37](https://github.com/yeruyi1024/novamaas-workspace/pull/37) | 2026-09-23 | `feat` | 素材库 / 下游兼容 API | 新增平台签发并加密保存的用户级素材库 AK/SK，在根路径和 `/api/v3/` 提供火山方舟同形态的 HMAC-SHA256 V4 Action API；支持公网 URL 安全导入、租户隔离、下游密钥自助管理和大规模素材分页检索。 | NovaMaaS 下游专属；上游当前没有面向下游客户的平台素材库 AK/SK、同路径 Action API、URL 导入与租户隔离组合实现。 |
 | [#36](https://github.com/yeruyi1024/novamaas-workspace/pull/36) | 2026-09-22 | `feat` | 素材库 / 对象存储 / 视频渠道 | 新增网关自有永久素材库、租户权限与签名预览，按渠道维护上游副本和同步任务；支持 Volcengine Action AK/SK、Bearer 及 YooFang REST Bearer SK，并在 DoubaoVideo 和火山原生请求中将我方素材 ID 实时翻译为对应渠道 ID。 | NovaMaaS 下游专属；上游当前没有等价的自有素材库、多渠道副本同步、加密渠道凭据与请求时 ID 映射组合实现。 |

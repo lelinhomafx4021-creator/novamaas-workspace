@@ -166,8 +166,39 @@ func TestBillingStartAndCorporateProfileVersionAreAudited(t *testing.T) {
 	assert.Contains(t, events[0].Snapshot, "测试企业")
 	assert.Contains(t, events[1].Snapshot, "更新企业")
 	past := int64(1)
-	_, err = SaveBillingAccount(id, 1, updated.ProfileVersion, "更新企业", "NEW-TAX", &past)
-	require.Error(t, err)
+	backdated, err := SaveBillingAccount(id, 1, updated.ProfileVersion, "更新企业", "NEW-TAX", &past)
+	require.NoError(t, err)
+	assert.Equal(t, past, backdated.AccountingStartAt)
+	_, err = PostBillingAdjustment(&BillingEntry{EventKey: "after-start", UserID: id, Kind: "usage", Quota: 100, WalletDelta: -100}, nil)
+	require.NoError(t, err)
+	future := common.GetTimestamp() + 2*366*86400
+	_, err = SaveBillingAccount(id, 1, backdated.ProfileVersion, "更新企业", "NEW-TAX", &future)
+	require.ErrorContains(t, err, "accounting start is locked")
+}
+
+func TestBillingAdministratorCanChoosePastOrDistantFutureStart(t *testing.T) {
+	truncateTables(t)
+	user := User{Id: 902, Username: "billing_admin_target", Quota: 10000, Status: common.UserStatusEnabled}
+	require.NoError(t, DB.Create(&user).Error)
+	_, err := PostBillingAdjustment(&BillingEntry{EventKey: "before-formal-start", UserID: user.Id, Kind: "usage", Quota: 100, WalletDelta: -100}, nil)
+	require.NoError(t, err)
+	past := common.GetTimestamp() - 86400
+	account, err := SaveBillingAccount(user.Id, 1, 0, "Company", "TAX", &past)
+	require.NoError(t, err)
+	assert.Equal(t, past, account.AccountingStartAt)
+	assert.Equal(t, int64(2), account.StartSequence, "past start must not silently import earlier usage")
+	var hours int64
+	require.NoError(t, DB.Model(&BillingHour{}).Where("user_id = ?", user.Id).Count(&hours).Error)
+	assert.Zero(t, hours)
+
+	future := common.GetTimestamp() + 2*366*86400
+	account, err = SaveBillingAccount(user.Id, 1, account.ProfileVersion, "Company", "TAX", &future)
+	require.NoError(t, err)
+	assert.Equal(t, future, account.AccountingStartAt)
+
+	unsupported := int64(-1)
+	_, err = SaveBillingAccount(user.Id, 1, account.ProfileVersion, "Company", "TAX", &unsupported)
+	assert.ErrorIs(t, err, ErrBillingStartInvalid)
 }
 
 func TestUsageEvidenceCannotBeDeletedOrDisabled(t *testing.T) {

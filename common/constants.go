@@ -15,6 +15,8 @@ var Version = "v0.0.0"            // this hard coding will be replaced automatic
 var SystemName = "New API"
 var Footer = ""
 var Logo = ""
+var OperatingEntityName = ""
+var OperatingEntityLogo = ""
 var TopUpLink = ""
 
 // var ChatLink = ""

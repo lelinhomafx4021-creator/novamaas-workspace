@@ -3,6 +3,8 @@ package controller
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +31,38 @@ func TestBillingBrandingFailureReturnsActionableErrorCode(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.Equal(t, "BILLING_BRANDING_INVALID", response.Code)
+}
+
+func TestBillingBlockedLogoFetchReturnsNetworkPolicyCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	billingError(ctx, fmt.Errorf("%w: %w", service.ErrBillingDocumentBranding, service.ErrBillingLogoFetchBlocked))
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	var response struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.Equal(t, "BILLING_BRANDING_FETCH_BLOCKED", response.Code)
+}
+
+func TestBillingInvalidStartHasDifferentErrorCodeFromLockedStart(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		code string
+	}{
+		{model.ErrBillingStartInvalid, "BILLING_START_INVALID"},
+		{errors.New("accounting start is locked after the first posted entry"), "BILLING_START_LOCKED"},
+	} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		billingError(ctx, test.err)
+		assert.Equal(t, http.StatusBadRequest, recorder.Code)
+		var response struct {
+			Code string `json:"code"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		assert.Equal(t, test.code, response.Code)
+	}
 }
 
 func TestBillingControllerOwnershipAndSessionBoundary(t *testing.T) {

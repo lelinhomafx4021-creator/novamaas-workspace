@@ -171,7 +171,7 @@ function BillingProfileForm(props: {
             </Field>
             <Field>
               <FieldLabel htmlFor={`${id}-time`}>
-                {t('Accounting start')}
+                {t('Accounting start')} (Asia/Shanghai)
               </FieldLabel>
               <Input
                 id={`${id}-time`}
@@ -181,7 +181,7 @@ function BillingProfileForm(props: {
               />
               <FieldDescription>
                 {t(
-                  'Leave empty to start now. Earlier usage logs remain historical records.'
+                  'Leave empty to start now. A past start does not import earlier usage; review and import it before issuing a statement.'
                 )}
               </FieldDescription>
             </Field>

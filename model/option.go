@@ -1,9 +1,12 @@
 package model
 
 import (
+	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
@@ -73,6 +76,8 @@ func InitOptionMap() {
 	common.OptionMap["Footer"] = common.Footer
 	common.OptionMap["SystemName"] = common.SystemName
 	common.OptionMap["Logo"] = common.Logo
+	common.OptionMap["OperatingEntityName"] = common.OperatingEntityName
+	common.OptionMap["OperatingEntityLogo"] = common.OperatingEntityLogo
 	common.OptionMap["ServerAddress"] = ""
 	common.OptionMap["WorkerUrl"] = system_setting.WorkerUrl
 	common.OptionMap["WorkerValidKey"] = system_setting.WorkerValidKey
@@ -208,6 +213,17 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == "OperatingEntityName" {
+		if utf8.RuneCountInString(strings.TrimSpace(value)) > 120 {
+			return errors.New("operating entity name exceeds 120 characters")
+		}
+	}
+	if key == "OperatingEntityLogo" && value != "" {
+		parsed, err := url.Parse(value)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
+			return errors.New("operating entity logo must be an HTTP(S) URL without credentials or a fragment")
+		}
+	}
 	if key == model_setting.MiniAppPlaygroundMediaOptionKey {
 		return model_setting.ValidateMiniAppPlaygroundMedia(value)
 	}
@@ -527,6 +543,10 @@ func updateOptionMap(key string, value string) (err error) {
 		common.SystemName = value
 	case "Logo":
 		common.Logo = value
+	case "OperatingEntityName":
+		common.OperatingEntityName = value
+	case "OperatingEntityLogo":
+		common.OperatingEntityLogo = value
 	case "WeChatServerAddress":
 		common.WeChatServerAddress = value
 	case "WeChatServerToken":

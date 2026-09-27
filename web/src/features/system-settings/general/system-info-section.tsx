@@ -49,6 +49,8 @@ const _systemInfoSchema = z.object({
   SystemName: z.string().min(1),
   ServerAddress: z.string().optional(),
   Logo: z.string().url().optional().or(z.literal('')),
+  OperatingEntityName: z.string().max(120),
+  OperatingEntityLogo: z.string().url().optional().or(z.literal('')),
   Footer: z.string().optional(),
   About: z.string().optional(),
   HomePageContent: z.string().optional(),
@@ -77,6 +79,8 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     SystemName: normalizeValue(defaultValues.SystemName),
     ServerAddress: normalizeValue(defaultValues.ServerAddress),
     Logo: normalizeValue(defaultValues.Logo),
+    OperatingEntityName: normalizeValue(defaultValues.OperatingEntityName),
+    OperatingEntityLogo: normalizeValue(defaultValues.OperatingEntityLogo),
     Footer: normalizeValue(defaultValues.Footer),
     About: normalizeValue(defaultValues.About),
     HomePageContent: normalizeValue(defaultValues.HomePageContent),
@@ -92,6 +96,16 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     }),
     ServerAddress: z.string().optional(),
     Logo: z.string().url().optional().or(z.literal('')),
+    OperatingEntityName: z.string().max(120, {
+      error: () => t('Operating entity name must be 120 characters or fewer'),
+    }),
+    OperatingEntityLogo: z
+      .string()
+      .url({ error: () => t('Enter an HTTP or HTTPS image URL') })
+      .or(z.literal(''))
+      .refine((value) => value === '' || /^https?:\/\//i.test(value), {
+        error: () => t('Enter an HTTP or HTTPS image URL'),
+      }),
     Footer: z.string().optional(),
     About: z.string().optional(),
     HomePageContent: z.string().optional(),
@@ -114,6 +128,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
           let v = normalizeValue(value)
           if (key === 'ServerAddress') {
             v = v.replace(/\/+$/, '')
+          }
+          if (key === 'OperatingEntityName' || key === 'OperatingEntityLogo') {
+            v = v.trim()
           }
           await updateOption.mutateAsync({
             key,
@@ -188,6 +205,45 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     </FormControl>
                     <FormDescription>
                       {t('URL to your logo image (optional)')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='OperatingEntityName'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Operating entity name')}</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Legal entity name shown on PDF documents (optional)')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='OperatingEntityLogo'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Operating entity logo URL')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder='https://example.com/operator-logo.png'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Use a public image URL. New billing statements archive a copy of this logo.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

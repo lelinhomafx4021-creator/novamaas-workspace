@@ -100,4 +100,15 @@ describe('statement downloads', () => {
       'Unable to prepare PDF branding. Check the system Logo URL and Footer settings, then try again.'
     )
   })
+
+  test('explains DNS and proxy checks when the PDF logo fetch is blocked', () => {
+    expect(
+      getServerErrorMessageKey({
+        code: 'BILLING_BRANDING_FETCH_BLOCKED',
+        message: 'private IP address not allowed: internal detail',
+      })
+    ).toBe(
+      'The server blocked a PDF logo download. Check the server DNS and proxy settings so the configured image domain resolves to a public IP.'
+    )
+  })
 })

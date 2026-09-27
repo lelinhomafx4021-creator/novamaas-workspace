@@ -35,17 +35,103 @@ func (doc *billingPDFDocument) headerV3(snapshot *BillingSnapshot, page, pages i
 	}
 	scale := math.Min(38/float64(config.Width), 38/float64(config.Height))
 	width, height := float64(config.Width)*scale, float64(config.Height)*scale
-	if doc.err = doc.pdf.ImageByHolder(mark, 40+(38-width)/2, 33+(38-height)/2, &gopdf.Rect{W: width, H: height}); doc.err != nil {
+	platformTop, titleTop := 33.0, 34.0
+	if snapshot.PDFTemplateVersion == 6 {
+		platformTop, titleTop = 42, 43
+	}
+	if doc.err = doc.pdf.ImageByHolder(mark, 40+(38-width)/2, platformTop+(38-height)/2, &gopdf.Rect{W: width, H: height}); doc.err != nil {
 		return
 	}
 	doc.pdf.SetTextColor(25, 51, 94)
-	end := doc.text(90, 34, 465, 15, snapshot.Issuer)
+	platformWidth := 465.0
+	if snapshot.PDFTemplateVersion >= 4 && (len(snapshot.PDFOperatingLogoPNG) > 0 || snapshot.OperatingName != "") {
+		platformWidth = 335
+	}
+	end := doc.text(90, titleTop, platformWidth, 15, snapshot.Issuer)
 	if end > 80 {
 		doc.err = errors.New("platform name exceeds PDF letterhead")
 		return
 	}
 	doc.pdf.SetTextColor(90, 106, 129)
-	doc.text(90, end+1, 465, 8, "CUSTOMER RECONCILIATION  /  客户服务消费对账")
+	if snapshot.PDFTemplateVersion == 6 && platformWidth < 465 {
+		doc.text(90, end+1, platformWidth, 7.5, "CUSTOMER RECONCILIATION  /  客户服务消费对账")
+		if len(snapshot.PDFOperatingLogoPNG) > 0 {
+			config, _, err := image.DecodeConfig(bytes.NewReader(snapshot.PDFOperatingLogoPNG))
+			if err != nil || config.Width <= 0 || config.Height <= 0 {
+				doc.err = errors.New("billing document operating entity logo is invalid")
+				return
+			}
+			operatingMark, err := gopdf.ImageHolderByBytes(snapshot.PDFOperatingLogoPNG)
+			if err != nil {
+				doc.err = err
+				return
+			}
+			scale := math.Min(125/float64(config.Width), 40/float64(config.Height))
+			width, height := float64(config.Width)*scale, float64(config.Height)*scale
+			if doc.err = doc.pdf.ImageByHolder(operatingMark, 555-width, 42+(40-height)/2, &gopdf.Rect{W: width, H: height}); doc.err != nil {
+				return
+			}
+		} else {
+			doc.right(430, 54, 125, 10, snapshot.OperatingName)
+		}
+	} else if snapshot.PDFTemplateVersion == 5 && platformWidth < 465 {
+		doc.text(90, end+1, platformWidth, 7.5, "CUSTOMER RECONCILIATION  /  客户服务消费对账")
+		if len(snapshot.PDFOperatingLogoPNG) > 0 {
+			config, _, err := image.DecodeConfig(bytes.NewReader(snapshot.PDFOperatingLogoPNG))
+			if err != nil || config.Width <= 0 || config.Height <= 0 {
+				doc.err = errors.New("billing document operating entity logo is invalid")
+				return
+			}
+			operatingMark, err := gopdf.ImageHolderByBytes(snapshot.PDFOperatingLogoPNG)
+			if err != nil {
+				doc.err = err
+				return
+			}
+			scale := math.Min(125/float64(config.Width), 40/float64(config.Height))
+			width, height := float64(config.Width)*scale, float64(config.Height)*scale
+			if doc.err = doc.pdf.ImageByHolder(operatingMark, 555-width, 34+(40-height)/2, &gopdf.Rect{W: width, H: height}); doc.err != nil {
+				return
+			}
+		}
+		label := snapshot.OperatingName
+		if label == "" {
+			label = "运营主体 / OPERATOR"
+		}
+		labelY := 79.0
+		if len(snapshot.PDFOperatingLogoPNG) == 0 {
+			labelY = 47
+		}
+		doc.right(430, labelY, 125, 8, label)
+	} else if snapshot.PDFTemplateVersion == 4 && platformWidth < 465 {
+		doc.text(90, end+1, platformWidth, 7.5, "CUSTOMER RECONCILIATION  /  客户服务消费对账")
+		if len(snapshot.PDFOperatingLogoPNG) > 0 {
+			config, _, err := image.DecodeConfig(bytes.NewReader(snapshot.PDFOperatingLogoPNG))
+			if err != nil || config.Width <= 0 || config.Height <= 0 {
+				doc.err = errors.New("billing document operating entity logo is invalid")
+				return
+			}
+			operatingMark, err := gopdf.ImageHolderByBytes(snapshot.PDFOperatingLogoPNG)
+			if err != nil {
+				doc.err = err
+				return
+			}
+			scale := math.Min(34/float64(config.Width), 34/float64(config.Height))
+			width, height := float64(config.Width)*scale, float64(config.Height)*scale
+			if doc.err = doc.pdf.ImageByHolder(operatingMark, 518+(34-width)/2, 33+(34-height)/2, &gopdf.Rect{W: width, H: height}); doc.err != nil {
+				return
+			}
+		}
+		label := snapshot.OperatingName
+		if label == "" {
+			label = "运营主体 / OPERATOR"
+		}
+		if doc.text(430, 76, 125, 7, label) > 98 {
+			doc.err = errors.New("operating entity name exceeds PDF letterhead")
+			return
+		}
+	} else {
+		doc.text(90, end+1, 465, 8, "CUSTOMER RECONCILIATION  /  客户服务消费对账")
+	}
 	doc.pdf.SetStrokeColor(39, 71, 122)
 	doc.pdf.SetLineWidth(1.5)
 	doc.pdf.Line(40, 100, 555, 100)
@@ -77,6 +163,18 @@ func (doc *billingPDFDocument) headerV3(snapshot *BillingSnapshot, page, pages i
 	}
 	doc.right(500, 794, 55, 8, fmt.Sprintf("%02d / %02d", page, pages))
 	doc.pdf.SetTextColor(28, 43, 64)
+}
+
+func renderBillingStatementPDFV4(statement *model.BillingStatement, snapshot *BillingSnapshot, receipt bool) ([]byte, error) {
+	return renderBillingStatementPDFV3(statement, snapshot, receipt)
+}
+
+func renderBillingStatementPDFV5(statement *model.BillingStatement, snapshot *BillingSnapshot, receipt bool) ([]byte, error) {
+	return renderBillingStatementPDFV3(statement, snapshot, receipt)
+}
+
+func renderBillingStatementPDFV6(statement *model.BillingStatement, snapshot *BillingSnapshot, receipt bool) ([]byte, error) {
+	return renderBillingStatementPDFV3(statement, snapshot, receipt)
 }
 
 func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *BillingSnapshot, receipt bool) ([]byte, error) {

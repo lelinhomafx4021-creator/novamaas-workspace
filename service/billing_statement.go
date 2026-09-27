@@ -39,6 +39,8 @@ type BillingSnapshot struct {
 	SchemaVersion       int             `json:"schema_version"`
 	PDFTemplateVersion  int             `json:"pdf_template_version,omitempty"`
 	PDFLogoPNG          []byte          `json:"pdf_logo_png,omitempty"`
+	PDFOperatingLogoPNG []byte          `json:"pdf_operating_logo_png,omitempty"`
+	OperatingName       string          `json:"operating_name,omitempty"`
 	PDFFooter           string          `json:"pdf_footer,omitempty"`
 	Month               string          `json:"month"`
 	Timezone            string          `json:"timezone"`
@@ -359,7 +361,7 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 	}
 	branding, err := captureBillingDocumentBranding(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrBillingDocumentBranding, err)
+		return nil, fmt.Errorf("%w: %w", ErrBillingDocumentBranding, err)
 	}
 	statement := &model.BillingStatement{ID: common.GetUUID(), UserID: userID, CreatedBy: actorID, StorageProfileID: storageProfileID, Month: month}
 	err = model.CreateBillingStatement(statement, func(locked *model.BillingAccount, hours []model.BillingHour) (string, string, error) {
@@ -373,8 +375,9 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		if snapshot.Total.Count == 0 && hasHistory {
 			return "", "", ErrBillingHistoricalDataUnreconciled
 		}
-		snapshot.PDFTemplateVersion = 3
+		snapshot.PDFTemplateVersion = 6
 		snapshot.Issuer, snapshot.PDFLogoPNG, snapshot.PDFFooter = branding.Issuer, branding.LogoPNG, branding.Footer
+		snapshot.OperatingName, snapshot.PDFOperatingLogoPNG = branding.OperatingName, branding.OperatingLogoPNG
 		snapshot.Username, snapshot.DisplayName = customer.Username, customer.DisplayName
 		if len(imports) > 0 {
 			snapshot.HistoryImportID = imports[0].ID

@@ -78,6 +78,7 @@ type BillingHour struct {
 var ErrBillingConflict = errors.New("billing state changed; refresh and retry")
 var ErrBillingNotConfigured = errors.New("the administrator must configure the accounting start time first")
 var ErrBillingInsufficientQuota = errors.New("wallet quota insufficient")
+var ErrBillingStartInvalid = errors.New("invalid accounting timestamp")
 
 func GetBillingAccount(userID int) (*BillingAccount, error) {
 	var account BillingAccount
@@ -116,13 +117,12 @@ func SaveBillingAccount(userID, actorID int, expectedVersion int64, title, taxID
 			return ErrBillingConflict
 		}
 		if startAt != nil && (*startAt != account.AccountingStartAt || account.AccountingStartAt == 0) {
-			now := common.GetTimestamp()
 			start := *startAt
 			if start == 0 {
-				start = now
+				start = common.GetTimestamp()
 			}
-			if start < now || start > now+366*86400 {
-				return errors.New("accounting start must be now or a future time within one year")
+			if start < 0 {
+				return ErrBillingStartInvalid
 			}
 			var count int64
 			if err := tx.Model(&BillingStatement{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {

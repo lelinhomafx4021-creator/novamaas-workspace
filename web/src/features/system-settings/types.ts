@@ -137,6 +137,8 @@ export type SiteSettings = {
   Notice: string
   SystemName: string
   Logo: string
+  OperatingEntityName: string
+  OperatingEntityLogo: string
   Footer: string
   About: string
   HomePageContent: string

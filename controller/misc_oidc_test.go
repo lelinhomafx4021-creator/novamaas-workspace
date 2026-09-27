@@ -59,6 +59,27 @@ func TestGetStatusReturnsEffectiveOIDCDisplayName(t *testing.T) {
 	}
 }
 
+func TestGetStatusExposesOperatingEntityBranding(t *testing.T) {
+	savedName, savedLogo := common.OperatingEntityName, common.OperatingEntityLogo
+	t.Cleanup(func() {
+		common.OperatingEntityName, common.OperatingEntityLogo = savedName, savedLogo
+	})
+	common.OperatingEntityName = "Example Operator Ltd"
+	common.OperatingEntityLogo = "https://cdn.example/operator.png"
+
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	GetStatus(context)
+
+	var payload struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &payload))
+	assert.Equal(t, "Example Operator Ltd", payload.Data["operating_entity_name"])
+	assert.Equal(t, "https://cdn.example/operator.png", payload.Data["operating_entity_logo"])
+}
+
 func TestWeChatMiniAppStatusExposesReadinessWithoutCredentials(t *testing.T) {
 	t.Setenv("WECHAT_MINIAPP_APP_ID", "")
 	t.Setenv("WECHAT_MINIAPP_APP_SECRET", "")

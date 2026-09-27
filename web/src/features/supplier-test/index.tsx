@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TitledCard } from '@/components/ui/titled-card'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { fetchSupplierModels } from './api'
 import {
@@ -73,6 +74,7 @@ import {
   exportVideoPdfReport,
   stampFileName,
   type ReportInput,
+  type ReportBranding,
   type VideoReportInput,
 } from './report'
 import type {
@@ -131,6 +133,20 @@ function readStoredStandard(): SupplierStandard {
 
 export function SupplierTest() {
   const { t, i18n } = useTranslation()
+  const platformName = useSystemConfigStore((state) => state.config.systemName)
+  const platformLogo = useSystemConfigStore((state) => state.config.logo)
+  const operatingEntityName = useSystemConfigStore(
+    (state) => state.config.operatingEntityName
+  )
+  const operatingEntityLogo = useSystemConfigStore(
+    (state) => state.config.operatingEntityLogo
+  )
+  const branding: ReportBranding = {
+    platformName,
+    platformLogo,
+    operatingEntityName,
+    operatingEntityLogo,
+  }
   const [target, setTarget] = useState<TargetForm>({
     baseUrl: '',
     apiKey: '',
@@ -507,6 +523,7 @@ export function SupplierTest() {
 
   const reportInput = (): ReportInput => ({
     language: reportLanguage,
+    branding,
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
     vendor: target.vendor,
@@ -536,6 +553,7 @@ export function SupplierTest() {
 
   const videoReportInput = (): VideoReportInput => ({
     language: reportLanguage,
+    branding,
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
     endpointUrl: run.videoMetrics?.endpoint_url,
@@ -604,13 +622,17 @@ export function SupplierTest() {
         <Button
           variant='outline'
           disabled={busy || !hasReport}
-          onClick={() => {
-            if (isVideoTab) {
-              exportVideoPdfReport(videoReportInput())
-              toast.success(t('Video PDF report ready'))
-            } else {
-              exportPdfReport(reportInput())
-              toast.success(t('PDF report ready'))
+          onClick={async () => {
+            try {
+              if (isVideoTab) {
+                await exportVideoPdfReport(videoReportInput())
+                toast.success(t('Video PDF report ready'))
+              } else {
+                await exportPdfReport(reportInput())
+                toast.success(t('PDF report ready'))
+              }
+            } catch {
+              toast.error(t('PDF report could not be prepared'))
             }
           }}
         >
@@ -759,9 +781,13 @@ export function SupplierTest() {
                   startModule('video', checkId ? [checkId] : undefined)
                 }}
                 onManualQueryResult={run.updateVideoMetricsWithQueryResult}
-                onExportPdf={() => {
-                  exportVideoPdfReport(videoReportInput())
-                  toast.success(t('Video PDF report ready'))
+                onExportPdf={async () => {
+                  try {
+                    await exportVideoPdfReport(videoReportInput())
+                    toast.success(t('Video PDF report ready'))
+                  } catch {
+                    toast.error(t('PDF report could not be prepared'))
+                  }
                 }}
               />
             </TitledCard>

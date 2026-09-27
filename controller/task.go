@@ -152,6 +152,41 @@ func GetTaskRequestSnapshots(c *gin.Context) {
 	respondTaskRequestSnapshots(c, c.Param("task_id"), "")
 }
 
+func GetTaskPollHistory(c *gin.Context) {
+	taskID := c.Param("task_id")
+	if _, exists, err := model.GetByTaskIdForAdmin(taskID); err != nil {
+		common.ApiError(c, err)
+		return
+	} else if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "task not found"})
+		return
+	}
+	beforeID, err := strconv.ParseInt(c.DefaultQuery("before_id", "0"), 10, 64)
+	if err != nil || beforeID < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid before_id"})
+		return
+	}
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if err != nil || limit < 1 || limit > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "limit must be between 1 and 100"})
+		return
+	}
+	entries, err := model.ListTaskPollHistory(c.Request.Context(), taskID, beforeID, limit+1)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	hasMore := len(entries) > limit
+	if hasMore {
+		entries = entries[:limit]
+	}
+	var nextBeforeID int64
+	if hasMore {
+		nextBeforeID = entries[len(entries)-1].ID
+	}
+	common.ApiSuccess(c, gin.H{"items": entries, "next_before_id": nextBeforeID})
+}
+
 func GetLogRequestBody(c *gin.Context) {
 	taskID := c.Query("task_id")
 	requestID := c.Query("request_id")

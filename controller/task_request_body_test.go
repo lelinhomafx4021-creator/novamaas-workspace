@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -165,6 +166,34 @@ func TestGetTaskRequestSnapshotsReturnsOriginalAndUpstreamBodies(t *testing.T) {
 	assert.True(t, payload.Success)
 	assert.JSONEq(t, `{"model":"public-model","prompt":"hello"}`, string(payload.Data.Original))
 	assert.JSONEq(t, `{"model":"upstream-model","content":[{"type":"text","text":"hello"}]}`, string(payload.Data.Upstream))
+}
+
+func TestGetTaskPollHistoryReturnsOnlyRequestedTaskWithPagination(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskRequestBody{}))
+	previousDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = previousDB })
+	require.NoError(t, db.Create(&model.Task{TaskID: "history-task"}).Error)
+	require.NoError(t, model.RecordTaskPollHistory(context.Background(), "history-task", "QUEUED", 200, "", []byte(`{"status":"queued"}`)))
+	require.NoError(t, model.RecordTaskPollHistory(context.Background(), "history-task", "SUCCESS", 200, "", []byte(`{"status":"success"}`)))
+	require.NoError(t, model.RecordTaskPollHistory(context.Background(), "other-task", "FAILURE", 500, "failed", nil))
+
+	response := runTaskRequestBodyHandler(1, "history-task", GetTaskPollHistory)
+	assert.Equal(t, http.StatusOK, response.Code)
+	var payload struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items        []model.TaskPollHistoryEntry `json:"items"`
+			NextBeforeID int64                        `json:"next_before_id"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.DecodeJson(response.Body, &payload))
+	assert.True(t, payload.Success)
+	require.Len(t, payload.Data.Items, 2)
+	assert.Equal(t, "SUCCESS", payload.Data.Items[0].Status)
+	assert.Zero(t, payload.Data.NextBeforeID)
 }
 
 func TestGetTaskRequestBodyFallsBackToLegacyTaskProperty(t *testing.T) {

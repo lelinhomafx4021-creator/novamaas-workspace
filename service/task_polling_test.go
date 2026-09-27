@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 type taskPollingFetchAdaptor struct {
@@ -28,6 +30,27 @@ type taskPollingFetchAdaptor struct {
 	blockStarted chan struct{}
 	releaseBlock chan struct{}
 	blockOnce    sync.Once
+}
+
+type failingTaskPollingAdaptor struct{ taskPollingFetchAdaptor }
+
+type fixedResponsePollingAdaptor struct {
+	taskPollingFetchAdaptor
+	statusCode int
+	body       []byte
+	parseErr   error
+}
+
+func (a *fixedResponsePollingAdaptor) FetchTask(_ string, _ string, _ map[string]any, _ string) (*http.Response, error) {
+	return &http.Response{StatusCode: a.statusCode, Body: io.NopCloser(bytes.NewReader(a.body))}, nil
+}
+
+func (a *fixedResponsePollingAdaptor) ParseTaskResult(_ []byte) (*relaycommon.TaskInfo, error) {
+	return nil, a.parseErr
+}
+
+func (a *failingTaskPollingAdaptor) FetchTask(_ string, _ string, _ map[string]any, _ string) (*http.Response, error) {
+	return nil, errors.New("poll connection failed")
 }
 
 type sunoFailurePollingAdaptor struct {
@@ -223,6 +246,110 @@ func TestUpdateVideoTasksCanSkipPollingSleepPerChannel(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, adaptor.fetchCount())
+}
+
+func TestUpdateVideoSingleTaskArchivesPollResultsAndErrors(t *testing.T) {
+	truncate(t)
+	const channelID = 107
+	seedTaskPollingChannel(t, channelID, true)
+	task := seedPollingTask(t, channelID, "poll-history-public", "poll-history-upstream")
+	channel, err := model.CacheGetChannel(channelID)
+	require.NoError(t, err)
+	taskMap := map[string]*model.Task{task.GetUpstreamTaskID(): task}
+
+	adaptor := &taskPollingFetchAdaptor{}
+	require.NoError(t, updateVideoSingleTask(context.Background(), adaptor, channel, task.GetUpstreamTaskID(), taskMap))
+	require.NoError(t, updateVideoSingleTask(context.Background(), adaptor, channel, task.GetUpstreamTaskID(), taskMap))
+	entries, err := model.ListTaskPollHistory(context.Background(), task.TaskID, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, 2, entries[0].RepeatCount)
+	assert.Equal(t, 200, entries[0].HTTPStatus)
+	assert.Equal(t, string(model.TaskStatusInProgress), entries[0].Status)
+
+	err = updateVideoSingleTask(context.Background(), &failingTaskPollingAdaptor{}, channel, task.GetUpstreamTaskID(), taskMap)
+	require.ErrorContains(t, err, "poll connection failed")
+	entries, err = model.ListTaskPollHistory(context.Background(), task.TaskID, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	assert.Contains(t, entries[0].Error, "poll connection failed")
+}
+
+func TestUpdateVideoSingleTaskArchivesUpstreamAndStatusErrors(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		response   []byte
+		statusCode int
+		parseErr   error
+		wantError  string
+	}{
+		{
+			name:       "upstream HTTP and parse error",
+			response:   []byte(`{"error":{"message":"upstream exploded"}}`),
+			statusCode: http.StatusInternalServerError,
+			parseErr:   errors.New("invalid task response"),
+			wantError:  "invalid task response",
+		},
+		{
+			name:       "unknown upstream status",
+			response:   []byte(`{"code":"success","data":{"task_id":"invalid-status-public","status":"UNKNOWN"}}`),
+			statusCode: http.StatusOK,
+			wantError:  "unknown task status UNKNOWN",
+		},
+		{
+			name:       "parser returned no result",
+			response:   []byte(`{}`),
+			statusCode: http.StatusOK,
+			wantError:  "upstream response parser returned no task result",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			truncate(t)
+			const channelID = 109
+			seedTaskPollingChannel(t, channelID, true)
+			task := seedPollingTask(t, channelID, "invalid-status-public", "invalid-status-upstream")
+			channel, err := model.CacheGetChannel(channelID)
+			require.NoError(t, err)
+			adaptor := &fixedResponsePollingAdaptor{statusCode: test.statusCode, body: test.response, parseErr: test.parseErr}
+
+			err = updateVideoSingleTask(context.Background(), adaptor, channel, task.GetUpstreamTaskID(), map[string]*model.Task{task.GetUpstreamTaskID(): task})
+			require.Error(t, err)
+			entries, err := model.ListTaskPollHistory(context.Background(), task.TaskID, 0, 10)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			assert.Equal(t, test.statusCode, entries[0].HTTPStatus)
+			assert.Contains(t, entries[0].Error, test.wantError)
+			assert.JSONEq(t, string(test.response), string(entries[0].Response))
+			if test.statusCode == http.StatusInternalServerError {
+				assert.Contains(t, entries[0].Error, "upstream HTTP 500")
+			}
+		})
+	}
+}
+
+func TestUpdateVideoSingleTaskContinuesWhenHistoryWriteFails(t *testing.T) {
+	truncate(t)
+	const channelID = 108
+	seedTaskPollingChannel(t, channelID, true)
+	task := seedPollingTask(t, channelID, "history-write-failure", "history-write-upstream")
+	task.Progress = "10%"
+	require.NoError(t, model.DB.Model(task).Update("progress", task.Progress).Error)
+	channel, err := model.CacheGetChannel(channelID)
+	require.NoError(t, err)
+
+	callbackName := "test:fail_task_poll_history_insert"
+	require.NoError(t, model.DB.Callback().Create().Before("gorm:create").Register(callbackName, func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Dest.(*model.TaskRequestBody); ok {
+			tx.AddError(errors.New("archive unavailable"))
+		}
+	}))
+	t.Cleanup(func() { require.NoError(t, model.DB.Callback().Create().Remove(callbackName)) })
+
+	err = updateVideoSingleTask(context.Background(), &taskPollingFetchAdaptor{}, channel, task.GetUpstreamTaskID(), map[string]*model.Task{task.GetUpstreamTaskID(): task})
+	require.NoError(t, err)
+	var stored model.Task
+	require.NoError(t, model.DB.First(&stored, task.ID).Error)
+	assert.Equal(t, "30%", stored.Progress)
 }
 
 func TestUpdateVideoTasksDefaultSleepDoesNotBlockOtherChannels(t *testing.T) {

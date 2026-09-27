@@ -334,7 +334,7 @@ func SetApiRouter(router *gin.Engine) {
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		supplierTestRoute := apiRouter.Group("/supplier-test")
-		supplierTestRoute.Use(middleware.RootAuth(), middleware.DisableCache())
+		supplierTestRoute.Use(middleware.AdminAuth(), middleware.DisableCache())
 		{
 			supplierTestRoute.POST("/models", controller.ListSupplierTestModels)
 			supplierTestRoute.POST("/runs", controller.RunSupplierTest)

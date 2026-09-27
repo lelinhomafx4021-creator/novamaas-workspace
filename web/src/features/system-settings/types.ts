@@ -215,6 +215,7 @@ export type ContentSettings = {
 }
 
 export type ModelSettings = {
+  'miniapp.playground_media': string
   'global.pass_through_request_enabled': boolean
   'global.thinking_model_blacklist': string
   'global.chat_completions_to_responses_policy': string

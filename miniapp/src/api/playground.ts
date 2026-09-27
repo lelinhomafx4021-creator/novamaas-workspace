@@ -3,6 +3,7 @@ import Taro from '@tarojs/taro'
 import type { ChatMessage } from '@/playground/storage'
 
 import { decodeChatStreamEvent } from './chat-stream'
+import { imageDataUrl } from './playground-media'
 import { getAuthorizedMiniSession, getConfiguredApiBaseUrl } from './request'
 import { SseParser } from './sse'
 import { buildApiUrl } from './url'
@@ -21,9 +22,18 @@ export async function startStreamingChat(
   model: string,
   group: string,
   messages: ChatMessage[],
-  callbacks: StreamingChatCallbacks
+  callbacks: StreamingChatCallbacks,
+  allowImages = false
 ): Promise<StreamingChat> {
   const session = await getAuthorizedMiniSession()
+  const imageMessages = allowImages ? messages.filter((message) => message.imagePath).slice(-4) : []
+  const imageIds = new Set(imageMessages.map((message) => message.id))
+  const requestMessages = await Promise.all(messages.map(async ({ content, id, imagePath, role }) => ({
+    role,
+    content: imagePath && imageIds.has(id)
+      ? [{ type: 'text', text: content }, { type: 'image_url', image_url: { url: await imageDataUrl(imagePath) } }]
+      : content,
+  })))
   let task: Taro.RequestTask<unknown> | undefined
   let resolveCompletion!: () => void
   let rejectCompletion!: (error: Error) => void
@@ -68,7 +78,7 @@ export async function startStreamingChat(
     },
     data: {
       group,
-      messages: messages.map(({ content, role }) => ({ content, role })),
+      messages: requestMessages,
       model,
       stream: true,
     },

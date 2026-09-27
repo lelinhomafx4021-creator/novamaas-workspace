@@ -53,6 +53,15 @@
   line-height: 1.6;
 }
 
+.home-status__endpoint {
+  display: block;
+  margin-top: 8rpx;
+  color: #718096;
+  font-size: 22rpx;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
 .home-status__button {
   display: inline-flex;
   align-items: center;

@@ -43,6 +43,12 @@ export interface MiniBindInput {
   username: string
 }
 
+export interface MiniPasswordLoginInput {
+  password: string
+  twoFactorCode?: string
+  username: string
+}
+
 export interface MiniRegisterInput {
   acceptTerms: boolean
   affCode?: string
@@ -65,16 +71,35 @@ function persistAuthBundle(data: MiniAuthBundleData) {
   return session
 }
 
-export async function loginWithWeChat(): Promise<MiniLoginResult> {
+export async function loginWithWeChatPhone(phoneCode: string): Promise<MiniLoginResult> {
   const login = await Taro.login()
   const data = await apiRequest<MiniAuthBundleData | MiniBindingRequiredData>(
-    '/api/mini/auth/login',
-    { auth: false, retryAuth: false, method: 'POST', data: { code: login.code } }
+    '/api/mini/auth/phone',
+    {
+      auth: false,
+      retryAuth: false,
+      method: 'POST',
+      data: { code: login.code, phone_code: phoneCode },
+    }
   )
   if (data.binding_required) {
     return { kind: 'binding-required', binding: data }
   }
   return { kind: 'authenticated', session: persistAuthBundle(data) }
+}
+
+export async function loginWithPassword(input: MiniPasswordLoginInput) {
+  const data = await apiRequest<MiniAuthBundleData>('/api/mini/auth/password', {
+    auth: false,
+    retryAuth: false,
+    method: 'POST',
+    data: {
+      username: input.username.trim(),
+      password: input.password,
+      two_factor_code: input.twoFactorCode,
+    },
+  })
+  return persistAuthBundle(data)
 }
 
 export async function bindMiniAppAccount(input: MiniBindInput) {

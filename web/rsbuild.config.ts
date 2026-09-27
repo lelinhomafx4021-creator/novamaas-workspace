@@ -53,6 +53,11 @@ export default defineConfig(({ envMode }) => {
       },
     },
     source: {
+      define: {
+        'import.meta.env.VITE_FEATURED_RELEASE_IMAGE_URL': JSON.stringify(
+          env.rawPublicVars.VITE_FEATURED_RELEASE_IMAGE_URL ?? ''
+        ),
+      },
       entry: {
         index: './src/main.tsx',
       },

@@ -20,6 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 interface ImportMetaEnv {
   readonly VITE_REACT_APP_SERVER_URL?: string
+  readonly VITE_FEATURED_RELEASE_IMAGE_URL?: string
 }
 
 declare module '*.txt?raw' {

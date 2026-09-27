@@ -58,7 +58,6 @@ import { acknowledgeLoginNotice, getLoginNotice } from './api'
 import { createDeviceFingerprint } from './device-fingerprint'
 
 const FEATURED_RELEASE_KEY = '2026.09-asset-library-miniapp-preview'
-const FEATURED_RELEASE_IMAGE = '/releases/asset-library-miniapp-preview.png'
 const RELEASE_STORAGE_PREFIX = 'release-notices:v1:'
 
 function getSeenReleaseKeys(userID: number): string[] {
@@ -75,6 +74,11 @@ function getSeenReleaseKeys(userID: number): string[] {
 
 export function LoginNoticeDialog() {
   const { t } = useTranslation()
+  const featuredReleaseImageUrl =
+    import.meta.env.VITE_FEATURED_RELEASE_IMAGE_URL?.trim()
+  const featuredReleaseImage = featuredReleaseImageUrl?.startsWith('https://')
+    ? featuredReleaseImageUrl
+    : undefined
   const sessionID = useAuthStore((state) => state.auth.session?.sid)
   const userID = useAuthStore((state) => state.auth.user?.id)
   const [dismissedSessionID, setDismissedSessionID] = useState<string>()
@@ -201,13 +205,16 @@ export function LoginNoticeDialog() {
                     {t('A faster path from assets to growth')}
                   </h3>
                 </div>
-                <img
-                  src={FEATURED_RELEASE_IMAGE}
-                  alt={t(
-                    'Two colleagues organize media assets and check usage on a phone'
-                  )}
-                  className='aspect-[2.5/1] w-full object-cover object-center'
-                />
+                {featuredReleaseImage ? (
+                  <img
+                    src={featuredReleaseImage}
+                    alt={t(
+                      'Two colleagues organize media assets and check usage on a phone'
+                    )}
+                    referrerPolicy='no-referrer'
+                    className='aspect-[2.5/1] w-full object-cover object-center'
+                  />
+                ) : null}
                 <div className='grid gap-4 p-4 sm:grid-cols-2 sm:p-5'>
                   <div className='space-y-2'>
                     <div className='flex items-center gap-2 text-sm font-semibold'>

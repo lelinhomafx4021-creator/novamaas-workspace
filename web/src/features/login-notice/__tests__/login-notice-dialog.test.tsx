@@ -58,6 +58,10 @@ function renderDialog() {
 
 describe('LoginNoticeDialog', () => {
   beforeEach(() => {
+    vi.stubEnv(
+      'VITE_FEATURED_RELEASE_IMAGE_URL',
+      'https://assets.example.com/releases/2026-09/asset-library-miniapp-preview.png'
+    )
     localStorage.clear()
     vi.mocked(getLoginNotice).mockReset()
     vi.mocked(acknowledgeLoginNotice).mockReset()
@@ -82,6 +86,7 @@ describe('LoginNoticeDialog', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     useAuthStore.getState().auth.reset('complete')
   })
 
@@ -153,6 +158,14 @@ describe('LoginNoticeDialog', () => {
     const firstView = renderDialog()
     expect(await screen.findByText('Asset Library is live')).toBeVisible()
     expect(screen.getByText('WeChat mini program is coming')).toBeVisible()
+    expect(
+      screen.getByRole('img', {
+        name: 'Two colleagues organize media assets and check usage on a phone',
+      })
+    ).toHaveAttribute(
+      'src',
+      'https://assets.example.com/releases/2026-09/asset-library-miniapp-preview.png'
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
     await waitFor(() =>
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
@@ -204,6 +217,30 @@ describe('LoginNoticeDialog', () => {
     expect(
       JSON.parse(localStorage.getItem('release-notices:v1:12') || '[]')
     ).toContain('admin:2026.10-models')
+  })
+
+  test('keeps release details readable when the OSS image URL is not configured', async () => {
+    vi.stubEnv('VITE_FEATURED_RELEASE_IMAGE_URL', '')
+    vi.mocked(getLoginNotice).mockResolvedValue({
+      announcements: [],
+      statistics: {
+        today: { generated: 0, violations: 0 },
+        seven_days: { generated: 0, violations: 0 },
+        thirty_days: { generated: 0, violations: 0 },
+      },
+      requires_acknowledgement: false,
+      acknowledged: false,
+    })
+
+    renderDialog()
+
+    expect(await screen.findByText('Asset Library is live')).toBeVisible()
+    expect(screen.getByText('WeChat mini program is coming')).toBeVisible()
+    expect(
+      screen.queryByRole('img', {
+        name: 'Two colleagues organize media assets and check usage on a phone',
+      })
+    ).not.toBeInTheDocument()
   })
 
   test('uses a wide notice layout without losing narrow-screen margins', async () => {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -22,6 +23,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(videoPollHistoryCleanupHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
@@ -150,6 +152,32 @@ func (asyncTaskPollHandler) NewPayload() any { return nil }
 func (asyncTaskPollHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
 	summary := service.RunTaskPollingOnce(ctx, service.NewSystemTaskProgressReporter(task, runnerID))
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+}
+
+// videoPollHistoryCleanupHandler runs independently of unfinished video tasks.
+type videoPollHistoryCleanupHandler struct{}
+
+func (videoPollHistoryCleanupHandler) Type() string {
+	return model.SystemTaskTypeVideoPollHistoryCleanup
+}
+func (videoPollHistoryCleanupHandler) Enabled() bool           { return true }
+func (videoPollHistoryCleanupHandler) Interval() time.Duration { return time.Hour }
+func (videoPollHistoryCleanupHandler) NewPayload() any         { return nil }
+func (videoPollHistoryCleanupHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	var deleted int64
+	for i := 0; i < 20 && ctx.Err() == nil; i++ {
+		count, err := model.DeleteExpiredTaskPollHistory(ctx, time.Now(), 500)
+		if err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("video poll history cleanup failed: %v", err))
+			finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+			return
+		}
+		deleted += count
+		if count < 500 {
+			break
+		}
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, map[string]int64{"deleted": deleted}, nil)
 }
 
 func finishSystemTaskHandler(task *model.SystemTask, runnerID string, status model.SystemTaskStatus, result any, runErr error) {

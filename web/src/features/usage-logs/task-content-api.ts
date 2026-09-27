@@ -37,6 +37,39 @@ export interface TaskRequestSnapshotsResponse {
   data?: TaskRequestSnapshots
 }
 
+export interface TaskPollHistoryEntry {
+  id: number
+  task_id: string
+  first_seen_at: number
+  last_seen_at: number
+  repeat_count: number
+  status?: string
+  http_status?: number
+  error?: string
+  response?: unknown
+  response_size?: number
+  response_sha256?: string
+  response_omitted?: boolean
+  response_truncated?: boolean
+}
+
+export interface TaskPollHistoryResponse {
+  success: boolean
+  message?: string
+  data?: { items: TaskPollHistoryEntry[]; next_before_id: number }
+}
+
+export async function getTaskPollHistory(
+  taskId: string,
+  beforeId = 0
+): Promise<TaskPollHistoryResponse> {
+  const res = await api.get<TaskPollHistoryResponse>(
+    `/api/task/${encodeURIComponent(taskId)}/poll-history`,
+    { params: { before_id: beforeId, limit: 50 }, disableDuplicate: true }
+  )
+  return res.data
+}
+
 export async function getTaskRequestBody(
   taskId: string
 ): Promise<TaskRequestBodyResponse> {

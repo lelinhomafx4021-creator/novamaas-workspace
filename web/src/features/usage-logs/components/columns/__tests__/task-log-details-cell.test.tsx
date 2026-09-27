@@ -24,6 +24,7 @@ import {
   getTaskInformation,
   getTaskVideoContentInfo,
   getTaskRequestSnapshots,
+  getTaskPollHistory,
 } from '../../../task-content-api'
 import type { TaskLog } from '../../../types'
 import { TaskLogDetailsCell } from '../task-log-details-cell'
@@ -35,6 +36,7 @@ vi.mock('../../../task-content-api', () => ({
   getTaskInformation: vi.fn(),
   getTaskVideoContentInfo: vi.fn(),
   getTaskRequestSnapshots: vi.fn(),
+  getTaskPollHistory: vi.fn(),
 }))
 
 vi.mock('@/components/ai-elements/code-block', () => ({
@@ -60,6 +62,7 @@ const successfulVideoLog: TaskLog = {
 describe('TaskLogDetailsCell', () => {
   beforeEach(() => {
     vi.mocked(getTaskRequestSnapshots).mockReset()
+    vi.mocked(getTaskPollHistory).mockReset()
     vi.mocked(downloadTaskVideo).mockReset()
     vi.mocked(getTaskVideoContentInfo).mockReset()
     vi.mocked(getTaskInformation).mockReset()
@@ -111,6 +114,39 @@ describe('TaskLogDetailsCell', () => {
       'https://storage.example.com/staged.webp'
     )
     expect(screen.getByText('upstream failed')).toBeInTheDocument()
+  })
+
+  test('shows changed upstream poll responses to administrators', async () => {
+    vi.mocked(getTaskPollHistory).mockResolvedValue({
+      success: true,
+      data: {
+        items: [
+          {
+            id: 2,
+            task_id: 'task_video',
+            first_seen_at: 1_700_000_000,
+            last_seen_at: 1_700_000_015,
+            repeat_count: 2,
+            status: 'IN_PROGRESS',
+            http_status: 200,
+            response: { status: 'running', progress: 20 },
+          },
+        ],
+        next_before_id: 0,
+      },
+    })
+
+    render(<TaskLogDetailsCell isAdmin log={successfulVideoLog} />)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Video polling history' })
+    )
+
+    await waitFor(() =>
+      expect(getTaskPollHistory).toHaveBeenCalledWith('task_video', 0)
+    )
+    expect(await screen.findByText('IN_PROGRESS')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('View response JSON'))
+    expect(screen.getByText(/"progress": 20/)).toBeInTheDocument()
   })
 
   test('hides the request body action from non-administrators', () => {

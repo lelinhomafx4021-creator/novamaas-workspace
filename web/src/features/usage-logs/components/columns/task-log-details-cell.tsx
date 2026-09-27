@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Braces, Download, Info } from 'lucide-react'
+import { Braces, Download, History, Info } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -35,6 +35,7 @@ import {
 } from '../../task-content-api'
 import type { TaskLog } from '../../types'
 import { FailReasonDialog } from '../dialogs/fail-reason-dialog'
+import { PollHistoryDialog } from '../dialogs/poll-history-dialog'
 import { RequestBodyDialog } from '../dialogs/request-body-dialog'
 import { TaskInformationDialog } from '../dialogs/task-information-dialog'
 
@@ -73,6 +74,7 @@ export function TaskLogDetailsCell({
 }) {
   const { t } = useTranslation()
   const [failReasonOpen, setFailReasonOpen] = useState(false)
+  const [pollHistoryOpen, setPollHistoryOpen] = useState(false)
   const [requestBodyOpen, setRequestBodyOpen] = useState(false)
   const [requestSnapshots, setRequestSnapshots] =
     useState<TaskRequestSnapshots | null>(null)
@@ -168,6 +170,7 @@ export function TaskLogDetailsCell({
 
   const hasDetails =
     canDownloadVideo ||
+    (isAdmin && VIDEO_ACTIONS.has(log.action)) ||
     (isAdmin && log.request_body_available) ||
     canGetTaskInformation(log.platform) ||
     Boolean(log.fail_reason)
@@ -204,6 +207,17 @@ export function TaskLogDetailsCell({
           {t('View request body')}
         </Button>
       ) : null}
+      {isAdmin && VIDEO_ACTIONS.has(log.action) ? (
+        <Button
+          type='button'
+          variant='ghost'
+          size='xs'
+          onClick={() => setPollHistoryOpen(true)}
+        >
+          <History data-icon='inline-start' />
+          {t('Video polling history')}
+        </Button>
+      ) : null}
       {canGetTaskInformation(log.platform) ? (
         <Button
           type='button'
@@ -237,6 +251,13 @@ export function TaskLogDetailsCell({
         open={failReasonOpen}
         onOpenChange={setFailReasonOpen}
       />
+      {pollHistoryOpen ? (
+        <PollHistoryDialog
+          open={pollHistoryOpen}
+          onOpenChange={setPollHistoryOpen}
+          taskId={log.task_id}
+        />
+      ) : null}
       <RequestBodyDialog
         error={requestBodyError}
         loading={requestBodyLoading}

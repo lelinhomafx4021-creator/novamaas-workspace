@@ -454,12 +454,24 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
 	}
+	var pollStatus string
+	var pollHTTPStatus int
+	var pollError string
+	var pollBody []byte
+	defer func() {
+		historyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 500*time.Millisecond)
+		defer cancel()
+		if err := model.RecordTaskPollHistory(historyCtx, task.TaskID, pollStatus, pollHTTPStatus, pollError, pollBody); err != nil {
+			logger.LogWarn(ctx, fmt.Sprintf("task %s poll history write failed: %v", task.TaskID, err))
+		}
+	}()
 	key := ch.Key
 	// New Volc Native and Ali tasks retain the exact key used at submission. The
 	// selector is a fallback for tasks created before that snapshot existed.
 	if (ch.Type == constant.ChannelTypeVolcNative || ch.Type == constant.ChannelTypeAli) && task.PrivateData.Key == "" {
 		selectedKey, _, keyErr := ch.GetNextEnabledKey()
 		if keyErr != nil {
+			pollError = keyErr.Error()
 			return fmt.Errorf("select key for task %s failed: %w", taskId, keyErr)
 		}
 		key = selectedKey
@@ -474,12 +486,25 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		"action":  task.Action,
 	}, proxy)
 	if err != nil {
+		pollError = err.Error()
 		return fmt.Errorf("fetchTask failed for task %s: %w", taskId, err)
 	}
 	defer resp.Body.Close()
+	pollHTTPStatus = resp.StatusCode
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		pollError = err.Error()
 		return fmt.Errorf("readAll failed for task %s: %w", taskId, err)
+	}
+	pollBody = responseBody
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		pollError = fmt.Sprintf("upstream HTTP %d", resp.StatusCode)
+		var upstreamError dto.GeneralErrorResponse
+		if common.Unmarshal(responseBody, &upstreamError) == nil {
+			if message := upstreamError.ToMessage(); message != "" {
+				pollError += ": " + message
+			}
+		}
 	}
 
 	logger.LogDebug(ctx, "updateVideoSingleTask response: %s", responseBody)
@@ -499,7 +524,24 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		taskResult.Reason = t.FailReason
 		task.Data = t.Data
 	} else if taskResult, err = adaptor.ParseTaskResult(responseBody); err != nil {
+		if pollError != "" {
+			pollError += "; " + err.Error()
+		} else {
+			pollError = err.Error()
+		}
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
+	}
+	if taskResult == nil {
+		pollError = "upstream response parser returned no task result"
+		return fmt.Errorf("parseTaskResult failed for task %s: %s", taskId, pollError)
+	}
+	pollStatus = taskResult.Status
+	if taskResult.Reason != "" {
+		if pollError != "" {
+			pollError += "; " + taskResult.Reason
+		} else {
+			pollError = taskResult.Reason
+		}
 	}
 
 	task.Data = redactVideoResponseBody(responseBody)
@@ -516,18 +558,22 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 				// 返回规范的 OpenAI 错误格式，提取错误信息，判断错误是否为任务失败
 				if openaiError.Code == "429" {
 					// 429 错误通常表示请求过多或速率限制，暂时不认为是任务失败，保持原状态等待下一轮轮询
+					pollError = "upstream rate limited (429): " + openaiError.Message
 					return nil
 				}
 
 				// 其他错误认为是任务失败，记录错误信息并更新任务状态
 				taskResult = relaycommon.FailTaskInfo("upstream returned error")
+				pollError = openaiError.Message
 			} else {
 				// unknown error format, log original response
 				logger.LogError(ctx, fmt.Sprintf("Task %s returned empty status with unrecognized error format, response: %s", taskId, string(responseBody)))
 				taskResult = relaycommon.FailTaskInfo("upstream returned unrecognized message")
+				pollError = "upstream returned unrecognized message"
 			}
 		}
 	}
+	pollStatus = taskResult.Status
 
 	shouldRefund := false
 	shouldSettle := false
@@ -574,6 +620,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			shouldRefund = true
 		}
 	default:
+		pollError = fmt.Sprintf("unknown task status %s", taskResult.Status)
 		return fmt.Errorf("unknown task status %s for task %s", taskResult.Status, task.TaskID)
 	}
 	if taskResult.Progress != "" {

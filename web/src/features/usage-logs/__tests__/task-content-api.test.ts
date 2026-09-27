@@ -26,6 +26,7 @@ import {
   getLogRequestSnapshots,
   getTaskInformation,
   getTaskRequestSnapshots,
+  getTaskPollHistory,
 } from '../task-content-api'
 
 vi.mock('@/lib/api', () => ({
@@ -67,6 +68,15 @@ describe('task information API', () => {
 
     expect(api.get).toHaveBeenCalledWith('/api/log/request-body', {
       params: { task_id: 'task/1', request_id: 'request-1' },
+      disableDuplicate: true,
+    })
+  })
+
+  test('requests a paged video poll history for the selected task', async () => {
+    await getTaskPollHistory('task/1', 42)
+
+    expect(api.get).toHaveBeenCalledWith('/api/task/task%2F1/poll-history', {
+      params: { before_id: 42, limit: 50 },
       disableDuplicate: true,
     })
   })

@@ -48,9 +48,11 @@ No logos, words, letters, numerals, watermarks, extra people, sci-fi devices, ne
 | 像素 | 1672 × 941，约 16:9 |
 | 大小 | 2,269,215 字节，约 2.16 MiB |
 | SHA-256 | `171be83512fcaf2abe4a92e6f7daa44896674735199da3f084f27eb0df741b16` |
-| 建议 OSS 对象键 | `releases/2026-09/asset-library-miniapp-preview.png` |
+| 已上传 OSS 对象键 | `release/202609_001/asset-library-miniapp-preview.png` |
 
-由产品负责人上传图片到 OSS，并提供浏览器可公开访问的 HTTPS 地址。上传时设置 `Content-Type: image/png`；使用版本化对象键，避免下一次发版覆盖本期图片。可设置长期缓存，但换图时必须换文件名或对象键。上线前用无登录浏览器打开地址，确认图片可访问且不会过期。
+由产品负责人上传图片到 OSS，并提供浏览器可长期公开访问的 HTTPS 地址。上传时设置 `Content-Type: image/png`；使用版本化对象键，避免下一次发版覆盖本期图片。可设置长期缓存，但换图时必须换文件名或对象键。上线前用无登录浏览器打开地址，确认图片可访问且不会过期。不要将带 `Expires`、`OSSAccessKeyId`、`Signature` 的临时签名链接写入前端构建配置：它会失效，并把临时凭据暴露给所有浏览器。
+
+本期对象已上传到 `nova-maas-aitoken-prod` 存储桶；构建配置应使用通过匿名访问验证的长期有效地址。
 
 内置发版卡片从前端构建变量 `VITE_FEATURED_RELEASE_IMAGE_URL` 读取该 HTTPS 地址；图片不再从站内 `/releases/...` 加载。变量需在构建 `web/` 时提供，例如 `VITE_FEATURED_RELEASE_IMAGE_URL=https://<公开域名>/releases/2026-09/asset-library-miniapp-preview.png bun run build`。未配置有效 HTTPS 地址时卡片仍展示文案，但不展示图片；上传完成后提供实际地址并重新构建、部署前端即可展示 OSS 图片。后台新增的普通发版公告，在“图片地址”字段填入对应 OSS HTTPS 地址即可。
 

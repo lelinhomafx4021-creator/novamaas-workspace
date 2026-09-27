@@ -80,9 +80,9 @@ func Path2RelayMode(path string) int {
 		relayMode = RelayModeResponses
 	} else if strings.HasPrefix(path, "/v1/alpha/search") {
 		relayMode = RelayModeAlphaSearch
-	} else if strings.HasPrefix(path, "/v1/audio/speech") {
+	} else if strings.HasPrefix(path, "/v1/audio/speech") || strings.HasPrefix(path, "/pg/audio/speech") {
 		relayMode = RelayModeAudioSpeech
-	} else if strings.HasPrefix(path, "/v1/audio/transcriptions") {
+	} else if strings.HasPrefix(path, "/v1/audio/transcriptions") || strings.HasPrefix(path, "/pg/audio/transcriptions") {
 		relayMode = RelayModeAudioTranscription
 	} else if strings.HasPrefix(path, "/v1/audio/translations") {
 		relayMode = RelayModeAudioTranslation

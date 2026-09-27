@@ -1,0 +1,26 @@
+.media-preview-page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 24rpx 24rpx 48rpx;
+  background: #101827;
+}
+
+.media-preview-page__back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 72rpx;
+  margin: 0 0 24rpx;
+  padding: 0 26rpx;
+  color: #fff;
+  background: #334155;
+  border-radius: 18rpx;
+  font-size: 26rpx;
+  line-height: 72rpx;
+}
+
+.media-preview-page__image,
+.media-preview-page__video {
+  display: block;
+  width: 100%;
+  height: 74vh;
+}

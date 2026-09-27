@@ -21,7 +21,8 @@ var (
 		"light-green": true, "teal": true, "light-blue": true, "indigo": true,
 		"violet": true, "grey": true, "slate": true,
 	}
-	slugRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	slugRegex       = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	releaseKeyRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 )
 
 func parseJSONArray(jsonStr string, typeName string) ([]map[string]interface{}, error) {
@@ -155,6 +156,7 @@ func validateAnnouncements(announcementsStr string) error {
 	validTypes := map[string]bool{
 		"default": true, "ongoing": true, "success": true, "warning": true, "error": true,
 	}
+	releaseKeys := make(map[string]bool)
 	for i, ann := range list {
 		content, ok := ann["content"].(string)
 		if !ok || content == "" {
@@ -184,6 +186,34 @@ func validateAnnouncements(announcementsStr string) error {
 		if extra, exists := ann["extra"]; exists {
 			if extraStr, ok := extra.(string); ok && exceedsMaxCharacters(extraStr, 100) {
 				return fmt.Errorf("第%d个公告的说明长度不能超过100字符", i+1)
+			}
+		}
+		if kind, exists := ann["kind"]; exists && kind != "notice" && kind != "release" {
+			return fmt.Errorf("第%d个公告的分类不合法", i+1)
+		}
+		if ann["kind"] != "release" {
+			continue
+		}
+		title, ok := ann["title"].(string)
+		if !ok || strings.TrimSpace(title) == "" || exceedsMaxCharacters(title, 100) {
+			return fmt.Errorf("第%d个发版公告的标题不合法", i+1)
+		}
+		key, ok := ann["releaseKey"].(string)
+		if !ok || len(key) == 0 || len(key) > 64 || !releaseKeyRegex.MatchString(key) || releaseKeys[key] {
+			return fmt.Errorf("第%d个发版公告的版本标识不合法或重复", i+1)
+		}
+		releaseKeys[key] = true
+		if imageURL, exists := ann["imageUrl"]; exists {
+			image, ok := imageURL.(string)
+			if !ok || len(image) > 2000 {
+				return fmt.Errorf("第%d个发版公告的图片地址不合法", i+1)
+			}
+			if image != "" {
+				parsed, err := url.Parse(image)
+				if err != nil || (parsed.Scheme == "https" && parsed.Host == "") ||
+					(parsed.Scheme != "https" && (!strings.HasPrefix(image, "/") || strings.HasPrefix(image, "//"))) {
+					return fmt.Errorf("第%d个发版公告的图片地址不合法", i+1)
+				}
 			}
 		}
 	}
@@ -230,6 +260,15 @@ func getPublishTime(item map[string]interface{}) time.Time {
 
 func GetAnnouncements() []map[string]interface{} {
 	list := getJSONList(GetConsoleSetting().Announcements)
+	now := time.Now()
+	published := list[:0]
+	for _, item := range list {
+		publishTime := getPublishTime(item)
+		if publishTime.IsZero() || !publishTime.After(now) {
+			published = append(published, item)
+		}
+	}
+	list = published
 	sort.SliceStable(list, func(i, j int) bool {
 		return getPublishTime(list[i]).After(getPublishTime(list[j]))
 	})

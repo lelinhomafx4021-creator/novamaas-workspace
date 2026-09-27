@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // LoginNoticeAcknowledgement records that a dashboard login session saw and
 // acknowledged the post-login notice. DeviceFingerprint stores a one-way hash
 // produced by the browser; raw device attributes are never persisted.
@@ -21,10 +23,12 @@ type LoginNoticeAcknowledgement struct {
 	AcknowledgedAt          int64  `json:"acknowledged_at" gorm:"index"`
 }
 
-func HasLoginNoticeAcknowledgement(userID int, sessionID string) (bool, error) {
+func HasDailyViolationAcknowledgement(userID int, now time.Time) (bool, error) {
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var count int64
 	err := DB.Model(&LoginNoticeAcknowledgement{}).
-		Where("user_id = ? AND session_id = ?", userID, sessionID).
+		Where("user_id = ? AND required_acknowledgement = ? AND acknowledged_at >= ? AND acknowledged_at < ?",
+			userID, true, today.Unix(), today.AddDate(0, 0, 1).Unix()).
 		Count(&count).Error
 	return count > 0, err
 }

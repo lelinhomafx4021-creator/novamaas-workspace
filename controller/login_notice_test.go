@@ -99,6 +99,37 @@ func TestAcknowledgeLoginNoticeRecordsHashedDeviceAndSnapshot(t *testing.T) {
 	assert.True(t, gjson.Get(getRecorder.Body.String(), "data.acknowledged").Bool())
 }
 
+func TestLoginNoticeShowsViolationAtMostOncePerUserPerDay(t *testing.T) {
+	db := setupLoginNoticeControllerTest(t)
+	require.NoError(t, db.Create(&model.Task{
+		TaskID:     "recent-violation",
+		UserId:     12,
+		Action:     constant.TaskActionGenerate,
+		Status:     model.TaskStatusFailure,
+		FailReason: "content policy violation",
+		SubmitTime: time.Now().Unix(),
+	}).Error)
+
+	postContext, postRecorder := loginNoticeContext(http.MethodPost, `{"device_fingerprint":"`+strings.Repeat("ab", 32)+`"}`)
+	AcknowledgeLoginNotice(postContext)
+	require.Equal(t, http.StatusOK, postRecorder.Code)
+
+	otherSession, recorder := loginNoticeContext(http.MethodGet, "")
+	otherSession.Set("session_id", "session-other-device")
+	GetLoginNotice(otherSession)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, gjson.Get(recorder.Body.String(), "data.acknowledged").Bool())
+	assert.False(t, gjson.Get(recorder.Body.String(), "data.requires_acknowledgement").Bool())
+
+	yesterday := time.Now().AddDate(0, 0, -1).Unix()
+	require.NoError(t, db.Model(&model.LoginNoticeAcknowledgement{}).
+		Where("user_id = ?", 12).Update("acknowledged_at", yesterday).Error)
+	nextDayContext, nextDayRecorder := loginNoticeContext(http.MethodGet, "")
+	GetLoginNotice(nextDayContext)
+	assert.False(t, gjson.Get(nextDayRecorder.Body.String(), "data.acknowledged").Bool())
+	assert.True(t, gjson.Get(nextDayRecorder.Body.String(), "data.requires_acknowledgement").Bool())
+}
+
 func TestAcknowledgeLoginNoticeRejectsInvalidFingerprint(t *testing.T) {
 	setupLoginNoticeControllerTest(t)
 	context, recorder := loginNoticeContext(http.MethodPost, `{"device_fingerprint":"raw-device-data"}`)

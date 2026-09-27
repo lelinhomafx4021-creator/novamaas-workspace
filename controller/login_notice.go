@@ -27,12 +27,13 @@ func GetLoginNotice(c *gin.Context) {
 		return
 	}
 
-	stats, err := service.GetLoginNoticeStats(identity.UserID, time.Now())
+	now := time.Now()
+	stats, err := service.GetLoginNoticeStats(identity.UserID, now)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	acknowledged, err := model.HasLoginNoticeAcknowledgement(identity.UserID, identity.SessionID)
+	acknowledged, err := model.HasDailyViolationAcknowledgement(identity.UserID, now)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -46,7 +47,7 @@ func GetLoginNotice(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"announcements":            announcements,
 		"statistics":               stats,
-		"requires_acknowledgement": stats.SevenDays.Violations > 0,
+		"requires_acknowledgement": stats.SevenDays.Violations > 0 && !acknowledged,
 		"acknowledged":             acknowledged,
 	})
 }

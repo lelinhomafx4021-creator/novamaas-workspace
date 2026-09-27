@@ -137,6 +137,7 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 - Frontend UI text must support i18n with `i18next`/`react-i18next`. Use flat JSON locale files in `web/src/i18n/locales/{lang}.json`, with English source strings as keys.
 - In React components, use `useTranslation()` and call `t('English key')` for user-facing text.
 - Follow `web/AGENTS.md` for detailed frontend conventions, including TypeScript, component structure, styling, accessibility, testing, and build checks.
+- For each release announcement illustration, read `docs/RELEASE_ANNOUNCEMENTS.zh_CN.md` and use its reference image, two-character work scene, palette, composition, and generation prompt. The product owner uploads final images to OSS; render release images from a durable public HTTPS OSS/CDN URL, not a temporary signed URL or a bundled `web/public` copy.
 
 ### Project Governance
 

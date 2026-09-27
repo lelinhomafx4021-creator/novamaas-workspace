@@ -72,6 +72,10 @@ type Announcement = {
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  kind?: 'notice' | 'release'
+  title?: string
+  releaseKey?: string
+  imageUrl?: string
 }
 
 type AnnouncementsSectionProps = {
@@ -79,18 +83,47 @@ type AnnouncementsSectionProps = {
   data: string
 }
 
-const announcementSchema = z.object({
-  content: z
-    .string()
-    .min(1, 'Content is required')
-    .max(500, 'Content must be less than 500 characters'),
-  publishDate: z.string().min(1, 'Publish date is required'),
-  type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
-  extra: z
-    .string()
-    .max(100, 'Extra must be less than 100 characters')
-    .optional(),
-})
+const announcementSchema = z
+  .object({
+    content: z
+      .string()
+      .min(1, 'Content is required')
+      .max(500, 'Content must be less than 500 characters'),
+    publishDate: z.string().min(1, 'Publish date is required'),
+    type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
+    extra: z
+      .string()
+      .max(100, 'Extra must be less than 100 characters')
+      .optional(),
+    kind: z.enum(['notice', 'release']),
+    title: z.string().max(100).optional(),
+    releaseKey: z.string().max(64).optional(),
+    imageUrl: z.string().max(2000).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.kind !== 'release') return
+    if (!value.title?.trim()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['title'],
+        message: 'Release title is required',
+      })
+    }
+    if (!value.releaseKey || !/^[a-zA-Z0-9._-]+$/.test(value.releaseKey)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['releaseKey'],
+        message: 'Use letters, numbers, dots, hyphens or underscores',
+      })
+    }
+    if (value.imageUrl && !/^(https:\/\/|\/(?!\/))/.test(value.imageUrl)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['imageUrl'],
+        message: 'Use an HTTPS URL or a site path',
+      })
+    }
+  })
 
 type AnnouncementFormValues = z.infer<typeof announcementSchema>
 
@@ -152,6 +185,10 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      kind: 'notice',
+      title: '',
+      releaseKey: '',
+      imageUrl: '',
     },
   })
 
@@ -195,6 +232,10 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      kind: 'notice',
+      title: '',
+      releaseKey: '',
+      imageUrl: '',
     })
     setShowDialog(true)
   }
@@ -206,6 +247,10 @@ export function AnnouncementsSection({
       publishDate: announcement.publishDate,
       type: announcement.type,
       extra: announcement.extra || '',
+      kind: announcement.kind || 'notice',
+      title: announcement.title || '',
+      releaseKey: announcement.releaseKey || '',
+      imageUrl: announcement.imageUrl || '',
     })
     setShowDialog(true)
   }
@@ -249,6 +294,19 @@ export function AnnouncementsSection({
   }
 
   const handleSubmitForm = (values: AnnouncementFormValues) => {
+    if (
+      values.kind === 'release' &&
+      announcements.some(
+        (item) =>
+          item.id !== editingAnnouncement?.id &&
+          item.kind === 'release' &&
+          item.releaseKey === values.releaseKey
+      )
+    ) {
+      form.setError('releaseKey', { message: 'Release key must be unique' })
+      return
+    }
+
     if (editingAnnouncement) {
       setAnnouncements((prev) =>
         prev.map((item) =>
@@ -402,8 +460,11 @@ export function AnnouncementsSection({
               cell: (announcement) => (
                 <StatusBadge
                   label={
-                    typeOptions.find((opt) => opt.value === announcement.type)
-                      ?.label
+                    announcement.kind === 'release'
+                      ? t('Release update')
+                      : typeOptions.find(
+                          (opt) => opt.value === announcement.type
+                        )?.label
                   }
                   variant={
                     typeOptions.find((opt) => opt.value === announcement.type)
@@ -469,6 +530,116 @@ export function AnnouncementsSection({
             onSubmit={form.handleSubmit(handleSubmitForm)}
             className='space-y-4'
           >
+            <FormField
+              control={form.control}
+              name='kind'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Announcement category')}</FormLabel>
+                  <Select
+                    items={[
+                      { value: 'notice', label: t('System notice') },
+                      { value: 'release', label: t('Release update') },
+                    ]}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value='notice'>
+                        {t('System notice')}
+                      </SelectItem>
+                      <SelectItem value='release'>
+                        {t('Release update')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {form.watch('kind') === 'release' ? (
+              <>
+                <FormField
+                  control={form.control}
+                  name='title'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Release title')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage>
+                        {form.formState.errors.title?.message
+                          ? t(form.formState.errors.title.message)
+                          : null}
+                      </FormMessage>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='releaseKey'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Release key')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder='2026.09-product-update'
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Use a new key for each release so users see it once.'
+                        )}
+                      </FormDescription>
+                      <FormMessage>
+                        {form.formState.errors.releaseKey?.message
+                          ? t(form.formState.errors.releaseKey.message)
+                          : null}
+                      </FormMessage>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='imageUrl'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Release image URL (optional)')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder='/release/announcement.png'
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('Use an HTTPS image URL or a path on this site.')}
+                      </FormDescription>
+                      <FormMessage>
+                        {form.formState.errors.imageUrl?.message
+                          ? t(form.formState.errors.imageUrl.message)
+                          : null}
+                      </FormMessage>
+                    </FormItem>
+                  )}
+                />
+                {form.watch('imageUrl') &&
+                /^(https:\/\/|\/(?!\/))/.test(form.watch('imageUrl') || '') ? (
+                  <img
+                    src={form.watch('imageUrl')}
+                    alt={t('Release image preview')}
+                    referrerPolicy='no-referrer'
+                    className='aspect-[2.5/1] w-full rounded-lg border object-cover'
+                  />
+                ) : null}
+              </>
+            ) : null}
             <FormField
               control={form.control}
               name='content'

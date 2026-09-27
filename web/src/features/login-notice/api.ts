@@ -29,6 +29,10 @@ export interface LoginNoticeAnnouncement {
   publishDate?: string
   type?: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  kind?: 'notice' | 'release'
+  title?: string
+  releaseKey?: string
+  imageUrl?: string
 }
 
 export interface LoginNoticeData {

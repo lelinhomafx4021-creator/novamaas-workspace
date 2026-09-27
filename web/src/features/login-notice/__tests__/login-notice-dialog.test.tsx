@@ -58,6 +58,7 @@ function renderDialog() {
 
 describe('LoginNoticeDialog', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.mocked(getLoginNotice).mockReset()
     vi.mocked(acknowledgeLoginNotice).mockReset()
     vi.mocked(createDeviceFingerprint).mockReset()
@@ -115,7 +116,11 @@ describe('LoginNoticeDialog', () => {
     )
   })
 
-  test('does not show a notice already acknowledged in this login session', async () => {
+  test('does not show a notice after today’s compliance reminder and release were seen', async () => {
+    localStorage.setItem(
+      'release-notices:v1:12',
+      JSON.stringify(['featured:2026.09-asset-library-miniapp-preview'])
+    )
     vi.mocked(getLoginNotice).mockResolvedValue({
       announcements: [],
       statistics: {
@@ -131,6 +136,74 @@ describe('LoginNoticeDialog', () => {
 
     await waitFor(() => expect(getLoginNotice).toHaveBeenCalledOnce())
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  test('shows the release once without recording a device fingerprint when no violation is due', async () => {
+    vi.mocked(getLoginNotice).mockResolvedValue({
+      announcements: [],
+      statistics: {
+        today: { generated: 0, violations: 0 },
+        seven_days: { generated: 0, violations: 0 },
+        thirty_days: { generated: 0, violations: 0 },
+      },
+      requires_acknowledgement: false,
+      acknowledged: false,
+    })
+
+    const firstView = renderDialog()
+    expect(await screen.findByText('Asset Library is live')).toBeVisible()
+    expect(screen.getByText('WeChat mini program is coming')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    )
+    expect(acknowledgeLoginNotice).not.toHaveBeenCalled()
+    expect(createDeviceFingerprint).not.toHaveBeenCalled()
+    firstView.unmount()
+
+    renderDialog()
+    await waitFor(() => expect(getLoginNotice).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  test('shows an admin release with image and remembers its release key', async () => {
+    localStorage.setItem(
+      'release-notices:v1:12',
+      JSON.stringify(['featured:2026.09-asset-library-miniapp-preview'])
+    )
+    vi.mocked(getLoginNotice).mockResolvedValue({
+      announcements: [
+        {
+          id: 4,
+          kind: 'release',
+          releaseKey: '2026.10-models',
+          title: 'Model launch',
+          content: 'New model access',
+          imageUrl: '/releases/models.png',
+        },
+      ],
+      statistics: {
+        today: { generated: 0, violations: 0 },
+        seven_days: { generated: 0, violations: 0 },
+        thirty_days: { generated: 0, violations: 0 },
+      },
+      requires_acknowledgement: false,
+      acknowledged: false,
+    })
+
+    renderDialog()
+    expect(await screen.findByText('Model launch')).toBeVisible()
+    expect(screen.getByRole('img', { name: 'Model launch' })).toHaveAttribute(
+      'src',
+      '/releases/models.png'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    )
+    expect(
+      JSON.parse(localStorage.getItem('release-notices:v1:12') || '[]')
+    ).toContain('admin:2026.10-models')
   })
 
   test('uses a wide notice layout without losing narrow-screen margins', async () => {
@@ -157,7 +230,7 @@ describe('LoginNoticeDialog', () => {
     )
     expect(dialog).not.toHaveClass('data-[size=default]:max-w-xs')
     expect(dialog).not.toHaveClass('data-[size=default]:sm:max-w-sm')
-    expect(dialog).toHaveClass('max-h-[min(90svh,760px)]')
+    expect(dialog).toHaveClass('max-h-[min(94svh,900px)]')
     expect(screen.getByRole('button', { name: 'I acknowledge' })).toBeVisible()
   })
 })

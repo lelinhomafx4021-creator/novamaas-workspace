@@ -134,6 +134,11 @@ type StreamResult struct {
 	requestStarted      time.Time
 	ErrorMessage        string
 	SSE                 bool
+	SSEDone             bool
+	contentBuilder      strings.Builder
+	reasoningBuilder    strings.Builder
+	toolArgsBuilder     strings.Builder
+	hasOutput           bool
 }
 
 func NewHTTPClient(base *http.Client) *http.Client {
@@ -501,6 +506,7 @@ func streamChat(
 		result.SSE = true
 		parseSSE(resp.Body, started, &result, onDelta)
 		result.Elapsed = time.Since(started)
+		finalizeStreamContent(&result)
 		finalizeStreamTiming(&result)
 		return result
 	}
@@ -518,6 +524,7 @@ func streamChat(
 		return result
 	}
 	applyChunk(raw, started, &result, nil)
+	finalizeStreamContent(&result)
 	// A complete JSON response has no observable first output token.
 	result.TTFT = 0
 	result.TPOT = 0
@@ -539,6 +546,15 @@ func finalizeStreamTiming(result *StreamResult) {
 	}
 }
 
+func finalizeStreamContent(result *StreamResult) {
+	result.Content = result.contentBuilder.String()
+	result.Reasoning = result.reasoningBuilder.String()
+	result.ToolArgs = result.toolArgsBuilder.String()
+	result.contentBuilder = strings.Builder{}
+	result.reasoningBuilder = strings.Builder{}
+	result.toolArgsBuilder = strings.Builder{}
+}
+
 func parseSSE(body io.Reader, started time.Time, result *StreamResult, onDelta func(StreamDelta)) {
 	reader := bufio.NewReaderSize(body, 1<<20)
 	var data []string
@@ -549,6 +565,7 @@ func parseSSE(body io.Reader, started time.Time, result *StreamResult, onDelta f
 		payload := strings.Join(data, "\n")
 		data = data[:0]
 		if strings.TrimSpace(payload) == "[DONE]" {
+			result.SSEDone = true
 			return true
 		}
 		applyChunk([]byte(payload), started, result, onDelta)
@@ -572,7 +589,12 @@ func parseSSE(body io.Reader, started time.Time, result *StreamResult, onDelta f
 				result.ErrorMessage = err.Error()
 			}
 			if err == io.EOF {
-				dispatch()
+				if dispatch() {
+					return
+				}
+				if result.ErrorMessage == "" && result.FinishReason == "" && !result.SSEDone {
+					result.ErrorMessage = "stream ended before finish_reason or [DONE]"
+				}
 			}
 			return
 		}
@@ -629,7 +651,7 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 				for _, call := range choice.Message.ToolCalls {
 					if call.Function.Name != "" {
 						result.ToolName = call.Function.Name
-						result.ToolArgs += call.Function.Arguments
+						result.toolArgsBuilder.WriteString(call.Function.Arguments)
 					}
 				}
 			}
@@ -638,21 +660,23 @@ func applyChunk(raw []byte, started time.Time, result *StreamResult, onDelta fun
 			if call.Function.Name != "" {
 				result.ToolName = call.Function.Name
 			}
-			result.ToolArgs += call.Function.Arguments
+			result.toolArgsBuilder.WriteString(call.Function.Arguments)
 		}
 		if content != "" {
-			if result.Content == "" && result.Reasoning == "" && result.TTFT == 0 {
+			if !result.hasOutput && result.TTFT == 0 {
 				result.TTFT = time.Since(started)
 			}
-			result.Content += content
+			result.hasOutput = true
+			result.contentBuilder.WriteString(content)
 			delta.Content += content
 			result.lastOutput = time.Since(started)
 		}
 		if reasoning != "" {
-			if result.Content == "" && result.Reasoning == "" && result.TTFT == 0 {
+			if !result.hasOutput && result.TTFT == 0 {
 				result.TTFT = time.Since(started)
 			}
-			result.Reasoning += reasoning
+			result.hasOutput = true
+			result.reasoningBuilder.WriteString(reasoning)
 			delta.Reasoning += reasoning
 			result.lastOutput = time.Since(started)
 		}

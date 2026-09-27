@@ -1,8 +1,11 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/service"
@@ -48,26 +51,61 @@ func RunSupplierTest(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
 	flusher, _ := c.Writer.(http.Flusher)
-	flush := func() {
+	var writeMu sync.Mutex
+	runCtx, cancelRun := context.WithCancel(c.Request.Context())
+	defer cancelRun()
+	writeFrame := func(frame string) bool {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		if _, err := fmt.Fprint(c.Writer, frame); err != nil {
+			cancelRun()
+			return false
+		}
 		if flusher != nil {
 			flusher.Flush()
 		}
+		return true
 	}
-	flush()
+	if !writeFrame(": connected\n\n") {
+		return
+	}
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				if !writeFrame(": keep-alive\n\n") {
+					return
+				}
+			}
+		}
+	}()
+	var stopHeartbeatOnce sync.Once
+	stopHeartbeat := func() {
+		stopHeartbeatOnce.Do(func() {
+			cancelRun()
+			<-heartbeatDone
+		})
+	}
+	defer stopHeartbeat()
 
 	emit := func(event suppliertest.Event) {
 		payload, err := common.Marshal(event)
 		if err != nil {
 			return
 		}
-		fmt.Fprintf(c.Writer, "data: %s\n\n", payload)
-		flush()
+		writeFrame(fmt.Sprintf("data: %s\n\n", payload))
 	}
 
 	if err := suppliertest.NormalizeRunRequest(&req); err != nil {
 		emit(suppliertest.Event{Type: "error", Message: err.Error()})
-		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-		flush()
+		stopHeartbeat()
+		writeFrame("data: [DONE]\n\n")
 		return
 	}
 	hasChatModule := false
@@ -80,18 +118,18 @@ func RunSupplierTest(c *gin.Context) {
 	if hasChatModule {
 		if _, err := suppliertest.ChatCompletionsURL(req.BaseURL); err != nil {
 			emit(suppliertest.Event{Type: "error", Message: err.Error()})
-			fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-			flush()
+			stopHeartbeat()
+			writeFrame("data: [DONE]\n\n")
 			return
 		}
 	}
 
-	err := suppliertest.Run(c.Request.Context(), suppliertest.NewHTTPClient(service.GetHttpClient()), req, emit)
-	if err != nil && c.Request.Context().Err() == nil {
+	err := suppliertest.Run(runCtx, suppliertest.NewHTTPClient(service.GetHttpClient()), req, emit)
+	if err != nil && runCtx.Err() == nil {
 		emit(suppliertest.Event{Type: "error", Message: err.Error()})
 	}
-	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-	flush()
+	stopHeartbeat()
+	writeFrame("data: [DONE]\n\n")
 }
 
 func QuerySupplierTestVideoTask(c *gin.Context) {
@@ -148,4 +186,3 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 		"raw_response": string(rawResp),
 	})
 }
-

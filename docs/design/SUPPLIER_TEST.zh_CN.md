@@ -41,7 +41,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  UI[Admin /supplier-test] --> API["POST /api/supplier-test/runs SSE"]
+  UI[超级管理员 /supplier-test] --> API["POST /api/supplier-test/runs SSE"]
   API --> Runner[service/suppliertest]
   Runner --> Upstream[供应商 Base URL + Key]
   Runner --> Events[check / metrics / stream]

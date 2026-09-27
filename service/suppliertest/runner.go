@@ -963,6 +963,8 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 		issueMu      sync.Mutex
 		issues       = make(map[string]*StressIssue)
 		otherIssues  int
+		progressMu   sync.Mutex
+		lastProgress int
 	)
 
 	stressPrompt := strings.TrimSpace(req.Stress.Prompt)
@@ -975,12 +977,20 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 		MaxTokens: ptrInt(req.Stress.MaxTokens),
 	}, stream)
 
-	started := time.Now()
 	var wg sync.WaitGroup
+	var ready sync.WaitGroup
+	startGate := make(chan struct{})
+	ready.Add(req.Stress.Concurrency)
 	for worker := 0; worker < req.Stress.Concurrency; worker++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
+			ready.Done()
+			select {
+			case <-startGate:
+			case <-ctx.Done():
+				return
+			}
 			for round := 0; round < req.Stress.Rounds; round++ {
 				if ctx.Err() != nil {
 					return
@@ -1055,11 +1065,19 @@ func runStress(ctx context.Context, httpClient *http.Client, endpoint string, re
 				}
 				done := int(completed.Add(1))
 				if done == total || done%max(1, total/20) == 0 {
-					emit(Event{Type: "progress", Module: ModuleStress, Completed: done, Total: total})
+					progressMu.Lock()
+					if done > lastProgress {
+						lastProgress = done
+						emit(Event{Type: "progress", Module: ModuleStress, Completed: done, Total: total})
+					}
+					progressMu.Unlock()
 				}
 			}
 		}(worker)
 	}
+	ready.Wait()
+	started := time.Now()
+	close(startGate)
 	wg.Wait()
 
 	elapsed := time.Since(started)

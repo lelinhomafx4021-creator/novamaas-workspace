@@ -5,7 +5,7 @@
 
 ## 📝 变更描述 / Description
 
-给管理员加「供应商测试」工作台：填上游 Base URL、Key、模型，直连对方做基础验收、Prompt 缓存、并发压测及豆包视频生成测试。不走 Channel / relay / 计费，不新建数据库表，完全隔离安全。
+给超级管理员加「供应商测试」工作台：填上游 Base URL、Key、模型，直连对方做基础验收、Prompt 缓存、并发压测及豆包视频生成测试。不走 Channel / relay / 计费，不新建数据库表，完全隔离安全。
 
 ### 主要功能特性：
 1. **基础验收（Basic Acceptance）与厂商 Profile 适配**：
@@ -36,8 +36,7 @@
 
 官方文件动过原语句的只有两处，合之前看一眼：
 
-1. `router/api-router.go`：原 `gzip.Gzip(gzip.DefaultCompression)` 换成带 `WithExcludedPaths`，排除 `/api/supplier-test/runs`。其它 API 仍 gzip。下面再挂 `POST /api/supplier-test/models`、`/runs`、`/video/query`，AdminAuth。
-2. `model/user.go`：管理员 / root 默认侧栏 map 整段重写对齐，原有 channel、models 等开关都还在，只多了 `supplier_test: true`。
+1. `router/api-router.go`：原 `gzip.Gzip(gzip.DefaultCompression)` 换成带 `WithExcludedPaths`，排除 `/api/supplier-test/runs`。其它 API 仍 gzip。下面再挂 `POST /api/supplier-test/models`、`/runs`、`/video/query`，RootAuth。
 
 其余官方挂钩都是加项：侧栏菜单、模块开关、`/supplier-test` 路由、`env.d.ts` 允许读 `.txt`。没有删渠道、用户、计费代码。
 
@@ -56,7 +55,7 @@
 
 ## 🧭 与上游关系 / Upstream Relationship
 - 与上游关系：NovaMaaS 下游专属
-- 差异摘要：管理员诊断页，不改变网关转发、计费或渠道运行时语义，不写入 README 关键差异表。
+- 差异摘要：超级管理员诊断页，不改变网关转发、计费或渠道运行时语义，不写入 README 关键差异表。
 
 ## ✅ 提交前检查项 / Checklist
 - [x] **人工确认:** 我已亲自整理并撰写此描述，没有直接粘贴未经处理的 AI 输出。
@@ -79,11 +78,11 @@
 - `oxlint` 对 `src/features/supplier-test` 0 warning / 0 error
 - `vitest src/features/supplier-test` 26/26 单元测试全部通过（含视频独立报告、路径解析、基准标准、供应商 Profile 等）
 
-手动：管理员打开「供应商测试」→ 填目标 → 标签页跑基础 / 缓存 / 压测 / 视频生成 → 支持单跑管道、实时报文回显、原生 JSON 预览与独立导出报告。
+手动：超级管理员打开「供应商测试」→ 填目标 → 标签页跑基础 / 缓存 / 压测 / 视频生成 → 支持单跑管道、实时报文回显、原生 JSON 预览与独立导出报告。
 
 ---
 
-**建议 Title:** `feat: add admin supplier test workbench with vendor profiles, Kimi KVV, and Doubao video`
+**建议 Title:** `feat: add root-only supplier test workbench with vendor profiles, Kimi KVV, and Doubao video`
 
 **合向:** 公司 `main`（`yeruyi1024/novamaas-workspace:main`）
 **来源分支:** `lelinhomafx4021-creator/novamaas-workspace:feat/supplier-test-pr`

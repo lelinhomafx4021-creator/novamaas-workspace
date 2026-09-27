@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -406,6 +407,43 @@ func TestStreamChatParsesMultilineSSEEvent(t *testing.T) {
 	assert.Equal(t, "stop", result.FinishReason)
 }
 
+func TestStreamChatRejectsTruncatedSSE(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n")
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model: "demo", Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.True(t, result.SSE)
+	assert.False(t, result.SSEDone)
+	assert.Equal(t, "partial", result.Content)
+	assert.Contains(t, result.ErrorMessage, "stream ended before finish_reason or [DONE]")
+}
+
+func TestStreamChatAcceptsFinishReasonWithoutDoneSentinel(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"complete\"},\"finish_reason\":\"stop\"}]}\n\n")
+	}))
+	defer server.Close()
+
+	result := streamChat(context.Background(), server.Client(), server.URL, "key", chatRequest{
+		Model: "demo", Stream: true,
+	}, 5*time.Second, nil)
+	require.Equal(t, http.StatusOK, result.StatusCode)
+	assert.True(t, result.SSE)
+	assert.False(t, result.SSEDone)
+	assert.Empty(t, result.ErrorMessage)
+	assert.Equal(t, "complete", result.Content)
+	assert.Equal(t, "stop", result.FinishReason)
+}
+
 func TestFinalizeStreamTimingExcludesUsageTailAndUnstreamedReasoning(t *testing.T) {
 	t.Parallel()
 	result := StreamResult{
@@ -487,6 +525,64 @@ func TestRunStressSummarizesFailuresFromEveryWorker(t *testing.T) {
 	assert.Contains(t, []int{1, 2}, metrics.Issues[0].Worker)
 	assert.Contains(t, []int{1, 2}, metrics.Issues[0].Round)
 	assert.Zero(t, metrics.OtherIssueCount)
+}
+
+func TestRunStressUsesConfiguredConcurrencyAndMonotonicProgress(t *testing.T) {
+	t.Parallel()
+	const concurrency = 8
+	var active atomic.Int64
+	var peak atomic.Int64
+	var calls atomic.Int64
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		current := active.Add(1)
+		defer active.Add(-1)
+		for {
+			previous := peak.Load()
+			if current <= previous || peak.CompareAndSwap(previous, current) {
+				break
+			}
+		}
+		if current == concurrency {
+			releaseOnce.Do(func() { close(release) })
+		}
+		select {
+		case <-release:
+		case <-time.After(2 * time.Second):
+			t.Error("configured workers did not reach the upstream concurrently")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var metrics *StressMetrics
+	var progress []int
+	err := Run(context.Background(), server.Client(), RunRequest{
+		BaseURL: server.URL, Model: "demo", Modules: []string{ModuleStress},
+		Stress: StressConfig{Concurrency: concurrency, Rounds: 1, MaxTokens: 8},
+	}, func(event Event) {
+		if event.Type == "progress" {
+			progress = append(progress, event.Completed)
+		}
+		if event.Type == "metrics" {
+			metrics = event.Metrics
+		}
+	})
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	assert.EqualValues(t, concurrency, calls.Load())
+	assert.EqualValues(t, concurrency, peak.Load())
+	assert.Equal(t, concurrency, metrics.Succeeded)
+	require.NotEmpty(t, progress)
+	assert.Equal(t, 0, progress[0])
+	assert.Equal(t, concurrency, progress[len(progress)-1])
+	for index := 1; index < len(progress); index++ {
+		assert.Greater(t, progress[index], progress[index-1])
+	}
 }
 
 func TestRunStressReportsMalformedJSONResponse(t *testing.T) {

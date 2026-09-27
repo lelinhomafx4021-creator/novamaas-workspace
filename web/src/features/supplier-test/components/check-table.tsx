@@ -29,7 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
-import { statusLabel, statusVariant } from '../formatters'
+import { checkMessage, statusLabel, statusVariant } from '../formatters'
 import type { CheckResult } from '../types'
 
 export function CheckTable(props: {
@@ -67,7 +67,7 @@ export function CheckTable(props: {
               />
             </TableCell>
             <TableCell className='text-muted-foreground max-w-xl whitespace-pre-wrap'>
-              {check.message ?? ''}
+              {checkMessage(check, t)}
             </TableCell>
             {props.onRun ? (
               <TableCell>

@@ -356,7 +356,7 @@ export function VideoPanel(props: {
                         value={preset.value || '__auto__'}
                         className='text-xs'
                       >
-                        {preset.label}
+                        {t(preset.labelKey)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -445,7 +445,7 @@ export function VideoPanel(props: {
                     <SelectContent>
                       {VIDEO_ROLES.map((role) => (
                         <SelectItem key={role.value} value={role.value}>
-                          {role.label}
+                          {t(role.labelKey)}
                         </SelectItem>
                       ))}
                     </SelectContent>

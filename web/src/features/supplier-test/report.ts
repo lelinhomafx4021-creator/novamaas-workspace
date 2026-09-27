@@ -26,6 +26,7 @@ import {
   type Assessment,
 } from './baselines'
 import { PROTOCOL_BASIC_IDS, SHALLOW_BASIC_IDS } from './constants'
+import { checkMessage, statusLabel } from './formatters'
 import type {
   CacheMetrics,
   CheckResult,
@@ -43,6 +44,7 @@ export type StressConfig = {
 }
 
 export type ReportInput = {
+  language?: string
   baseUrl: string
   model: string
   vendor?: string
@@ -144,7 +146,8 @@ function checkLines(
   t: ReportInput['t']
 ): string[] {
   return checks.map((check) => {
-    const detail = check.message ? ` — ${check.message}` : ''
+    const message = checkMessage(check, t)
+    const detail = message ? ` — ${message}` : ''
     return `- ${t(check.title)}: ${t(input.statusLabel(check.status))}${detail}`
   })
 }
@@ -394,8 +397,9 @@ function renderCheckListHtml(
       } else if (check.status === 'skip') {
         statusCls = 'check-status-skip'
       }
-      const detail = check.message
-        ? ` <span class="check-detail">— ${escapeHtml(check.message)}</span>`
+      const message = checkMessage(check, t)
+      const detail = message
+        ? ` <span class="check-detail">— ${escapeHtml(message)}</span>`
         : ''
       return `<li class="check-list-item">
 <span class="check-bullet">•</span>
@@ -597,7 +601,7 @@ export function buildHtmlReport(input: ReportInput): string {
 
     stressSection = `<div class="section page-break-avoid">
 <div class="section-header">
-  <div class="section-title">二、${escapeHtml(t('Concurrency and stress test'))}</div>
+  <div class="section-title">2. ${escapeHtml(t('Concurrency and stress test'))}</div>
   <div class="verdict-badge ${overallCls}">${escapeHtml(badgeText)}</div>
 </div>
 ${configBar}
@@ -648,7 +652,7 @@ ${summaryHtml}
 
     cacheSection = `<div class="section page-break-avoid">
 <div class="section-header">
-  <div class="section-title">三、${escapeHtml(t('Prompt cache test'))}</div>
+  <div class="section-title">3. ${escapeHtml(t('Prompt cache test'))}</div>
   <div class="verdict-badge ${overallCls}">${escapeHtml(badgeText)}</div>
 </div>
 ${cacheChecksHtml}
@@ -659,7 +663,7 @@ ${summaryHtml}
   }
 
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(input.language || 'en')}">
 <head>
 <meta charset="utf-8"/>
 <title>${escapeHtml(t('Supplier Test Report'))}-${stampFileName()}</title>
@@ -997,7 +1001,7 @@ tr {
 <!-- 模块一：接口连通与协议兼容 -->
 <div class="section page-break-avoid">
   <div class="section-header">
-    <div class="section-title">一、${escapeHtml(t('Connectivity and protocol'))}</div>
+    <div class="section-title">1. ${escapeHtml(t('Connectivity and protocol'))}</div>
     <div class="verdict-badge ${basicBadgeClass}">${escapeHtml(t(basicBadge))}</div>
   </div>
   ${shallowChecks.length > 0 ? `<div class="check-group-title">1. ${escapeHtml(t('Basic connectivity checks'))}</div>${renderCheckListHtml(shallowChecks, input, t)}` : ''}
@@ -1018,6 +1022,7 @@ ${input.errorMessage ? `<div class="section page-break-avoid"><h2>${escapeHtml(t
 }
 
 export type VideoReportInput = {
+  language?: string
   baseUrl: string
   model: string
   endpointUrl?: string
@@ -1132,8 +1137,9 @@ export function buildVideoMarkdownReport(input: VideoReportInput): string {
 
   lines.push('', `## 2. ${t('Execution Pipeline')}`)
   for (const check of input.videoChecks) {
-    const detail = check.message ? ` — ${check.message}` : ''
-    lines.push(`- ${t(check.title)}: ${t(check.status)}${detail}`)
+    const message = checkMessage(check, t)
+    const detail = message ? ` — ${message}` : ''
+    lines.push(`- ${t(check.title)}: ${t(statusLabel(check.status))}${detail}`)
   }
 
   lines.push('', `## 3. ${t('Output Result')}`)
@@ -1178,7 +1184,8 @@ export function buildVideoHtmlReport(input: VideoReportInput): string {
       } else if (check.status === 'skip') {
         statusCls = 'check-status-skip'
       }
-      return `<div class="check-item"><span class="${statusCls}">●</span><span class="check-title">${escapeHtml(t(check.title))}：</span><span class="check-status-text">${escapeHtml(t(check.status))}</span>${check.message ? `<span class="check-msg">${escapeHtml(check.message)}</span>` : ''}</div>`
+      const message = checkMessage(check, t)
+      return `<div class="check-item"><span class="${statusCls}">●</span><span class="check-title">${escapeHtml(t(check.title))}：</span><span class="check-status-text">${escapeHtml(t(statusLabel(check.status)))}</span>${message ? `<span class="check-msg">${escapeHtml(message)}</span>` : ''}</div>`
     })
     .join('')
 
@@ -1269,7 +1276,7 @@ export function buildVideoHtmlReport(input: VideoReportInput): string {
   }
 
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(input.language || 'en')}">
 <head>
 <meta charset="utf-8"/>
 <title>${escapeHtml(t('Doubao Video Generation Test Report'))}-${stampFileName()}</title>
@@ -1348,7 +1355,7 @@ body {
 
 <div class="section page-break-avoid">
   <div class="section-header">
-    <div class="section-title">一、${escapeHtml(t('Video Generation Parameters'))}</div>
+    <div class="section-title">1. ${escapeHtml(t('Video Generation Parameters'))}</div>
   </div>
   <div class="prompt-box"><strong>${escapeHtml(t('Prompt'))}：</strong>${escapeHtml(input.videoConfig.prompt || '-')}</div>
   <div class="meta-grid" style="margin-bottom:0; background:#fff; border:none; padding:0;">
@@ -1358,7 +1365,7 @@ body {
 
 <div class="section page-break-avoid">
   <div class="section-header">
-    <div class="section-title">二、${escapeHtml(t('Execution Pipeline'))}</div>
+    <div class="section-title">2. ${escapeHtml(t('Execution Pipeline'))}</div>
   </div>
   <div class="checks-list">
     ${checksHtml}
@@ -1367,7 +1374,7 @@ body {
 
 <div class="section page-break-avoid">
   <div class="section-header">
-    <div class="section-title">三、${escapeHtml(t('Output Result'))}</div>
+    <div class="section-title">3. ${escapeHtml(t('Output Result'))}</div>
   </div>
   ${outputSectionHtml}
 </div>

@@ -115,3 +115,24 @@ test('an HTTP 200 stream closing without done reports an error', async () => {
     expect(result.current.runningModule).toBeNull()
   })
 })
+
+test('manual video query keeps a translatable status and its task state separate', () => {
+  const { result } = renderHook(() => useSupplierTestRun())
+
+  act(() => {
+    result.current.updateVideoMetricsWithQueryResult({
+      success: true,
+      task_id: 'video-42',
+      status: 'queued',
+    })
+  })
+
+  const pollCheck = result.current.videoChecks.find(
+    (check) => check.id === 'video_poll'
+  )
+  expect(pollCheck).toMatchObject({
+    status: 'running',
+    message: 'Current status: {{status}}',
+    messageArgs: { status: 'queued' },
+  })
+})

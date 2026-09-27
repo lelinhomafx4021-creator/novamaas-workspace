@@ -103,6 +103,7 @@ export type SupplierTestEvent = {
   status?: CheckStatus
   title?: string
   message?: string
+  message_args?: Record<string, string | number>
   summary?: string
   worker?: number
   text?: string
@@ -173,6 +174,7 @@ export type CheckResult = {
   title: string
   status: CheckStatus
   message?: string
+  messageArgs?: Record<string, string | number>
   hintKey?: string
 }
 

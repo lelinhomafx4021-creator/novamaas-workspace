@@ -551,8 +551,9 @@ func TestRunVideo_PermanentPollErrorFailsBothChecks(t *testing.T) {
 			}
 		}
 		require.NotNil(t, failed, "check %s must fail", checkID)
-		assert.Contains(t, failed.Message, "HTTP 401")
-		assert.Contains(t, failed.Message, "invalid token")
+		assert.Equal(t, "Polling failed (HTTP {{status}}): {{error}}", failed.Message)
+		assert.Equal(t, 401, failed.MessageArgs["status"])
+		assert.Contains(t, failed.MessageArgs["error"], "invalid token")
 	}
 }
 
@@ -591,7 +592,7 @@ func TestRunVideo_SingleCheckPoll(t *testing.T) {
 		}
 	}
 	require.NotNil(t, failPollEvent)
-	assert.Contains(t, failPollEvent.Message, "未提供任务 ID")
+	assert.Equal(t, "Submit a task or enter a task ID before querying status.", failPollEvent.Message)
 
 	// 2. Providing TaskID succeeds
 	req := RunRequest{
@@ -659,7 +660,7 @@ func TestRunVideo_SingleCheckResult(t *testing.T) {
 		}
 	}
 	require.NotNil(t, failResultEvent)
-	assert.Contains(t, failResultEvent.Message, "未提供任务 ID")
+	assert.Equal(t, "Submit a task or enter a task ID before querying status.", failResultEvent.Message)
 
 	// 2. Providing TaskID emits CheckVideoResult without CheckVideoPoll
 	req := RunRequest{

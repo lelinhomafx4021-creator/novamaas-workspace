@@ -86,7 +86,7 @@ function resetChecks(current: CheckResult[], ids?: string[]): CheckResult[] {
     if (selected && !selected.has(check.id)) {
       return check
     }
-    return { ...check, status: 'idle', message: undefined }
+    return { ...check, status: 'idle', message: undefined, messageArgs: undefined }
   })
 }
 
@@ -247,6 +247,7 @@ export function useSupplierTestRun() {
                     title: parsed.title || check.title,
                     status: parsed.status ?? check.status,
                     message: parsed.message,
+                    messageArgs: parsed.message_args,
                   }
                 : check
             )
@@ -279,6 +280,7 @@ export function useSupplierTestRun() {
                       title: parsed.title || check.title,
                       status: parsed.status ?? check.status,
                       message: parsed.message,
+                      messageArgs: parsed.message_args,
                     }
                   : check
               )
@@ -374,15 +376,18 @@ export function useSupplierTestRun() {
         )
 
         let pollStatus: CheckResult['status'] = 'running'
-        let pollMessage = t('Current status: {{status}}', {
+        let pollMessage = 'Current status: {{status}}'
+        let pollMessageArgs: CheckResult['messageArgs'] = {
           status: result.status,
-        })
+        }
         if (isSuccess) {
           pollStatus = 'pass'
-          pollMessage = t('Manual query: task completed')
+          pollMessage = 'Manual query: task completed'
+          pollMessageArgs = undefined
         } else if (isFailed) {
           pollStatus = 'fail'
-          pollMessage = result.fail_reason || t('Task failed')
+          pollMessage = result.fail_reason || 'Task failed'
+          pollMessageArgs = undefined
         }
 
         setVideoChecks((current) =>
@@ -392,6 +397,7 @@ export function useSupplierTestRun() {
                 ...check,
                 status: pollStatus,
                 message: pollMessage,
+                messageArgs: pollMessageArgs,
               }
             }
             if (check.id === 'video_result') {
@@ -400,15 +406,17 @@ export function useSupplierTestRun() {
                   ...check,
                   status: result.video_url ? 'pass' : 'fail',
                   message: result.video_url
-                    ? t('Successfully fetched video playback URL')
-                    : t('Task succeeded but no video URL returned'),
+                    ? 'Successfully fetched video playback URL'
+                    : 'Task succeeded but no video URL returned',
+                  messageArgs: undefined,
                 }
               }
               if (isFailed) {
                 return {
                   ...check,
                   status: 'fail',
-                  message: result.fail_reason || t('Task failed'),
+                  message: result.fail_reason || 'Task failed',
+                  messageArgs: undefined,
                 }
               }
             }
@@ -417,7 +425,7 @@ export function useSupplierTestRun() {
         )
       }
     },
-    [t]
+    []
   )
 
   return {

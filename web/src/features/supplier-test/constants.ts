@@ -396,22 +396,22 @@ export const VIDEO_RATIOS = [
   'adaptive',
 ] as const
 export const VIDEO_ROLES = [
-  { value: 'first_frame', label: 'First frame (首帧)' },
-  { value: 'reference_image', label: 'Reference image (参考图)' },
+  { value: 'first_frame', labelKey: 'First frame' },
+  { value: 'reference_image', labelKey: 'Reference image' },
 ] as const
 
-export const ENDPOINT_PATH_PRESETS: Array<{ value: string; label: string }> = [
-  { value: '', label: '自动探测 / 默认 (Auto Detect)' },
+export const ENDPOINT_PATH_PRESETS: Array<{ value: string; labelKey: string }> = [
+  { value: '', labelKey: 'Auto detect / default' },
   {
     value: '/api/v3/contents/generations/tasks',
-    label: '官方标准 (/api/v3/contents/generations/tasks)',
+    labelKey: 'Official API (/api/v3/contents/generations/tasks)',
   },
   {
     value: '/contents/generations/tasks',
-    label: '无 /api/v3 (/contents/generations/tasks)',
+    labelKey: 'Without /api/v3 (/contents/generations/tasks)',
   },
   {
     value: '/v1/contents/generations/tasks',
-    label: '网关 /v1 (/v1/contents/generations/tasks)',
+    labelKey: 'Gateway /v1 (/v1/contents/generations/tasks)',
   },
 ]

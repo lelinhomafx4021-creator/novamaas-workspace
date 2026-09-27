@@ -130,7 +130,7 @@ function readStoredStandard(): SupplierStandard {
 }
 
 export function SupplierTest() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [target, setTarget] = useState<TargetForm>({
     baseUrl: '',
     apiKey: '',
@@ -501,7 +501,12 @@ export function SupplierTest() {
     ? assessCache(run.cacheMetrics, standard)
     : null
 
+  let reportLanguage = i18n.language
+  if (reportLanguage === 'zhCN') reportLanguage = 'zh-CN'
+  if (reportLanguage === 'zhTW') reportLanguage = 'zh-TW'
+
   const reportInput = (): ReportInput => ({
+    language: reportLanguage,
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
     vendor: target.vendor,
@@ -530,6 +535,7 @@ export function SupplierTest() {
   })
 
   const videoReportInput = (): VideoReportInput => ({
+    language: reportLanguage,
     baseUrl: target.baseUrl.trim(),
     model: target.model.trim(),
     endpointUrl: run.videoMetrics?.endpoint_url,

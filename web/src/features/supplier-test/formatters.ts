@@ -19,7 +19,15 @@ For commercial licensing, please contact support@quantumnous.com
 import type { StatusVariant } from '@/components/status-badge'
 
 import type { Verdict } from './baselines'
-import type { CheckStatus } from './types'
+import type { CheckResult, CheckStatus } from './types'
+
+export function checkMessage(
+  check: CheckResult,
+  t: (key: string, options?: Record<string, string | number>) => string
+): string {
+  if (!check.message) return ''
+  return t(check.message, check.messageArgs)
+}
 
 export function statusVariant(status: CheckStatus): StatusVariant {
   if (status === 'pass') return 'success'

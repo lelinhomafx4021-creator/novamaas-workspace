@@ -79,20 +79,21 @@ type VideoConfig struct {
 }
 
 type Event struct {
-	Type      string         `json:"type"`
-	Module    string         `json:"module,omitempty"`
-	CheckID   string         `json:"check_id,omitempty"`
-	Status    string         `json:"status,omitempty"`
-	Title     string         `json:"title,omitempty"`
-	Message   string         `json:"message,omitempty"`
-	Summary   string         `json:"summary,omitempty"`
-	Worker    int            `json:"worker,omitempty"`
-	Text      string         `json:"text,omitempty"`
-	Completed int            `json:"completed,omitempty"`
-	Total     int            `json:"total,omitempty"`
-	Metrics   *StressMetrics `json:"metrics,omitempty"`
-	Cache     *CacheMetrics  `json:"cache,omitempty"`
-	Video     *VideoMetrics  `json:"video,omitempty"`
+	Type        string         `json:"type"`
+	Module      string         `json:"module,omitempty"`
+	CheckID     string         `json:"check_id,omitempty"`
+	Status      string         `json:"status,omitempty"`
+	Title       string         `json:"title,omitempty"`
+	Message     string         `json:"message,omitempty"`
+	MessageArgs map[string]any `json:"message_args,omitempty"`
+	Summary     string         `json:"summary,omitempty"`
+	Worker      int            `json:"worker,omitempty"`
+	Text        string         `json:"text,omitempty"`
+	Completed   int            `json:"completed,omitempty"`
+	Total       int            `json:"total,omitempty"`
+	Metrics     *StressMetrics `json:"metrics,omitempty"`
+	Cache       *CacheMetrics  `json:"cache,omitempty"`
+	Video       *VideoMetrics  `json:"video,omitempty"`
 }
 
 type VideoMetrics struct {
@@ -1314,10 +1315,10 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		taskID = strings.TrimSpace(req.Video.TaskID)
 		if taskID == "" {
 			failedCheckID := CheckVideoPoll
-			failedTitle := "状态轮询"
+			failedTitle := "Status polling"
 			if !runPoll && runResult {
 				failedCheckID = CheckVideoResult
-				failedTitle = "视频结果"
+				failedTitle = "Video result"
 			}
 			emit(Event{
 				Type:    "check",
@@ -1325,7 +1326,7 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 				CheckID: failedCheckID,
 				Status:  "fail",
 				Title:   failedTitle,
-				Message: "未提供任务 ID，无法执行状态查询。请先执行任务提交或输入任务 ID",
+				Message: "Submit a task or enter a task ID before querying status.",
 				Video:   metrics,
 			})
 			return
@@ -1337,8 +1338,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			Module:  ModuleVideo,
 			CheckID: CheckVideoSubmit,
 			Status:  "running",
-			Title:   "任务提交",
-			Message: "正在组装请求并向火山方舟提交视频生成任务...",
+			Title:   "Task submit",
+			Message: "Preparing and submitting the video task...",
 			Video:   metrics,
 		})
 
@@ -1348,13 +1349,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			var rawMap map[string]any
 			if err := common.Unmarshal([]byte(rawPayloadTrimmed), &rawMap); err != nil {
 				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoSubmit,
-					Status:  "fail",
-					Title:   "任务提交",
-					Message: "原生请求 JSON 解析失败: " + err.Error(),
-					Video:   metrics,
+					Type:        "check",
+					Module:      ModuleVideo,
+					CheckID:     CheckVideoSubmit,
+					Status:      "fail",
+					Title:       "Task submit",
+					Message:     "Could not parse native request JSON: {{error}}",
+					MessageArgs: map[string]any{"error": err.Error()},
+					Video:       metrics,
 				})
 				return
 			}
@@ -1364,8 +1366,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 					Module:  ModuleVideo,
 					CheckID: CheckVideoSubmit,
 					Status:  "fail",
-					Title:   "任务提交",
-					Message: "原生请求 JSON 必须是对象",
+					Title:   "Task submit",
+					Message: "Native request JSON must be an object.",
 					Video:   metrics,
 				})
 				return
@@ -1376,13 +1378,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			b, err := common.Marshal(rawMap)
 			if err != nil {
 				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoSubmit,
-					Status:  "fail",
-					Title:   "任务提交",
-					Message: "序列化原生请求 JSON 失败: " + err.Error(),
-					Video:   metrics,
+					Type:        "check",
+					Module:      ModuleVideo,
+					CheckID:     CheckVideoSubmit,
+					Status:      "fail",
+					Title:       "Task submit",
+					Message:     "Could not serialize native request JSON: {{error}}",
+					MessageArgs: map[string]any{"error": err.Error()},
+					Video:       metrics,
 				})
 				return
 			}
@@ -1405,8 +1408,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 						Module:  ModuleVideo,
 						CheckID: CheckVideoSubmit,
 						Status:  "fail",
-						Title:   "任务提交",
-						Message: "选择了公网 URL 模式但未提供图片地址",
+						Title:   "Task submit",
+						Message: "Public image URL mode requires an image URL.",
 						Video:   metrics,
 					})
 					return
@@ -1430,8 +1433,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 						Module:  ModuleVideo,
 						CheckID: CheckVideoSubmit,
 						Status:  "fail",
-						Title:   "任务提交",
-						Message: "选择了 Base64 模式但未提供数据",
+						Title:   "Task submit",
+						Message: "Base64 image mode requires image data.",
 						Video:   metrics,
 					})
 					return
@@ -1442,8 +1445,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 						Module:  ModuleVideo,
 						CheckID: CheckVideoSubmit,
 						Status:  "fail",
-						Title:   "任务提交",
-						Message: "Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+						Title:   "Task submit",
+						Message: "Base64 image data must use data:image/<type>;base64,... format.",
 						Video:   metrics,
 					})
 					return
@@ -1482,8 +1485,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 							Module:  ModuleVideo,
 							CheckID: CheckVideoSubmit,
 							Status:  "fail",
-							Title:   "任务提交",
-							Message: "尾帧 Base64 数据格式不规范，需为 data:image/<type>;base64,... 格式",
+							Title:   "Task submit",
+							Message: "End frame Base64 data must use data:image/<type>;base64,... format.",
 							Video:   metrics,
 						})
 						return
@@ -1529,13 +1532,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 				var extra map[string]any
 				if err := common.Unmarshal([]byte(req.Video.CustomJSON), &extra); err != nil {
 					emit(Event{
-						Type:    "check",
-						Module:  ModuleVideo,
-						CheckID: CheckVideoSubmit,
-						Status:  "fail",
-						Title:   "任务提交",
-						Message: "自定义参数 JSON 解析失败: " + err.Error(),
-						Video:   metrics,
+						Type:        "check",
+						Module:      ModuleVideo,
+						CheckID:     CheckVideoSubmit,
+						Status:      "fail",
+						Title:       "Task submit",
+						Message:     "Could not parse custom parameters JSON: {{error}}",
+						MessageArgs: map[string]any{"error": err.Error()},
+						Video:       metrics,
 					})
 					return
 				}
@@ -1547,13 +1551,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			b, err := common.Marshal(payloadMap)
 			if err != nil {
 				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoSubmit,
-					Status:  "fail",
-					Title:   "任务提交",
-					Message: "构建请求 JSON 失败: " + err.Error(),
-					Video:   metrics,
+					Type:        "check",
+					Module:      ModuleVideo,
+					CheckID:     CheckVideoSubmit,
+					Status:      "fail",
+					Title:       "Task submit",
+					Message:     "Could not build request JSON: {{error}}",
+					MessageArgs: map[string]any{"error": err.Error()},
+					Video:       metrics,
 				})
 				return
 			}
@@ -1570,13 +1575,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		metrics.RawSubmitResponseJSON = string(submitResp)
 		if err != nil {
 			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoSubmit,
-				Status:  "fail",
-				Title:   "任务提交",
-				Message: "提交任务网络请求失败: " + err.Error(),
-				Video:   metrics,
+				Type:        "check",
+				Module:      ModuleVideo,
+				CheckID:     CheckVideoSubmit,
+				Status:      "fail",
+				Title:       "Task submit",
+				Message:     "Video task submission failed: {{error}}",
+				MessageArgs: map[string]any{"error": err.Error()},
+				Video:       metrics,
 			})
 			return
 		}
@@ -1584,13 +1590,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		if status != http.StatusOK && status != http.StatusCreated && status != http.StatusAccepted {
 			errMsg := ExtractAPIError(submitResp, fmt.Sprintf("HTTP %d", status))
 			emit(Event{
-				Type:    "check",
-				Module:  ModuleVideo,
-				CheckID: CheckVideoSubmit,
-				Status:  "fail",
-				Title:   "任务提交",
-				Message: fmt.Sprintf("上游返回错误 (HTTP %d): %s", status, errMsg),
-				Video:   metrics,
+				Type:        "check",
+				Module:      ModuleVideo,
+				CheckID:     CheckVideoSubmit,
+				Status:      "fail",
+				Title:       "Task submit",
+				Message:     "Upstream error (HTTP {{status}}): {{error}}",
+				MessageArgs: map[string]any{"status": status, "error": errMsg},
+				Video:       metrics,
 			})
 			return
 		}
@@ -1602,8 +1609,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 				Module:  ModuleVideo,
 				CheckID: CheckVideoSubmit,
 				Status:  "fail",
-				Title:   "任务提交",
-				Message: "提交成功但响应中未返回有效任务 ID",
+				Title:   "Task submit",
+				Message: "Submission succeeded, but no valid task ID was returned.",
 				Video:   metrics,
 			})
 			return
@@ -1612,13 +1619,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		taskID = parsedID
 		metrics.TaskID = taskID
 		emit(Event{
-			Type:    "check",
-			Module:  ModuleVideo,
-			CheckID: CheckVideoSubmit,
-			Status:  "pass",
-			Title:   "任务提交",
-			Message: fmt.Sprintf("任务提交成功，任务 ID: %s", taskID),
-			Video:   metrics,
+			Type:        "check",
+			Module:      ModuleVideo,
+			CheckID:     CheckVideoSubmit,
+			Status:      "pass",
+			Title:       "Task submit",
+			Message:     "Task submitted. Task ID: {{taskId}}",
+			MessageArgs: map[string]any{"taskId": taskID},
+			Video:       metrics,
 		})
 
 		if !runPoll && !runResult {
@@ -1628,35 +1636,37 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 
 	if runPoll {
 		emit(Event{
-			Type:    "check",
-			Module:  ModuleVideo,
-			CheckID: CheckVideoPoll,
-			Status:  "running",
-			Title:   "状态轮询",
-			Message: fmt.Sprintf("任务 [%s] 已进入队列，开始轮询状态...", taskID),
-			Video:   metrics,
+			Type:        "check",
+			Module:      ModuleVideo,
+			CheckID:     CheckVideoPoll,
+			Status:      "running",
+			Title:       "Status polling",
+			Message:     "Task {{taskId}} queued; polling status...",
+			MessageArgs: map[string]any{"taskId": taskID},
+			Video:       metrics,
 		})
 	} else if runResult {
 		emit(Event{
-			Type:    "check",
-			Module:  ModuleVideo,
-			CheckID: CheckVideoResult,
-			Status:  "running",
-			Title:   "视频结果",
-			Message: fmt.Sprintf("正在查询任务 [%s] 的视频生成结果...", taskID),
-			Video:   metrics,
+			Type:        "check",
+			Module:      ModuleVideo,
+			CheckID:     CheckVideoResult,
+			Status:      "running",
+			Title:       "Video result",
+			Message:     "Checking video generation result for task {{taskId}}...",
+			MessageArgs: map[string]any{"taskId": taskID},
+			Video:       metrics,
 		})
 	}
 
 	pollCtx, cancelPoll := context.WithTimeout(ctx, videoPollTotalTimeout)
 	defer cancelPoll()
-	emitPollFailure := func(message string) {
+	emitPollFailure := func(message string, args map[string]any) {
 		metrics.ElapsedMS = float64(time.Since(started).Milliseconds())
 		if runPoll {
-			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoPoll, Status: "fail", Title: "状态轮询", Message: message, Video: metrics})
+			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoPoll, Status: "fail", Title: "Status polling", Message: message, MessageArgs: args, Video: metrics})
 		}
 		if runResult {
-			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoResult, Status: "fail", Title: "视频结果", Message: message, Video: metrics})
+			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoResult, Status: "fail", Title: "Video result", Message: message, MessageArgs: args, Video: metrics})
 		}
 	}
 
@@ -1667,10 +1677,10 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		metrics.ElapsedMS = float64(elapsed.Milliseconds())
 
 		activeCheckID := CheckVideoPoll
-		activeTitle := "状态轮询"
+		activeTitle := "Status polling"
 		if !runPoll && runResult {
 			activeCheckID = CheckVideoResult
-			activeTitle = "视频结果"
+			activeTitle = "Video result"
 		}
 
 		if pollErr != nil {
@@ -1678,31 +1688,32 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 				return false
 			}
 			emit(Event{
-				Type:    "progress",
-				Module:  ModuleVideo,
-				CheckID: activeCheckID,
-				Status:  "running",
-				Title:   activeTitle,
-				Message: fmt.Sprintf("轮询异常 (%s)，5 秒后重试...", pollErr.Error()),
-				Video:   metrics,
+				Type:        "progress",
+				Module:      ModuleVideo,
+				CheckID:     activeCheckID,
+				Status:      "running",
+				Title:       activeTitle,
+				Message:     "Polling error ({{error}}); retrying in 5 seconds...",
+				MessageArgs: map[string]any{"error": pollErr.Error()},
+				Video:       metrics,
 			})
 			return false
 		}
 
 		if pollStatus != http.StatusOK {
 			if pollStatus >= http.StatusBadRequest && pollStatus < http.StatusInternalServerError && pollStatus != http.StatusRequestTimeout && pollStatus != http.StatusTooManyRequests {
-				message := fmt.Sprintf("轮询失败 (HTTP %d): %s", pollStatus, ExtractAPIError(pollResp, http.StatusText(pollStatus)))
-				emitPollFailure(message)
+				emitPollFailure("Polling failed (HTTP {{status}}): {{error}}", map[string]any{"status": pollStatus, "error": ExtractAPIError(pollResp, http.StatusText(pollStatus))})
 				return true
 			}
 			emit(Event{
-				Type:    "progress",
-				Module:  ModuleVideo,
-				CheckID: activeCheckID,
-				Status:  "running",
-				Title:   activeTitle,
-				Message: fmt.Sprintf("轮询返回 HTTP %d，5 秒后重试...", pollStatus),
-				Video:   metrics,
+				Type:        "progress",
+				Module:      ModuleVideo,
+				CheckID:     activeCheckID,
+				Status:      "running",
+				Title:       activeTitle,
+				Message:     "Polling returned HTTP {{status}}; retrying in 5 seconds...",
+				MessageArgs: map[string]any{"status": pollStatus},
+				Video:       metrics,
 			})
 			return false
 		}
@@ -1716,49 +1727,53 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		switch normalizedState {
 		case "queued", "pending":
 			emit(Event{
-				Type:    "progress",
-				Module:  ModuleVideo,
-				CheckID: activeCheckID,
-				Status:  "running",
-				Title:   activeTitle,
-				Message: fmt.Sprintf("排队中 (queued)，已等待 %.1f 秒...", elapsed.Seconds()),
-				Video:   metrics,
+				Type:        "progress",
+				Module:      ModuleVideo,
+				CheckID:     activeCheckID,
+				Status:      "running",
+				Title:       activeTitle,
+				Message:     "Queued; waited {{seconds}} seconds...",
+				MessageArgs: map[string]any{"seconds": fmt.Sprintf("%.1f", elapsed.Seconds())},
+				Video:       metrics,
 			})
 			return false
 		case "running", "processing", "in_progress":
 			emit(Event{
-				Type:    "progress",
-				Module:  ModuleVideo,
-				CheckID: activeCheckID,
-				Status:  "running",
-				Title:   activeTitle,
-				Message: fmt.Sprintf("生成渲染中 (running)，已耗时 %.1f 秒...", elapsed.Seconds()),
-				Video:   metrics,
+				Type:        "progress",
+				Module:      ModuleVideo,
+				CheckID:     activeCheckID,
+				Status:      "running",
+				Title:       activeTitle,
+				Message:     "Generating; elapsed {{seconds}} seconds...",
+				MessageArgs: map[string]any{"seconds": fmt.Sprintf("%.1f", elapsed.Seconds())},
+				Video:       metrics,
 			})
 			return false
 		case "succeeded", "success":
 			if runPoll {
 				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "pass",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("任务生成完成，总耗时 %.1f 秒", elapsed.Seconds()),
-					Video:   metrics,
+					Type:        "check",
+					Module:      ModuleVideo,
+					CheckID:     CheckVideoPoll,
+					Status:      "pass",
+					Title:       "Status polling",
+					Message:     "Task complete in {{seconds}} seconds.",
+					MessageArgs: map[string]any{"seconds": fmt.Sprintf("%.1f", elapsed.Seconds())},
+					Video:       metrics,
 				})
 			}
 
 			if runResult {
 				if videoURL != "" {
 					emit(Event{
-						Type:    "check",
-						Module:  ModuleVideo,
-						CheckID: CheckVideoResult,
-						Status:  "pass",
-						Title:   "视频结果",
-						Message: fmt.Sprintf("成功获取视频播放地址: %s", videoURL),
-						Video:   metrics,
+						Type:        "check",
+						Module:      ModuleVideo,
+						CheckID:     CheckVideoResult,
+						Status:      "pass",
+						Title:       "Video result",
+						Message:     "Video URL retrieved: {{url}}",
+						MessageArgs: map[string]any{"url": videoURL},
+						Video:       metrics,
 					})
 				} else {
 					emit(Event{
@@ -1766,8 +1781,8 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 						Module:  ModuleVideo,
 						CheckID: CheckVideoResult,
 						Status:  "fail",
-						Title:   "视频结果",
-						Message: "任务状态成功，但响应中未提取到 video_url",
+						Title:   "Video result",
+						Message: "Task succeeded, but no video_url was found.",
 						Video:   metrics,
 					})
 				}
@@ -1776,40 +1791,43 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		case "failed", "failure", "cancelled", "expired":
 			errMsg := failReason
 			if errMsg == "" {
-				errMsg = ExtractAPIError(pollResp, "任务执行失败")
+				errMsg = ExtractAPIError(pollResp, "task failed")
 			}
 			if runPoll {
 				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoPoll,
-					Status:  "fail",
-					Title:   "状态轮询",
-					Message: fmt.Sprintf("任务执行失败 (%s): %s", taskState, errMsg),
-					Video:   metrics,
+					Type:        "check",
+					Module:      ModuleVideo,
+					CheckID:     CheckVideoPoll,
+					Status:      "fail",
+					Title:       "Status polling",
+					Message:     "Task failed ({{status}}): {{error}}",
+					MessageArgs: map[string]any{"status": taskState, "error": errMsg},
+					Video:       metrics,
 				})
 			}
 			if runResult {
 				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoResult,
-					Status:  "fail",
-					Title:   "视频结果",
-					Message: fmt.Sprintf("由于任务失败 (%s)，未能生成视频结果: %s", taskState, errMsg),
-					Video:   metrics,
+					Type:        "check",
+					Module:      ModuleVideo,
+					CheckID:     CheckVideoResult,
+					Status:      "fail",
+					Title:       "Video result",
+					Message:     "No video was generated because task failed ({{status}}): {{error}}",
+					MessageArgs: map[string]any{"status": taskState, "error": errMsg},
+					Video:       metrics,
 				})
 			}
 			return true
 		default:
 			emit(Event{
-				Type:    "progress",
-				Module:  ModuleVideo,
-				CheckID: activeCheckID,
-				Status:  "running",
-				Title:   activeTitle,
-				Message: fmt.Sprintf("当前状态: %s，已耗时 %.1f 秒...", taskState, elapsed.Seconds()),
-				Video:   metrics,
+				Type:        "progress",
+				Module:      ModuleVideo,
+				CheckID:     activeCheckID,
+				Status:      "running",
+				Title:       activeTitle,
+				Message:     "Current status: {{status}}; elapsed {{seconds}} seconds...",
+				MessageArgs: map[string]any{"status": taskState, "seconds": fmt.Sprintf("%.1f", elapsed.Seconds())},
+				Video:       metrics,
 			})
 			return false
 		}
@@ -1825,14 +1843,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 	for {
 		select {
 		case <-ctx.Done():
-			emitPollFailure("测试已取消或请求已超时")
+			emitPollFailure("Test cancelled or request timed out.", nil)
 			return
 		case <-pollCtx.Done():
-			message := "任务轮询超时（超过 40 分钟），上游未在预期时间内完成"
+			message := "Task polling timed out after 40 minutes."
 			if ctx.Err() != nil {
-				message = "测试已取消或请求已超时"
+				message = "Test cancelled or request timed out."
 			}
-			emitPollFailure(message)
+			emitPollFailure(message, nil)
 			return
 		case <-ticker.C:
 			if queryTask() {

@@ -440,6 +440,7 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 			taskRoute.GET("/:task_id/request-body", middleware.AdminAuth(), controller.GetTaskRequestBody)
 			taskRoute.GET("/:task_id/request-snapshots", middleware.AdminAuth(), controller.GetTaskRequestSnapshots)
+			taskRoute.GET("/:task_id/poll-history", middleware.AdminAuth(), controller.GetTaskPollHistory)
 		}
 
 		vendorRoute := apiRouter.Group("/vendors")

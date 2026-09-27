@@ -219,7 +219,7 @@ describe('LoginNoticeDialog', () => {
     ).toContain('admin:2026.10-models')
   })
 
-  test('keeps release details readable when the OSS image URL is not configured', async () => {
+  test('uses the public OSS artwork when no image override is configured', async () => {
     vi.stubEnv('VITE_FEATURED_RELEASE_IMAGE_URL', '')
     vi.mocked(getLoginNotice).mockResolvedValue({
       announcements: [],
@@ -237,10 +237,13 @@ describe('LoginNoticeDialog', () => {
     expect(await screen.findByText('Asset Library is live')).toBeVisible()
     expect(screen.getByText('WeChat mini program is coming')).toBeVisible()
     expect(
-      screen.queryByRole('img', {
+      screen.getByRole('img', {
         name: 'Two colleagues organize media assets and check usage on a phone',
       })
-    ).not.toBeInTheDocument()
+    ).toHaveAttribute(
+      'src',
+      'https://nova-maas-aitoken-public.oss-cn-shenzhen.aliyuncs.com/releases/202609_001/asset-library-miniapp-preview.webp'
+    )
   })
 
   test('uses a wide notice layout without losing narrow-screen margins', async () => {

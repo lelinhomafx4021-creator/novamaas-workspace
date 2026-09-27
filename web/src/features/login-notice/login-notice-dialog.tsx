@@ -58,6 +58,8 @@ import { acknowledgeLoginNotice, getLoginNotice } from './api'
 import { createDeviceFingerprint } from './device-fingerprint'
 
 const FEATURED_RELEASE_KEY = '2026.09-asset-library-miniapp-preview'
+const FEATURED_RELEASE_IMAGE =
+  'https://nova-maas-aitoken-public.oss-cn-shenzhen.aliyuncs.com/releases/202609_001/asset-library-miniapp-preview.webp'
 const RELEASE_STORAGE_PREFIX = 'release-notices:v1:'
 
 function getSeenReleaseKeys(userID: number): string[] {
@@ -75,7 +77,8 @@ function getSeenReleaseKeys(userID: number): string[] {
 export function LoginNoticeDialog() {
   const { t } = useTranslation()
   const featuredReleaseImageUrl =
-    import.meta.env.VITE_FEATURED_RELEASE_IMAGE_URL?.trim()
+    import.meta.env.VITE_FEATURED_RELEASE_IMAGE_URL?.trim() ||
+    FEATURED_RELEASE_IMAGE
   const featuredReleaseImage = featuredReleaseImageUrl?.startsWith('https://')
     ? featuredReleaseImageUrl
     : undefined

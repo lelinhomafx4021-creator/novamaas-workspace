@@ -42,22 +42,22 @@ No logos, words, letters, numerals, watermarks, extra people, sci-fi devices, ne
 
 | 项目 | 信息 |
 | --- | --- |
-| 推荐上传文件 | [`docs/images/releases/asset-library-miniapp-preview.webp`](images/releases/asset-library-miniapp-preview.webp) |
+| 已上传展示文件 | [`docs/images/releases/asset-library-miniapp-preview.webp`](images/releases/asset-library-miniapp-preview.webp) |
 | 文件名 / MIME | `asset-library-miniapp-preview.webp` / `image/webp` |
 | 像素 | 1672 × 941，约 16:9 |
 | 压缩图大小 | 227,376 字节，约 222 KiB；比原 PNG 少约 90% |
 | 压缩图 SHA-256 | `c9b6e8265fb5f5d48ff7d180893aa0fca2adfda98ab5b347be48615bfb5d6e48` |
-| 建议新 OSS 对象键 | `release/202609_001/asset-library-miniapp-preview.webp` |
+| 已上传 WebP 对象键 | `releases/202609_001/asset-library-miniapp-preview.webp` |
 | 保留的原图 | [`asset-library-miniapp-preview.png`](images/releases/asset-library-miniapp-preview.png)，2,269,215 字节；SHA-256 `171be83512fcaf2abe4a92e6f7daa44896674735199da3f084f27eb0df741b16` |
 | 已上传原图对象键 | `release/202609_001/asset-library-miniapp-preview.png` |
 
 本期压缩图从原 PNG 以 `cwebp -q 88 -m 6 -mt -sharp_yuv -metadata none` 导出，保留原始像素尺寸。下一期先用同样的导出参数制作网页图，再根据实际画面检查画质和文件大小。
 
-由产品负责人上传 WebP 到 OSS，并提供浏览器可长期公开访问的 HTTPS 地址。上传时设置 `Content-Type: image/webp`；使用新的版本化对象键，不覆盖已上传的 PNG 原图或其他发版图片。可设置长期缓存，但换图时必须换文件名或对象键。上线前用无登录浏览器打开地址，确认图片可访问且不会过期。不要将带 `Expires`、`OSSAccessKeyId`、`Signature` 的临时签名链接写入前端构建配置：它会失效，并把临时凭据暴露给所有浏览器。
+由产品负责人上传 WebP 到 OSS，并提供浏览器可长期公开访问的 HTTPS 地址。上传时设置 `Content-Type: image/webp`；使用新的版本化对象键，不覆盖已上传的 PNG 原图或其他发版图片。可设置长期缓存，但换图时必须换文件名或对象键。上线前用无登录浏览器打开地址，确认图片可访问且不会过期。不要将带 `Expires`、`OSSAccessKeyId`、`Signature` 的临时签名链接写入前端构建配置：它会失效，并把临时凭据暴露给所有浏览器。本期[公开 WebP 地址](https://nova-maas-aitoken-public.oss-cn-shenzhen.aliyuncs.com/releases/202609_001/asset-library-miniapp-preview.webp)已验证返回 `image/webp`，内容 SHA-256 与本地文件一致。
 
-本期 PNG 原图已上传到 `nova-maas-aitoken-prod` 存储桶；WebP 压缩图待上传。构建配置应使用通过匿名访问验证的长期有效 WebP 地址。
+本期 PNG 原图已上传到 `nova-maas-aitoken-prod` 存储桶；WebP 压缩图已上传到 `nova-maas-aitoken-public` 存储桶。
 
-内置发版卡片从前端构建变量 `VITE_FEATURED_RELEASE_IMAGE_URL` 读取该 HTTPS 地址；图片不再从站内 `/releases/...` 加载。变量需在构建 `web/` 时提供，例如 `VITE_FEATURED_RELEASE_IMAGE_URL=https://<公开域名>/release/202609_001/asset-library-miniapp-preview.webp bun run build`。未配置有效 HTTPS 地址时卡片仍展示文案，但不展示图片；上传完成后提供实际地址并重新构建、部署前端即可展示 OSS 图片。后台新增的普通发版公告，在“图片地址”字段填入对应 OSS HTTPS 地址即可。
+内置发版卡片默认从本期公开 WebP 地址加载；图片不再从站内 `/releases/...` 加载。未来发版可在构建 `web/` 时用 `VITE_FEATURED_RELEASE_IMAGE_URL` 指定新的长期有效 HTTPS 地址，覆盖默认图片；同时必须更新版本标识、图片与文案。后台新增的普通发版公告，在“图片地址”字段填入对应 OSS HTTPS 地址即可。
 
 ## 发布与展示规则
 

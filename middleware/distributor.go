@@ -16,7 +16,6 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -84,20 +83,14 @@ func Distribute() func(c *gin.Context) {
 				}
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-				// check path is /pg/chat/completions
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
-					playgroundRequest := &dto.PlayGroundRequest{}
-					err = common.UnmarshalBodyReusable(c, playgroundRequest)
-					if err != nil {
-						abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidPlayground, map[string]any{"Error": err.Error()}))
-						return
-					}
-					if playgroundRequest.Group != "" {
-						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
+				// Playground requests may select a user-accessible group.
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/") {
+					if modelRequest.Group != "" {
+						if !service.GroupInUserUsableGroups(usingGroup, modelRequest.Group) && modelRequest.Group != usingGroup {
 							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 							return
 						}
-						usingGroup = playgroundRequest.Group
+						usingGroup = modelRequest.Group
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
@@ -137,7 +130,7 @@ func Distribute() func(c *gin.Context) {
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
 						TokenGroup:  usingGroup,
-						RequestPath: c.Request.URL.Path,
+						RequestPath: playgroundRelayRequestPath(c.Request.URL.Path),
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
@@ -161,7 +154,7 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 		}
-		if channel != nil && !channelSupportsRequestPath(channel, c.Request.URL.Path, modelRequest.Model) {
+		if channel != nil && !channelSupportsRequestPath(channel, playgroundRelayRequestPath(c.Request.URL.Path), modelRequest.Model) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, "the selected channel does not support this request path")
 			return
 		}
@@ -179,6 +172,7 @@ func Distribute() func(c *gin.Context) {
 // are deliberately isolated to Fire Ark's native /api/v3 endpoints, in both
 // directions, so compatible and native routes cannot select each other's channels.
 func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
+	requestPath = playgroundRelayRequestPath(requestPath)
 	if channel == nil {
 		return false
 	}
@@ -190,6 +184,13 @@ func channelSupportsRequestPath(channel *model.Channel, requestPath string, requ
 	}
 	config := channel.GetOtherSettings().AdvancedCustom
 	return config != nil && config.SupportsPathForModel(requestPath, requestModel)
+}
+
+func playgroundRelayRequestPath(path string) string {
+	if strings.HasPrefix(path, "/pg/audio/") {
+		return "/v1" + strings.TrimPrefix(path, "/pg")
+	}
+	return path
 }
 
 // getModelFromRequest 从请求中读取模型信息
@@ -423,7 +424,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		c.Set("relay_mode", relayMode)
 	}
-	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/") {
 		// playground chat completions
 		req, err := getModelFromRequest(c)
 		if err != nil {
@@ -432,6 +433,13 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		modelRequest.Model = req.Model
 		modelRequest.Group = req.Group
 		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
+	}
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/audio/") {
+		if strings.HasSuffix(c.Request.URL.Path, "/speech") {
+			c.Set("relay_mode", relayconstant.RelayModeAudioSpeech)
+		} else {
+			c.Set("relay_mode", relayconstant.RelayModeAudioTranscription)
+		}
 	}
 
 	return &modelRequest, shouldSelectChannel, nil

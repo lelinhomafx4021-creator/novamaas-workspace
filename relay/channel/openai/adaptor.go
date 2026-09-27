@@ -404,6 +404,9 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 			if key == "model" {
 				continue
 			}
+			if info.IsPlayground && (key == "group" || key == "chat_model") {
+				continue
+			}
 			for _, value := range values {
 				writer.WriteField(key, value)
 				logger.LogDebug(c.Request.Context(), "--form '%s=\"%s\"'", key, value)

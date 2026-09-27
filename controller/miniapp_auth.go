@@ -22,15 +22,29 @@ import (
 const miniAppBindingFlowTTL = 10 * time.Minute
 
 var exchangeMiniAppCode = service.ExchangeWeChatMiniAppCode
+var exchangeMiniAppPhoneCode = service.ExchangeWeChatMiniAppPhoneCode
 
 type miniAppLoginRequest struct {
 	Code string `json:"code"`
 }
 
+type miniAppPasswordLoginRequest struct {
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	TwoFactorCode string `json:"two_factor_code,omitempty"`
+}
+
+type miniAppPhoneLoginRequest struct {
+	Code      string `json:"code"`
+	PhoneCode string `json:"phone_code"`
+}
+
 type miniAppBindingFlowPayload struct {
-	AppId   string `json:"app_id"`
-	OpenId  string `json:"open_id"`
-	UnionId string `json:"union_id,omitempty"`
+	AppId          string `json:"app_id"`
+	OpenId         string `json:"open_id"`
+	UnionId        string `json:"union_id,omitempty"`
+	Phone          string `json:"phone,omitempty"`
+	RequiredUserId int    `json:"required_user_id,omitempty"`
 }
 
 type miniAppBindRequest struct {
@@ -80,38 +94,8 @@ func MiniAppLogin(c *gin.Context) {
 		identity.OpenId,
 	)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		payload, marshalErr := common.Marshal(miniAppBindingFlowPayload{
+		writeMiniAppBindingRequired(c, miniAppBindingFlowPayload{
 			AppId: identity.AppId, OpenId: identity.OpenId, UnionId: identity.UnionId,
-		})
-		if marshalErr != nil {
-			writeMiniAppInternalError(c, marshalErr)
-			return
-		}
-		flowToken, flow, flowErr := model.CreateAuthFlow(model.AuthFlowCreate{
-			Purpose:   model.AuthFlowPurposeWeChatMiniAppBind,
-			Provider:  model.ExternalIdentityProviderWeChatMiniApp,
-			Intent:    model.AuthFlowIntentBind,
-			Payload:   string(payload),
-			ExpiresAt: time.Now().Add(miniAppBindingFlowTTL),
-		})
-		if flowErr != nil {
-			writeMiniAppInternalError(c, flowErr)
-			return
-		}
-		legalSettings := system_setting.GetLegalSettings()
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "",
-			"data": gin.H{
-				"binding_required":           true,
-				"flow_token":                 flowToken,
-				"flow_expires_at":            flow.ExpiresAt.Unix(),
-				"password_login_enabled":     common.PasswordLoginEnabled,
-				"registration_enabled":       common.RegisterEnabled && common.PasswordRegisterEnabled,
-				"email_verification_enabled": common.EmailVerificationEnabled,
-				"user_agreement_enabled":     legalSettings.UserAgreement != "",
-				"privacy_policy_enabled":     legalSettings.PrivacyPolicy != "",
-			},
 		})
 		return
 	}
@@ -123,6 +107,180 @@ func MiniAppLogin(c *gin.Context) {
 	user, err := model.GetUserById(userId, false)
 	if err != nil || user.Status != common.UserStatusEnabled {
 		writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_ACCOUNT_UNAVAILABLE")
+		return
+	}
+	bundle, err := service.CreateLoginSession(user.Id, "wechat_miniapp", c.ClientIP(), c.Request.UserAgent())
+	if err != nil {
+		writeAuthSessionError(c, err)
+		return
+	}
+	writeMiniAppAuthBundle(c, user, bundle)
+}
+
+// MiniAppPasswordLogin is independent of WeChat authorization. Existing users
+// can still sign in when the phone-number permission or wx.login is unavailable.
+func MiniAppPasswordLogin(c *gin.Context) {
+	setAuthNoStore(c)
+	if !common.PasswordLoginEnabled {
+		writeMiniAppAuthError(c, http.StatusForbidden, "MINI_AUTH_PASSWORD_LOGIN_DISABLED")
+		return
+	}
+	var request miniAppPasswordLoginRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil ||
+		strings.TrimSpace(request.Username) == "" || request.Password == "" {
+		writeMiniAppAuthError(c, http.StatusBadRequest, "MINI_AUTH_INVALID_REQUEST")
+		return
+	}
+	user, ok := verifyMiniAppAccountCredentials(c, request.Username, request.Password, request.TwoFactorCode)
+	if !ok {
+		return
+	}
+	bundle, err := service.CreateLoginSessionAtAuthVersion(user.Id, user.AuthVersion, "password_miniapp", c.ClientIP(), c.Request.UserAgent())
+	if err != nil {
+		writeAuthSessionError(c, err)
+		return
+	}
+	writeMiniAppAuthBundle(c, user, bundle)
+}
+
+func writeMiniAppBindingRequired(c *gin.Context, binding miniAppBindingFlowPayload) {
+	payload, err := common.Marshal(binding)
+	if err != nil {
+		writeMiniAppInternalError(c, err)
+		return
+	}
+	flowToken, flow, err := model.CreateAuthFlow(model.AuthFlowCreate{
+		Purpose:   model.AuthFlowPurposeWeChatMiniAppBind,
+		Provider:  model.ExternalIdentityProviderWeChatMiniApp,
+		Intent:    model.AuthFlowIntentBind,
+		Payload:   string(payload),
+		ExpiresAt: time.Now().Add(miniAppBindingFlowTTL),
+	})
+	if err != nil {
+		writeMiniAppInternalError(c, err)
+		return
+	}
+	legalSettings := system_setting.GetLegalSettings()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"binding_required":           true,
+			"flow_token":                 flowToken,
+			"flow_expires_at":            flow.ExpiresAt.Unix(),
+			"password_login_enabled":     common.PasswordLoginEnabled,
+			"registration_enabled":       binding.Phone != "" && binding.RequiredUserId == 0 && common.RegisterEnabled && common.PasswordRegisterEnabled,
+			"email_verification_enabled": common.EmailVerificationEnabled,
+			"user_agreement_enabled":     legalSettings.UserAgreement != "",
+			"privacy_policy_enabled":     legalSettings.PrivacyPolicy != "",
+		},
+	})
+}
+
+func MiniAppPhoneLogin(c *gin.Context) {
+	setAuthNoStore(c)
+	var request miniAppPhoneLoginRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil ||
+		strings.TrimSpace(request.Code) == "" || strings.TrimSpace(request.PhoneCode) == "" {
+		writeMiniAppAuthError(c, http.StatusBadRequest, "MINI_AUTH_CODE_REQUIRED")
+		return
+	}
+	identity, err := exchangeMiniAppCode(c.Request.Context(), request.Code)
+	if err != nil {
+		writeMiniAppCodeExchangeError(c, err)
+		return
+	}
+	phone, err := exchangeMiniAppPhoneCode(c.Request.Context(), request.PhoneCode)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrWeChatMiniAppPhoneRejected):
+			writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_PHONE_CODE_INVALID")
+		case errors.Is(err, service.ErrWeChatMiniAppDisabled), errors.Is(err, service.ErrWeChatMiniAppConfiguration):
+			writeMiniAppAuthError(c, http.StatusServiceUnavailable, "MINI_AUTH_NOT_CONFIGURED")
+		default:
+			writeMiniAppAuthError(c, http.StatusBadGateway, "MINI_AUTH_UPSTREAM_UNAVAILABLE")
+		}
+		return
+	}
+	userId, err := model.GetUserIdByScopedExternalIdentity(
+		model.ExternalIdentityProviderWeChatMiniApp, identity.AppId, identity.OpenId,
+	)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		var owner *model.User
+		var requiredUserId int
+		var unavailable bool
+		err = model.DB.Transaction(func(tx *gorm.DB) error {
+			candidate, lookupErr := model.GetTrustedPhoneOwnerWithTx(tx, phone)
+			if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if candidate.Status != common.UserStatusEnabled {
+				unavailable = true
+				return nil
+			}
+			requiredUserId = candidate.Id
+			twoFAEnabled, checkErr := model.IsTwoFAEnabledWithTx(tx, candidate.Id)
+			if checkErr != nil {
+				return checkErr
+			}
+			if candidate.Role != common.RoleCommonUser || twoFAEnabled {
+				return nil
+			}
+			phoneSource := "wechat_miniapp"
+			if candidate.Phone != "" {
+				phoneSource = "system_assigned_wechat"
+			}
+			if claimErr := model.ClaimVerifiedPhoneWithTx(tx, phone, candidate.Id, phoneSource); claimErr != nil {
+				return claimErr
+			}
+			if claimErr := model.ClaimScopedExternalIdentityWithTx(
+				tx, model.ExternalIdentityProviderWeChatMiniApp, identity.AppId, identity.OpenId, candidate.Id,
+			); claimErr != nil {
+				return claimErr
+			}
+			owner = candidate
+			return nil
+		})
+		if err != nil {
+			writeMiniAppBindingError(c, err)
+			return
+		}
+		if unavailable {
+			writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_ACCOUNT_UNAVAILABLE")
+			return
+		}
+		if owner != nil {
+			bundle, sessionErr := service.CreateLoginSession(owner.Id, "wechat_miniapp", c.ClientIP(), c.Request.UserAgent())
+			if sessionErr != nil {
+				writeAuthSessionError(c, sessionErr)
+				return
+			}
+			writeMiniAppAuthBundle(c, owner, bundle)
+			return
+		}
+		writeMiniAppBindingRequired(c, miniAppBindingFlowPayload{
+			AppId: identity.AppId, OpenId: identity.OpenId, UnionId: identity.UnionId,
+			Phone: phone, RequiredUserId: requiredUserId,
+		})
+		return
+	}
+	if err != nil {
+		writeMiniAppInternalError(c, err)
+		return
+	}
+	user, err := model.GetUserById(userId, false)
+	if err != nil || user.Status != common.UserStatusEnabled {
+		writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_ACCOUNT_UNAVAILABLE")
+		return
+	}
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		return model.ClaimVerifiedPhoneWithTx(tx, phone, user.Id, "wechat_miniapp")
+	})
+	if err != nil {
+		writeMiniAppBindingError(c, err)
 		return
 	}
 	bundle, err := service.CreateLoginSession(user.Id, "wechat_miniapp", c.ClientIP(), c.Request.UserAgent())
@@ -153,34 +311,27 @@ func MiniAppBind(c *gin.Context) {
 		return
 	}
 
-	user := model.User{Username: strings.TrimSpace(request.Username), Password: request.Password}
-	if err := user.ValidateAndFill(); err != nil {
-		writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_CREDENTIALS_INVALID")
+	user, ok := verifyMiniAppAccountCredentials(c, request.Username, request.Password, request.TwoFactorCode)
+	if !ok {
 		return
 	}
-	twoFAEnabled, err := model.IsTwoFAEnabled(user.Id)
-	if err != nil {
-		writeMiniAppInternalError(c, err)
+	if payload.RequiredUserId != 0 && user.Id != payload.RequiredUserId {
+		writeMiniAppAuthError(c, http.StatusConflict, "MINI_AUTH_PHONE_CONFLICT")
 		return
-	}
-	if twoFAEnabled {
-		if strings.TrimSpace(request.TwoFactorCode) == "" {
-			writeMiniAppAuthError(c, http.StatusForbidden, "MINI_AUTH_2FA_REQUIRED")
-			return
-		}
-		if !validateMiniAppTwoFactor(&user, request.TwoFactorCode) {
-			writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_2FA_INVALID")
-			return
-		}
 	}
 
-	_, err = model.ConsumeAuthFlowWithAction(request.FlowToken, model.AuthFlowMatch{
+	_, err := model.ConsumeAuthFlowWithAction(request.FlowToken, model.AuthFlowMatch{
 		Purpose:  model.AuthFlowPurposeWeChatMiniAppBind,
 		Provider: model.ExternalIdentityProviderWeChatMiniApp,
 		Intent:   model.AuthFlowIntentBind,
 	}, func(tx *gorm.DB, consumed *model.AuthFlow) error {
 		if consumed.Id != flow.Id {
 			return model.ErrAuthFlowInvalid
+		}
+		if payload.Phone != "" {
+			if err := model.ClaimVerifiedPhoneWithTx(tx, payload.Phone, user.Id, "wechat_miniapp"); err != nil {
+				return err
+			}
 		}
 		return model.ClaimScopedExternalIdentityWithTx(
 			tx,
@@ -199,7 +350,35 @@ func MiniAppBind(c *gin.Context) {
 		writeAuthSessionError(c, err)
 		return
 	}
-	writeMiniAppAuthBundle(c, &user, bundle)
+	writeMiniAppAuthBundle(c, user, bundle)
+}
+
+func verifyMiniAppAccountCredentials(c *gin.Context, username, password, twoFactorCode string) (*model.User, bool) {
+	user := &model.User{Username: strings.TrimSpace(username), Password: password}
+	if err := user.ValidateAndFill(); err != nil {
+		if errors.Is(err, model.ErrDatabase) {
+			writeMiniAppInternalError(c, err)
+		} else {
+			writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_CREDENTIALS_INVALID")
+		}
+		return nil, false
+	}
+	twoFAEnabled, err := model.IsTwoFAEnabled(user.Id)
+	if err != nil {
+		writeMiniAppInternalError(c, err)
+		return nil, false
+	}
+	if twoFAEnabled {
+		if strings.TrimSpace(twoFactorCode) == "" {
+			writeMiniAppAuthError(c, http.StatusForbidden, "MINI_AUTH_2FA_REQUIRED")
+			return nil, false
+		}
+		if !validateMiniAppTwoFactor(user, twoFactorCode) {
+			writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_2FA_INVALID")
+			return nil, false
+		}
+	}
+	return user, true
 }
 
 func MiniAppRegister(c *gin.Context) {
@@ -219,6 +398,14 @@ func MiniAppRegister(c *gin.Context) {
 	}
 	flow, payload, ok := readMiniAppBindingFlow(c, request.FlowToken)
 	if !ok {
+		return
+	}
+	if payload.Phone == "" {
+		writeMiniAppAuthError(c, http.StatusForbidden, "MINI_AUTH_PHONE_REQUIRED")
+		return
+	}
+	if payload.RequiredUserId != 0 {
+		writeMiniAppAuthError(c, http.StatusConflict, "MINI_AUTH_PHONE_CONFLICT")
 		return
 	}
 
@@ -272,6 +459,9 @@ func MiniAppRegister(c *gin.Context) {
 		if err := cleanUser.InsertWithTx(tx, inviterId); err != nil {
 			return err
 		}
+		if err := model.ClaimVerifiedPhoneWithTx(tx, payload.Phone, cleanUser.Id, "wechat_miniapp"); err != nil {
+			return err
+		}
 		if err := model.ClaimScopedExternalIdentityWithTx(
 			tx,
 			model.ExternalIdentityProviderWeChatMiniApp,
@@ -297,7 +487,7 @@ func MiniAppRegister(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, model.ErrExternalIdentityAlreadyClaimed) {
+		if errors.Is(err, model.ErrExternalIdentityAlreadyClaimed) || errors.Is(err, model.ErrVerifiedPhoneAlreadyClaimed) {
 			writeMiniAppBindingError(c, err)
 			return
 		}
@@ -439,6 +629,10 @@ func writeMiniAppBindingError(c *gin.Context, err error) {
 		writeMiniAppAuthError(c, http.StatusConflict, "MINI_AUTH_FLOW_CONSUMED")
 	case errors.Is(err, model.ErrExternalIdentityAlreadyClaimed):
 		writeMiniAppAuthError(c, http.StatusConflict, "MINI_AUTH_IDENTITY_CONFLICT")
+	case errors.Is(err, model.ErrVerifiedPhoneAlreadyClaimed):
+		writeMiniAppAuthError(c, http.StatusConflict, "MINI_AUTH_PHONE_CONFLICT")
+	case errors.Is(err, model.ErrVerifiedPhoneInvalid):
+		writeMiniAppAuthError(c, http.StatusBadRequest, "MINI_AUTH_PHONE_CODE_INVALID")
 	case errors.Is(err, model.ErrAuthFlowInvalid):
 		writeMiniAppAuthError(c, http.StatusBadRequest, "MINI_AUTH_FLOW_INVALID")
 	default:

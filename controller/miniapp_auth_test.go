@@ -25,13 +25,14 @@ type miniAppAuthTestResponse struct {
 	Success bool   `json:"success"`
 	Code    string `json:"code"`
 	Data    struct {
-		BindingRequired bool   `json:"binding_required"`
-		FlowToken       string `json:"flow_token"`
-		AccessToken     string `json:"access_token"`
-		RefreshToken    string `json:"refresh_token"`
-		ProofToken      string `json:"proof_token"`
-		Key             string `json:"key"`
-		Session         struct {
+		BindingRequired     bool   `json:"binding_required"`
+		RegistrationEnabled bool   `json:"registration_enabled"`
+		FlowToken           string `json:"flow_token"`
+		AccessToken         string `json:"access_token"`
+		RefreshToken        string `json:"refresh_token"`
+		ProofToken          string `json:"proof_token"`
+		Key                 string `json:"key"`
+		Session             struct {
 			SID string `json:"sid"`
 		} `json:"session"`
 		User map[string]any `json:"user"`
@@ -133,6 +134,7 @@ func setupMiniAppAuthTest(t *testing.T) *gorm.DB {
 	previousEmailVerification := common.EmailVerificationEnabled
 	previousGenerateToken := constant.GenerateDefaultToken
 	previousExchange := exchangeMiniAppCode
+	previousPhoneExchange := exchangeMiniAppPhoneCode
 	legalSettings := system_setting.GetLegalSettings()
 	previousAgreement := legalSettings.UserAgreement
 	previousPrivacy := legalSettings.PrivacyPolicy
@@ -145,7 +147,7 @@ func setupMiniAppAuthTest(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&model.User{}, &model.UserSession{}, &model.AuthFlow{}, &model.ExternalIdentityClaim{},
-		&model.TwoFA{}, &model.TwoFABackupCode{}, &model.Token{}, &model.Log{},
+		&model.TwoFA{}, &model.TwoFABackupCode{}, &model.Token{}, &model.Log{}, &model.VerifiedPhone{},
 	))
 	model.DB = db
 	model.LOG_DB = db
@@ -160,6 +162,9 @@ func setupMiniAppAuthTest(t *testing.T) *gorm.DB {
 	legalSettings.PrivacyPolicy = ""
 	exchangeMiniAppCode = func(_ context.Context, code string) (service.WeChatMiniAppIdentity, error) {
 		return service.WeChatMiniAppIdentity{AppId: "wx-test-app", OpenId: "openid-" + code}, nil
+	}
+	exchangeMiniAppPhoneCode = func(_ context.Context, code string) (string, error) {
+		return "+861380000" + code, nil
 	}
 	gin.SetMode(gin.TestMode)
 
@@ -176,6 +181,7 @@ func setupMiniAppAuthTest(t *testing.T) *gorm.DB {
 		legalSettings.UserAgreement = previousAgreement
 		legalSettings.PrivacyPolicy = previousPrivacy
 		exchangeMiniAppCode = previousExchange
+		exchangeMiniAppPhoneCode = previousPhoneExchange
 		_ = sqlDB.Close()
 	})
 	return db
@@ -206,9 +212,13 @@ func createMiniAppPasswordUser(t *testing.T, db *gorm.DB, username, password str
 	return user
 }
 
-func createMiniAppBindingFlow(t *testing.T, appId, openId string, expiresAt time.Time) string {
+func createMiniAppBindingFlow(t *testing.T, appId, openId string, expiresAt time.Time, phone ...string) string {
 	t.Helper()
-	payload, err := common.Marshal(miniAppBindingFlowPayload{AppId: appId, OpenId: openId})
+	binding := miniAppBindingFlowPayload{AppId: appId, OpenId: openId}
+	if len(phone) > 0 {
+		binding.Phone = phone[0]
+	}
+	payload, err := common.Marshal(binding)
 	require.NoError(t, err)
 	token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
 		Purpose:   model.AuthFlowPurposeWeChatMiniAppBind,
@@ -219,6 +229,58 @@ func createMiniAppBindingFlow(t *testing.T, appId, openId string, expiresAt time
 	})
 	require.NoError(t, err)
 	return token
+}
+
+func TestMiniAppPasswordLoginWorksWithoutWeChatCredentials(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	user := createMiniAppPasswordUser(t, db, "mini-password-user", "password123")
+	user.Phone = "13800001234"
+	require.NoError(t, db.Save(user).Error)
+
+	for _, login := range []string{"mini-password-user", "13800001234"} {
+		body := fmt.Sprintf(`{"username":%q,"password":"password123"}`, login)
+		recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/password", body, MiniAppPasswordLogin)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		assert.True(t, response.Success)
+		assert.NotEmpty(t, response.Data.AccessToken)
+		assert.NotEmpty(t, response.Data.RefreshToken)
+		assert.NotEmpty(t, response.Data.Session.SID)
+		identity, err := service.ParseAccessToken(response.Data.AccessToken)
+		require.NoError(t, err)
+		assert.Equal(t, user.Id, identity.UserID)
+	}
+	var claims int64
+	require.NoError(t, db.Model(&model.ExternalIdentityClaim{}).Count(&claims).Error)
+	assert.Zero(t, claims, "password login must not claim a WeChat identity")
+}
+
+func TestMiniAppPasswordLoginRequiresPasswordAndRespectsTwoFactor(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	user := createMiniAppPasswordUser(t, db, "mini-secure-user", "password123")
+	require.NoError(t, db.Create(&model.TwoFA{UserId: user.Id, Secret: "test-secret", IsEnabled: true}).Error)
+
+	for _, scenario := range []struct {
+		body   string
+		status int
+		code   string
+	}{
+		{`{"username":"mini-secure-user","password":"wrong"}`, http.StatusUnauthorized, "MINI_AUTH_CREDENTIALS_INVALID"},
+		{`{"username":"mini-secure-user","password":"password123"}`, http.StatusForbidden, "MINI_AUTH_2FA_REQUIRED"},
+		{`{"username":"mini-secure-user","password":"password123","two_factor_code":"000000"}`, http.StatusUnauthorized, "MINI_AUTH_2FA_INVALID"},
+	} {
+		recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/password", scenario.body, MiniAppPasswordLogin)
+		assert.Equal(t, scenario.status, recorder.Code)
+		assert.Equal(t, scenario.code, response.Code)
+		assert.Empty(t, response.Data.AccessToken)
+	}
+}
+
+func TestMiniAppPasswordLoginHonorsPlatformSetting(t *testing.T) {
+	setupMiniAppAuthTest(t)
+	common.PasswordLoginEnabled = false
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/password", `{"username":"any","password":"password123"}`, MiniAppPasswordLogin)
+	assert.Equal(t, http.StatusForbidden, recorder.Code)
+	assert.Equal(t, "MINI_AUTH_PASSWORD_LOGIN_DISABLED", response.Code)
 }
 
 func TestMiniAppLoginCreatesOpaqueBindingFlowForUnknownIdentity(t *testing.T) {
@@ -276,7 +338,7 @@ func TestMiniAppBindRefreshLogoutAndReplayProtection(t *testing.T) {
 
 func TestMiniAppRegisterCreatesUserAndClaimsIdentityAtomically(t *testing.T) {
 	db := setupMiniAppAuthTest(t)
-	flowToken := createMiniAppBindingFlow(t, "wx-test-app", "openid-register", time.Now().Add(time.Minute))
+	flowToken := createMiniAppBindingFlow(t, "wx-test-app", "openid-register", time.Now().Add(time.Minute), "+8613800001000")
 	body := fmt.Sprintf(`{"flow_token":%q,"username":"mini-register","password":"password123","accept_terms":true}`, flowToken)
 
 	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/register", body, MiniAppRegister)
@@ -285,9 +347,115 @@ func TestMiniAppRegisterCreatesUserAndClaimsIdentityAtomically(t *testing.T) {
 	require.NotEmpty(t, response.Data.AccessToken)
 	var user model.User
 	require.NoError(t, db.Where("username = ?", "mini-register").First(&user).Error)
+	phone, err := model.GetVerifiedPhoneByUser(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "+8613800001000", phone.Phone)
 	owner, err := model.GetUserIdByScopedExternalIdentity(model.ExternalIdentityProviderWeChatMiniApp, "wx-test-app", "openid-register")
 	require.NoError(t, err)
 	assert.Equal(t, user.Id, owner)
+}
+
+func TestMiniAppRegisterRequiresVerifiedPhoneFlow(t *testing.T) {
+	setupMiniAppAuthTest(t)
+	flowToken := createMiniAppBindingFlow(t, "wx-test-app", "openid-no-phone", time.Now().Add(time.Minute))
+	body := fmt.Sprintf(`{"flow_token":%q,"username":"mini-no-phone","password":"password123","accept_terms":true}`, flowToken)
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/register", body, MiniAppRegister)
+	assert.Equal(t, http.StatusForbidden, recorder.Code)
+	assert.Equal(t, "MINI_AUTH_PHONE_REQUIRED", response.Code)
+}
+
+func TestMiniAppRegisterRejectsClaimedPhoneWithoutCreatingAccount(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	owner := createMiniAppPasswordUser(t, db, "mini-existing-phone", "password123")
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ClaimVerifiedPhoneWithTx(tx, "+8613800001234", owner.Id, "wechat_miniapp")
+	}))
+	flowToken := createMiniAppBindingFlow(t, "wx-test-app", "openid-new-collision", time.Now().Add(time.Minute), "+8613800001234")
+	body := fmt.Sprintf(`{"flow_token":%q,"username":"mini-new-collision","password":"password123","accept_terms":true}`, flowToken)
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/register", body, MiniAppRegister)
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+	assert.Equal(t, "MINI_AUTH_PHONE_CONFLICT", response.Code)
+	var count int64
+	require.NoError(t, db.Model(&model.User{}).Where("username = ?", "mini-new-collision").Count(&count).Error)
+	assert.Zero(t, count)
+	_, err := model.GetUserIdByScopedExternalIdentity(model.ExternalIdentityProviderWeChatMiniApp, "wx-test-app", "openid-new-collision")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+}
+
+func TestMiniAppPhoneLoginClaimsPhoneForBoundIdentity(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	user := createMiniAppPasswordUser(t, db, "mini-phone-bound", "password123")
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return model.ClaimScopedExternalIdentityWithTx(tx, model.ExternalIdentityProviderWeChatMiniApp, "wx-test-app", "openid-bound", user.Id)
+	}))
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/phone", `{"code":"bound","phone_code":"1234"}`, MiniAppPhoneLogin)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, response.Success)
+	require.NotEmpty(t, response.Data.AccessToken)
+	phone, err := model.GetVerifiedPhoneByUser(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "+8613800001234", phone.Phone)
+}
+
+func TestMiniAppPhoneLoginLinksUniqueSystemAssignedPhone(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	user := createMiniAppPasswordUser(t, db, "mini-assigned-phone", "password123")
+	require.NoError(t, db.Model(user).Update("phone", "13800001234").Error)
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/phone", `{"code":"assigned","phone_code":"1234"}`, MiniAppPhoneLogin)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.True(t, response.Success)
+	assert.False(t, response.Data.BindingRequired)
+	require.NotEmpty(t, response.Data.AccessToken)
+	owner, err := model.GetUserIdByScopedExternalIdentity(model.ExternalIdentityProviderWeChatMiniApp, "wx-test-app", "openid-assigned")
+	require.NoError(t, err)
+	assert.Equal(t, user.Id, owner)
+	verified, err := model.GetVerifiedPhoneByUser(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "+8613800001234", verified.Phone)
+	assert.Equal(t, "system_assigned_wechat", verified.Source)
+}
+
+func TestMiniAppPhoneLoginRequiresAccountProofForAdmin(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	user := createMiniAppPasswordUser(t, db, "mini-admin-phone", "password123")
+	require.NoError(t, db.Model(user).Updates(map[string]any{"phone": "13800001234", "role": common.RoleAdminUser}).Error)
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/phone", `{"code":"admin","phone_code":"1234"}`, MiniAppPhoneLogin)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, response.Data.BindingRequired)
+	assert.False(t, response.Data.RegistrationEnabled)
+	_, err := model.GetUserIdByScopedExternalIdentity(model.ExternalIdentityProviderWeChatMiniApp, "wx-test-app", "openid-admin")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+}
+
+func TestMiniAppPhoneLoginDoesNotBypassExistingTwoFactor(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	user := createMiniAppPasswordUser(t, db, "mini-twofa-phone", "password123")
+	require.NoError(t, db.Model(user).Update("phone", "13800001234").Error)
+	require.NoError(t, db.Create(&model.TwoFA{UserId: user.Id, Secret: "test-secret", IsEnabled: true}).Error)
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/phone", `{"code":"twofa","phone_code":"1234"}`, MiniAppPhoneLogin)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, response.Data.BindingRequired)
+	assert.False(t, response.Data.RegistrationEnabled)
+	assert.Empty(t, response.Data.AccessToken)
+	_, err := model.GetUserIdByScopedExternalIdentity(model.ExternalIdentityProviderWeChatMiniApp, "wx-test-app", "openid-twofa")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+}
+
+func TestMiniAppPhoneLoginDoesNotMergeAnotherAccountsPhone(t *testing.T) {
+	db := setupMiniAppAuthTest(t)
+	owner := createMiniAppPasswordUser(t, db, "mini-phone-owner", "password123")
+	other := createMiniAppPasswordUser(t, db, "mini-phone-other", "password123")
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := model.ClaimVerifiedPhoneWithTx(tx, "+8613800001234", owner.Id, "wechat_miniapp"); err != nil {
+			return err
+		}
+		return model.ClaimScopedExternalIdentityWithTx(tx, model.ExternalIdentityProviderWeChatMiniApp, "wx-test-app", "openid-other", other.Id)
+	}))
+	recorder, response := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/phone", `{"code":"other","phone_code":"1234"}`, MiniAppPhoneLogin)
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+	assert.Equal(t, "MINI_AUTH_PHONE_CONFLICT", response.Code)
+	_, err := model.GetVerifiedPhoneByUser(other.Id)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
 
 func TestMiniAppEmailVerificationRequiresEnabledSettingAndValidFlow(t *testing.T) {

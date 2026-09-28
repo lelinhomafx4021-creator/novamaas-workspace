@@ -18,182 +18,120 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   AiNetworkIcon,
-  Building02Icon,
+  ArrowRight01Icon,
   CloudServerIcon,
-  CpuIcon,
   DatabaseSync01Icon,
-  Key01Icon,
-  Share01Icon,
 } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 
-type NetworkNodeProps = {
-  icon: IconSvgElement
-  label: string
-  meta: string
-  roadmap?: boolean
-}
-
-function NetworkNode(props: NetworkNodeProps) {
-  const { t } = useTranslation()
-
-  return (
-    <div className='maas-network-node flex items-center gap-3 rounded-xl px-3 py-3'>
-      <span className='maas-node-icon flex size-9 shrink-0 items-center justify-center rounded-lg'>
-        <HugeiconsIcon
-          icon={props.icon}
-          className='size-4.5'
-          strokeWidth={1.8}
-          aria-hidden='true'
-        />
-      </span>
-      <span className='min-w-0 flex-1'>
-        <span className='block text-xs leading-tight font-medium'>
-          {props.label}
-        </span>
-        <span className='text-muted-foreground mt-0.5 block truncate text-[10px]'>
-          {props.meta}
-        </span>
-        {props.roadmap ? (
-          <Badge
-            variant='outline'
-            className='maas-roadmap-badge mt-1.5 h-4 px-1.5 text-[8px] leading-none'
-          >
-            {t('Roadmap')}
-          </Badge>
-        ) : null}
-      </span>
-    </div>
-  )
-}
-
 export function TokenNetworkVisual() {
   const { t } = useTranslation()
 
-  const supplyNodes = [
-    {
-      icon: CloudServerIcon,
-      label: t('Model providers'),
-      meta: t('Public API supply'),
-    },
-    {
-      icon: DatabaseSync01Icon,
-      label: t('Private token pools'),
-      meta: t('Managed inventory'),
-    },
-    {
-      icon: CpuIcon,
-      label: t('Compute capacity'),
-      meta: t('Schedulable supply'),
-      roadmap: true,
-    },
-  ]
-
-  const demandNodes = [
-    {
-      icon: Key01Icon,
-      label: t('API consumers'),
-      meta: t('Metered access'),
-    },
-    {
-      icon: Share01Icon,
-      label: t('Channel partners'),
-      meta: t('Commercial distribution'),
-    },
-    {
-      icon: Building02Icon,
-      label: t('Enterprise teams'),
-      meta: t('Governed usage'),
-    },
-  ]
-
   return (
     <div
-      className='maas-network-panel relative mx-auto max-w-5xl overflow-hidden rounded-[1.75rem] p-3 sm:p-4'
+      className='maas-workbench w-full rounded-[1.75rem] p-5 sm:p-7'
       role='group'
-      aria-label={t('AI supply network')}
+      aria-label={t('Gateway workbench')}
     >
-      <div aria-hidden className='maas-network-scan absolute inset-x-0 h-px' />
+      <div className='maas-workbench-header flex items-center justify-between gap-3 border-b pb-5'>
+        <span className='maas-workbench-eyebrow flex items-center gap-2 text-sm font-semibold'>
+          <span
+            aria-hidden
+            className='maas-workbench-mark size-2 rounded-full'
+          />
+          {t('Gateway workbench')}
+        </span>
+        <span className='maas-workbench-status shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium sm:text-xs'>
+          {t('Available now')}
+        </span>
+      </div>
 
-      <div className='maas-network-surface relative overflow-hidden rounded-[1.35rem] p-4 sm:p-5'>
-        <div className='flex items-center justify-between gap-4'>
-          <div className='flex min-w-0 items-center gap-2.5'>
-            <span aria-hidden className='maas-live-dot size-2 rounded-full' />
-            <span className='truncate font-mono text-[10px] tracking-[0.16em] uppercase sm:text-xs'>
-              {t('AI supply network')}
-            </span>
-          </div>
-          <Badge variant='outline' className='maas-online-badge shrink-0'>
-            {t('Control plane online')}
-          </Badge>
+      <div className='mt-7'>
+        <p className='maas-workbench-label text-xs font-medium'>
+          {t('One entry point')}
+        </p>
+        <div className='maas-workbench-entry mt-3 flex min-w-0 items-center justify-between gap-2 rounded-xl px-3 py-3.5 sm:px-4'>
+          <span className='maas-workbench-endpoint min-w-0 font-mono text-xs font-medium sm:text-sm'>
+            POST /v1/chat/completions
+          </span>
+          <HugeiconsIcon
+            icon={ArrowRight01Icon}
+            className='maas-workbench-arrow size-4 shrink-0'
+            aria-hidden='true'
+          />
         </div>
+      </div>
 
-        <div className='mt-5 grid items-center gap-3 lg:grid-cols-[minmax(0,1fr)_2.5rem_minmax(9rem,0.8fr)_2.5rem_minmax(0,1fr)]'>
-          <div className='flex min-w-0 flex-col gap-2.5'>
-            <p className='text-muted-foreground mb-0.5 font-mono text-[10px] tracking-[0.14em] uppercase'>
-              {t('Supply')}
-            </p>
-            {supplyNodes.map((node) => (
-              <NetworkNode key={node.label} {...node} />
-            ))}
-          </div>
+      <div className='maas-workbench-stage mt-4 flex items-center gap-3 rounded-2xl px-4 py-4'>
+        <span className='maas-workbench-gateway-icon flex size-10 shrink-0 items-center justify-center rounded-xl'>
+          <HugeiconsIcon
+            icon={AiNetworkIcon}
+            className='size-5'
+            aria-hidden='true'
+          />
+        </span>
+        <span className='min-w-0'>
+          <span className='block text-sm font-semibold'>
+            {t('Unified gateway access')}
+          </span>
+          <span className='maas-workbench-muted mt-0.5 block text-xs'>
+            {t('Policy · Routing · Billing')}
+          </span>
+        </span>
+      </div>
 
-          <div aria-hidden className='maas-network-connector hidden lg:block' />
-
-          <div className='maas-network-core relative mx-auto flex aspect-square w-full max-w-40 items-center justify-center rounded-full p-5'>
-            <div
-              aria-hidden
-              className='maas-core-ring absolute inset-2 rounded-full'
-            />
-            <div className='relative flex flex-col items-center text-center'>
-              <span className='maas-core-icon flex size-12 items-center justify-center rounded-2xl'>
-                <HugeiconsIcon
-                  icon={AiNetworkIcon}
-                  className='size-6'
-                  strokeWidth={1.7}
-                  aria-hidden='true'
-                />
-              </span>
-              <span className='mt-3 text-xs font-semibold'>
-                {t('Unified token pool')}
-              </span>
-              <span className='text-muted-foreground mt-1 font-mono text-[9px] tracking-wider uppercase'>
-                {t('Policy · Routing · Billing')}
-              </span>
-            </div>
-          </div>
-
-          <div aria-hidden className='maas-network-connector hidden lg:block' />
-
-          <div className='flex min-w-0 flex-col gap-2.5'>
-            <p className='text-muted-foreground mb-0.5 font-mono text-[10px] tracking-[0.14em] uppercase'>
-              {t('Demand')}
-            </p>
-            {demandNodes.map((node) => (
-              <NetworkNode key={node.label} {...node} />
-            ))}
-          </div>
-        </div>
-
-        <div className='maas-network-footer mt-5 grid grid-cols-3 gap-px overflow-hidden rounded-xl'>
+      <div className='mt-7'>
+        <p className='maas-workbench-label text-xs font-medium'>
+          {t('Connected supply')}
+        </p>
+        <div className='mt-3 grid gap-2 sm:grid-cols-2'>
           {[
-            { label: t('Routing policy'), value: t('Adaptive') },
-            { label: t('Metered settlement'), value: t('Traceable') },
-            { label: t('Access control'), value: t('Governed') },
-          ].map((item) => (
-            <div key={item.label} className='px-2 py-3 text-center'>
-              <div className='maas-network-value text-xs font-medium'>
-                {item.value}
-              </div>
-              <div className='text-muted-foreground mt-1 text-[9px] leading-tight sm:text-[10px]'>
-                {item.label}
-              </div>
+            {
+              icon: CloudServerIcon,
+              label: t('Model providers'),
+              meta: t('Public API supply'),
+            },
+            {
+              icon: DatabaseSync01Icon,
+              label: t('Private token pools'),
+              meta: t('Managed inventory'),
+            },
+          ].map((source) => (
+            <div
+              key={source.label}
+              className='maas-workbench-source flex min-w-0 items-center gap-2.5 rounded-xl px-3 py-3'
+            >
+              <HugeiconsIcon
+                icon={source.icon}
+                className='maas-workbench-source-icon size-4 shrink-0'
+                aria-hidden='true'
+              />
+              <span className='min-w-0'>
+                <span className='block truncate text-xs font-medium'>
+                  {source.label}
+                </span>
+                <span className='maas-workbench-muted mt-0.5 block truncate text-[11px]'>
+                  {source.meta}
+                </span>
+              </span>
             </div>
           ))}
         </div>
+      </div>
+
+      <div className='maas-workbench-next mt-7 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-5'>
+        <span className='text-sm font-medium'>
+          {t('Evaluated token supply')}
+        </span>
+        <Badge
+          variant='outline'
+          className='maas-workbench-roadmap h-5 rounded-full px-2 text-[10px]'
+        >
+          {t('Roadmap')}
+        </Badge>
       </div>
     </div>
   )

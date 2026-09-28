@@ -42,7 +42,7 @@ export function ValueChain() {
     {
       number: '01',
       icon: DatabaseSync01Icon,
-      title: t('Aggregate token supply'),
+      title: t('Unified gateway access'),
       description: t(
         'Bring multi-provider tokens into one managed pool with unified routing, pricing, quotas and observability.'
       ),
@@ -52,22 +52,23 @@ export function ValueChain() {
     {
       number: '02',
       icon: DeliverySent01Icon,
-      title: t('Distribute with control'),
+      title: t('Evaluated token supply'),
       description: t(
-        'Create access products for customers, teams and channels while keeping margins, permissions and usage visible.'
+        'Make channel security, reliability, cost and enterprise fit easier to compare before you choose.'
       ),
-      status: t('Available now'),
-      footer: t('Many routes to market'),
+      status: t('Roadmap'),
+      footer: t('A clearer supply shelf'),
+      roadmap: true,
     },
     {
       number: '03',
       icon: CpuIcon,
-      title: t('Extend into compute supply'),
+      title: t('Enterprise operations'),
       description: t(
-        'Evolve from token distribution toward a marketplace for schedulable compute capacity.'
+        'Deepen tenant controls, metered billing and security governance, with compute leasing on the horizon.'
       ),
-      status: t('Roadmap'),
-      footer: t('Built for expansion'),
+      status: t('Expanding'),
+      footer: t('Built for enterprise'),
       roadmap: true,
     },
   ]
@@ -85,12 +86,12 @@ export function ValueChain() {
               id='value-chain-title'
               className='mt-4 max-w-2xl text-3xl leading-tight font-semibold tracking-[-0.035em] text-balance md:text-5xl'
             >
-              {t('One platform, three layers of value')}
+              {t('Access, source, operate')}
             </h2>
           </div>
           <p className='text-muted-foreground max-w-xl text-base leading-7 text-pretty lg:justify-self-end'>
             {t(
-              'Move beyond simple API access and build a programmable supply network that grows with your business.'
+              'Start with a working gateway, then make supply easier to compare and every transaction easier to govern.'
             )}
           </p>
         </AnimateInView>

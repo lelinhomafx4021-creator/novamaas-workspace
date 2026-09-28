@@ -84,11 +84,11 @@ async function renderHome(content: string) {
   )
 }
 
-test('empty administrator content presents the AI supply value chain and configured documentation link', async () => {
+test('empty administrator content presents the gateway and planned sourcing and mobile sections', async () => {
   await renderHome('')
   const heroTitle = await screen.findByRole('heading', {
     level: 1,
-    name: /Turn fragmented AI supply into one programmable market/,
+    name: /One gateway to diverse AI supply Choose every token with purpose/,
   })
   const main = screen.getByRole('main')
   expect(heroTitle).toBeVisible()
@@ -99,47 +99,89 @@ test('empty administrator content presents the AI supply value chain and configu
   expect(
     within(main).getByRole('heading', {
       level: 2,
-      name: 'One platform, three layers of value',
+      name: 'Access, source, operate',
     })
   ).toBeVisible()
-  expect(
-    within(main).getByRole('group', { name: 'AI supply network' })
-  ).toBeVisible()
+  const sourcing = within(main).getByRole('region', {
+    name: 'Make token supply visible before you buy',
+  })
+  const enterprise = within(main).getByRole('region', {
+    name: 'Enterprise operations at every layer',
+  })
+  const miniProgram = within(main).getByRole('region', {
+    name: 'AI results and usage, always close',
+  })
+  expect(sourcing).toHaveTextContent('Roadmap')
+  expect(sourcing).toHaveTextContent('Review what matters')
+  expect(sourcing).toHaveTextContent('Match the need')
+  expect(enterprise).toHaveTextContent('security and compliance governance')
+  expect(enterprise).toHaveTextContent('Compute leasing is next')
+  expect(miniProgram).toHaveTextContent('Coming soon')
+  expect(miniProgram).toHaveTextContent('Generation results')
+  expect(miniProgram).toHaveTextContent('Token usage')
+  expect(sourcing.compareDocumentPosition(enterprise)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING
+  )
+  expect(enterprise.compareDocumentPosition(miniProgram)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING
+  )
+  expect(within(main).getByTestId('home-hero-artwork')).toHaveAttribute(
+    'aria-hidden',
+    'true'
+  )
   expect(
     within(main).getAllByRole('button', { name: 'Get Started' })
   ).toHaveLength(2)
   expect(within(main).getAllByText('Roadmap')).not.toHaveLength(0)
 })
 
-test('default homepage applies the balanced typography treatment to its primary value statement', async () => {
+test('default homepage keeps the primary value statement compact over the hero image', async () => {
   await renderHome('')
-  expect(
-    await screen.findByRole('heading', {
-      level: 1,
-      name: /Turn fragmented AI supply into one programmable market/,
-    })
-  ).toHaveClass('maas-hero-title')
+  const heroTitle = await screen.findByRole('heading', {
+    level: 1,
+    name: /One gateway to diverse AI supply Choose every token with purpose/,
+  })
+  const description = screen.getByText(
+    /Connect models and token channels through one gateway/
+  )
+
+  expect(heroTitle).toHaveClass('maas-hero-title')
+  expect(heroTitle.parentElement).toHaveClass(
+    'max-w-xl',
+    'xl:max-w-[700px]',
+    '2xl:max-w-[780px]'
+  )
+  expect(heroTitle.closest('[data-testid="home-hero-layout"]')).toHaveClass(
+    'max-w-7xl',
+    '2xl:max-w-[96rem]'
+  )
+  expect(screen.getByRole('banner').firstElementChild).toHaveClass(
+    '2xl:max-w-[96rem]'
+  )
+  expect(description).toHaveClass('text-base', 'max-w-lg')
 })
 
-test('default homepage stacks the value statement above the centered supply network', async () => {
+test('default homepage layers a decorative full-width image behind the value statement', async () => {
   await renderHome('')
   const layout = await screen.findByTestId('home-hero-layout')
   const heroTitle = await screen.findByRole('heading', {
     level: 1,
-    name: /Turn fragmented AI supply into one programmable market/,
+    name: /One gateway to diverse AI supply Choose every token with purpose/,
   })
-  const network = screen.getByRole('group', { name: 'AI supply network' })
+  const hero = heroTitle.closest('section')
+  const artwork = screen.getByTestId('home-hero-artwork')
 
-  expect(layout).toHaveClass('flex-col', 'items-center')
-  expect(heroTitle.compareDocumentPosition(network)).toBe(
-    Node.DOCUMENT_POSITION_FOLLOWING
-  )
+  expect(hero).toHaveClass('maas-hero', 'overflow-hidden', 'md:min-h-[720px]')
+  expect(artwork).toHaveClass('maas-hero-image', 'absolute', 'inset-0')
+  expect(artwork).toHaveAttribute('aria-hidden', 'true')
+  expect(layout).toContainElement(heroTitle)
+  expect(screen.queryByRole('group', { name: 'Gateway workbench' })).toBeNull()
 })
 
 test('control plane diagrams explain supply convergence, policy routing and itemized settlement', async () => {
   await renderHome('')
   const controlPlane = await screen.findByRole('region', {
-    name: 'Operate the economics, not just the API',
+    name: 'Enterprise operations at every layer',
   })
 
   const supplyDiagram = within(controlPlane).getByRole('img', {
@@ -190,7 +232,7 @@ test('administrator URL takes precedence over the default home while keeping its
   )
   expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin')
   expect(
-    screen.queryByRole('heading', { name: /Turn fragmented AI supply/ })
+    screen.queryByRole('heading', { name: /One gateway to diverse AI supply/ })
   ).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible()
 })
@@ -201,7 +243,7 @@ test('administrator Markdown remains visible instead of the default presentation
     await screen.findByRole('heading', { name: 'Company welcome' })
   ).toBeVisible()
   expect(
-    screen.queryByRole('heading', { name: /Turn fragmented AI supply/ })
+    screen.queryByRole('heading', { name: /One gateway to diverse AI supply/ })
   ).not.toBeInTheDocument()
 })
 
@@ -220,6 +262,6 @@ test('administrator HTML remains isolated and takes precedence over the default 
   expect(shadowRoot.textContent).toContain('Custom company')
   expect(shadowRoot.querySelector('script')).toBeNull()
   expect(
-    screen.queryByRole('heading', { name: /Turn fragmented AI supply/ })
+    screen.queryByRole('heading', { name: /One gateway to diverse AI supply/ })
   ).not.toBeInTheDocument()
 })

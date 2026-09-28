@@ -50,16 +50,16 @@ export function CTA(props: CTAProps) {
         <div className='maas-cta-panel relative overflow-hidden rounded-[2rem] px-6 py-16 text-center sm:px-10 md:py-24'>
           <div aria-hidden className='maas-cta-grid absolute inset-0' />
           <div className='relative mx-auto max-w-3xl'>
-            <p className='maas-section-kicker'>{t('Build the market')}</p>
+            <p className='maas-section-kicker'>{t('Build on one gateway')}</p>
             <h2
               id='home-cta-title'
               className='mt-4 text-3xl leading-tight font-semibold tracking-[-0.04em] text-balance md:text-6xl'
             >
-              {t('Build the operating system for AI supply')}
+              {t('Start with access. Grow into smarter sourcing')}
             </h2>
             <p className='text-muted-foreground mx-auto mt-6 max-w-2xl text-base leading-7 text-pretty md:text-lg'>
               {t(
-                'Start with token aggregation and distribution today, then expand into the compute market as your business grows.'
+                'Use the gateway today, then bring evaluated token supply and enterprise operations into the same journey as the platform evolves.'
               )}
             </p>
             <div className='mt-9 flex flex-wrap items-center justify-center gap-3'>

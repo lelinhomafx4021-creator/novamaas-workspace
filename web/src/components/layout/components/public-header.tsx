@@ -179,7 +179,8 @@ export function PublicHeader(props: PublicHeaderProps) {
         <div
           className={cn(
             'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-6xl px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
+            scrolled ? 'max-w-6xl px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6',
+            !scrolled && props.className
           )}
         >
           <nav

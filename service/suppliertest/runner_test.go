@@ -827,7 +827,7 @@ func TestRunStressBreakCachePrefixesDiffer(t *testing.T) {
 	assert.NotEqual(t, prompts[0], prompts[1])
 }
 
-func TestBasicSkipsVendorSpecificFields(t *testing.T) {
+func TestBasicClassifiesOptionalAndContractChecks(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -863,6 +863,58 @@ func TestBasicSkipsVendorSpecificFields(t *testing.T) {
 	assert.Equal(t, "skip", statusByCheck[CheckThinking])
 	assert.Equal(t, "skip", statusByCheck[CheckAuthError])
 	assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
+}
+
+func TestBasicClassifiesHTTP500ByVendorSelection(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"error":{"message":"relay failed"}}`)
+	}))
+	defer server.Close()
+
+	checks := []string{CheckAuthError, CheckBadRequest}
+	tests := []struct {
+		name       string
+		vendor     string
+		wantStatus string
+	}{
+		{name: "generic skips relay-wrapped errors", vendor: VendorGeneric, wantStatus: "skip"},
+		{name: "selected vendor fails contract errors", vendor: VendorGLM, wantStatus: "fail"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var events []Event
+			err := Run(context.Background(), server.Client(), RunRequest{
+				BaseURL: server.URL,
+				APIKey:  "any",
+				Model:   "demo",
+				Vendor:  test.vendor,
+				Modules: []string{ModuleBasic},
+				Basic:   BasicConfig{Checks: checks},
+			}, func(event Event) {
+				events = append(events, event)
+			})
+			require.NoError(t, err)
+
+			statusByCheck := map[string]string{}
+			messageByCheck := map[string]string{}
+			for _, event := range events {
+				if event.Type == "check" && event.Status != "running" {
+					statusByCheck[event.CheckID] = event.Status
+					messageByCheck[event.CheckID] = event.Message
+				}
+			}
+			for _, check := range checks {
+				assert.Equal(t, test.wantStatus, statusByCheck[check], check)
+				assert.Contains(t, messageByCheck[check], "500", check)
+				if test.vendor == VendorGeneric {
+					assert.Contains(t, messageByCheck[check], "通用中转平台", check)
+				}
+			}
+		})
+	}
 }
 
 func TestBasicRejectsIncompleteVendorUsage(t *testing.T) {

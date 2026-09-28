@@ -236,6 +236,12 @@ function checkLines(
   })
 }
 
+function assessmentResultLabel(verdict: Verdict): string {
+  if (verdict === 'ok') return 'Passed'
+  if (verdict === 'na') return 'Skipped'
+  return 'Failed'
+}
+
 function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
   const benchmarkRows = assessment.rows.filter(
     (row) => !isInformationalRow(row)
@@ -247,7 +253,7 @@ function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
   ]
   for (const row of benchmarkRows) {
     lines.push(
-      `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(row.verdict === 'ok' ? 'Passed' : 'Failed')} |`
+      `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(assessmentResultLabel(row.verdict))} |`
     )
   }
   return lines
@@ -289,7 +295,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     lines.push('', `## 2. ${t('Concurrency and stress test')}`)
     if (input.stressAssessment) {
       lines.push(
-        `**${t('Stress test assessment')}：${t(input.stressAssessment.overall === 'ok' ? 'Passed' : 'Failed')}**`,
+        `**${t('Stress test assessment')}：${t(assessmentResultLabel(input.stressAssessment.overall))}**`,
         ''
       )
     }
@@ -404,7 +410,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     lines.push('', `## 3. ${t('Prompt cache test')}`)
     if (input.cacheAssessment) {
       lines.push(
-        `**${t('Prompt cache assessment')}：${t(input.cacheAssessment.overall === 'ok' ? 'Passed' : 'Failed')}**`,
+        `**${t('Prompt cache assessment')}：${t(assessmentResultLabel(input.cacheAssessment.overall))}**`,
         ''
       )
     }
@@ -612,11 +618,13 @@ body.pdf-document { width:auto; max-width:none; min-height:0; display:block; fon
 
 function verdictHtmlColor(verdict: Assessment['overall']): string {
   if (verdict === 'ok') return '#15803d'
+  if (verdict === 'na') return '#a16207'
   return '#dc2626'
 }
 
 function verdictHtmlClass(verdict: Assessment['overall']): string {
   if (verdict === 'ok') return 'verdict-ok'
+  if (verdict === 'na') return 'verdict-na'
   return 'verdict-abnormal'
 }
 
@@ -668,7 +676,7 @@ function htmlBenchmarkTable(
 <td>${escapeHtml(t(row.label))}</td>
 <td class="cell-measured">${escapeHtml(displayMeasured(row, t))}</td>
 <td class="cell-threshold">${escapeHtml(displayThreshold(row, t))}</td>
-<td style="color:${color};font-weight:700">${escapeHtml(t(row.verdict === 'ok' ? 'Passed' : 'Failed'))}</td>
+<td style="color:${color};font-weight:700">${escapeHtml(t(assessmentResultLabel(row.verdict)))}</td>
 </tr>`
     })
     .join('')
@@ -747,7 +755,7 @@ export function buildHtmlReport(
   if (input.stressAssessment || input.stressMetrics || input.summaries.stress) {
     const overall = input.stressAssessment?.overall ?? 'ok'
     const overallCls = verdictHtmlClass(overall)
-    const badgeText = `${t('Stress test assessment')}：${t(overall === 'ok' ? 'Passed' : 'Failed')}`
+    const badgeText = `${t('Stress test assessment')}：${t(assessmentResultLabel(overall))}`
 
     let configBar = ''
     if (input.stressConfig) {
@@ -900,7 +908,7 @@ ${summaryHtml}
   if (input.cacheAssessment || input.cacheMetrics || input.summaries.cache) {
     const overall = input.cacheAssessment?.overall ?? 'ok'
     const overallCls = verdictHtmlClass(overall)
-    const badgeText = `${t('Prompt cache assessment')}：${t(overall === 'ok' ? 'Passed' : 'Failed')}`
+    const badgeText = `${t('Prompt cache assessment')}：${t(assessmentResultLabel(overall))}`
 
     let configBar = ''
     if (input.cacheMetrics) {

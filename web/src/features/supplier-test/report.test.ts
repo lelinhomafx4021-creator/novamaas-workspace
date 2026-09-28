@@ -233,7 +233,7 @@ describe('supplier-test report', () => {
     expect(html).toContain('W2/R1, 1.25 s')
   })
 
-  test('buildMarkdownReport formats structured sections without Cannot compare in tables', () => {
+  test('buildMarkdownReport formats structured sections without skipped informational rows', () => {
     const input = makeTestInput()
     const md = buildMarkdownReport(input)
 

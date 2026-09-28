@@ -26,7 +26,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   ok: 'Normal',
   slow: 'Slow',
   abnormal: 'Abnormal',
-  na: 'Cannot compare',
+  na: 'Skipped',
 }
 
 export type MetricGroup = 'shallow' | 'perf'
@@ -288,7 +288,7 @@ export const STANDARD_EDITOR_FIELDS: StandardEditorField[] = [
     key: 'ttlWaitSeconds',
     group: 'cache',
     label: 'TTL wait (s)',
-    hint: 'Wait this long after the first cache request before judging TTL. Waiting less than this is Cannot compare.',
+    hint: 'Wait this long after the first cache request before judging TTL. A shorter wait skips the TTL check.',
     min: 0,
     max: 600,
     display: 'raw',
@@ -380,7 +380,7 @@ export function overallLabel(verdict: Verdict): string {
   if (verdict === 'ok') return 'Overall: normal'
   if (verdict === 'slow') return 'Overall: slow'
   if (verdict === 'abnormal') return 'Overall: abnormal'
-  return 'Overall: cannot compare'
+  return 'Skipped'
 }
 
 export function formatMs(value: number | undefined): string {
@@ -674,7 +674,7 @@ export function assessCache(
       rows.push({
         id: 'ttl',
         label: 'Cache TTL',
-        measured: 'Cannot compare',
+        measured: 'No cached_tokens field',
         threshold: TTL_RULE,
         thresholdValues: ttlValues,
         verdict: 'na',

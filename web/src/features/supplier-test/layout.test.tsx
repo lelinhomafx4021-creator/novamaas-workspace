@@ -99,6 +99,22 @@ test('target sits above tests, modules are tabbed, and judgment starts collapsed
   ).not.toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: /Expand/ }))
+  expect(screen.getByText('How to use these standards')).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      'Basic test uses fixed interface rules and is not affected by the thresholds below.'
+    )
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      'Stress test uses error rate, TTFT, and TPOT limits. Lower limits are stricter.'
+    )
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      'Cache test uses the minimum cache hit rate and the wait time for TTL verification. A higher hit rate and longer wait are stricter.'
+    )
+  ).toBeInTheDocument()
   expect(screen.getByLabelText('Error rate (%)')).toBeInTheDocument()
 })
 

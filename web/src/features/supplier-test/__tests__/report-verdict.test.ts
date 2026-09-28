@@ -56,7 +56,7 @@ function reportInput(overrides: Partial<ReportInput> = {}): ReportInput {
 }
 
 describe('supplier report overall verdict', () => {
-  test('keeps a normal result when assessed checks pass and other checks cannot be compared', () => {
+  test('keeps a passing result when assessed checks pass and other checks are skipped', () => {
     const html = buildHtmlReport(
       reportInput({
         basicChecks: [
@@ -72,9 +72,7 @@ describe('supplier report overall verdict', () => {
     expect(html).toContain(
       '<div class="document-summary-value result-pass">Passed</div>'
     )
-    expect(html).not.toContain(
-      '<div class="document-summary-value result-na">Cannot compare</div>'
-    )
+    expect(html).not.toContain('Cannot compare')
   })
 
   test('fails the report when it has no assessed result', () => {

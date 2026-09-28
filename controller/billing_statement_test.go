@@ -163,7 +163,7 @@ func TestBillingStatementDetailResolvesCustomerAndOperatorWithoutPrivateUserFiel
 	t.Cleanup(func() { model.DB = saved })
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}))
 	require.NoError(t, db.Create(&[]model.User{{Id: 1, Username: "admin", DisplayName: "Administrator", Password: "private-hash", Email: "private@example.com", AffCode: "test-admin"}, {Id: 4, Username: "example_customer", DisplayName: "Customer", AffCode: "test-customer"}}).Error)
-	snapshot := `{"user_id":4,"total":{"count":13}}`
+	snapshot := `{"user_id":4,"models":[{"model_name":"customer-visible-model","charge":"1.000000","refund":"0.000000","amount":"1.000000","count":1,"charge_quota":500000,"refund_quota":0}],"total":{"count":13}}`
 	hash := sha256.Sum256([]byte(snapshot))
 	require.NoError(t, db.Create(&model.BillingStatement{ID: "identified", UserID: 4, Status: model.StatementIssued, IssuedAt: 100, Snapshot: snapshot, SnapshotSHA256: hex.EncodeToString(hash[:])}).Error)
 	require.NoError(t, db.Create(&model.BillingStatementEvent{StatementID: "identified", ActorID: 1, Action: "prepare", SessionID: "private-session"}).Error)
@@ -190,6 +190,11 @@ func TestBillingStatementDetailResolvesCustomerAndOperatorWithoutPrivateUserFiel
 	assert.NotContains(t, response.Body.String(), "private")
 	assert.NotContains(t, response.Body.String(), "password")
 	assert.NotContains(t, response.Body.String(), "email")
+	assert.Contains(t, response.Body.String(), "customer-visible-model")
+	assert.NotContains(t, response.Body.String(), "channel_id")
+	assert.NotContains(t, response.Body.String(), "upstream_model")
+	assert.NotContains(t, response.Body.String(), "cost_quota")
+	assert.NotContains(t, response.Body.String(), "profit_quota")
 }
 
 func TestBillingLegacyEmptyDraftCannotBeIssuedWithHistoricalConsumption(t *testing.T) {

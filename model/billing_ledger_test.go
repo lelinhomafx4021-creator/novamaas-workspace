@@ -240,7 +240,7 @@ func TestBillingStatementBlocksOpenOperationsAndRetainsVoidedVersions(t *testing
 	op := &BillingOperation{ID: "unresolved-old-request", UserID: id, State: "reserved", CreatedAt: start + 60}
 	require.NoError(t, DB.Create(op).Error)
 	statement := &BillingStatement{ID: "version-one", UserID: id, Month: "2020-02", StorageProfileID: 1, CreatedBy: 1}
-	build := func(account *BillingAccount, hours []BillingHour) (string, string, error) {
+	build := func(account *BillingAccount, hours []BillingHour, models []BillingModelTotal) (string, string, error) {
 		return "{}", strings.Repeat("a", 64), nil
 	}
 	require.ErrorContains(t, CreateBillingStatement(statement, build), "unfinished")
@@ -287,25 +287,35 @@ func TestBillingStatementExportsOnlyFrozenMonthlySequenceRange(t *testing.T) {
 	require.NoError(t, DB.Model(&BillingAccount{}).Where("user_id = ?", id).Updates(map[string]interface{}{"accounting_start_at": start - 86400, "sequence": 1000}).Error)
 	for _, entry := range []BillingEntry{
 		{EventKey: "old", UserID: id, Sequence: 5, PostedAt: start - 1, Kind: "usage"},
-		{EventKey: "first", UserID: id, Sequence: 11, PostedAt: start, Kind: "usage", Quota: 20},
-		{EventKey: "last", UserID: id, Sequence: 12, PostedAt: start + 1, Kind: "usage", Quota: 30},
+		{EventKey: "first", UserID: id, Sequence: 11, PostedAt: start, Kind: "usage", Quota: 20, ModelName: "model-a"},
+		{EventKey: "second", UserID: id, Sequence: 12, PostedAt: start + 1, Kind: "usage", Quota: 30, ModelName: "model-b"},
+		{EventKey: "last", UserID: id, Sequence: 13, PostedAt: start + 86402, Kind: "usage", Quota: -5, ModelName: "model-a"},
 		{EventKey: "newer", UserID: id, Sequence: 1000, PostedAt: end, Kind: "usage"},
 	} {
 		require.NoError(t, DB.Create(&entry).Error)
 	}
-	require.NoError(t, DB.Create(&BillingHour{UserID: id, Hour: start, Charge: 50, Count: 2, FirstSequence: 11, LastSequence: 12}).Error)
+	require.NoError(t, DB.Create(&BillingHour{UserID: id, Hour: start, Charge: 50, Refund: 5, Count: 3, FirstSequence: 11, LastSequence: 13}).Error)
 	statement := &BillingStatement{ID: "bounded-month", UserID: id, Month: "2020-02"}
-	require.NoError(t, CreateBillingStatement(statement, func(*BillingAccount, []BillingHour) (string, string, error) { return "{}", "", nil }))
+	modelTotals := make(map[string]BillingModelTotal)
+	require.NoError(t, CreateBillingStatement(statement, func(_ *BillingAccount, _ []BillingHour, totals []BillingModelTotal) (string, string, error) {
+		for _, total := range totals {
+			modelTotals[total.ModelName] = total
+		}
+		return "{}", "", nil
+	}))
 	assert.Equal(t, int64(11), statement.FromSequence)
-	assert.Equal(t, int64(12), statement.ToSequence)
+	assert.Equal(t, int64(13), statement.ToSequence)
+	assert.Equal(t, BillingModelTotal{ModelName: "model-a", Charge: 20, Refund: 5, Count: 2, ChargeCount: 1, RefundCount: 1, ActiveDays: 2, FirstPosted: start, LastPosted: start + 86402}, modelTotals["model-a"])
+	assert.Equal(t, BillingModelTotal{ModelName: "model-b", Charge: 30, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: start + 1, LastPosted: start + 1}, modelTotals["model-b"])
 	page, err := GetBillingStatementEntries(statement, 0, 1)
 	require.NoError(t, err)
 	require.Len(t, page, 1)
 	assert.Equal(t, "first", page[0].EventKey)
 	page, err = GetBillingStatementEntries(statement, page[0].Sequence, 1000)
 	require.NoError(t, err)
-	require.Len(t, page, 1)
-	assert.Equal(t, "last", page[0].EventKey)
+	require.Len(t, page, 2)
+	assert.Equal(t, "second", page[0].EventKey)
+	assert.Equal(t, "last", page[1].EventKey)
 }
 
 func TestBillingArchiveCompletionPersistsDigestsAndRequiresCurrentLease(t *testing.T) {

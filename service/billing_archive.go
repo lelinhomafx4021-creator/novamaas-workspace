@@ -120,6 +120,8 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 	manifest.Timezone, manifest.StartAt, manifest.EndAt = snapshot.Timezone, statement.StartAt, statement.EndAt
 	manifest.FromSequence, manifest.ToSequence = statement.FromSequence, statement.ToSequence
 	dayTotals := make(map[string]BillingRow, len(snapshot.Days))
+	modelTotals := make(map[string]model.BillingModelTotal, len(snapshot.Models))
+	modelDays := make(map[string]map[string]struct{}, len(snapshot.Models))
 	rate, err := decimal.NewFromString(snapshot.Currency.Rate)
 	if err != nil || !rate.IsPositive() {
 		return errors.New("invalid snapshot currency rate")
@@ -166,6 +168,30 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 			}
 			total.Count++
 			dayTotals[day] = total
+			modelTotal := modelTotals[entry.ModelName]
+			modelTotal.ModelName = entry.ModelName
+			if modelTotal.FirstPosted == 0 || entry.PostedAt < modelTotal.FirstPosted {
+				modelTotal.FirstPosted = entry.PostedAt
+			}
+			if entry.PostedAt > modelTotal.LastPosted {
+				modelTotal.LastPosted = entry.PostedAt
+			}
+			days := modelDays[entry.ModelName]
+			if days == nil {
+				days = make(map[string]struct{}, 1)
+				modelDays[entry.ModelName] = days
+			}
+			days[day] = struct{}{}
+			modelTotal.ActiveDays = int64(len(days))
+			if entry.Quota >= 0 {
+				modelTotal.Charge += entry.Quota
+				modelTotal.ChargeCount++
+			} else {
+				modelTotal.Refund -= entry.Quota
+				modelTotal.RefundCount++
+			}
+			modelTotal.Count++
+			modelTotals[entry.ModelName] = modelTotal
 			// Customer-visible immutable details intentionally exclude balances,
 			// operator IDs, request bodies, and internal funding event keys.
 			record := struct {
@@ -214,6 +240,20 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 	}
 	if len(dayTotals) > 0 {
 		return errors.New("statement contains details outside the frozen calendar")
+	}
+	if snapshot.PDFTemplateVersion >= 7 {
+		for _, row := range snapshot.Models {
+			total, ok := modelTotals[row.ModelName]
+			if !ok || total.Charge != row.ChargeQuota || total.Refund != row.RefundQuota || total.Count != row.Count ||
+				(snapshot.PDFTemplateVersion >= 8 && (total.ChargeCount != row.ChargeCount || total.RefundCount != row.RefundCount ||
+					total.ActiveDays != row.ActiveDays || total.FirstPosted != row.FirstPosted || total.LastPosted != row.LastPosted)) {
+				return errors.New("statement model details do not reconcile with snapshot")
+			}
+			delete(modelTotals, row.ModelName)
+		}
+		if len(modelTotals) > 0 {
+			return errors.New("statement contains models outside the frozen summary")
+		}
 	}
 	if _, err := store.Put(ctx, statement.ID, "snapshot", 0, statement.UserID, "application/json", []byte(statement.Snapshot), 0); err != nil {
 		return err

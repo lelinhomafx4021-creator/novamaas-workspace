@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -35,31 +36,98 @@ type BillingRow struct {
 	ProfitQuota int64  `json:"profit_quota,omitempty"`
 	State       string `json:"state,omitempty"`
 }
-type BillingSnapshot struct {
-	SchemaVersion       int             `json:"schema_version"`
-	PDFTemplateVersion  int             `json:"pdf_template_version,omitempty"`
-	PDFLogoPNG          []byte          `json:"pdf_logo_png,omitempty"`
-	PDFOperatingLogoPNG []byte          `json:"pdf_operating_logo_png,omitempty"`
-	OperatingName       string          `json:"operating_name,omitempty"`
-	PDFFooter           string          `json:"pdf_footer,omitempty"`
-	Month               string          `json:"month"`
-	Timezone            string          `json:"timezone"`
-	UserID              int             `json:"user_id"`
-	Username            string          `json:"username,omitempty"`
-	DisplayName         string          `json:"display_name,omitempty"`
-	HistoryImportID     string          `json:"history_import_id,omitempty"`
-	HistorySourceSHA256 string          `json:"history_source_sha256,omitempty"`
-	CompanyTitle        string          `json:"company_title"`
-	TaxID               string          `json:"tax_id"`
-	Issuer              string          `json:"issuer"`
-	AccountingStartAt   int64           `json:"accounting_start_at"`
-	Currency            BillingCurrency `json:"currency"`
-	Days                []BillingRow    `json:"days"`
-	Total               BillingRow      `json:"total"`
-	ChargeQuota         int64           `json:"charge_quota"`
-	RefundQuota         int64           `json:"refund_quota"`
-	RoundingDifference  string          `json:"rounding_difference"`
+type BillingModelRow struct {
+	ModelName   string `json:"model_name"`
+	Charge      string `json:"charge"`
+	Refund      string `json:"refund"`
+	Amount      string `json:"amount"`
+	ChargeShare string `json:"charge_share,omitempty"`
+	Count       int64  `json:"count"`
+	ChargeCount int64  `json:"charge_count,omitempty"`
+	RefundCount int64  `json:"refund_count,omitempty"`
+	ActiveDays  int64  `json:"active_days,omitempty"`
+	FirstPosted int64  `json:"first_posted_at,omitempty"`
+	LastPosted  int64  `json:"last_posted_at,omitempty"`
+	ChargeQuota int64  `json:"charge_quota"`
+	RefundQuota int64  `json:"refund_quota"`
 }
+type BillingSnapshot struct {
+	SchemaVersion       int               `json:"schema_version"`
+	PDFTemplateVersion  int               `json:"pdf_template_version,omitempty"`
+	PDFLogoPNG          []byte            `json:"pdf_logo_png,omitempty"`
+	PDFOperatingLogoPNG []byte            `json:"pdf_operating_logo_png,omitempty"`
+	OperatingName       string            `json:"operating_name,omitempty"`
+	PDFFooter           string            `json:"pdf_footer,omitempty"`
+	Month               string            `json:"month"`
+	Timezone            string            `json:"timezone"`
+	UserID              int               `json:"user_id"`
+	Username            string            `json:"username,omitempty"`
+	DisplayName         string            `json:"display_name,omitempty"`
+	HistoryImportID     string            `json:"history_import_id,omitempty"`
+	HistorySourceSHA256 string            `json:"history_source_sha256,omitempty"`
+	CompanyTitle        string            `json:"company_title"`
+	TaxID               string            `json:"tax_id"`
+	Issuer              string            `json:"issuer"`
+	AccountingStartAt   int64             `json:"accounting_start_at"`
+	Currency            BillingCurrency   `json:"currency"`
+	Days                []BillingRow      `json:"days"`
+	Models              []BillingModelRow `json:"models,omitempty"`
+	Total               BillingRow        `json:"total"`
+	ChargeQuota         int64             `json:"charge_quota"`
+	RefundQuota         int64             `json:"refund_quota"`
+	RoundingDifference  string            `json:"rounding_difference"`
+}
+
+func attachBillingModelRows(snapshot *BillingSnapshot, totals []model.BillingModelTotal) error {
+	if snapshot == nil {
+		return errors.New("billing snapshot is required")
+	}
+	rows := make([]BillingModelRow, 0, len(totals))
+	var charge, refund, count int64
+	for _, total := range totals {
+		if total.Charge < 0 || total.Refund < 0 || total.Count < 0 ||
+			total.ChargeCount < 0 || total.RefundCount < 0 || total.ChargeCount > math.MaxInt64-total.RefundCount ||
+			total.ChargeCount+total.RefundCount != total.Count ||
+			total.ActiveDays <= 0 || total.ActiveDays > total.Count || total.FirstPosted <= 0 || total.LastPosted < total.FirstPosted ||
+			total.Charge > int64(common.MaxWalletQuota)-charge ||
+			total.Refund > int64(common.MaxWalletQuota)-refund ||
+			total.Count > math.MaxInt64-count {
+			return errors.New("model billing quota exceeds exact limit")
+		}
+		amounts, err := billingRow(total.ModelName, total.Charge, total.Refund, total.Count, snapshot.Currency)
+		if err != nil {
+			return err
+		}
+		chargeShare := "0.00%"
+		if snapshot.ChargeQuota > 0 {
+			chargeShare = decimal.NewFromInt(total.Charge).Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(snapshot.ChargeQuota)).StringFixed(2) + "%"
+		}
+		rows = append(rows, BillingModelRow{
+			ModelName: total.ModelName, Charge: amounts.Charge, Refund: amounts.Refund,
+			Amount: amounts.Amount, ChargeShare: chargeShare, Count: amounts.Count,
+			ChargeCount: total.ChargeCount, RefundCount: total.RefundCount,
+			ActiveDays: total.ActiveDays, FirstPosted: total.FirstPosted, LastPosted: total.LastPosted,
+			ChargeQuota: amounts.ChargeQuota, RefundQuota: amounts.RefundQuota,
+		})
+		charge += total.Charge
+		refund += total.Refund
+		count += total.Count
+	}
+	if charge != snapshot.ChargeQuota || refund != snapshot.RefundQuota || count != snapshot.Total.Count {
+		return errors.New("model billing totals do not reconcile with hourly snapshot")
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		left := rows[i].ChargeQuota - rows[i].RefundQuota
+		right := rows[j].ChargeQuota - rows[j].RefundQuota
+		if left != right {
+			return left > right
+		}
+		return rows[i].ModelName < rows[j].ModelName
+	})
+	snapshot.Models = rows
+	return nil
+}
+
 type BillingDayView struct {
 	Date               string                `json:"date"`
 	Timezone           string                `json:"timezone"`
@@ -364,7 +432,7 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		return nil, fmt.Errorf("%w: %w", ErrBillingDocumentBranding, err)
 	}
 	statement := &model.BillingStatement{ID: common.GetUUID(), UserID: userID, CreatedBy: actorID, StorageProfileID: storageProfileID, Month: month}
-	err = model.CreateBillingStatement(statement, func(locked *model.BillingAccount, hours []model.BillingHour) (string, string, error) {
+	err = model.CreateBillingStatement(statement, func(locked *model.BillingAccount, hours []model.BillingHour, modelTotals []model.BillingModelTotal) (string, string, error) {
 		if locked.AccountingStartAt != account.AccountingStartAt || locked.ProfileVersion != account.ProfileVersion {
 			return "", "", model.ErrBillingConflict
 		}
@@ -372,10 +440,13 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		if err != nil {
 			return "", "", err
 		}
+		if err := attachBillingModelRows(snapshot, modelTotals); err != nil {
+			return "", "", err
+		}
 		if snapshot.Total.Count == 0 && hasHistory {
 			return "", "", ErrBillingHistoricalDataUnreconciled
 		}
-		snapshot.PDFTemplateVersion = 6
+		snapshot.PDFTemplateVersion = 8
 		snapshot.Issuer, snapshot.PDFLogoPNG, snapshot.PDFFooter = branding.Issuer, branding.LogoPNG, branding.Footer
 		snapshot.OperatingName, snapshot.PDFOperatingLogoPNG = branding.OperatingName, branding.OperatingLogoPNG
 		snapshot.Username, snapshot.DisplayName = customer.Username, customer.DisplayName

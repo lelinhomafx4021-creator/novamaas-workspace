@@ -272,7 +272,7 @@ func TestBillingDraftArchivesFrozenBrandingAfterSettingsChange(t *testing.T) {
 	assert.NotEmpty(t, archived.PDFLogoPNG)
 	assert.Equal(t, "客户服务公司", archived.OperatingName)
 	assert.NotEmpty(t, archived.PDFOperatingLogoPNG)
-	assert.Equal(t, 6, archived.PDFTemplateVersion)
+	assert.Equal(t, 8, archived.PDFTemplateVersion)
 	assert.NotContains(t, string(store.files["snapshot"]), "signature")
 	assert.NotEmpty(t, store.files["pdf"])
 	assert.NotEmpty(t, statement.PDFSHA256)
@@ -375,8 +375,8 @@ func TestBillingPDFV3FreezesBrandingForBothOriginalAndReceipt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, original, legacy, "the v3 template must keep its archived output")
 	if output := os.Getenv("BILLING_PDF_V3_OUTPUT_DIR"); output != "" {
-		require.NoError(t, os.WriteFile(filepath.Join(output, BillingArtifactFilename(statement, "pdf", 0)), original, 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(output, BillingArtifactFilename(statement, "receipt", 0)), receipt, 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(output, BillingArtifactFilename(statement, snapshot.Username, "pdf", 0)), original, 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(output, BillingArtifactFilename(statement, snapshot.Username, "receipt", 0)), receipt, 0600))
 	}
 	snapshot.PDFFooter = ""
 	noFooter, err := RenderBillingStatementPDF(statement, snapshot, false)
@@ -390,15 +390,15 @@ func TestBillingPDFV3FreezesBrandingForBothOriginalAndReceipt(t *testing.T) {
 	assert.ErrorContains(t, err, "Footer exceeds", "never silently clip a legal footer")
 }
 
-func TestBillingArtifactFilenameUsesFrozenShanghaiTimestamp(t *testing.T) {
-	statement := &model.BillingStatement{ID: "internal-uuid", Month: "2026-08", Revision: 2, CreatedAt: time.Date(2026, 9, 3, 0, 0, 0, 0, billingLocation).Unix(), ConfirmedAt: time.Date(2026, 9, 4, 8, 9, 10, 0, billingLocation).Unix()}
+func TestBillingArtifactFilenameUsesFrozenUsernameMonthAndRevision(t *testing.T) {
+	statement := &model.BillingStatement{ID: "internal-uuid", UserID: 42, Month: "2026-08", Revision: 2, CreatedAt: time.Date(2026, 9, 3, 0, 0, 0, 0, billingLocation).Unix(), ConfirmedAt: time.Date(2026, 9, 4, 8, 9, 10, 0, billingLocation).Unix()}
 	for _, test := range []struct{ kind, expected string }{
-		{"pdf", "月度对账单_20260903000000.pdf"},
-		{"receipt", "对账确认回执_20260904080910.pdf"},
+		{"pdf", "demo_customer_2026-08_月度对账单_V02.pdf"},
+		{"receipt", "demo_customer_2026-08_对账确认回执_V02.pdf"},
 		{"details", "statement-2026-08-r2-details-0.jsonl.gz"},
 		{"manifest", "statement-2026-08-r2-manifest-0.json"},
 	} {
-		name := BillingArtifactFilename(statement, test.kind, 0)
+		name := BillingArtifactFilename(statement, "demo_customer", test.kind, 0)
 		assert.Equal(t, test.expected, name)
 		header := mime.FormatMediaType("attachment", map[string]string{"filename": name})
 		mediaType, params, err := mime.ParseMediaType(header)
@@ -407,4 +407,9 @@ func TestBillingArtifactFilenameUsesFrozenShanghaiTimestamp(t *testing.T) {
 		assert.Equal(t, test.expected, params["filename"], "Chinese filename survives standard HTTP header encoding")
 		assert.NotContains(t, header, statement.ID)
 	}
+	assert.Equal(t, "team_finance_2026-08_月度对账单_V02.pdf", BillingArtifactFilename(statement, "team/finance\r\n", "pdf", 0))
+	assert.Equal(t, "上海示例客户_2026-08_月度对账单_V02.pdf", BillingArtifactFilename(statement, "上海示例客户", "pdf", 0))
+	assert.Equal(t, "user-42_2026-08_月度对账单_V02.pdf", BillingArtifactFilename(statement, "", "pdf", 0))
+	statement.Month, statement.Revision = "2026-09", 12
+	assert.Equal(t, "demo_customer_2026-09_月度对账单_V12.pdf", BillingArtifactFilename(statement, "demo_customer", "pdf", 0))
 }

@@ -314,12 +314,28 @@ func billingFooterText(footer string) (string, error) {
 
 // Customer download names are presentation only. Internal UUIDs, object keys
 // and evidence digests remain unchanged; downloading again keeps the same name.
-func BillingArtifactFilename(statement *model.BillingStatement, kind string, ordinal int) string {
+// Use the username frozen in the statement snapshot so later account renames do
+// not change the name of already archived evidence.
+func BillingArtifactFilename(statement *model.BillingStatement, username, kind string, ordinal int) string {
+	username = strings.TrimSpace(username)
+	username = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || strings.ContainsRune(`/\:*?"<>|`, r) {
+			return '_'
+		}
+		return r
+	}, username)
+	username = strings.Trim(username, ". ")
+	if username == "" {
+		username = fmt.Sprintf("user-%d", statement.UserID)
+	}
+	if runes := []rune(username); len(runes) > 64 {
+		username = string(runes[:64])
+	}
 	if kind == "pdf" {
-		return "月度对账单_" + time.Unix(statement.CreatedAt, 0).In(billingLocation).Format("20060102150405") + ".pdf"
+		return fmt.Sprintf("%s_%s_月度对账单_V%02d.pdf", username, statement.Month, statement.Revision)
 	}
 	if kind == "receipt" {
-		return "对账确认回执_" + time.Unix(statement.ConfirmedAt, 0).In(billingLocation).Format("20060102150405") + ".pdf"
+		return fmt.Sprintf("%s_%s_对账确认回执_V%02d.pdf", username, statement.Month, statement.Revision)
 	}
 	extension := "json"
 	if kind == "details" {

@@ -72,6 +72,21 @@ type BillingArtifact struct {
 	Rows        int64  `json:"rows" gorm:"bigint"`
 }
 
+// BillingModelTotal is the customer-visible amount breakdown frozen with a
+// statement. It contains no channel, provider-cost, margin, or administrator
+// accounting data.
+type BillingModelTotal struct {
+	ModelName   string `json:"model_name"`
+	Charge      int64  `json:"charge"`
+	Refund      int64  `json:"refund"`
+	Count       int64  `json:"count" gorm:"column:records"`
+	ChargeCount int64  `json:"charge_count"`
+	RefundCount int64  `json:"refund_count"`
+	ActiveDays  int64  `json:"active_days"`
+	FirstPosted int64  `json:"first_posted_at" gorm:"column:first_posted_at"`
+	LastPosted  int64  `json:"last_posted_at" gorm:"column:last_posted_at"`
+}
+
 func GetBillingStatement(id string) (*BillingStatement, error) {
 	var statement BillingStatement
 	err := DB.First(&statement, "id = ?", id).Error
@@ -121,7 +136,7 @@ func ListBillingStatements(userID int, before int64, beforeID, status string, cu
 
 // Caller supplies a snapshot built under the account lock. It contains no
 // sensitive request bodies or credentials.
-func CreateBillingStatement(statement *BillingStatement, buildSnapshot func(*BillingAccount, []BillingHour) (string, string, error)) error {
+func CreateBillingStatement(statement *BillingStatement, buildSnapshot func(*BillingAccount, []BillingHour, []BillingModelTotal) (string, string, error)) error {
 	start, end, err := BillingMonthBounds(statement.Month)
 	if err != nil {
 		return err
@@ -181,7 +196,26 @@ func CreateBillingStatement(statement *BillingStatement, buildSnapshot func(*Bil
 				return errors.New("invalid hourly billing sequence bounds")
 			}
 		}
-		statement.Snapshot, statement.SnapshotSHA256, err = buildSnapshot(account, hours)
+		modelTotals := make([]BillingModelTotal, 0)
+		if bounds.FirstSequence > 0 {
+			entryScope := tx.Model(&BillingEntry{}).
+				Where("user_id = ? AND sequence >= ? AND sequence <= ? AND posted_at >= ? AND posted_at < ? AND kind <> ?", statement.UserID, statement.FromSequence, statement.ToSequence, start, end, "funding")
+			err = entryScope.
+				Select(`model_name,
+					COALESCE(SUM(CASE WHEN quota >= 0 THEN quota ELSE 0 END), 0) AS charge,
+					COALESCE(SUM(CASE WHEN quota < 0 THEN -quota ELSE 0 END), 0) AS refund,
+					COALESCE(SUM(CASE WHEN quota >= 0 THEN 1 ELSE 0 END), 0) AS charge_count,
+					COALESCE(SUM(CASE WHEN quota < 0 THEN 1 ELSE 0 END), 0) AS refund_count,
+					COUNT(DISTINCT ((posted_at + 28800) - ((posted_at + 28800) % 86400))) AS active_days,
+					MIN(posted_at) AS first_posted_at,
+					MAX(posted_at) AS last_posted_at,
+					COUNT(*) AS records`).
+				Group("model_name").Scan(&modelTotals).Error
+			if err != nil {
+				return err
+			}
+		}
+		statement.Snapshot, statement.SnapshotSHA256, err = buildSnapshot(account, hours, modelTotals)
 		if err != nil {
 			return err
 		}

@@ -127,6 +127,31 @@ describe('Billing customer workflow', () => {
       })
     )
   })
+  test('administrator can submit a past accounting start in Shanghai time', async () => {
+    vi.mocked(getBillingAccount).mockResolvedValue({
+      ...account,
+      accounting_start_at: 0,
+    })
+    renderBilling(<BillingProfileCard userId={2} admin />)
+    const enable = await screen.findByRole('checkbox', {
+      name: 'Enable formal accounting',
+    })
+    fireEvent.click(enable)
+    const start = screen.getByLabelText('Accounting start (Asia/Shanghai)')
+    fireEvent.change(start, { target: { value: '2020-01-01T12:34' } })
+    expect(
+      screen.getByText(/A past start does not import earlier usage/)
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(saveBillingAccount).toHaveBeenCalledWith(2, {
+        company_title: 'Customer Ltd',
+        tax_id: 'TAX123',
+        profile_version: 3,
+        accounting_start_at: 1577853240,
+      })
+    )
+  })
   test('owner must acknowledge and explicitly confirm the frozen version', async () => {
     renderBilling(
       <StatementDetail

@@ -50,6 +50,11 @@ func billingError(c *gin.Context, err error) {
 		status, code = http.StatusConflict, "BILLING_HISTORY_UNRECONCILED"
 	case errors.Is(err, model.ErrBillingHistoryBlocked):
 		status, code = http.StatusConflict, "BILLING_HISTORY_BLOCKED"
+	case errors.Is(err, model.ErrBillingStartInvalid):
+		code = "BILLING_START_INVALID"
+	case errors.Is(err, service.ErrBillingLogoFetchBlocked):
+		code = "BILLING_BRANDING_FETCH_BLOCKED"
+		common.SysError(err.Error())
 	case errors.Is(err, service.ErrBillingDocumentBranding):
 		code = "BILLING_BRANDING_INVALID"
 		common.SysError(err.Error())

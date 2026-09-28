@@ -38,6 +38,8 @@ const SITE_SECTIONS = [
         defaultValues={{
           SystemName: settings.SystemName,
           Logo: settings.Logo,
+          OperatingEntityName: settings.OperatingEntityName,
+          OperatingEntityLogo: settings.OperatingEntityLogo,
           Footer: settings.Footer,
           About: settings.About,
           HomePageContent: settings.HomePageContent,

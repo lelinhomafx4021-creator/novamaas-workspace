@@ -64,7 +64,6 @@ For commercial licensing, please contact support@quantumnous.com
     -webkit-backdrop-filter: blur(24px) saturate(135%);
   }
 
-  .maas-public .maas-hero-grid,
   .maas-public .maas-section-grid,
   .maas-public .maas-cta-grid {
     background-image:
@@ -74,49 +73,37 @@ For commercial licensing, please contact support@quantumnous.com
     mask-image: linear-gradient(to bottom, black, transparent 92%);
   }
 
-  .maas-public .maas-hero-grid {
-    opacity: 0.85;
+  .maas-public .maas-hero {
+    background: #f7f9fd;
   }
 
-  .maas-public .maas-hero-orb {
-    width: 34rem;
-    height: 34rem;
-    border-radius: 9999px;
-    filter: blur(18px);
-    opacity: 0.6;
+  .maas-public .maas-hero-image {
+    background-image:
+      linear-gradient(90deg, #f7f9fdfc 0%, #f7f9fdd9 32%, #f7f9fd00 72%),
+      url('../assets/maas-hero-gateway.webp');
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
   }
 
-  .maas-public .maas-hero-orb-primary {
-    top: -16rem;
-    left: -12rem;
-    background: radial-gradient(circle, var(--maas-glow), transparent 68%);
+  .dark .maas-public .maas-hero {
+    background: #05070d;
   }
 
-  .maas-public .maas-hero-orb-secondary {
-    right: -13rem;
-    bottom: -17rem;
-    background: radial-gradient(
-      circle,
-      color-mix(in srgb, var(--maas-violet) 22%, transparent),
-      transparent 68%
-    );
+  .dark .maas-public .maas-hero-image {
+    background-image:
+      linear-gradient(90deg, #05070dfc 0%, #05070de8 34%, #05070d80 100%),
+      url('../assets/maas-hero-gateway.webp');
   }
 
-  .maas-public .maas-gradient-text {
-    color: transparent;
-    background: linear-gradient(
-      112deg,
-      var(--maas-accent) 5%,
-      var(--maas-cyan) 52%,
-      var(--maas-violet) 96%
-    );
-    background-clip: text;
+  .maas-public .maas-hero-accent {
+    color: var(--maas-accent);
   }
 
   .maas-public .maas-hero-title {
-    font-size: clamp(2.625rem, 4.25vw, 4.5rem);
-    line-height: 1.08;
-    letter-spacing: -0.035em;
+    font-size: clamp(2.125rem, 3.15vw, 3.25rem);
+    line-height: 1.17;
+    letter-spacing: -0.025em;
     text-wrap: balance;
   }
 
@@ -128,8 +115,7 @@ For commercial licensing, please contact support@quantumnous.com
     animation: maas-signal-pulse 2.4s ease-in-out infinite;
   }
 
-  .maas-public .maas-hero-badge,
-  .maas-public .maas-online-badge {
+  .maas-public .maas-hero-badge {
     border-color: var(--maas-line-strong);
     color: var(--maas-accent);
     background: color-mix(in srgb, var(--maas-accent) 7%, transparent);
@@ -151,79 +137,90 @@ For commercial licensing, please contact support@quantumnous.com
     background: color-mix(in srgb, var(--maas-panel-solid) 75%, transparent);
   }
 
-  .maas-public .maas-check-icon {
-    color: var(--maas-success);
-    background: color-mix(in srgb, var(--maas-success) 10%, transparent);
-  }
-
-  .maas-public .maas-network-panel {
+  .maas-public .maas-workbench {
+    color: var(--maas-ink);
     border: 1px solid var(--maas-line-strong);
-    background: linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--maas-accent) 10%, var(--maas-panel-solid)),
-      color-mix(in srgb, var(--maas-violet) 7%, var(--maas-panel-solid))
-    );
-    box-shadow:
-      0 35px 90px -50px var(--maas-accent),
-      inset 0 1px 0 color-mix(in srgb, #ffffff 45%, transparent);
+    background: var(--maas-panel-solid);
+    box-shadow: 0 28px 70px -55px var(--maas-accent);
   }
 
-  .maas-public .maas-network-surface {
+  .maas-public .maas-workbench-header,
+  .maas-public .maas-workbench-next {
+    border-color: var(--maas-line);
+  }
+
+  .maas-public .maas-workbench-mark {
+    background: var(--maas-accent);
+  }
+
+  .maas-public .maas-workbench-label {
+    color: var(--maas-cyan);
+  }
+
+  .maas-public .maas-workbench-status {
+    color: var(--maas-success);
+    background: color-mix(in srgb, var(--maas-success) 9%, transparent);
+  }
+
+  .maas-public .maas-workbench-entry {
+    color: var(--maas-ink);
     border: 1px solid var(--maas-line);
-    background:
-      linear-gradient(var(--maas-grid) 1px, transparent 1px),
-      linear-gradient(90deg, var(--maas-grid) 1px, transparent 1px),
-      color-mix(in srgb, var(--maas-panel-solid) 88%, transparent);
-    background-size:
-      24px 24px,
-      24px 24px,
-      auto;
-    box-shadow: inset 0 0 70px
-      color-mix(in srgb, var(--maas-accent) 4%, transparent);
-  }
-
-  .maas-public .maas-network-scan {
-    top: 0;
-    z-index: 2;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      var(--maas-cyan),
-      transparent
+    background: color-mix(
+      in srgb,
+      var(--maas-accent) 3%,
+      var(--maas-panel-solid)
     );
-    opacity: 0.7;
-    animation: maas-network-scan 5s ease-in-out infinite;
   }
 
-  .maas-public .maas-network-node,
+  .maas-public .maas-workbench-endpoint {
+    overflow-wrap: anywhere;
+  }
+
+  .maas-public .maas-workbench-stage {
+    border: 1px solid var(--maas-line-strong);
+    background: color-mix(
+      in srgb,
+      var(--maas-accent) 8%,
+      var(--maas-panel-solid)
+    );
+  }
+
+  .maas-public .maas-workbench-gateway-icon {
+    color: var(--maas-accent);
+    background: color-mix(in srgb, var(--maas-accent) 12%, transparent);
+  }
+
+  .maas-public .maas-workbench-muted {
+    color: var(--muted-foreground);
+  }
+
+  .maas-public .maas-workbench-arrow {
+    color: var(--maas-accent);
+  }
+
+  .maas-public .maas-workbench-source {
+    border: 1px solid var(--maas-line);
+  }
+
+  .maas-public .maas-workbench-source-icon {
+    color: var(--maas-accent);
+  }
+
+  .maas-public .maas-workbench-roadmap {
+    border-color: color-mix(in srgb, var(--maas-violet) 38%, transparent);
+    color: var(--maas-violet);
+    background: color-mix(in srgb, var(--maas-violet) 8%, transparent);
+  }
+
   .maas-public .maas-access-row,
   .maas-public .maas-supply-source {
     border: 1px solid var(--maas-line);
     background: color-mix(in srgb, var(--maas-panel-solid) 82%, transparent);
   }
 
-  .maas-public .maas-network-node {
-    transition:
-      border-color 180ms ease,
-      transform 180ms ease,
-      background-color 180ms ease;
-  }
-
-  .maas-public .maas-network-node:hover {
-    border-color: var(--maas-line-strong);
-    background: color-mix(
-      in srgb,
-      var(--maas-accent) 7%,
-      var(--maas-panel-solid)
-    );
-    transform: translateY(-1px);
-  }
-
-  .maas-public .maas-node-icon,
   .maas-public .maas-value-icon,
   .maas-public .maas-control-icon,
-  .maas-public .maas-market-icon,
-  .maas-public .maas-core-icon {
+  .maas-public .maas-market-icon {
     color: var(--maas-accent);
     border: 1px solid var(--maas-line-strong);
     background: color-mix(in srgb, var(--maas-accent) 9%, transparent);
@@ -235,41 +232,6 @@ For commercial licensing, please contact support@quantumnous.com
     background: color-mix(in srgb, var(--maas-violet) 8%, transparent);
   }
 
-  .maas-public .maas-network-connector {
-    height: 1px;
-    background: repeating-linear-gradient(
-      90deg,
-      var(--maas-accent) 0 5px,
-      transparent 5px 9px
-    );
-    animation: maas-route-flow 1.6s linear infinite;
-  }
-
-  .maas-public .maas-network-core {
-    border: 1px solid var(--maas-line-strong);
-    background: radial-gradient(
-      circle,
-      color-mix(in srgb, var(--maas-accent) 13%, var(--maas-panel-solid)),
-      color-mix(in srgb, var(--maas-panel-solid) 90%, transparent) 65%
-    );
-    box-shadow: 0 0 40px -24px var(--maas-accent);
-  }
-
-  .maas-public .maas-core-ring {
-    border: 1px dashed color-mix(in srgb, var(--maas-accent) 48%, transparent);
-    animation: maas-core-rotate 18s linear infinite;
-  }
-
-  .maas-public .maas-network-footer {
-    border: 1px solid var(--maas-line);
-    background: var(--maas-line);
-  }
-
-  .maas-public .maas-network-footer > div {
-    background: color-mix(in srgb, var(--maas-panel-solid) 90%, transparent);
-  }
-
-  .maas-public .maas-network-value,
   .maas-public .maas-market-outcome {
     color: var(--maas-accent);
   }
@@ -520,6 +482,62 @@ For commercial licensing, please contact support@quantumnous.com
     background: linear-gradient(90deg, transparent, var(--maas-line-strong));
   }
 
+  .maas-public .maas-sourcing-panel,
+  .maas-public .maas-mini-stage {
+    border: 1px solid var(--maas-line-strong);
+    background:
+      radial-gradient(circle at 80% 10%, var(--maas-glow), transparent 55%),
+      linear-gradient(
+        140deg,
+        color-mix(in srgb, var(--maas-accent) 6%, var(--maas-panel-solid)),
+        color-mix(in srgb, var(--maas-panel-solid) 92%, transparent)
+      );
+    box-shadow: 0 28px 75px -55px var(--maas-accent);
+  }
+
+  .maas-public .maas-sourcing-step,
+  .maas-public .maas-mini-row,
+  .maas-public .maas-enterprise-next {
+    border: 1px solid var(--maas-line);
+    background: color-mix(in srgb, var(--maas-panel-solid) 88%, transparent);
+  }
+
+  .maas-public .maas-sourcing-signal,
+  .maas-public .maas-mini-row-dot {
+    background: var(--maas-success);
+    box-shadow: 0 0 0 4px
+      color-mix(in srgb, var(--maas-success) 10%, transparent);
+  }
+
+  .maas-public .maas-mini-section {
+    border-top: 1px solid var(--maas-line);
+  }
+
+  .maas-public .maas-mini-phone {
+    border: 1px solid var(--maas-line-strong);
+    background: color-mix(
+      in srgb,
+      var(--maas-ink) 10%,
+      var(--maas-panel-solid)
+    );
+    box-shadow: 0 30px 55px -38px var(--maas-accent);
+    transform: rotate(4deg);
+  }
+
+  .maas-public .maas-mini-screen {
+    min-height: 25rem;
+    background: var(--maas-panel-solid);
+  }
+
+  .maas-public .maas-mini-row {
+    color: var(--maas-accent);
+  }
+
+  .maas-public .maas-mini-caption {
+    color: var(--maas-accent);
+    background: color-mix(in srgb, var(--maas-accent) 8%, transparent);
+  }
+
   .maas-public .maas-cta-orb {
     top: 15%;
     left: 50%;
@@ -555,6 +573,38 @@ For commercial licensing, please contact support@quantumnous.com
   .maas-public footer {
     border-top-color: var(--maas-line);
     background: color-mix(in srgb, var(--maas-panel-solid) 65%, transparent);
+  }
+
+  @media (max-width: 767px) {
+    .maas-public .maas-hero-image {
+      background-image:
+        linear-gradient(
+          180deg,
+          #f7f9fd 0%,
+          #f7f9fdf5 44%,
+          #f7f9fd99 62%,
+          #f7f9fd00 80%
+        ),
+        url('../assets/maas-hero-gateway.webp');
+      background-position:
+        center,
+        66% bottom;
+      background-size:
+        cover,
+        auto 61%;
+    }
+
+    .dark .maas-public .maas-hero-image {
+      background-image:
+        linear-gradient(
+          180deg,
+          #05070d 0%,
+          #05070df5 44%,
+          #05070dcc 62%,
+          #05070d66 100%
+        ),
+        url('../assets/maas-hero-gateway.webp');
+    }
   }
 
   @media (min-width: 768px) {
@@ -615,21 +665,6 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-@keyframes maas-network-scan {
-  0%,
-  100% {
-    top: 4%;
-    opacity: 0;
-  }
-  15%,
-  85% {
-    opacity: 0.65;
-  }
-  50% {
-    top: 96%;
-  }
-}
-
 @keyframes maas-route-flow {
   to {
     background-position: 18px 0;
@@ -639,11 +674,5 @@ For commercial licensing, please contact support@quantumnous.com
 @keyframes maas-path-flow {
   to {
     stroke-dashoffset: -26;
-  }
-}
-
-@keyframes maas-core-rotate {
-  to {
-    transform: rotate(360deg);
   }
 }

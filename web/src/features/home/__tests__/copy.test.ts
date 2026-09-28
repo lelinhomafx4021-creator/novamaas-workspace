@@ -27,14 +27,13 @@ import zhTW from '@/i18n/locales/zh-TW.json'
 import zh from '@/i18n/locales/zh.json'
 
 const homepageTitleKeys = [
-  'Access the right supply through one endpoint',
-  'Build a distribution business with control',
-  'Build the operating system for AI supply',
-  'One platform, multiple business models',
-  'One platform, three layers of value',
-  'one programmable market',
-  'Operate the economics, not just the API',
-  'Turn fragmented inventory into reachable demand',
+  'AI results and usage, always close',
+  'Access, source, operate',
+  'Choose every token with purpose',
+  'Enterprise operations at every layer',
+  'Make token supply visible before you buy',
+  'One gateway to diverse AI supply',
+  'Start with access. Grow into smarter sourcing',
 ] as const
 
 const localeTranslations = [

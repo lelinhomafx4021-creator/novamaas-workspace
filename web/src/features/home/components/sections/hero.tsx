@@ -16,11 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  ArrowRight01Icon,
-  BookOpen01Icon,
-  Tick02Icon,
-} from '@hugeicons/core-free-icons'
+import { ArrowRight01Icon, BookOpen01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
@@ -29,8 +25,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 import { cn } from '@/lib/utils'
-
-import { TokenNetworkVisual } from '../token-network-visual'
 
 interface HeroProps {
   className?: string
@@ -47,56 +41,54 @@ export function Hero(props: HeroProps) {
   return (
     <section
       className={cn(
-        'maas-hero relative overflow-hidden px-5 pt-28 pb-20 sm:px-6 md:pt-36 md:pb-28 lg:pt-40 lg:pb-32',
+        'maas-hero relative isolate overflow-hidden px-5 pt-36 pb-[21rem] sm:px-6 md:flex md:min-h-[720px] md:items-center md:py-32 lg:min-h-[740px]',
         props.className
       )}
       aria-labelledby='home-hero-title'
     >
-      <div aria-hidden className='maas-hero-grid absolute inset-0 -z-20' />
       <div
-        aria-hidden
-        className='maas-hero-orb maas-hero-orb-primary absolute -z-10'
-      />
-      <div
-        aria-hidden
-        className='maas-hero-orb maas-hero-orb-secondary absolute -z-10'
+        aria-hidden='true'
+        data-testid='home-hero-artwork'
+        className='maas-hero-image absolute inset-0 -z-10'
       />
 
       <div
-        className='mx-auto flex max-w-7xl flex-col items-center'
+        className='mx-auto w-full max-w-7xl 2xl:max-w-[96rem]'
         data-testid='home-hero-layout'
       >
-        <div className='flex w-full max-w-4xl min-w-0 flex-col items-center text-center'>
+        <div className='flex max-w-xl min-w-0 flex-col items-start text-left xl:max-w-[700px] 2xl:max-w-[780px]'>
           <Badge
             variant='outline'
             className='maas-hero-badge landing-animate-fade-up h-7 gap-2 rounded-full px-3 opacity-0'
           >
             <span aria-hidden className='maas-live-dot size-1.5 rounded-full' />
-            {t('AI supply infrastructure')}
+            {t('AI compute gateway')}
           </Badge>
 
           <h1
             id='home-hero-title'
-            className='maas-hero-title landing-animate-fade-up mt-7 max-w-4xl font-semibold opacity-0'
+            className='maas-hero-title landing-animate-fade-up mt-6 font-semibold opacity-0'
             style={{ animationDelay: '70ms' }}
           >
-            <span className='block'>{t('Turn fragmented AI supply into')}</span>{' '}
-            <span className='maas-gradient-text block'>
-              {t('one programmable market')}
+            <span className='block'>
+              {t('One gateway to diverse AI supply')}
+            </span>{' '}
+            <span className='maas-hero-accent block'>
+              {t('Choose every token with purpose')}
             </span>
           </h1>
 
           <p
-            className='landing-animate-fade-up text-muted-foreground mx-auto mt-7 max-w-2xl text-base leading-7 text-pretty opacity-0 md:text-lg md:leading-8'
+            className='landing-animate-fade-up text-muted-foreground mt-6 max-w-lg text-base leading-7 text-pretty opacity-0 2xl:max-w-[640px]'
             style={{ animationDelay: '140ms' }}
           >
             {t(
-              'Aggregate tokens across providers, distribute access with commercial control, and prepare your platform for the next layer of compute supply.'
+              'Connect models and token channels through one gateway. Next, discover evaluated supply and manage enterprise usage in a clearer procurement journey.'
             )}
           </p>
 
           <div
-            className='landing-animate-fade-up mt-9 flex flex-wrap items-center justify-center gap-3 opacity-0'
+            className='landing-animate-fade-up mt-8 flex flex-wrap items-center gap-3 opacity-0'
             style={{ animationDelay: '210ms' }}
           >
             <Button
@@ -143,37 +135,6 @@ export function Hero(props: HeroProps) {
               </Button>
             )}
           </div>
-
-          <div
-            className='landing-animate-fade-up text-muted-foreground mt-9 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs opacity-0 sm:text-sm'
-            style={{ animationDelay: '280ms' }}
-            aria-label={t('Platform capabilities')}
-          >
-            {[
-              t('Multi-provider aggregation'),
-              t('Commercial distribution'),
-              t('Metered settlement'),
-            ].map((capability) => (
-              <span key={capability} className='flex items-center gap-2'>
-                <span className='maas-check-icon flex size-4 items-center justify-center rounded-full'>
-                  <HugeiconsIcon
-                    icon={Tick02Icon}
-                    className='size-2.5'
-                    strokeWidth={2.5}
-                    aria-hidden='true'
-                  />
-                </span>
-                {capability}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div
-          className='landing-animate-fade-up mt-16 w-full min-w-0 opacity-0 md:mt-20'
-          style={{ animationDelay: '220ms' }}
-        >
-          <TokenNetworkVisual />
         </div>
       </div>
     </section>

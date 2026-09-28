@@ -31,6 +31,7 @@ import {
   ControlPlane,
   Hero,
   MarketNetwork,
+  MiniProgram,
   ValueChain,
 } from './components'
 import { useHomePageContent } from './hooks'
@@ -127,12 +128,17 @@ export function Home() {
   }
 
   return (
-    <PublicLayout showMainContainer={false} appearance='maas'>
+    <PublicLayout
+      showMainContainer={false}
+      appearance='maas'
+      headerProps={{ className: '2xl:max-w-[96rem]' }}
+    >
       <main>
         <Hero isAuthenticated={isAuthenticated} />
         <ValueChain />
-        <ControlPlane />
         <MarketNetwork />
+        <ControlPlane />
+        <MiniProgram />
         <CTA isAuthenticated={isAuthenticated} />
       </main>
       <Footer showSourceLink={false} />

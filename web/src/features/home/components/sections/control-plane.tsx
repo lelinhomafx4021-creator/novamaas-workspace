@@ -26,6 +26,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
+import { Badge } from '@/components/ui/badge'
 import {
   Card,
   CardContent,
@@ -56,11 +57,11 @@ export function ControlPlane() {
             id='control-plane-title'
             className='mt-4 text-3xl leading-tight font-semibold tracking-[-0.035em] text-balance md:text-5xl'
           >
-            {t('Operate the economics, not just the API')}
+            {t('Enterprise operations at every layer')}
           </h2>
           <p className='text-muted-foreground mx-auto mt-5 max-w-2xl text-base leading-7 text-pretty'>
             {t(
-              'Connect supply, package access, enforce policy and understand every unit of value from one control plane.'
+              'Deepen multi-tenant access, metered billing, security and compliance governance around every transaction, with compute leasing on the roadmap.'
             )}
           </p>
         </AnimateInView>
@@ -108,20 +109,20 @@ export function ControlPlane() {
                   />
                 </span>
                 <CardTitle className='text-xl'>
-                  {t('Package access for every market')}
+                  {t('Tenant-aware access')}
                 </CardTitle>
                 <CardDescription className='leading-6'>
                   {t(
-                    'Turn capacity into controlled products for direct customers, partners and internal teams.'
+                    'Define organization boundaries, team permissions and channel policies from one control plane.'
                   )}
                 </CardDescription>
               </CardHeader>
               <CardContent className='mt-auto px-6 pb-4 md:px-7'>
                 <div className='flex flex-col gap-2.5'>
                   {[
-                    t('Direct API access'),
-                    t('Channel distribution'),
-                    t('Enterprise workspaces'),
+                    t('Organization boundaries'),
+                    t('Team permissions'),
+                    t('Channel policies'),
                   ].map((channel, index) => (
                     <div
                       key={channel}
@@ -155,11 +156,11 @@ export function ControlPlane() {
                   />
                 </span>
                 <CardTitle className='text-xl'>
-                  {t('Route by policy')}
+                  {t('Security-led routing')}
                 </CardTitle>
                 <CardDescription className='leading-6'>
                   {t(
-                    'Balance availability, performance and cost without exposing upstream complexity.'
+                    'Balance availability, performance and cost under your access policies.'
                   )}
                 </CardDescription>
               </CardHeader>
@@ -185,11 +186,11 @@ export function ControlPlane() {
                   />
                 </span>
                 <CardTitle className='text-xl'>
-                  {t('Settle with confidence')}
+                  {t('Usage-based billing')}
                 </CardTitle>
                 <CardDescription className='max-w-xl leading-6'>
                   {t(
-                    'Keep usage, cost and channel performance traceable across the complete distribution chain.'
+                    'Trace usage, cost and settlement across teams and channels.'
                   )}
                 </CardDescription>
               </CardHeader>
@@ -199,6 +200,22 @@ export function ControlPlane() {
             </Card>
           </AnimateInView>
         </div>
+        <AnimateInView className='maas-enterprise-next mt-5 flex flex-col gap-4 rounded-2xl px-6 py-5 sm:flex-row sm:items-center sm:justify-between'>
+          <div>
+            <p className='font-semibold'>{t('Compute leasing is next')}</p>
+            <p className='text-muted-foreground mt-1 max-w-2xl text-sm leading-6'>
+              {t(
+                'Extend the same governance model from token transactions to rentable compute capacity.'
+              )}
+            </p>
+          </div>
+          <Badge
+            variant='outline'
+            className='maas-roadmap-badge w-fit shrink-0'
+          >
+            {t('Roadmap')}
+          </Badge>
+        </AnimateInView>
       </div>
     </section>
   )

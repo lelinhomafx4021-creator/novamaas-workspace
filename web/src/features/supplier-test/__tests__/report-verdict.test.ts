@@ -171,12 +171,6 @@ describe('supplier report overall verdict', () => {
     expect(html).toContain(
       '<span class="check-reason"><strong>Reason:</strong> No request id returned</span>'
     )
-    expect(html).toContain(
-      '.pdf-document .check-status-pass { color:#15803d; font-weight:700; }'
-    )
-    expect(html).toContain(
-      '.pdf-document .check-status-fail { color:#b91c1c; font-weight:700; }'
-    )
 
     const markdown = buildMarkdownReport(input)
     expect(markdown).toContain('Connectivity: **Passed** — Connected')

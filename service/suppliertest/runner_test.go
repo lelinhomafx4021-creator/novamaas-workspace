@@ -17,6 +17,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func latestChecksByID(events []Event) map[string]Event {
+	checks := make(map[string]Event)
+	for _, event := range events {
+		if event.Type == "check" && event.CheckID != "" {
+			checks[event.CheckID] = event
+		}
+	}
+	return checks
+}
+
 func TestModelsURL(t *testing.T) {
 	t.Parallel()
 	got, err := ModelsURL("https://api.example.com")
@@ -662,14 +672,11 @@ func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	statusByCheck := map[string]string{}
+	checks := latestChecksByID(events)
 	var metrics *StressMetrics
 	var sawStream bool
 	var sawDone bool
 	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
 		if event.Type == "stream" && event.Text != "" {
 			sawStream = true
 		}
@@ -681,13 +688,13 @@ func TestRunBasicAndStressAgainstFakeUpstream(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, "pass", statusByCheck[CheckConnectivity])
-	assert.Equal(t, "pass", statusByCheck[CheckUsage])
-	assert.Equal(t, "pass", statusByCheck[CheckJSONMode])
-	assert.Equal(t, "pass", statusByCheck[CheckToolCall])
-	assert.Equal(t, "pass", statusByCheck[CheckAuthError])
-	assert.Equal(t, "pass", statusByCheck[CheckBadRequest])
-	assert.Equal(t, "skip", statusByCheck[CheckThinking])
+	assert.Equal(t, "pass", checks[CheckConnectivity].Status)
+	assert.Equal(t, "pass", checks[CheckUsage].Status)
+	assert.Equal(t, "pass", checks[CheckJSONMode].Status)
+	assert.Equal(t, "pass", checks[CheckToolCall].Status)
+	assert.Equal(t, "pass", checks[CheckAuthError].Status)
+	assert.Equal(t, "pass", checks[CheckBadRequest].Status)
+	assert.Equal(t, "skip", checks[CheckThinking].Status)
 	require.NotNil(t, metrics)
 	assert.Equal(t, 2, metrics.Total)
 	assert.Equal(t, 2, metrics.Succeeded)
@@ -848,21 +855,16 @@ func TestBasicClassifiesOptionalAndContractChecks(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	statusByCheck := map[string]string{}
-	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
-	}
-	assert.Equal(t, "pass", statusByCheck[CheckConnectivity])
-	assert.Equal(t, "skip", statusByCheck[CheckStream])
-	assert.Equal(t, "skip", statusByCheck[CheckUsage])
-	assert.Equal(t, "skip", statusByCheck[CheckRequestID])
-	assert.Equal(t, "skip", statusByCheck[CheckJSONMode])
-	assert.Equal(t, "skip", statusByCheck[CheckToolCall])
-	assert.Equal(t, "skip", statusByCheck[CheckThinking])
-	assert.Equal(t, "skip", statusByCheck[CheckAuthError])
-	assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
+	checks := latestChecksByID(events)
+	assert.Equal(t, "pass", checks[CheckConnectivity].Status)
+	assert.Equal(t, "skip", checks[CheckStream].Status)
+	assert.Equal(t, "skip", checks[CheckUsage].Status)
+	assert.Equal(t, "skip", checks[CheckRequestID].Status)
+	assert.Equal(t, "skip", checks[CheckJSONMode].Status)
+	assert.Equal(t, "skip", checks[CheckToolCall].Status)
+	assert.Equal(t, "skip", checks[CheckThinking].Status)
+	assert.Equal(t, "skip", checks[CheckAuthError].Status)
+	assert.Equal(t, "skip", checks[CheckBadRequest].Status)
 }
 
 func TestBasicTreatsWrappedHTTP500ByCheckAndVendor(t *testing.T) {
@@ -898,19 +900,12 @@ func TestBasicTreatsWrappedHTTP500ByCheckAndVendor(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			statusByCheck := map[string]string{}
-			messageByCheck := map[string]string{}
-			for _, event := range events {
-				if event.Type == "check" && event.Status != "running" {
-					statusByCheck[event.CheckID] = event.Status
-					messageByCheck[event.CheckID] = event.Message
-				}
-			}
-			assert.Equal(t, test.wantAuthStatus, statusByCheck[CheckAuthError])
-			assert.Contains(t, messageByCheck[CheckAuthError], "500")
-			assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
-			assert.Contains(t, messageByCheck[CheckBadRequest], "HTTP 500")
-			assert.Contains(t, messageByCheck[CheckBadRequest], "接入平台")
+			checks := latestChecksByID(events)
+			assert.Equal(t, test.wantAuthStatus, checks[CheckAuthError].Status)
+			assert.Contains(t, checks[CheckAuthError].Message, "500")
+			assert.Equal(t, "skip", checks[CheckBadRequest].Status)
+			assert.Contains(t, checks[CheckBadRequest].Message, "HTTP 500")
+			assert.Contains(t, checks[CheckBadRequest].Message, "接入平台")
 		})
 	}
 }
@@ -938,19 +933,10 @@ func TestBasicRejectsIncompleteVendorUsage(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	statusByCheck := map[string]string{}
-	var usageMessage string
-	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-			if event.CheckID == CheckUsage {
-				usageMessage = event.Message
-			}
-		}
-	}
-	assert.Equal(t, "pass", statusByCheck[CheckConnectivity])
-	assert.Equal(t, "fail", statusByCheck[CheckUsage])
-	assert.Contains(t, usageMessage, "完整 usage")
+	checks := latestChecksByID(events)
+	assert.Equal(t, "pass", checks[CheckConnectivity].Status)
+	assert.Equal(t, "fail", checks[CheckUsage].Status)
+	assert.Contains(t, checks[CheckUsage].Message, "完整 usage")
 }
 
 func TestBasicRunsOnlyRequestedChecks(t *testing.T) {
@@ -978,18 +964,15 @@ func TestBasicRunsOnlyRequestedChecks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, calls)
 
-	statusByCheck := map[string]string{}
+	checks := latestChecksByID(events)
 	var summary string
 	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
 		if event.Type == "summary" {
 			summary = event.Summary
 		}
 	}
-	assert.Equal(t, "pass", statusByCheck[CheckJSONMode])
-	_, hasConnectivity := statusByCheck[CheckConnectivity]
+	assert.Equal(t, "pass", checks[CheckJSONMode].Status)
+	_, hasConnectivity := checks[CheckConnectivity]
 	assert.False(t, hasConnectivity)
 	assert.Contains(t, summary, "通过 1")
 }
@@ -1016,17 +999,12 @@ func TestCacheModuleReportsMissingCachedTokens(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	statusByCheck := map[string]string{}
-	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
-	}
-	assert.Equal(t, "pass", statusByCheck[CheckCacheWarm])
-	assert.Equal(t, "pass", statusByCheck[CheckCacheProbe])
-	assert.Equal(t, "skip", statusByCheck[CheckCacheTokens])
-	assert.Equal(t, "skip", statusByCheck[CheckCacheHitRate])
-	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
+	checks := latestChecksByID(events)
+	assert.Equal(t, "pass", checks[CheckCacheWarm].Status)
+	assert.Equal(t, "pass", checks[CheckCacheProbe].Status)
+	assert.Equal(t, "skip", checks[CheckCacheTokens].Status)
+	assert.Equal(t, "skip", checks[CheckCacheHitRate].Status)
+	assert.Equal(t, "skip", checks[CheckCacheTTL].Status)
 }
 
 func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
@@ -1054,21 +1032,18 @@ func TestCacheRunsConfiguredProbeRounds(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 4, calls)
 
-	statusByCheck := map[string]string{}
+	checks := latestChecksByID(events)
 	var summary string
 	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
 		if event.Type == "summary" {
 			summary = event.Summary
 		}
 	}
-	assert.Equal(t, "pass", statusByCheck[CheckCacheWarm])
-	assert.Equal(t, "pass", statusByCheck[CheckCacheProbe])
-	assert.Equal(t, "pass", statusByCheck[CheckCacheTokens])
-	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
-	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
+	assert.Equal(t, "pass", checks[CheckCacheWarm].Status)
+	assert.Equal(t, "pass", checks[CheckCacheProbe].Status)
+	assert.Equal(t, "pass", checks[CheckCacheTokens].Status)
+	assert.Equal(t, "pass", checks[CheckCacheHitRate].Status)
+	assert.Equal(t, "skip", checks[CheckCacheTTL].Status)
 	assert.Contains(t, summary, "探测 3 轮")
 }
 
@@ -1102,17 +1077,14 @@ func TestCacheReportsPartialProbeFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3, calls)
 
-	statusByCheck := map[string]string{}
+	checks := latestChecksByID(events)
 	var metrics *CacheMetrics
 	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
 		if event.Type == "metrics" {
 			metrics = event.Cache
 		}
 	}
-	assert.Equal(t, "fail", statusByCheck[CheckCacheProbe])
+	assert.Equal(t, "fail", checks[CheckCacheProbe].Status)
 	require.NotNil(t, metrics)
 	assert.Equal(t, 1, metrics.HitCount)
 }
@@ -1139,29 +1111,20 @@ func TestCacheHitRateDoesNotFailOnLowHit(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	statusByCheck := map[string]string{}
+	checks := latestChecksByID(events)
 	var cacheMetrics *CacheMetrics
 	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
 		if event.Type == "metrics" && event.Cache != nil {
 			cacheMetrics = event.Cache
 		}
 	}
-	assert.Equal(t, "pass", statusByCheck[CheckCacheHitRate])
-	assert.Equal(t, "skip", statusByCheck[CheckCacheTTL])
+	assert.Equal(t, "pass", checks[CheckCacheHitRate].Status)
+	assert.Equal(t, "skip", checks[CheckCacheTTL].Status)
 	require.NotNil(t, cacheMetrics)
 	assert.True(t, cacheMetrics.HasCachedTokens)
 	assert.InDelta(t, 0.2, cacheMetrics.AvgHitRate, 0.001)
-	var hitMessage string
-	for _, event := range events {
-		if event.Type == "check" && event.CheckID == CheckCacheHitRate {
-			hitMessage = event.Message
-		}
-	}
-	assert.NotContains(t, hitMessage, "不正常")
-	assert.NotContains(t, hitMessage, "偏弱")
+	assert.NotContains(t, checks[CheckCacheHitRate].Message, "不正常")
+	assert.NotContains(t, checks[CheckCacheHitRate].Message, "偏弱")
 }
 
 func TestBasicSkipsDependentsWhenConnectivityFails(t *testing.T) {
@@ -1187,17 +1150,12 @@ func TestBasicSkipsDependentsWhenConnectivityFails(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	statusByCheck := map[string]string{}
-	for _, event := range events {
-		if event.Type == "check" && event.CheckID != "" {
-			statusByCheck[event.CheckID] = event.Status
-		}
-	}
-	assert.Equal(t, "fail", statusByCheck[CheckConnectivity])
-	assert.Equal(t, "skip", statusByCheck[CheckStream])
-	assert.Equal(t, "skip", statusByCheck[CheckUsage])
-	assert.Equal(t, "skip", statusByCheck[CheckRequestID])
-	assert.Equal(t, "skip", statusByCheck[CheckSampling])
+	checks := latestChecksByID(events)
+	assert.Equal(t, "fail", checks[CheckConnectivity].Status)
+	assert.Equal(t, "skip", checks[CheckStream].Status)
+	assert.Equal(t, "skip", checks[CheckUsage].Status)
+	assert.Equal(t, "skip", checks[CheckRequestID].Status)
+	assert.Equal(t, "skip", checks[CheckSampling].Status)
 }
 
 func TestStreamChatReadsVendorCacheAliases(t *testing.T) {

@@ -578,9 +578,9 @@ body.pdf-document { width:auto; max-width:none; min-height:0; display:block; fon
 .pdf-document .check-bullet { display:none; }
 .pdf-document .checks-list .check-item > span:first-child { display:none; }
 .pdf-document .check-name { flex:1; font-weight:400; }
-.pdf-document .check-status-pass { color:#15803d; font-weight:700; }
-.pdf-document .check-status-fail { color:#b91c1c; font-weight:700; }
-.pdf-document .check-status-skip { color:#a16207; font-weight:700; }
+.pdf-document .check-status-pass { color:#15803d; }
+.pdf-document .check-status-fail { color:#b91c1c; }
+.pdf-document .check-status-skip { color:#a16207; }
 .pdf-document .check-detail, .pdf-document .check-reason { color:#59697f; }
 .pdf-document .config-bar { grid-template-columns:repeat(2,minmax(0,1fr)); gap:4pt 12pt; margin:0 0 7pt; padding:5pt 0; border:0; border-radius:0; background:none; font-size:8.2pt; }
 .pdf-document .config-item { color:#59697f; }

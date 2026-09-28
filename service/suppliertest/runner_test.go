@@ -865,7 +865,7 @@ func TestBasicClassifiesOptionalAndContractChecks(t *testing.T) {
 	assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
 }
 
-func TestBasicClassifiesHTTP500ByVendorSelection(t *testing.T) {
+func TestBasicTreatsWrappedHTTP500ByCheckAndVendor(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -876,12 +876,12 @@ func TestBasicClassifiesHTTP500ByVendorSelection(t *testing.T) {
 
 	checks := []string{CheckAuthError, CheckBadRequest}
 	tests := []struct {
-		name       string
-		vendor     string
-		wantStatus string
+		name           string
+		vendor         string
+		wantAuthStatus string
 	}{
-		{name: "generic skips relay-wrapped errors", vendor: VendorGeneric, wantStatus: "skip"},
-		{name: "selected vendor fails contract errors", vendor: VendorGLM, wantStatus: "fail"},
+		{name: "generic skips relay-wrapped auth errors", vendor: VendorGeneric, wantAuthStatus: "skip"},
+		{name: "selected vendor fails auth contract errors", vendor: VendorGLM, wantAuthStatus: "fail"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -906,13 +906,11 @@ func TestBasicClassifiesHTTP500ByVendorSelection(t *testing.T) {
 					messageByCheck[event.CheckID] = event.Message
 				}
 			}
-			for _, check := range checks {
-				assert.Equal(t, test.wantStatus, statusByCheck[check], check)
-				assert.Contains(t, messageByCheck[check], "500", check)
-				if test.vendor == VendorGeneric {
-					assert.Contains(t, messageByCheck[check], "通用中转平台", check)
-				}
-			}
+			assert.Equal(t, test.wantAuthStatus, statusByCheck[CheckAuthError])
+			assert.Contains(t, messageByCheck[CheckAuthError], "500")
+			assert.Equal(t, "skip", statusByCheck[CheckBadRequest])
+			assert.Contains(t, messageByCheck[CheckBadRequest], "HTTP 500")
+			assert.Contains(t, messageByCheck[CheckBadRequest], "接入平台")
 		})
 	}
 }

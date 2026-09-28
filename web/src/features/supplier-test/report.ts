@@ -79,6 +79,10 @@ export function stampFileName(): string {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 }
 
+export function supplierReportName(t: ReportInput['t']): string {
+  return `${translate(t, 'Supplier Test')}${stampFileName().slice(0, 8)}`
+}
+
 export function downloadFile(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: `${mime};charset=utf-8` })
   const href = URL.createObjectURL(blob)
@@ -251,6 +255,7 @@ function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
 
 export function buildMarkdownReport(input: ReportInput): string {
   const t: ReportInput['t'] = (key, options) => translate(input.t, key, options)
+  const reportName = supplierReportName(t)
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
   )
@@ -261,7 +266,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
   })
   const lines = [
-    `# ${t('Supplier Test Report')}`,
+    `# ${reportName}`,
     '',
     `- ${t('Time')}: ${new Date().toLocaleString()}`,
     `- ${t('Base URL')}: ${input.baseUrl || '-'}`,
@@ -678,6 +683,7 @@ export function buildHtmlReport(
   options: { format?: 'html' | 'pdf' } = {}
 ): string {
   const t: ReportInput['t'] = (key, options) => translate(input.t, key, options)
+  const reportName = supplierReportName(t)
 
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
@@ -734,7 +740,7 @@ export function buildHtmlReport(
       valueClass: resultClass,
     },
   ])
-  const pdfSubtitle = `SUPPLIER TEST REPORT  /  ${t('Supplier Test Report')}`
+  const pdfSubtitle = `SUPPLIER TEST  /  ${reportName}`
 
   // Section 2: Stress test HTML
   let stressSection = ''
@@ -963,7 +969,7 @@ ${summaryHtml}
 <html lang="${escapeHtml(input.language || 'en')}">
 <head>
 <meta charset="utf-8"/>
-<title>${escapeHtml(t('Supplier Test Report'))}${options.format === 'pdf' ? '' : `-${stampFileName()}`}</title>
+<title>${escapeHtml(reportName)}${options.format === 'pdf' ? '' : `-${stampFileName()}`}</title>
 <style>
 ${options.format === 'pdf' ? '' : '@page { size: A4; margin: 0; }'}
 @media print {
@@ -1275,7 +1281,7 @@ tr {
   padding-top: 5px;
   text-align: center;
 }
-${options.format === 'pdf' ? pdfPageFooterStyles(input.branding, t('Supplier Test Report')) + pdfDocumentStyles : ''}
+${options.format === 'pdf' ? pdfPageFooterStyles(input.branding, reportName) + pdfDocumentStyles : ''}
 </style>
 </head>
 <body${options.format === 'pdf' ? ' class="pdf-document"' : ''}>
@@ -1285,7 +1291,7 @@ ${rowOpen}
 <div class="report-header">
   <div class="report-title-row">
     <div>
-      <h1 class="report-title">${escapeHtml(t('Supplier Test Report'))}</h1>
+      <h1 class="report-title">${escapeHtml(reportName)}</h1>
       <div class="report-subtitle">Supplier Benchmark &amp; SLA Compliance Test Report</div>
     </div>
     <div class="report-badge-top">${escapeHtml(t('Commercial evaluation'))}</div>

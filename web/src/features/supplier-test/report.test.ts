@@ -237,7 +237,7 @@ describe('supplier-test report', () => {
     const input = makeTestInput()
     const md = buildMarkdownReport(input)
 
-    expect(md).toContain('# Supplier Test Report')
+    expect(md).toMatch(/^# Supplier Test\d{8}$/m)
     expect(md).toContain('## 1. Connectivity and protocol')
     expect(md).toContain('## 2. Concurrency and stress test')
     expect(md).toContain('## 3. Prompt cache test')

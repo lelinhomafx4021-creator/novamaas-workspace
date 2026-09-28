@@ -200,7 +200,7 @@ func billingModelSummaryPages(pdf *gopdf.GoPdf, rows []BillingModelRow, nameWidt
 		// V8 reserves a compact executive summary above the table and a
 		// reconciliation note below it. Keep pagination deterministic so the
 		// final row, totals and notes never compete for the footer area.
-		pageHeight = 384
+		pageHeight = 365
 	}
 	for _, row := range rows {
 		name := row.ModelName
@@ -214,6 +214,9 @@ func billingModelSummaryPages(pdf *gopdf.GoPdf, rows []BillingModelRow, nameWidt
 		rowHeight := math.Max(20, float64(len(lines))*8.2*1.45+8)
 		if includeUsageDates && row.ActiveDays > 0 {
 			rowHeight += 13
+		}
+		if includeUsageDates {
+			rowHeight = math.Max(32, rowHeight)
 		}
 		if rowHeight > pageHeight {
 			return nil, errors.New("billing model name exceeds available page space")
@@ -402,7 +405,7 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		doc.headerV3(snapshot, pageNumber, pages)
 		title := "按模型消费汇总"
 		if snapshot.PDFTemplateVersion >= 8 {
-			title = "模型消费构成"
+			title = "模型消费明细"
 			if pageIndex > 0 {
 				title += "（续）"
 			}
@@ -420,15 +423,15 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 				refundRecords += row.RefundCount
 			}
 			pdf.SetTextColor(89, 105, 127)
-			doc.text(40, 151, 515, 7.5, "MODEL BREAKDOWN  /  按模型汇总本期消费")
-			doc.text(40, 165, 515, 8.2, fmt.Sprintf("客户 %s (#%d)  ·  查看各模型的消费、退款和本期净额", snapshot.Username, statement.UserID))
+			doc.text(40, 151, 515, 7.5, "MODEL CONSUMPTION DETAILS  /  按模型核对本期消费、退款及净额")
+			doc.text(40, 165, 515, 8.2, fmt.Sprintf("客户 %s (#%d)  ·  逐项列示模型金额、涉及账单日和消费金额占比", snapshot.Username, statement.UserID))
 			if pageIndex == 0 {
 				summaryTop := 184.0
 				for index, item := range []struct {
 					label string
 					value string
 				}{
-					{"模型分组", fmt.Sprintf("%d 个", len(snapshot.Models))},
+					{"模型数量", fmt.Sprintf("%d 个", len(snapshot.Models))},
 					{"消费笔数", fmt.Sprintf("%d 笔", chargeRecords)},
 					{"退款笔数", fmt.Sprintf("%d 笔", refundRecords)},
 					{"本期净额", snapshot.Currency.Symbol + " " + snapshot.Total.Amount},
@@ -468,7 +471,7 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		if snapshot.PDFTemplateVersion >= 8 {
 			columns = []float64{50, 202, 261, 335, 402, 478}
 			widths = []float64{147, 54, 69, 62, 71, 67}
-			titles = []string{"模型 / 使用期间", "", "消费金额", "退款金额", "净消费", "消费占比"}
+			titles = []string{"模型 / 涉及账单日", "", "消费金额", "退款金额", "本期净额", "消费金额占比"}
 		}
 		for i, title := range titles {
 			if i == 0 {
@@ -478,13 +481,23 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 			}
 		}
 		if snapshot.PDFTemplateVersion >= 8 {
-			doc.right(columns[1], headerY+5, widths[1], 7.6, "记录笔数")
+			doc.right(columns[1], headerY+5, widths[1], 7.6, "笔数")
 			doc.right(columns[1], headerY+17, widths[1], 6.8, "消费 / 退款")
 		}
 		y = rowsY
 		if len(modelRows) == 0 {
 			pdf.SetTextColor(89, 105, 127)
-			y = doc.text(50, y+18, 495, 9, "本期没有计费模型记录。") + 16
+			y = doc.text(50, y+18, 495, 9, "本期没有模型消费记录。") + 16
+		}
+		var highestChargeQuota int64
+		highestChargeShare := "0.00%"
+		if snapshot.PDFTemplateVersion >= 8 {
+			for _, row := range snapshot.Models {
+				if row.ChargeQuota > highestChargeQuota {
+					highestChargeQuota = row.ChargeQuota
+					highestChargeShare = row.ChargeShare
+				}
+			}
 		}
 		for rowIndex, row := range modelRows {
 			name := row.ModelName
@@ -502,7 +515,15 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 			if snapshot.PDFTemplateVersion >= 8 && row.ActiveDays > 0 {
 				rowHeight += 13
 			}
-			if rowIndex%2 == 0 {
+			if snapshot.PDFTemplateVersion >= 8 {
+				rowHeight = math.Max(32, rowHeight)
+			}
+			if snapshot.PDFTemplateVersion >= 8 && highestChargeQuota > 0 && row.ChargeQuota == highestChargeQuota {
+				pdf.SetFillColor(234, 242, 252)
+				pdf.RectFromUpperLeftWithStyle(40, y, 515, rowHeight, "F")
+				pdf.SetFillColor(47, 103, 177)
+				pdf.RectFromUpperLeftWithStyle(40, y, 3, rowHeight, "F")
+			} else if rowIndex%2 == 0 {
 				pdf.SetFillColor(245, 247, 251)
 				pdf.RectFromUpperLeftWithStyle(40, y, 515, rowHeight, "F")
 			}
@@ -511,7 +532,7 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 			if snapshot.PDFTemplateVersion >= 8 && row.ActiveDays > 0 {
 				first := time.Unix(row.FirstPosted, 0).In(billingLocation).Format("01-02")
 				last := time.Unix(row.LastPosted, 0).In(billingLocation).Format("01-02")
-				usage := fmt.Sprintf("使用 %d 天 · %s", row.ActiveDays, first)
+				usage := fmt.Sprintf("涉及 %d 个账单日 · %s", row.ActiveDays, first)
 				if first != last {
 					usage += " 至 " + last
 				}
@@ -521,10 +542,16 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 			}
 			values := []string{row.Charge, row.Refund, row.Amount, fmt.Sprint(row.Count)}
 			if snapshot.PDFTemplateVersion >= 8 {
-				values = []string{fmt.Sprintf("%d / %d", row.ChargeCount, row.RefundCount), row.Charge, row.Refund, row.Amount, row.ChargeShare}
+				doc.right(columns[1], y+4, widths[1], 7.3, fmt.Sprintf("消费 %d", row.ChargeCount))
+				doc.right(columns[1], y+16, widths[1], 7.3, fmt.Sprintf("退款 %d", row.RefundCount))
+				values = []string{row.Charge, row.Refund, row.Amount, row.ChargeShare}
 			}
 			for col, value := range values {
-				doc.right(columns[col+1], y+5, widths[col+1], 8.2, value)
+				columnOffset := 1
+				if snapshot.PDFTemplateVersion >= 8 {
+					columnOffset = 2
+				}
+				doc.right(columns[col+columnOffset], y+5, widths[col+columnOffset], 8.2, value)
 			}
 			if snapshot.PDFTemplateVersion >= 8 {
 				barX, barY, barWidth := columns[5]+18, y+21, widths[5]-18
@@ -555,7 +582,9 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 					chargeRecords += row.ChargeCount
 					refundRecords += row.RefundCount
 				}
-				totalValues = []string{"合计", fmt.Sprintf("%d / %d", chargeRecords, refundRecords), snapshot.Total.Charge, snapshot.Total.Refund, snapshot.Total.Amount, totalShare}
+				totalValues = []string{"合计", "", snapshot.Total.Charge, snapshot.Total.Refund, snapshot.Total.Amount, totalShare}
+				doc.right(columns[1], y+3, widths[1], 7.3, fmt.Sprintf("消费 %d", chargeRecords))
+				doc.right(columns[1], y+14, widths[1], 7.3, fmt.Sprintf("退款 %d", refundRecords))
 			}
 			for col, value := range totalValues {
 				if col == 0 {
@@ -567,16 +596,21 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 			pdf.SetTextColor(89, 105, 127)
 			note := "记录数为正式账本明细数量，不等同于成功请求数；退款按实际入账模型抵减。"
 			if snapshot.PDFTemplateVersion >= 8 {
-				note = "记录笔数按“消费 / 退款”展示；使用期间按本期账单日期统计；消费占比以本期消费总额为分母。"
+				note = "本期净额 = 消费金额 - 退款金额；消费金额占比 = 单模型消费金额 ÷ 本期消费总额。"
 			}
 			y = doc.text(40, y+37, 515, 8, note)
 			if snapshot.PDFTemplateVersion >= 8 {
-				y = doc.text(40, y+4, 515, 8, "各模型金额合计与本期账单总额一致；退款已计入对应模型并抵减本期净额。")
+				if highestChargeQuota > 0 {
+					pdf.SetTextColor(47, 103, 177)
+					y = doc.text(40, y+4, 515, 8, "重点核对：浅蓝标记项为本期消费金额最高的模型，占本期消费金额 "+highestChargeShare+"。")
+				}
+				pdf.SetTextColor(89, 105, 127)
+				y = doc.text(40, y+4, 515, 8, "各模型消费、退款及本期净额合计与本期对账单一致。")
 			}
 		} else {
 			continuation := "模型消费汇总续下页。"
 			if snapshot.PDFTemplateVersion >= 8 {
-				continuation = "模型消费构成续下页，所有分页共同组成完整汇总。"
+				continuation = "模型消费明细续下页，所有分页共同组成完整明细。"
 			}
 			y = doc.text(40, y+12, 515, 8, continuation)
 		}

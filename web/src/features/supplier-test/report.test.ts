@@ -233,11 +233,11 @@ describe('supplier-test report', () => {
     expect(html).toContain('W2/R1, 1.25 s')
   })
 
-  test('buildMarkdownReport formats structured sections without Cannot compare in tables', () => {
+  test('buildMarkdownReport formats structured sections without skipped informational rows', () => {
     const input = makeTestInput()
     const md = buildMarkdownReport(input)
 
-    expect(md).toContain('# Supplier Test Report')
+    expect(md).toMatch(/^# Supplier Test\d{8}$/m)
     expect(md).toContain('## 1. Connectivity and protocol')
     expect(md).toContain('## 2. Concurrency and stress test')
     expect(md).toContain('## 3. Prompt cache test')

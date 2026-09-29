@@ -672,8 +672,10 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		}, stream), 30*time.Second, nil)
 		if unauthorized.StatusCode == http.StatusUnauthorized || unauthorized.StatusCode == http.StatusForbidden {
 			emitCheck(CheckAuthError, "pass", fmt.Sprintf("无效 Key 返回了 HTTP %d，符合预期", unauthorized.StatusCode))
+		} else if profile.id == VendorGeneric {
+			emitCheck(CheckAuthError, "skip", fmt.Sprintf("通用中转平台可能统一包装错误状态；无效 Key 返回了 HTTP %d，已跳过 401/403 状态码规范校验", unauthorized.StatusCode))
 		} else {
-			emitCheck(CheckAuthError, "skip", fmt.Sprintf("无效 Key 返回了 HTTP %d，不是 401/403", unauthorized.StatusCode))
+			emitCheck(CheckAuthError, "fail", fmt.Sprintf("无效 Key 返回了 HTTP %d，不是 401/403", unauthorized.StatusCode))
 		}
 	}
 
@@ -684,8 +686,11 @@ func runBasic(ctx context.Context, httpClient *http.Client, endpoint string, req
 		}, stream), 30*time.Second, nil)
 		if bad.StatusCode >= 400 && bad.StatusCode < 500 {
 			emitCheck(CheckBadRequest, "pass", fmt.Sprintf("缺字段返回了 HTTP %d，符合预期", bad.StatusCode))
+		} else if profile.id == VendorGeneric && bad.StatusCode == http.StatusInternalServerError && bad.ErrorType == "new_api_error" &&
+			(bad.ErrorCode == "invalid_request" || bad.ErrorCode == "bad_request_body" || bad.ErrorCode == "read_request_body_failed" || bad.ErrorCode == "convert_request_failed") {
+			emitCheck(CheckBadRequest, "skip", fmt.Sprintf("通用中转平台将缺字段错误包装为 HTTP 500（%s），已跳过 4xx 状态码规范校验", bad.ErrorCode))
 		} else {
-			emitCheck(CheckBadRequest, "skip", fmt.Sprintf("缺字段返回了 HTTP %d，不是 4xx", bad.StatusCode))
+			emitCheck(CheckBadRequest, "fail", fmt.Sprintf("缺字段返回了 HTTP %d，不是 4xx", bad.StatusCode))
 		}
 	}
 

@@ -358,6 +358,11 @@ func DownloadBillingArtifact(c *gin.Context) {
 		billingError(c, err)
 		return
 	}
+	var snapshot service.BillingSnapshot
+	if err := common.UnmarshalJsonStr(statement.Snapshot, &snapshot); err != nil {
+		billingError(c, err)
+		return
+	}
 	kind := c.Param("kind")
 	if kind != "pdf" && kind != "details" && kind != "manifest" && kind != "receipt" && kind != "snapshot" {
 		billingError(c, gorm.ErrRecordNotFound)
@@ -378,11 +383,6 @@ func DownloadBillingArtifact(c *gin.Context) {
 	var artifact model.BillingArtifact
 	err = model.DB.Where("statement_id = ? AND kind = ? AND ordinal = ?", statement.ID, kind, ordinal).First(&artifact).Error
 	if kind == "receipt" && ordinal == 0 && statement.Status == model.StatementConfirmed && errors.Is(err, gorm.ErrRecordNotFound) {
-		var snapshot service.BillingSnapshot
-		if err = common.UnmarshalJsonStr(statement.Snapshot, &snapshot); err != nil {
-			billingError(c, err)
-			return
-		}
 		pdf, renderErr := service.RenderBillingStatementPDF(statement, &snapshot, true)
 		if renderErr != nil {
 			billingError(c, renderErr)
@@ -412,7 +412,7 @@ func DownloadBillingArtifact(c *gin.Context) {
 	if kind == "manifest" || kind == "snapshot" {
 		contentType = "application/json"
 	}
-	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": service.BillingArtifactFilename(statement, kind, ordinal)}))
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": service.BillingArtifactFilename(statement, snapshot.Username, kind, ordinal)}))
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("X-Content-SHA256", artifact.SHA256)

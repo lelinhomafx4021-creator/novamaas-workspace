@@ -73,6 +73,7 @@ import {
   exportPdfReport,
   exportVideoPdfReport,
   stampFileName,
+  supplierReportName,
   type ReportInput,
   type ReportBranding,
   type VideoReportInput,
@@ -652,7 +653,7 @@ export function SupplierTest() {
               toast.success(t('Video HTML report exported'))
             } else {
               downloadFile(
-                `supplier-test-${stampFileName()}.html`,
+                `${supplierReportName((key, options) => t(key, options))}.html`,
                 buildHtmlReport(reportInput()),
                 'text/html'
               )

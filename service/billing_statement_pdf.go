@@ -29,6 +29,10 @@ func RenderBillingStatementPDF(statement *model.BillingStatement, snapshot *Bill
 		return renderBillingStatementPDFV5(statement, snapshot, receipt)
 	case 6:
 		return renderBillingStatementPDFV6(statement, snapshot, receipt)
+	case 7:
+		return renderBillingStatementPDFV7(statement, snapshot, receipt)
+	case 8:
+		return renderBillingStatementPDFV8(statement, snapshot, receipt)
 	default:
 		return nil, errors.New("unsupported billing PDF template version")
 	}

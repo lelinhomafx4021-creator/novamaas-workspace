@@ -47,10 +47,10 @@ describe('statement downloads', () => {
   })
 
   test.each([
-    ['pdf', '月度对账单_20260903000000.pdf'],
-    ['receipt', '对账确认回执_20260903020000.pdf'],
+    ['pdf', 'demo_customer_2026-08_月度对账单_V01.pdf'],
+    ['receipt', 'demo_customer_2026-08_对账确认回执_V01.pdf'],
   ])(
-    'uses the server Chinese timestamp filename for %s',
+    'uses the server customer and billing month filename for %s',
     async (kind, name) => {
       vi.mocked(api.get).mockResolvedValue({
         data: new Blob(['PDF'], { type: 'application/pdf' }),

@@ -33,6 +33,21 @@ export interface BillingRow {
   profit?: string
   count: number
 }
+export interface BillingModelRow {
+  model_name: string
+  charge: string
+  refund: string
+  amount: string
+  charge_share?: string
+  count: number
+  charge_count?: number
+  refund_count?: number
+  active_days?: number
+  first_posted_at?: number
+  last_posted_at?: number
+  charge_quota: number
+  refund_quota: number
+}
 export interface BillingCurrency {
   code: string
   symbol: string
@@ -54,6 +69,7 @@ export interface BillingSnapshot {
   accounting_start_at: number
   currency: BillingCurrency
   days: BillingRow[]
+  models?: BillingModelRow[]
   total: BillingRow
   rounding_difference?: string
 }

@@ -146,7 +146,7 @@ describe('supplier-test verdicts', () => {
     expect(assessment.rows.find((row) => row.id === 'success')?.verdict).toBe(
       'abnormal'
     )
-    // Deep performance should be 'na' (cannot compare) when shallow failed with abnormal error rate
+    // Deep performance is skipped when shallow checks already establish failure.
     const perf = assessmentGroup(assessment, 'perf')
     expect(perf.overall).toBe('na')
   })
@@ -306,7 +306,7 @@ describe('supplier-test verdicts', () => {
     expect(assessment.rows.find((row) => row.id === 'hit')?.verdict).toBe('ok')
   })
 
-  test('filters informational rows so SLA benchmark tables have zero Cannot compare verdicts', () => {
+  test('filters informational rows out of SLA benchmark tables', () => {
     const stressAss = assessStress(stress({}))
     const benchmarkRows = stressAss.rows.filter(
       (row) => !isInformationalRow(row)

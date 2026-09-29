@@ -22,6 +22,7 @@ const taskPollHistoryDays = 90
 
 // TaskPollHistoryEntry is stored in TaskRequestBody.Body under a separate
 // reference prefix, leaving the two submission request snapshots untouched.
+// Consecutive polls that differ only by volatile timestamps update one entry.
 type TaskPollHistoryEntry struct {
 	ID                int64           `json:"id"`
 	TaskID            string          `json:"task_id"`
@@ -71,6 +72,38 @@ func omitTaskPollLargeStrings(value any, fieldName string) (any, bool) {
 	return value, false
 }
 
+func taskPollComparableResponse(value any) any {
+	switch current := value.(type) {
+	case map[string]any:
+		comparable := make(map[string]any, len(current))
+		for key, item := range current {
+			normalizedKey := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "_", ""), "-", ""))
+			switch normalizedKey {
+			case "timestamp", "updatedat", "updatetime":
+				continue
+			}
+			comparable[key] = taskPollComparableResponse(item)
+		}
+		return comparable
+	case []any:
+		comparable := make([]any, len(current))
+		for index, item := range current {
+			comparable[index] = taskPollComparableResponse(item)
+		}
+		return comparable
+	default:
+		return value
+	}
+}
+
+func taskPollResponseDedupSHA256(value any, fallback string) string {
+	comparable, err := common.Marshal(taskPollComparableResponse(value))
+	if err != nil {
+		return fallback
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(comparable))
+}
+
 func taskPollResponse(raw []byte) (json.RawMessage, string, bool, bool) {
 	if len(raw) == 0 {
 		return nil, "", false, false
@@ -97,12 +130,49 @@ func taskPollResponse(raw []byte) (json.RawMessage, string, bool, bool) {
 		}
 		digest = sha256.Sum256(canonical)
 	}
+	responseHash := fmt.Sprintf("%x", digest)
 	value, truncated := omitTaskPollLargeStrings(value, "")
 	clean, err := common.Marshal(value)
 	if err != nil || len(clean) > MaxTaskPollResponseBytes {
-		return nil, fmt.Sprintf("%x", digest), true, truncated
+		return nil, responseHash, true, truncated
 	}
-	return clean, fmt.Sprintf("%x", digest), false, truncated
+	return clean, responseHash, false, truncated
+}
+
+func taskPollHistoryStatus(status string) string {
+	return strings.ToUpper(strings.TrimSpace(status))
+}
+
+func taskPollHistoryDedupSHA256(entry TaskPollHistoryEntry) string {
+	if len(entry.Response) == 0 {
+		return entry.ResponseSHA256
+	}
+	var value any
+	if err := common.Unmarshal(entry.Response, &value); err != nil {
+		return entry.ResponseSHA256
+	}
+	return taskPollResponseDedupSHA256(value, entry.ResponseSHA256)
+}
+
+func sameTaskPollHistoryObservation(current, previous TaskPollHistoryEntry) bool {
+	return taskPollHistoryStatus(current.Status) == taskPollHistoryStatus(previous.Status) &&
+		current.HTTPStatus == previous.HTTPStatus && current.Error == previous.Error &&
+		taskPollHistoryDedupSHA256(current) == taskPollHistoryDedupSHA256(previous) &&
+		current.ResponseOmitted == previous.ResponseOmitted && current.ResponseTruncated == previous.ResponseTruncated
+}
+
+func mergeTaskPollHistoryObservation(current *TaskPollHistoryEntry, previous TaskPollHistoryEntry) {
+	if previous.FirstSeenAt > 0 && (current.FirstSeenAt == 0 || previous.FirstSeenAt < current.FirstSeenAt) {
+		current.FirstSeenAt = previous.FirstSeenAt
+	}
+	if previous.LastSeenAt > current.LastSeenAt {
+		current.LastSeenAt = previous.LastSeenAt
+	}
+	previousCount := previous.RepeatCount
+	if previousCount < 1 {
+		previousCount = 1
+	}
+	current.RepeatCount += previousCount
 }
 
 func RecordTaskPollHistory(ctx context.Context, taskID, status string, httpStatus int, pollError string, raw []byte) error {
@@ -127,27 +197,24 @@ func RecordTaskPollHistory(ctx context.Context, taskID, status string, httpStatu
 		if err := lockForUpdate(tx).Select("id").Where("task_id = ?", taskID).First(&task).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		var last TaskRequestBody
-		err := lockForUpdate(tx).Where("task_id = ? AND reference_id LIKE ?", taskID, taskPollHistoryPrefix+"%").Order("id DESC").First(&last).Error
+		var latest TaskRequestBody
+		err := lockForUpdate(tx).Select("id", "body").Where("task_id = ? AND reference_id LIKE ?", taskID, taskPollHistoryPrefix+"%").Order("id DESC").First(&latest).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		if err == nil {
 			var previous TaskPollHistoryEntry
-			if err := common.Unmarshal(last.Body, &previous); err != nil {
+			if err := common.Unmarshal(latest.Body, &previous); err != nil {
 				return err
 			}
-			if previous.Status == entry.Status && previous.HTTPStatus == entry.HTTPStatus &&
-				previous.Error == entry.Error && previous.ResponseSHA256 == entry.ResponseSHA256 &&
-				previous.ResponseOmitted == entry.ResponseOmitted && previous.ResponseTruncated == entry.ResponseTruncated {
-				previous.LastSeenAt = now
-				previous.RepeatCount++
-				body, err := common.Marshal(previous)
+			if sameTaskPollHistoryObservation(entry, previous) {
+				mergeTaskPollHistoryObservation(&entry, previous)
+				body, err := common.Marshal(entry)
 				if err != nil {
 					return err
 				}
 				digest := sha256.Sum256(body)
-				return tx.Model(&TaskRequestBody{}).Where("id = ?", last.ID).Updates(map[string]any{
+				return tx.Model(&TaskRequestBody{}).Where("id = ?", latest.ID).Updates(map[string]any{
 					"body": json.RawMessage(body), "body_size": len(body),
 					"body_sha256": fmt.Sprintf("%x", digest), "updated_at": now,
 				}).Error
@@ -190,6 +257,9 @@ func ListTaskPollHistory(ctx context.Context, taskID string, beforeID int64, lim
 		if err := common.Unmarshal(row.Body, &entry); err != nil {
 			return nil, err
 		}
+		if entry.RepeatCount < 1 {
+			entry.RepeatCount = 1
+		}
 		entry.ID = row.ID
 		entries = append(entries, entry)
 	}
@@ -202,7 +272,7 @@ func DeleteExpiredTaskPollHistory(ctx context.Context, now time.Time, limit int)
 	}
 	cutoff := now.AddDate(0, 0, -taskPollHistoryDays).Unix()
 	var ids []int64
-	// A deduplicated row can keep receiving identical polls after its first
+	// A deduplicated row can keep receiving equivalent polls after its first
 	// observation. Retain it until its last observation is also 90 days old.
 	if err := DB.WithContext(ctx).Model(&TaskRequestBody{}).Where("reference_id LIKE ? AND created_at < ? AND updated_at < ?", taskPollHistoryPrefix+"%", cutoff, cutoff).
 		Order("id ASC").Limit(limit).Pluck("id", &ids).Error; err != nil {

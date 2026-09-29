@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -72,6 +73,78 @@ type BillingArtifact struct {
 	Rows        int64  `json:"rows" gorm:"bigint"`
 }
 
+// BillingModelTotal is the customer-visible amount breakdown frozen with a
+// statement. It contains no channel, provider-cost, margin, or administrator
+// accounting data.
+type BillingModelTotal struct {
+	ModelName   string `json:"model_name"`
+	Charge      int64  `json:"charge"`
+	Refund      int64  `json:"refund"`
+	Count       int64  `json:"count" gorm:"column:records"`
+	ChargeCount int64  `json:"charge_count"`
+	RefundCount int64  `json:"refund_count"`
+	ActiveDays  int64  `json:"active_days"`
+	FirstPosted int64  `json:"first_posted_at" gorm:"column:first_posted_at"`
+	LastPosted  int64  `json:"last_posted_at" gorm:"column:last_posted_at"`
+}
+
+// summarizeBillingModels uses the original model name from each ledger entry.
+// SQL GROUP BY follows the database column collation, which can merge names
+// such as Foo and foo on MySQL even though the archive compares them exactly.
+func summarizeBillingModels(entriesScope *gorm.DB, userID int, fromSequence, toSequence, start, end int64) ([]BillingModelTotal, error) {
+	const batchSize = 1000
+	totals := make(map[string]BillingModelTotal)
+	modelDays := make(map[string]map[int64]struct{})
+	cursor := fromSequence - 1
+	for {
+		var entries []BillingEntry
+		err := entriesScope.Session(&gorm.Session{}).
+			Select("sequence", "model_name", "posted_at", "quota").
+			Where("user_id = ? AND sequence >= ? AND sequence > ? AND sequence <= ? AND posted_at >= ? AND posted_at < ? AND kind <> ?", userID, fromSequence, cursor, toSequence, start, end, "funding").
+			Order("sequence asc").Limit(batchSize).Find(&entries).Error
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			total := totals[entry.ModelName]
+			total.ModelName = entry.ModelName
+			if total.Count == 0 || entry.PostedAt < total.FirstPosted {
+				total.FirstPosted = entry.PostedAt
+			}
+			if entry.PostedAt > total.LastPosted {
+				total.LastPosted = entry.PostedAt
+			}
+			day := (entry.PostedAt + 28800) / 86400
+			days := modelDays[entry.ModelName]
+			if days == nil {
+				days = make(map[int64]struct{})
+				modelDays[entry.ModelName] = days
+			}
+			days[day] = struct{}{}
+			total.ActiveDays = int64(len(days))
+			if entry.Quota >= 0 {
+				total.Charge += entry.Quota
+				total.ChargeCount++
+			} else {
+				total.Refund -= entry.Quota
+				total.RefundCount++
+			}
+			total.Count++
+			totals[entry.ModelName] = total
+		}
+		if len(entries) < batchSize {
+			break
+		}
+		cursor = entries[len(entries)-1].Sequence
+	}
+	result := make([]BillingModelTotal, 0, len(totals))
+	for _, total := range totals {
+		result = append(result, total)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ModelName < result[j].ModelName })
+	return result, nil
+}
+
 func GetBillingStatement(id string) (*BillingStatement, error) {
 	var statement BillingStatement
 	err := DB.First(&statement, "id = ?", id).Error
@@ -121,7 +194,7 @@ func ListBillingStatements(userID int, before int64, beforeID, status string, cu
 
 // Caller supplies a snapshot built under the account lock. It contains no
 // sensitive request bodies or credentials.
-func CreateBillingStatement(statement *BillingStatement, buildSnapshot func(*BillingAccount, []BillingHour) (string, string, error)) error {
+func CreateBillingStatement(statement *BillingStatement, buildSnapshot func(*BillingAccount, []BillingHour, []BillingModelTotal) (string, string, error)) error {
 	start, end, err := BillingMonthBounds(statement.Month)
 	if err != nil {
 		return err
@@ -181,7 +254,14 @@ func CreateBillingStatement(statement *BillingStatement, buildSnapshot func(*Bil
 				return errors.New("invalid hourly billing sequence bounds")
 			}
 		}
-		statement.Snapshot, statement.SnapshotSHA256, err = buildSnapshot(account, hours)
+		modelTotals := make([]BillingModelTotal, 0)
+		if bounds.FirstSequence > 0 {
+			modelTotals, err = summarizeBillingModels(tx.Model(&BillingEntry{}), statement.UserID, statement.FromSequence, statement.ToSequence, start, end)
+			if err != nil {
+				return err
+			}
+		}
+		statement.Snapshot, statement.SnapshotSHA256, err = buildSnapshot(account, hours, modelTotals)
 		if err != nil {
 			return err
 		}

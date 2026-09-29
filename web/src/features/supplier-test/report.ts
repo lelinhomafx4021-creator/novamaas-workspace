@@ -24,9 +24,9 @@ import {
   displayThreshold,
   formatPercent,
   isInformationalRow,
-  overallLabel,
-  VERDICT_LABEL,
+  worstVerdict,
   type Assessment,
+  type Verdict,
 } from './baselines'
 import { PROTOCOL_BASIC_IDS, SHALLOW_BASIC_IDS } from './constants'
 import { checkMessage, statusLabel } from './formatters'
@@ -77,6 +77,10 @@ export function stampFileName(): string {
   const now = new Date()
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+}
+
+export function supplierReportName(t: ReportInput['t']): string {
+  return `${translate(t, 'Supplier Test')}${stampFileName().slice(0, 8)}`
 }
 
 export function downloadFile(filename: string, content: string, mime: string) {
@@ -212,16 +216,30 @@ export function formatTokenCompact(tokens: number | undefined): string {
   return String(tokens)
 }
 
+function checkExplanation(check: CheckResult, t: ReportInput['t']): string {
+  const message = checkMessage(check, t)
+  if (message) return message
+  if (check.status === 'skip' && check.hintKey) return t(check.hintKey)
+  return ''
+}
+
 function checkLines(
   checks: CheckResult[],
   input: ReportInput,
   t: ReportInput['t']
 ): string[] {
   return checks.map((check) => {
-    const message = checkMessage(check, t)
-    const detail = message ? ` — ${message}` : ''
-    return `- ${t(check.title)}: ${t(input.statusLabel(check.status))}${detail}`
+    const explanation = checkExplanation(check, t)
+    const reasonLabel = check.status === 'skip' ? `**${t('Reason')}:** ` : ''
+    const detail = explanation ? ` — ${reasonLabel}${explanation}` : ''
+    return `- ${t(check.title)}: **${t(input.statusLabel(check.status))}**${detail}`
   })
+}
+
+function assessmentResultLabel(verdict: Verdict): string {
+  if (verdict === 'ok') return 'Passed'
+  if (verdict === 'na') return 'Skipped'
+  return 'Failed'
 }
 
 function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
@@ -235,7 +253,7 @@ function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
   ]
   for (const row of benchmarkRows) {
     lines.push(
-      `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(VERDICT_LABEL[row.verdict])} |`
+      `| ${t(row.label)} | ${displayMeasured(row, t)} | ${displayThreshold(row, t)} | ${t(assessmentResultLabel(row.verdict))} |`
     )
   }
   return lines
@@ -243,6 +261,7 @@ function markdownTable(assessment: Assessment, t: ReportInput['t']): string[] {
 
 export function buildMarkdownReport(input: ReportInput): string {
   const t: ReportInput['t'] = (key, options) => translate(input.t, key, options)
+  const reportName = supplierReportName(t)
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
   )
@@ -253,7 +272,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     return (PROTOCOL_BASIC_IDS as readonly string[]).includes(check.id)
   })
   const lines = [
-    `# ${t('Supplier Test Report')}`,
+    `# ${reportName}`,
     '',
     `- ${t('Time')}: ${new Date().toLocaleString()}`,
     `- ${t('Base URL')}: ${input.baseUrl || '-'}`,
@@ -276,7 +295,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     lines.push('', `## 2. ${t('Concurrency and stress test')}`)
     if (input.stressAssessment) {
       lines.push(
-        `**${t('Stress test assessment')}：${t(overallLabel(input.stressAssessment.overall))}**`,
+        `**${t('Stress test assessment')}：${t(assessmentResultLabel(input.stressAssessment.overall))}**`,
         ''
       )
     }
@@ -391,7 +410,7 @@ export function buildMarkdownReport(input: ReportInput): string {
     lines.push('', `## 3. ${t('Prompt cache test')}`)
     if (input.cacheAssessment) {
       lines.push(
-        `**${t('Prompt cache assessment')}：${t(overallLabel(input.cacheAssessment.overall))}**`,
+        `**${t('Prompt cache assessment')}：${t(assessmentResultLabel(input.cacheAssessment.overall))}**`,
         ''
       )
     }
@@ -492,13 +511,18 @@ function pdfRow(content: string): string {
 }
 
 function pdfSummaryCards(
-  cards: Array<{ label: string; value: string; detail: string }>
+  cards: Array<{
+    label: string
+    value: string
+    detail: string
+    valueClass?: string
+  }>
 ): string {
   return `<div class="document-summary">${cards
     .map(
       (card) => `<div class="document-summary-card">
   <div class="document-summary-label">${escapeHtml(card.label)}</div>
-  <div class="document-summary-value">${escapeHtml(card.value)}</div>
+  <div class="document-summary-value${card.valueClass ? ` ${card.valueClass}` : ''}">${escapeHtml(card.value)}</div>
   <div class="document-summary-detail">${escapeHtml(card.detail)}</div>
 </div>`
     )
@@ -539,6 +563,8 @@ body.pdf-document { width:auto; max-width:none; min-height:0; display:block; fon
 .document-summary-label { font-size:8pt; line-height:11pt; color:#536681; }
 .document-summary-card:last-child .document-summary-label { color:#dce7f7; }
 .document-summary-value { margin-top:8pt; font-size:16pt; line-height:21pt; text-align:right; overflow-wrap:anywhere; }
+.document-summary-value.result-pass { color:#86efac; font-weight:700; }
+.document-summary-value.result-fail { color:#fecaca; font-weight:700; }
 .document-summary-detail { margin-top:3pt; font-size:8pt; text-align:right; }
 .pdf-document .section { margin:0 0 16pt; padding:0; border:0; border-radius:0; background:none; }
 .pdf-document .section-header { height:26pt; padding:0 10pt; margin:0 0 6pt; border:0; background:#19335e; break-after:avoid-page; }
@@ -552,9 +578,10 @@ body.pdf-document { width:auto; max-width:none; min-height:0; display:block; fon
 .pdf-document .check-bullet { display:none; }
 .pdf-document .checks-list .check-item > span:first-child { display:none; }
 .pdf-document .check-name { flex:1; font-weight:400; }
-.pdf-document .check-status-pass, .pdf-document .check-status-skip { color:#233145; font-weight:400; }
-.pdf-document .check-status-fail { color:#b91c1c; font-weight:400; }
-.pdf-document .check-detail { color:#59697f; }
+.pdf-document .check-status-pass { color:#15803d; }
+.pdf-document .check-status-fail { color:#b91c1c; }
+.pdf-document .check-status-skip { color:#a16207; }
+.pdf-document .check-detail, .pdf-document .check-reason { color:#59697f; }
 .pdf-document .config-bar { grid-template-columns:repeat(2,minmax(0,1fr)); gap:4pt 12pt; margin:0 0 7pt; padding:5pt 0; border:0; border-radius:0; background:none; font-size:8.2pt; }
 .pdf-document .config-item { color:#59697f; }
 .pdf-document .config-item span { color:#233145; font-weight:400; }
@@ -591,16 +618,14 @@ body.pdf-document { width:auto; max-width:none; min-height:0; display:block; fon
 
 function verdictHtmlColor(verdict: Assessment['overall']): string {
   if (verdict === 'ok') return '#15803d'
-  if (verdict === 'slow') return '#a16207'
-  if (verdict === 'abnormal') return '#dc2626'
-  return '#6b7280'
+  if (verdict === 'na') return '#a16207'
+  return '#dc2626'
 }
 
 function verdictHtmlClass(verdict: Assessment['overall']): string {
   if (verdict === 'ok') return 'verdict-ok'
-  if (verdict === 'slow') return 'verdict-slow'
-  if (verdict === 'abnormal') return 'verdict-abnormal'
-  return 'verdict-na'
+  if (verdict === 'na') return 'verdict-na'
+  return 'verdict-abnormal'
 }
 
 function renderCheckListHtml(
@@ -617,14 +642,19 @@ function renderCheckListHtml(
       } else if (check.status === 'skip') {
         statusCls = 'check-status-skip'
       }
-      const message = checkMessage(check, t)
-      const detail = message
-        ? ` <span class="check-detail">— ${escapeHtml(message)}</span>`
-        : ''
+      const explanation = checkExplanation(check, t)
+      let detail = ''
+      if (explanation) {
+        if (check.status === 'skip') {
+          detail = ` <span class="check-reason"><strong>${escapeHtml(t('Reason'))}:</strong> ${escapeHtml(explanation)}</span>`
+        } else {
+          detail = ` <span class="check-detail">— ${escapeHtml(explanation)}</span>`
+        }
+      }
       return `<li class="check-list-item">
 <span class="check-bullet">•</span>
 <span class="check-name">${escapeHtml(t(check.title))}：</span>
-<span class="${statusCls}">${escapeHtml(t(input.statusLabel(check.status)))}</span>${detail}
+<span class="check-status ${statusCls}">${escapeHtml(t(input.statusLabel(check.status)))}</span>${detail}
 </li>`
     })
     .join('')
@@ -646,7 +676,7 @@ function htmlBenchmarkTable(
 <td>${escapeHtml(t(row.label))}</td>
 <td class="cell-measured">${escapeHtml(displayMeasured(row, t))}</td>
 <td class="cell-threshold">${escapeHtml(displayThreshold(row, t))}</td>
-<td style="color:${color};font-weight:600">${escapeHtml(t(VERDICT_LABEL[row.verdict]))}</td>
+<td style="color:${color};font-weight:700">${escapeHtml(t(assessmentResultLabel(row.verdict)))}</td>
 </tr>`
     })
     .join('')
@@ -661,6 +691,7 @@ export function buildHtmlReport(
   options: { format?: 'html' | 'pdf' } = {}
 ): string {
   const t: ReportInput['t'] = (key, options) => translate(input.t, key, options)
+  const reportName = supplierReportName(t)
 
   const shallowChecks = input.basicChecks.filter((check) =>
     (SHALLOW_BASIC_IDS as readonly string[]).includes(check.id)
@@ -681,27 +712,22 @@ export function buildHtmlReport(
     basicBadge = 'Checks complete with skips'
     basicBadgeClass = 'verdict-na'
   }
-  let pdfVerdict: keyof typeof VERDICT_LABEL = 'ok'
-  if (
-    basicResults.some((check) => check.status === 'fail') ||
-    input.stressAssessment?.overall === 'abnormal' ||
-    input.cacheAssessment?.overall === 'abnormal' ||
-    input.errorMessage
-  ) {
-    pdfVerdict = 'abnormal'
-  } else if (
-    input.stressAssessment?.overall === 'slow' ||
-    input.cacheAssessment?.overall === 'slow'
-  ) {
-    pdfVerdict = 'slow'
-  } else if (
-    basicResults.length === 0 ||
-    basicResults.some((check) => check.status === 'skip') ||
-    input.stressAssessment?.overall === 'na' ||
-    input.cacheAssessment?.overall === 'na'
-  ) {
-    pdfVerdict = 'na'
+  const assessedVerdicts: Verdict[] = []
+  if (basicResults.some((check) => check.status === 'fail')) {
+    assessedVerdicts.push('abnormal')
+  } else if (basicResults.some((check) => check.status === 'pass')) {
+    assessedVerdicts.push('ok')
   }
+  if (input.stressAssessment && input.stressAssessment.overall !== 'na') {
+    assessedVerdicts.push(input.stressAssessment.overall)
+  }
+  if (input.cacheAssessment && input.cacheAssessment.overall !== 'na') {
+    assessedVerdicts.push(input.cacheAssessment.overall)
+  }
+  if (input.errorMessage) assessedVerdicts.push('abnormal')
+  const pdfVerdict = worstVerdict(assessedVerdicts)
+  const resultLabel = pdfVerdict === 'ok' ? 'Passed' : 'Failed'
+  const resultClass = pdfVerdict === 'ok' ? 'result-pass' : 'result-fail'
   const pdfSummary = pdfSummaryCards([
     {
       label: t('Connectivity and protocol'),
@@ -717,18 +743,19 @@ export function buildHtmlReport(
     },
     {
       label: t('Result'),
-      value: t(VERDICT_LABEL[pdfVerdict]),
+      value: t(resultLabel),
       detail: t('Judgment standard'),
+      valueClass: resultClass,
     },
   ])
-  const pdfSubtitle = `SUPPLIER TEST REPORT  /  ${t('Supplier Test Report')}`
+  const pdfSubtitle = `SUPPLIER TEST  /  ${reportName}`
 
   // Section 2: Stress test HTML
   let stressSection = ''
   if (input.stressAssessment || input.stressMetrics || input.summaries.stress) {
     const overall = input.stressAssessment?.overall ?? 'ok'
     const overallCls = verdictHtmlClass(overall)
-    const badgeText = `${t('Stress test assessment')}：${t(overallLabel(overall))}`
+    const badgeText = `${t('Stress test assessment')}：${t(assessmentResultLabel(overall))}`
 
     let configBar = ''
     if (input.stressConfig) {
@@ -881,7 +908,7 @@ ${summaryHtml}
   if (input.cacheAssessment || input.cacheMetrics || input.summaries.cache) {
     const overall = input.cacheAssessment?.overall ?? 'ok'
     const overallCls = verdictHtmlClass(overall)
-    const badgeText = `${t('Prompt cache assessment')}：${t(overallLabel(overall))}`
+    const badgeText = `${t('Prompt cache assessment')}：${t(assessmentResultLabel(overall))}`
 
     let configBar = ''
     if (input.cacheMetrics) {
@@ -950,7 +977,7 @@ ${summaryHtml}
 <html lang="${escapeHtml(input.language || 'en')}">
 <head>
 <meta charset="utf-8"/>
-<title>${escapeHtml(t('Supplier Test Report'))}${options.format === 'pdf' ? '' : `-${stampFileName()}`}</title>
+<title>${escapeHtml(reportName)}${options.format === 'pdf' ? '' : `-${stampFileName()}`}</title>
 <style>
 ${options.format === 'pdf' ? '' : '@page { size: A4; margin: 0; }'}
 @media print {
@@ -1134,23 +1161,26 @@ body {
   color: #1e293b;
   flex-shrink: 0;
 }
+.check-status {
+  font-weight: 700;
+}
 .check-status-pass {
   color: #15803d;
-  font-weight: 600;
   flex-shrink: 0;
 }
 .check-status-skip {
-  color: #64748b;
-  font-weight: 600;
+  color: #a16207;
   flex-shrink: 0;
 }
 .check-status-fail {
   color: #dc2626;
-  font-weight: 600;
   flex-shrink: 0;
 }
-.check-detail {
+.check-detail, .check-reason {
   color: #475569;
+}
+.check-reason strong {
+  color: #a16207;
 }
 
 /* Config Grid */
@@ -1259,7 +1289,7 @@ tr {
   padding-top: 5px;
   text-align: center;
 }
-${options.format === 'pdf' ? pdfPageFooterStyles(input.branding, t('Supplier Test Report')) + pdfDocumentStyles : ''}
+${options.format === 'pdf' ? pdfPageFooterStyles(input.branding, reportName) + pdfDocumentStyles : ''}
 </style>
 </head>
 <body${options.format === 'pdf' ? ' class="pdf-document"' : ''}>
@@ -1269,7 +1299,7 @@ ${rowOpen}
 <div class="report-header">
   <div class="report-title-row">
     <div>
-      <h1 class="report-title">${escapeHtml(t('Supplier Test Report'))}</h1>
+      <h1 class="report-title">${escapeHtml(reportName)}</h1>
       <div class="report-subtitle">Supplier Benchmark &amp; SLA Compliance Test Report</div>
     </div>
     <div class="report-badge-top">${escapeHtml(t('Commercial evaluation'))}</div>
@@ -1280,7 +1310,7 @@ ${rowClose}
 ${rowOpen}
 <div class="meta-grid">
   <div class="meta-item"><span class="meta-label">${escapeHtml(t('Model'))}：</span><span class="meta-value">${escapeHtml(input.model || '-')}</span></div>
-  ${options.format === 'pdf' ? '' : `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Base URL'))}：</span><span class="meta-value">${escapeHtml(input.baseUrl || '-')}</span></div>`}
+  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Base URL'))}：</span><span class="meta-value">${escapeHtml(input.baseUrl || '-')}</span></div>
   <div class="meta-item"><span class="meta-label">${escapeHtml(t('Judgment standard'))}：</span><span class="meta-value">${escapeHtml(input.standardLabel)}</span></div>
   ${options.format === 'pdf' ? '' : `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Time'))}：</span><span class="meta-value">${escapeHtml(new Date().toLocaleString())}</span></div>`}
 </div>

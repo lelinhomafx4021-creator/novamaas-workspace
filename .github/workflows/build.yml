@@ -61,6 +61,36 @@ jobs:
           go build ./...
       - run: make test
 
+  billing-model-mysql:
+    name: Billing model names on MySQL CI collation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.0.36
+        env:
+          MYSQL_ROOT_PASSWORD: test
+          MYSQL_DATABASE: test_billing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      TEST_MYSQL_DSN: 'root:test@tcp(127.0.0.1:3306)/test_billing?parseTime=true&charset=utf8mb4'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.1'
+          cache-dependency-path: go.sum
+      - run: go test ./model -run '^TestBillingStatementKeepsCaseDistinctModelsUnderMySQLCICollation$' -count=1 -v
+
   frontend:
     name: Frontend checks
     if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -103,6 +104,90 @@ func TestBillingPDFV2FreezesBrandingIdentityAndOriginalAfterConfirmation(t *test
 	assert.ErrorContains(t, err, "template version", "unknown templates cannot silently alter an archived file")
 }
 
+func TestBillingPDFV8AddsExactCustomerModelSummaryBeforeConfirmationReceipt(t *testing.T) {
+	start, end, err := model.BillingMonthBounds("2026-08")
+	require.NoError(t, err)
+	snapshot, err := BuildBillingSnapshot(
+		&model.BillingAccount{UserID: 4, CompanyTitle: "上海示例科技有限公司（演示数据）", TaxID: "DEMO-NOT-A-REAL-TAX-ID", AccountingStartAt: start},
+		"2026-08",
+		[]model.BillingHour{{Hour: start + 9*3600, Charge: 1500000, Refund: 125000, Count: 5}},
+	)
+	require.NoError(t, err)
+	snapshot.PDFTemplateVersion = 8
+	snapshot.PDFLogoPNG = billingPlatformMarkV2
+	snapshot.Issuer = "聚合算力网关"
+	snapshot.Username = "demo_customer"
+	require.NoError(t, attachBillingModelRows(snapshot, []model.BillingModelTotal{
+		{ModelName: "gpt-5", Charge: 800000, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: start + 9*3600, LastPosted: start + 9*3600},
+		{ModelName: "claude-sonnet", Charge: 400000, Refund: 125000, Count: 2, ChargeCount: 1, RefundCount: 1, ActiveDays: 2, FirstPosted: start + 2*86400, LastPosted: start + 10*86400},
+		{ModelName: "企业级超长上下文推理与多模态分析模型专业版本", Charge: 200000, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: start + 15*86400, LastPosted: start + 15*86400},
+		{Charge: 100000, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: start + 20*86400, LastPosted: start + 20*86400},
+	}))
+	require.Len(t, snapshot.Models, 4)
+	assert.Equal(t, "gpt-5", snapshot.Models[0].ModelName)
+	assert.Equal(t, "claude-sonnet", snapshot.Models[1].ModelName)
+	assert.Empty(t, snapshot.Models[3].ModelName, "entries without a model remain a distinct OTHER group")
+	assert.Equal(t, "53.33%", snapshot.Models[0].ChargeShare)
+	assert.Equal(t, int64(1), snapshot.Models[0].ActiveDays)
+	assert.Equal(t, int64(1), snapshot.Models[1].ChargeCount)
+	assert.Equal(t, int64(1), snapshot.Models[1].RefundCount)
+	assert.Equal(t, int64(2), snapshot.Models[1].ActiveDays)
+	body, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	hash := sha256.Sum256(body)
+	statement := &model.BillingStatement{
+		ID: "DEMO-202608-MODEL-SUMMARY", UserID: 4, Month: snapshot.Month, Revision: 1,
+		StartAt: start, EndAt: end, CreatedAt: end + 2*86400,
+		Snapshot: string(body), SnapshotSHA256: hex.EncodeToString(hash[:]),
+	}
+	original, err := RenderBillingStatementPDF(statement, snapshot, false)
+	require.NoError(t, err)
+	retry, err := RenderBillingStatementPDF(statement, snapshot, false)
+	require.NoError(t, err)
+	assert.Equal(t, original, retry)
+	pdfHash := sha256.Sum256(original)
+	statement.PDFSHA256 = hex.EncodeToString(pdfHash[:])
+	statement.ManifestSHA256 = strings.Repeat("a", 64)
+	statement.ConfirmedAt = statement.CreatedAt + 86400
+	receipt, err := RenderBillingStatementPDF(statement, snapshot, true)
+	require.NoError(t, err)
+	assert.NotEqual(t, original, receipt)
+	if output := os.Getenv("BILLING_PDF_V8_TEST_OUTPUT"); output != "" {
+		require.NoError(t, os.WriteFile(output, receipt, 0600))
+	}
+}
+
+func TestBillingPDFV8PaginatesLargeModelSummary(t *testing.T) {
+	start, end, err := model.BillingMonthBounds("2026-08")
+	require.NoError(t, err)
+	snapshot, err := BuildBillingSnapshot(
+		&model.BillingAccount{UserID: 4, CompanyTitle: "分页测试客户", TaxID: "TEST", AccountingStartAt: start},
+		"2026-08",
+		[]model.BillingHour{{Hour: start, Charge: 60, Count: 60}},
+	)
+	require.NoError(t, err)
+	snapshot.PDFTemplateVersion = 8
+	snapshot.PDFLogoPNG = billingPlatformMarkV2
+	snapshot.Issuer = "聚合算力网关"
+	snapshot.Username = "pagination_customer"
+	totals := make([]model.BillingModelTotal, 0, 60)
+	for index := 0; index < 60; index++ {
+		totals = append(totals, model.BillingModelTotal{ModelName: fmt.Sprintf("model-%02d", index), Charge: 1, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: start, LastPosted: start})
+	}
+	require.NoError(t, attachBillingModelRows(snapshot, totals))
+	statement := &model.BillingStatement{
+		ID: "model-pagination", UserID: 4, Month: "2026-08", Revision: 1,
+		StartAt: start, EndAt: end, CreatedAt: end + 86400,
+		SnapshotSHA256: strings.Repeat("1", 64),
+	}
+	pdf, err := RenderBillingStatementPDF(statement, snapshot, false)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, strings.Count(string(pdf), "\n  /Type /Page\n"), 5, "all model rows must continue onto additional PDF pages")
+	if output := os.Getenv("BILLING_PDF_V8_PAGINATION_TEST_OUTPUT"); output != "" {
+		require.NoError(t, os.WriteFile(output, pdf, 0600))
+	}
+}
+
 func TestBillingPDFV2SupportsTheAcceptedCorporateIdentityLength(t *testing.T) {
 	start, end, err := model.BillingMonthBounds("2026-08")
 	require.NoError(t, err)
@@ -137,6 +222,9 @@ func TestBillingArchiveFreezesDetailsAndVerifiesTotals(t *testing.T) {
 	require.NoError(t, model.DB.Create(entry).Error)
 	snapshot, err := BuildBillingSnapshot(&model.BillingAccount{UserID: 42, CompanyTitle: "测试企业", TaxID: "TEST"}, "2026-02", []model.BillingHour{{Hour: posted, Charge: 100, Count: 1}})
 	require.NoError(t, err)
+	snapshot.PDFTemplateVersion = 8
+	snapshot.PDFLogoPNG = billingPlatformMarkV2
+	require.NoError(t, attachBillingModelRows(snapshot, []model.BillingModelTotal{{ModelName: "model", Charge: 100, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: posted, LastPosted: posted}}))
 	body, err := common.Marshal(snapshot)
 	require.NoError(t, err)
 	hash := sha256.Sum256(body)
@@ -153,6 +241,79 @@ func TestBillingArchiveFreezesDetailsAndVerifiesTotals(t *testing.T) {
 	statement.Snapshot += " "
 	err = BuildBillingArchive(context.Background(), statement, store)
 	assert.ErrorIs(t, err, model.ErrBillingEvidenceIntegrity)
+}
+
+func TestBillingArchiveReconcilesCaseDistinctModelNames(t *testing.T) {
+	truncate(t)
+	posted := int64(1769875200)
+	for _, entry := range []model.BillingEntry{
+		{EventKey: "upper-charge", UserID: 46, Sequence: 1, PostedAt: posted, Kind: "usage", Quota: 20, ModelName: "Foo"},
+		{EventKey: "lower-charge", UserID: 46, Sequence: 2, PostedAt: posted + 1, Kind: "usage", Quota: 30, ModelName: "foo"},
+		{EventKey: "upper-refund", UserID: 46, Sequence: 3, PostedAt: posted + 86400, Kind: "refund", Quota: -5, ModelName: "Foo"},
+	} {
+		require.NoError(t, model.DB.Create(&entry).Error)
+	}
+	snapshot, err := BuildBillingSnapshot(&model.BillingAccount{UserID: 46, CompanyTitle: "测试企业", TaxID: "TEST"}, "2026-02", []model.BillingHour{
+		{Hour: posted, Charge: 50, Count: 2},
+		{Hour: posted + 86400, Refund: 5, Count: 1},
+	})
+	require.NoError(t, err)
+	snapshot.PDFTemplateVersion = 8
+	snapshot.PDFLogoPNG = billingPlatformMarkV2
+	require.NoError(t, attachBillingModelRows(snapshot, []model.BillingModelTotal{
+		{ModelName: "Foo", Charge: 20, Refund: 5, Count: 2, ChargeCount: 1, RefundCount: 1, ActiveDays: 2, FirstPosted: posted, LastPosted: posted + 86400},
+		{ModelName: "foo", Charge: 30, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: posted + 1, LastPosted: posted + 1},
+	}))
+	body, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	hash := sha256.Sum256(body)
+	statement := &model.BillingStatement{ID: "case-distinct-models", UserID: 46, Month: "2026-02", Revision: 1, Snapshot: string(body), SnapshotSHA256: hex.EncodeToString(hash[:]), StartAt: posted, EndAt: 1772294400, CreatedAt: 1772380800, FromSequence: 1, ToSequence: 3}
+	store := &memoryBillingArchive{files: map[string][]byte{}}
+	require.NoError(t, BuildBillingArchive(context.Background(), statement, store))
+	assert.NotEmpty(t, store.files["pdf"])
+	assert.NotEmpty(t, store.files["manifest"])
+}
+
+func TestBillingArchiveRejectsModelSummaryThatDoesNotMatchFrozenDetails(t *testing.T) {
+	truncate(t)
+	posted := int64(1769875200)
+	require.NoError(t, model.DB.Create(&model.BillingEntry{EventKey: "model-source", UserID: 43, Sequence: 1, PostedAt: posted, Kind: "usage", Quota: 100, ModelName: "model-a"}).Error)
+	snapshot, err := BuildBillingSnapshot(&model.BillingAccount{UserID: 43, CompanyTitle: "测试企业", TaxID: "TEST"}, "2026-02", []model.BillingHour{{Hour: posted, Charge: 100, Count: 1}})
+	require.NoError(t, err)
+	snapshot.PDFTemplateVersion = 8
+	snapshot.PDFLogoPNG = billingPlatformMarkV2
+	require.NoError(t, attachBillingModelRows(snapshot, []model.BillingModelTotal{{ModelName: "model-b", Charge: 100, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: posted, LastPosted: posted}}))
+	body, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	hash := sha256.Sum256(body)
+	statement := &model.BillingStatement{ID: "wrong-model-summary", UserID: 43, Month: "2026-02", Snapshot: string(body), SnapshotSHA256: hex.EncodeToString(hash[:]), StartAt: posted, EndAt: 1772294400, FromSequence: 1, ToSequence: 1}
+	store := &memoryBillingArchive{files: map[string][]byte{}}
+	err = BuildBillingArchive(context.Background(), statement, store)
+	require.ErrorContains(t, err, "model details do not reconcile")
+	assert.NotContains(t, store.files, "pdf")
+	assert.NotContains(t, store.files, "manifest")
+}
+
+func TestBillingArchiveRejectsModelMetadataThatDoesNotMatchFrozenDetails(t *testing.T) {
+	truncate(t)
+	posted := int64(1769875200)
+	for index, at := range []int64{posted, posted + 1} {
+		require.NoError(t, model.DB.Create(&model.BillingEntry{EventKey: fmt.Sprintf("model-metadata-%d", index), UserID: 44, Sequence: int64(index + 1), PostedAt: at, Kind: "usage", Quota: 50, ModelName: "model-a"}).Error)
+	}
+	snapshot, err := BuildBillingSnapshot(&model.BillingAccount{UserID: 44, CompanyTitle: "测试企业", TaxID: "TEST"}, "2026-02", []model.BillingHour{{Hour: posted, Charge: 100, Count: 2}})
+	require.NoError(t, err)
+	snapshot.PDFTemplateVersion = 8
+	snapshot.PDFLogoPNG = billingPlatformMarkV2
+	require.NoError(t, attachBillingModelRows(snapshot, []model.BillingModelTotal{{ModelName: "model-a", Charge: 100, Count: 2, ChargeCount: 2, ActiveDays: 2, FirstPosted: posted, LastPosted: posted + 1}}))
+	body, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	hash := sha256.Sum256(body)
+	statement := &model.BillingStatement{ID: "wrong-model-metadata", UserID: 44, Month: "2026-02", Snapshot: string(body), SnapshotSHA256: hex.EncodeToString(hash[:]), StartAt: posted, EndAt: 1772294400, FromSequence: 1, ToSequence: 2}
+	store := &memoryBillingArchive{files: map[string][]byte{}}
+	err = BuildBillingArchive(context.Background(), statement, store)
+	require.ErrorContains(t, err, "model details do not reconcile")
+	assert.NotContains(t, store.files, "pdf")
+	assert.NotContains(t, store.files, "manifest")
 }
 
 func TestBillingArchiveRejectsWrongDayEvenWhenMonthlyTotalMatches(t *testing.T) {
@@ -208,13 +369,11 @@ func TestBillingArchiveRejectsMissingFirstHourInsteadOfOmittingItsEntries(t *tes
 	}
 	require.NoError(t, model.DB.Create(&entries).Error)
 	require.NoError(t, model.DB.Create(&model.BillingHour{UserID: 91, Hour: start + 7200, Charge: 100, Count: 1, FirstSequence: 2, LastSequence: 2}).Error)
-	statement, err := PrepareBillingStatement(91, 1, 1, "2020-02")
-	require.NoError(t, err)
-	store := &memoryBillingArchive{files: map[string][]byte{}}
-	err = BuildBillingArchive(context.Background(), statement, store)
-	require.Error(t, err, "a missing boundary summary must not silently remove official entries from evidence")
-	assert.NotContains(t, store.files, "pdf")
-	assert.NotContains(t, store.files, "manifest")
+	_, err = PrepareBillingStatement(91, 1, 1, "2020-02")
+	require.ErrorContains(t, err, "do not reconcile", "a missing boundary summary must not silently remove official entries from evidence")
+	var statements int64
+	require.NoError(t, model.DB.Model(&model.BillingStatement{}).Where("user_id = ?", 91).Count(&statements).Error)
+	assert.Zero(t, statements, "an inconsistent statement must not be persisted for archival")
 }
 
 func TestDurableStreamingReservationsSettleOnlyOnce(t *testing.T) {

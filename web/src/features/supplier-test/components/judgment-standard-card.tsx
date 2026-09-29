@@ -83,6 +83,29 @@ export function JudgmentStandardCard(props: {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className='space-y-5 border-t px-4 py-4'>
+            <div className='bg-muted/40 space-y-1.5 rounded-lg border px-3 py-2.5 text-xs'>
+              <p className='font-medium'>{t('How to use these standards')}</p>
+              <p className='text-muted-foreground'>
+                {t(
+                  'Basic test uses fixed interface rules and is not affected by the thresholds below.'
+                )}
+              </p>
+              <p className='text-muted-foreground'>
+                {t(
+                  'Stress test uses error rate, TTFT, and TPOT limits. Lower limits are stricter.'
+                )}
+              </p>
+              <p className='text-muted-foreground'>
+                {t(
+                  'Cache test uses the minimum cache hit rate and the wait time for TTL verification. A higher hit rate and longer wait are stricter.'
+                )}
+              </p>
+              <p className='text-muted-foreground'>
+                {t(
+                  'Changing a standard recalculates the displayed assessment and report immediately.'
+                )}
+              </p>
+            </div>
             <div className='max-w-sm'>
               <FieldSelect
                 label={t('Load preset')}

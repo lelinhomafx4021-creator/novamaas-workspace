@@ -243,6 +243,37 @@ func TestBillingArchiveFreezesDetailsAndVerifiesTotals(t *testing.T) {
 	assert.ErrorIs(t, err, model.ErrBillingEvidenceIntegrity)
 }
 
+func TestBillingArchiveReconcilesCaseDistinctModelNames(t *testing.T) {
+	truncate(t)
+	posted := int64(1769875200)
+	for _, entry := range []model.BillingEntry{
+		{EventKey: "upper-charge", UserID: 46, Sequence: 1, PostedAt: posted, Kind: "usage", Quota: 20, ModelName: "Foo"},
+		{EventKey: "lower-charge", UserID: 46, Sequence: 2, PostedAt: posted + 1, Kind: "usage", Quota: 30, ModelName: "foo"},
+		{EventKey: "upper-refund", UserID: 46, Sequence: 3, PostedAt: posted + 86400, Kind: "refund", Quota: -5, ModelName: "Foo"},
+	} {
+		require.NoError(t, model.DB.Create(&entry).Error)
+	}
+	snapshot, err := BuildBillingSnapshot(&model.BillingAccount{UserID: 46, CompanyTitle: "测试企业", TaxID: "TEST"}, "2026-02", []model.BillingHour{
+		{Hour: posted, Charge: 50, Count: 2},
+		{Hour: posted + 86400, Refund: 5, Count: 1},
+	})
+	require.NoError(t, err)
+	snapshot.PDFTemplateVersion = 8
+	snapshot.PDFLogoPNG = billingPlatformMarkV2
+	require.NoError(t, attachBillingModelRows(snapshot, []model.BillingModelTotal{
+		{ModelName: "Foo", Charge: 20, Refund: 5, Count: 2, ChargeCount: 1, RefundCount: 1, ActiveDays: 2, FirstPosted: posted, LastPosted: posted + 86400},
+		{ModelName: "foo", Charge: 30, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: posted + 1, LastPosted: posted + 1},
+	}))
+	body, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	hash := sha256.Sum256(body)
+	statement := &model.BillingStatement{ID: "case-distinct-models", UserID: 46, Month: "2026-02", Revision: 1, Snapshot: string(body), SnapshotSHA256: hex.EncodeToString(hash[:]), StartAt: posted, EndAt: 1772294400, CreatedAt: 1772380800, FromSequence: 1, ToSequence: 3}
+	store := &memoryBillingArchive{files: map[string][]byte{}}
+	require.NoError(t, BuildBillingArchive(context.Background(), statement, store))
+	assert.NotEmpty(t, store.files["pdf"])
+	assert.NotEmpty(t, store.files["manifest"])
+}
+
 func TestBillingArchiveRejectsModelSummaryThatDoesNotMatchFrozenDetails(t *testing.T) {
 	truncate(t)
 	posted := int64(1769875200)

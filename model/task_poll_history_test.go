@@ -109,7 +109,7 @@ func TestTaskPollHistoryOmitsBase64ButKeepsChangingPollMetadata(t *testing.T) {
 	assert.JSONEq(t, `{"status":"running","progress":40,"result":{"video":"[content omitted: 65558 bytes]","b64_json":"[content omitted: 4 bytes]"}}`, string(entries[0].Response))
 }
 
-func TestListTaskPollHistoryCollapsesTimestampOnlyChangesInLegacyRows(t *testing.T) {
+func TestListTaskPollHistoryPaginatesLegacyRowsByStoredID(t *testing.T) {
 	db := setupTaskRequestBodyTestDB(t)
 	ctx := context.Background()
 	taskID := "legacy-video-history"
@@ -131,19 +131,69 @@ func TestListTaskPollHistoryCollapsesTimestampOnlyChangesInLegacyRows(t *testing
 
 	history, err := ListTaskPollHistory(ctx, taskID, 0, 10)
 	require.NoError(t, err)
-	require.Len(t, history, 3)
+	require.Len(t, history, 4)
 	assert.Equal(t, "IN_PROGRESS", history[0].Status)
-	assert.Equal(t, 9, history[0].RepeatCount)
-	assert.EqualValues(t, 14, history[0].FirstSeenAt)
+	assert.Equal(t, 5, history[0].RepeatCount)
+	assert.EqualValues(t, 16, history[0].FirstSeenAt)
 	assert.EqualValues(t, 17, history[0].LastSeenAt)
 	assert.JSONEq(t, `{"progress":30,"updated_at":200}`, string(history[0].Response))
-	assert.Equal(t, "QUEUED", history[1].Status)
-	assert.Equal(t, 3, history[1].RepeatCount)
-	assert.EqualValues(t, 12, history[1].FirstSeenAt)
-	assert.EqualValues(t, 13, history[1].LastSeenAt)
-	assert.JSONEq(t, `{"status":"queued"}`, string(history[1].Response))
-	assert.Equal(t, "SUBMITTED", history[2].Status)
-	assert.Equal(t, 2, history[2].RepeatCount)
+	assert.Equal(t, "IN_PROGRESS", history[1].Status)
+	assert.Equal(t, 4, history[1].RepeatCount)
+	assert.JSONEq(t, `{"progress":30,"updated_at":100}`, string(history[1].Response))
+	assert.Equal(t, "QUEUED", history[2].Status)
+	assert.Equal(t, "SUBMITTED", history[3].Status)
+
+	page, err := ListTaskPollHistory(ctx, taskID, history[0].ID, 2)
+	require.NoError(t, err)
+	require.Len(t, page, 2)
+	assert.Equal(t, history[1].ID, page[0].ID)
+	assert.Equal(t, history[2].ID, page[1].ID)
+}
+
+func TestListTaskPollHistoryBoundsReadAcrossFormerScanBatches(t *testing.T) {
+	db := setupTaskRequestBodyTestDB(t)
+	ctx := context.Background()
+	const taskID = "many-video-polls"
+	// A legacy row with an incompatible body must not affect newer pages.
+	require.NoError(t, db.Create(&TaskRequestBody{
+		ReferenceID: taskPollHistoryPrefix + "incompatible-oldest",
+		TaskID:      taskID,
+		Body:        []byte(`"unexpected"`),
+	}).Error)
+
+	const validRows = 102 // Crosses the former 100-row scan batch boundary.
+	stored := make([]TaskRequestBody, 0, validRows)
+	for index := range validRows {
+		body, err := common.Marshal(TaskPollHistoryEntry{
+			TaskID: taskID, Status: fmt.Sprintf("STEP_%03d", index), RepeatCount: 1,
+		})
+		require.NoError(t, err)
+		stored = append(stored, TaskRequestBody{
+			ReferenceID: fmt.Sprintf("%smany-%03d", taskPollHistoryPrefix, index),
+			TaskID:      taskID,
+			Body:        body,
+		})
+	}
+	require.NoError(t, db.CreateInBatches(&stored, 50).Error)
+
+	var beforeID int64
+	var seenIDs []int64
+	for pageIndex, expectedSize := range []int{50, 50, 2} {
+		page, err := ListTaskPollHistory(ctx, taskID, beforeID, expectedSize)
+		require.NoError(t, err, "page %d", pageIndex)
+		require.Len(t, page, expectedSize)
+		for _, entry := range page {
+			seenIDs = append(seenIDs, entry.ID)
+		}
+		beforeID = page[len(page)-1].ID
+	}
+	require.Len(t, seenIDs, validRows)
+	for index, id := range seenIDs {
+		assert.Equal(t, stored[validRows-1-index].ID, id)
+	}
+
+	_, err := ListTaskPollHistory(ctx, taskID, beforeID, 50)
+	require.Error(t, err)
 }
 
 func TestTaskPollHistoryPreservesStatusTransitionsBackToEarlierStatus(t *testing.T) {

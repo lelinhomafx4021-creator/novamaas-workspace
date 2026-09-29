@@ -312,7 +312,6 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			assetWebhookRoute.GET("", controller.ListAssetWebhookEndpoints)
 			assetWebhookRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetWebhookEndpoint)
-			assetWebhookRoute.PUT("/:id", middleware.CriticalRateLimit(), controller.UpdateAssetWebhookEndpoint)
 			assetWebhookRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetWebhookEndpoint)
 			assetWebhookRoute.POST("/:id/test", middleware.CriticalRateLimit(), controller.TestAssetWebhookEndpoint)
 		}

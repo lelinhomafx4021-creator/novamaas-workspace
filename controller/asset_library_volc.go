@@ -43,7 +43,6 @@ type volcAssetActionRequest struct {
 	NextToken   string          `json:"NextToken"`
 	SortBy      string          `json:"SortBy"`
 	SortOrder   string          `json:"SortOrder"`
-	EventTypes  []string        `json:"EventTypes"`
 }
 
 func ListAssetAccessKeys(c *gin.Context) {
@@ -115,25 +114,6 @@ func HandleVolcAssetAction(c *gin.Context) {
 
 	var result any
 	switch action {
-	case "CreateAssetWebhookEndpoint":
-		result, err = assetService.CreateWebhookEndpoint(ownerUserID, assetService.WebhookEndpointInput{
-			Name: input.Name, URL: input.URL, EventTypes: input.EventTypes,
-		})
-	case "ListAssetWebhookEndpoints":
-		var endpoints []assetService.WebhookEndpointView
-		endpoints, err = assetService.ListWebhookEndpoints(ownerUserID)
-		result = gin.H{"Items": endpoints, "TotalCount": len(endpoints)}
-	case "UpdateAssetWebhookEndpoint":
-		result, err = assetService.UpdateWebhookEndpoint(ownerUserID, input.ID, assetService.WebhookEndpointInput{
-			Name: input.Name, URL: input.URL, EventTypes: input.EventTypes,
-		})
-	case "DeleteAssetWebhookEndpoint":
-		err = assetService.DeleteWebhookEndpoint(ownerUserID, input.ID)
-		result = gin.H{}
-	case "TestAssetWebhookEndpoint":
-		var eventID string
-		eventID, err = assetService.QueueWebhookEndpointTest(ownerUserID, input.ID)
-		result = gin.H{"EventId": eventID}
 	case "CreateAssetGroup":
 		if input.GroupType != "" && !strings.EqualFold(input.GroupType, "AIGC") {
 			err = &assetService.RequestError{StatusCode: http.StatusBadRequest, Err: errors.New("GroupType must be AIGC")}

@@ -63,30 +63,6 @@ Content-Type: application/json
 
 ## 素材状态 Webhook
 
-### 企业 AK/SK 管理接口
-
-企业可使用同一套素材 AK/SK 签名管理回调，不必先登录控制台。请求仍为 `POST /api/v3/?Action=...&Version=2024-01-01`（也支持已签名的根路径）。下面这些 Action 是本平台扩展，不是火山官方 Action；客户需使用能签署自定义 Action 的客户端。
-
-| Action | JSON 请求字段 | Result |
-| --- | --- | --- |
-| CreateAssetWebhookEndpoint | Name、URL、EventTypes | 端点对象；不生成签名密钥 |
-| ListAssetWebhookEndpoints | `{}` | Items、TotalCount |
-| UpdateAssetWebhookEndpoint | Id、Name、URL、EventTypes | 更新后的端点对象；完整替换名称、URL、订阅类型 |
-| DeleteAssetWebhookEndpoint | Id | `{}`，禁用端点 |
-| TestAssetWebhookEndpoint | Id | EventId；仅表示已入队，不保证已经送达 |
-
-创建请求示例：
-
-```json
-{
-  "Name": "ERP material notifications",
-  "URL": "https://customer.example.com/webhooks/assets",
-  "EventTypes": ["asset.active", "asset.failed"]
-}
-```
-
-响应仍使用 `ResponseMetadata` / `Result` 信封。Result 内的端点对象沿用控制台接口的字段命名：`id`、`name`、`url`、`event_types`、`status`、`created_at`、`updated_at` 等。后续请求中的 `Id` 填返回的 `Result.id`。端点归属由签名 AK 所属用户决定，不接受客户端指定其他用户；同一企业账号签发的 AK 共享该账号端点，不能访问其他账号的端点。
-
 ### 素材状态查询与图片预览
 
 AK/SK 的 `GetAsset` 与 `ListAssets` 返回素材元数据和审核状态；查询成功为 HTTP 200，素材是否可用需看 `Status`。审核拒绝返回 `Status=Failed` 和 `FailureReason`，不会因审核失败隐藏素材。
@@ -110,17 +86,18 @@ AK/SK 的 `GetAsset` 与 `ListAssets` 返回素材元数据和审核状态；查
 
 ### 控制台配置与事件投递
 
-下游客户在控制台「素材库 → Webhooks」填写自己的公网 HTTPS 回调地址。平台集中轮询上游素材状态；首次确认可用，或后续复审将素材从可用改判为失败时，平台先更新本地素材状态，再向订阅端点发送事件。Webhook 只负责提醒，`GetAsset` / `ListAssets` 返回的本地状态始终是最终依据。
+下游客户使用素材所属账号登录控制台，在「素材库 → Webhooks」填写自己的公网 HTTPS 回调地址、选择 `asset.active` 和/或 `asset.failed`，并可发送测试事件。普通用户即可配置自己的端点，无需管理员权限或素材 AK/SK；素材上传、查询等 Action API 仍使用原有 AK/SK。平台集中轮询上游素材状态；首次确认可用，或后续复审将素材从可用改判为失败时，平台先更新本地素材状态，再向订阅端点发送事件。Webhook 只负责提醒，`GetAsset` / `ListAssets` 返回的本地状态始终是最终依据。
 
-也可以通过登录态控制台接口管理端点：
+控制台页面使用以下受控制台用户鉴权保护的接口管理端点，不提供素材 AK/SK Action 管理入口：
 
 - `GET /api/asset-library/webhook-endpoints`
 - `POST /api/asset-library/webhook-endpoints`
-- `PUT /api/asset-library/webhook-endpoints/{id}`
 - `DELETE /api/asset-library/webhook-endpoints/{id}`
 - `POST /api/asset-library/webhook-endpoints/{id}/test`
 
-创建或更新请求示例：
+端点支持新增、查看、测试和删除。如需更换回调地址或订阅事件，请删除旧端点后重新添加；删除后旧端点不再继续投递，重新添加不会补发历史事件，切换期间可用 `GetAsset` / `ListAssets` 对账。
+
+创建请求示例：
 
 ```json
 {

@@ -118,33 +118,6 @@ func CreateWebhookEndpoint(ownerUserID int, input WebhookEndpointInput) (*Webhoo
 	return &view, nil
 }
 
-func UpdateWebhookEndpoint(ownerUserID int, publicID string, input WebhookEndpointInput) (*WebhookEndpointView, error) {
-	name, callbackURL, eventTypes, err := validateWebhookEndpointInput(ownerUserID, input)
-	if err != nil {
-		return nil, err
-	}
-	encodedEventTypes, err := common.Marshal(eventTypes)
-	if err != nil {
-		return nil, err
-	}
-	now := common.GetTimestamp()
-	result := model.DB.Model(&model.AssetWebhookEndpoint{}).
-		Where("public_id = ? AND owner_user_id = ? AND status = ?", strings.TrimSpace(publicID), ownerUserID, model.AssetWebhookEndpointStatusEnabled).
-		Updates(map[string]any{"name": name, "url": callbackURL, "event_types": string(encodedEventTypes), "updated_at": now})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return nil, gorm.ErrRecordNotFound
-	}
-	var endpoint model.AssetWebhookEndpoint
-	if err = model.DB.Where("public_id = ? AND owner_user_id = ?", publicID, ownerUserID).First(&endpoint).Error; err != nil {
-		return nil, err
-	}
-	view, err := webhookEndpointView(endpoint)
-	return &view, err
-}
-
 func DeleteWebhookEndpoint(ownerUserID int, publicID string) error {
 	result := model.DB.Model(&model.AssetWebhookEndpoint{}).
 		Where("public_id = ? AND owner_user_id = ? AND status = ?", strings.TrimSpace(publicID), ownerUserID, model.AssetWebhookEndpointStatusEnabled).

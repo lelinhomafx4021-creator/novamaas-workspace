@@ -49,10 +49,10 @@ func requestSignedAssetAction(t *testing.T, key *assetService.CreatedAccessKeyVi
 	return recorder
 }
 
-func TestEnterpriseSignedWebhookManagementAndAssetQueries(t *testing.T) {
+func TestEnterpriseSignedAssetQueries(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "enterprise-api-test-key")
-	require.NoError(t, db.AutoMigrate(&model.AssetAccessKey{}, &model.AssetWebhookEndpoint{}, &model.AssetWebhookDelivery{},
+	require.NoError(t, db.AutoMigrate(&model.AssetAccessKey{},
 		&model.MediaAsset{}, &model.AssetGroup{}, &model.StoragePolicy{}, &model.StorageObject{}))
 	owner := model.User{Username: "enterprise-owner", Status: common.UserStatusEnabled, Group: "default", AffCode: "enterprise-owner"}
 	other := model.User{Username: "enterprise-other", Status: common.UserStatusEnabled, Group: "default", AffCode: "enterprise-other"}
@@ -62,33 +62,6 @@ func TestEnterpriseSignedWebhookManagementAndAssetQueries(t *testing.T) {
 	require.NoError(t, err)
 	otherKey, err := assetService.CreateAccessKey(other.Id, "integration")
 	require.NoError(t, err)
-	created := requestSignedAssetAction(t, key, "CreateAssetWebhookEndpoint", `{"Name":"ERP","URL":"https://customer.example/assets","EventTypes":["asset.failed"]}`)
-	require.Equal(t, http.StatusOK, created.Code, created.Body.String())
-	var envelope struct {
-		Result assetService.WebhookEndpointView
-	}
-	require.NoError(t, common.Unmarshal(created.Body.Bytes(), &envelope))
-	assert.NotContains(t, created.Body.String(), `"signing_secret"`)
-	idBodyBytes, err := common.Marshal(map[string]string{"Id": envelope.Result.ID})
-	require.NoError(t, err)
-	idBody := string(idBodyBytes)
-	listed := requestSignedAssetAction(t, key, "ListAssetWebhookEndpoints", `{}`)
-	require.Equal(t, http.StatusOK, listed.Code)
-	assert.Contains(t, listed.Body.String(), envelope.Result.ID)
-	assert.NotContains(t, listed.Body.String(), `"signing_secret":`)
-	for _, action := range []string{"DeleteAssetWebhookEndpoint", "TestAssetWebhookEndpoint"} {
-		denied := requestSignedAssetAction(t, otherKey, action, idBody)
-		assert.Equal(t, http.StatusNotFound, denied.Code, denied.Body.String())
-	}
-	updateBytes, err := common.Marshal(map[string]any{"Id": envelope.Result.ID, "Name": "ERP updated", "URL": "https://customer.example/new", "EventTypes": []string{"asset.active", "asset.failed"}})
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusNotFound, requestSignedAssetAction(t, otherKey, "UpdateAssetWebhookEndpoint", string(updateBytes)).Code)
-	assert.Equal(t, http.StatusOK, requestSignedAssetAction(t, key, "UpdateAssetWebhookEndpoint", string(updateBytes)).Code)
-	assert.Equal(t, http.StatusOK, requestSignedAssetAction(t, key, "TestAssetWebhookEndpoint", idBody).Code)
-	var deliveries int64
-	require.NoError(t, db.Model(&model.AssetWebhookDelivery{}).Count(&deliveries).Error)
-	assert.EqualValues(t, 1, deliveries)
-	assert.Equal(t, http.StatusOK, requestSignedAssetAction(t, key, "DeleteAssetWebhookEndpoint", idBody).Code)
 
 	group := model.AssetGroup{PublicID: "group-enterprise", OwnerUserID: owner.Id, Status: model.AssetStatusReady}
 	require.NoError(t, db.Create(&group).Error)
@@ -115,9 +88,17 @@ func TestEnterpriseSignedWebhookManagementAndAssetQueries(t *testing.T) {
 		assert.Contains(t, response.Body.String(), `"Status":"`+state.public+`"`)
 		assert.NotContains(t, response.Body.String(), "FailureReason")
 	}
+	for _, action := range []string{
+		"CreateAssetWebhookEndpoint", "ListAssetWebhookEndpoints", "UpdateAssetWebhookEndpoint",
+		"DeleteAssetWebhookEndpoint", "TestAssetWebhookEndpoint",
+	} {
+		response := requestSignedAssetAction(t, key, action, `{}`)
+		assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+		assert.Contains(t, response.Body.String(), `"Code":"InvalidAction"`)
+	}
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v3/?Action=ListAssetWebhookEndpoints&Version=2024-01-01", strings.NewReader(`{}`))
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v3/?Action=GetAsset&Version=2024-01-01", strings.NewReader(`{"Id":"asset-enterprise"}`))
 	HandleVolcAssetAction(ctx)
 	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
 }

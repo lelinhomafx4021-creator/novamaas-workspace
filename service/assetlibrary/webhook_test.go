@@ -1,6 +1,8 @@
 package assetlibrary
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -21,8 +23,67 @@ func (legacyAssetWebhookEndpoint) TableName() string {
 	return "asset_webhook_endpoints"
 }
 
+func seedAssetWebhookOwner(t *testing.T) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "asset-webhook-owner", Password: "password"}).Error)
+}
+
+func TestConcurrentWebhookCreationCannotExceedEndpointLimit(t *testing.T) {
+	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
+	for index := 0; index < maxWebhookEndpointsPerUser-1; index++ {
+		endpoint := model.AssetWebhookEndpoint{
+			PublicID: fmt.Sprintf("we_existing_%d", index), OwnerUserID: 42,
+			Name: "existing", URL: "https://customer.example.com/assets",
+			EventTypes: `[]`, Status: model.AssetWebhookEndpointStatusEnabled,
+		}
+		require.NoError(t, db.Create(&endpoint).Error)
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var workers sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+				Name: "concurrent", URL: "https://customer.example.com/assets",
+				EventTypes: []string{WebhookEventAssetFailed},
+			})
+			results <- err
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+
+	created := 0
+	conflicts := 0
+	for err := range results {
+		if err == nil {
+			created++
+			continue
+		}
+		var requestErr *RequestError
+		require.ErrorAs(t, err, &requestErr)
+		assert.Equal(t, 409, requestErr.HTTPStatusCode())
+		conflicts++
+	}
+	assert.Equal(t, 1, created)
+	assert.Equal(t, 1, conflicts)
+
+	var count int64
+	require.NoError(t, db.Model(&model.AssetWebhookEndpoint{}).
+		Where("owner_user_id = ? AND status = ?", 42, model.AssetWebhookEndpointStatusEnabled).
+		Count(&count).Error)
+	assert.EqualValues(t, maxWebhookEndpointsPerUser, count)
+}
+
 func TestCreateWebhookEndpointWithoutEncryptionConfiguration(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
 	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "")
 	t.Setenv("CRYPTO_SECRET", "")
 	t.Setenv("SESSION_SECRET", "")
@@ -53,6 +114,7 @@ func TestCreateWebhookEndpointWithoutEncryptionConfiguration(t *testing.T) {
 
 func TestWebhookEndpointKeepsLegacyCredentialColumnsWithoutUsingThem(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
 	require.NoError(t, db.AutoMigrate(&legacyAssetWebhookEndpoint{}))
 	for _, column := range []string{"encrypted_secret", "secret_hint", "credential_key_version"} {
 		require.True(t, db.Migrator().HasColumn(&legacyAssetWebhookEndpoint{}, column), column)
@@ -73,6 +135,7 @@ func TestWebhookEndpointKeepsLegacyCredentialColumnsWithoutUsingThem(t *testing.
 
 func TestInitialActivationQueuesWebhookAndPromotesAsset(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
 
 	_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
 		Name: "production", URL: "https://customer.example.com/webhooks/assets",
@@ -102,6 +165,7 @@ func TestInitialActivationQueuesWebhookAndPromotesAsset(t *testing.T) {
 
 func TestConfirmedDelayedRejectionQueuesWebhookAfterLocalStateChange(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
 
 	endpoint, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
 		Name:       "production",
@@ -134,6 +198,7 @@ func TestConfirmedDelayedRejectionQueuesWebhookAfterLocalStateChange(t *testing.
 
 func TestDelayedRejectionSupersedesUndeliveredActiveWebhook(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
 
 	_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
 		Name: "production", URL: "https://customer.example.com/webhooks/assets",

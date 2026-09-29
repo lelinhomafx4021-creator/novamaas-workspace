@@ -21,6 +21,8 @@ const (
 	AssetWebhookDeliveryStatusSuperseded = "superseded"
 )
 
+var ErrAssetWebhookEndpointLimit = errors.New("asset webhook endpoint limit reached")
+
 // AssetWebhookEndpoint stores one tenant-owned downstream callback.
 type AssetWebhookEndpoint struct {
 	ID          int64  `json:"-" gorm:"primaryKey"`
@@ -66,6 +68,58 @@ func (value *AssetWebhookEndpoint) BeforeCreate(_ *gorm.DB) error {
 func (value *AssetWebhookDelivery) BeforeCreate(_ *gorm.DB) error {
 	setAssetTimestamps(&value.CreatedAt, &value.UpdatedAt)
 	return nil
+}
+
+// CreateAssetWebhookEndpointWithinLimit serializes creation before counting so
+// concurrent requests cannot exceed the per-owner limit.
+func CreateAssetWebhookEndpointWithinLimit(endpoint *AssetWebhookEndpoint, limit int) error {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		return DB.Connection(func(connection *gorm.DB) error {
+			if err := connection.Exec("BEGIN IMMEDIATE").Error; err != nil {
+				return err
+			}
+			committed := false
+			defer func() {
+				if !committed {
+					_ = connection.Exec("ROLLBACK").Error
+				}
+			}()
+			transaction := connection.Session(&gorm.Session{SkipDefaultTransaction: true})
+			if err := createAssetWebhookEndpointWithinLimit(transaction, endpoint, limit, false); err != nil {
+				return err
+			}
+			if err := connection.Exec("COMMIT").Error; err != nil {
+				return err
+			}
+			committed = true
+			return nil
+		})
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return createAssetWebhookEndpointWithinLimit(tx, endpoint, limit, true)
+	})
+}
+
+func createAssetWebhookEndpointWithinLimit(tx *gorm.DB, endpoint *AssetWebhookEndpoint, limit int, lockOwner bool) error {
+	ownerQuery := tx
+	if lockOwner {
+		ownerQuery = lockForUpdate(ownerQuery)
+	}
+	var owner User
+	if err := ownerQuery.Select("id").First(&owner, endpoint.OwnerUserID).Error; err != nil {
+		return err
+	}
+	var count int64
+	if err := tx.Model(&AssetWebhookEndpoint{}).
+		Where("owner_user_id = ? AND status = ?", endpoint.OwnerUserID, AssetWebhookEndpointStatusEnabled).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count >= int64(limit) {
+		return ErrAssetWebhookEndpointLimit
+	}
+	return tx.Create(endpoint).Error
 }
 
 // PurgeAssetWebhookDeliveriesBefore removes only terminal deliveries in a

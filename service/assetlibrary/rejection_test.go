@@ -18,6 +18,7 @@ import (
 
 func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesUnsignedWebhook(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
 	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "delayed-rejection-end-to-end-key")
 	fetchSetting := system_setting.GetFetchSetting()
 	originalFetchSetting := *fetchSetting
@@ -120,6 +121,7 @@ func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesUnsignedWebhook(t 
 
 func TestVolcDelayedFailureReasonUpdatesAssetsAndQueuesNotifications(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
 	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "customer-rejection-regression")
 	credential, err := encryptChannelCredential("provider-secret")
 	require.NoError(t, err)

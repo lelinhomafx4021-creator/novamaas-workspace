@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/glebarez/sqlite"
@@ -19,7 +20,9 @@ import (
 func setupAssetLibraryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	previous := model.DB
-	dsn := fmt.Sprintf("file:asset-library-%s?mode=memory&cache=shared", t.Name())
+	previousDatabaseType := common.MainDatabaseType()
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	dsn := fmt.Sprintf("file:asset-library-%s?mode=memory&cache=shared&_busy_timeout=30000", t.Name())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
@@ -36,7 +39,10 @@ func setupAssetLibraryTestDB(t *testing.T) *gorm.DB {
 		&model.StorageObject{},
 	))
 	model.DB = db
-	t.Cleanup(func() { model.DB = previous })
+	t.Cleanup(func() {
+		model.DB = previous
+		common.SetMainDatabaseType(previousDatabaseType)
+	})
 	return db
 }
 

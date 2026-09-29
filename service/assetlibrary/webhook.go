@@ -86,15 +86,6 @@ func CreateWebhookEndpoint(ownerUserID int, input WebhookEndpointInput) (*Webhoo
 	if err != nil {
 		return nil, err
 	}
-	var count int64
-	if err = model.DB.Model(&model.AssetWebhookEndpoint{}).
-		Where("owner_user_id = ? AND status = ?", ownerUserID, model.AssetWebhookEndpointStatusEnabled).
-		Count(&count).Error; err != nil {
-		return nil, err
-	}
-	if count >= maxWebhookEndpointsPerUser {
-		return nil, &RequestError{StatusCode: http.StatusConflict, Err: errors.New("a user can have at most 5 active asset webhook endpoints")}
-	}
 	publicID, err := randomWebhookValue("we_", 18)
 	if err != nil {
 		return nil, err
@@ -108,7 +99,10 @@ func CreateWebhookEndpoint(ownerUserID int, input WebhookEndpointInput) (*Webhoo
 		EventTypes: string(encodedEventTypes),
 		Status:     model.AssetWebhookEndpointStatusEnabled,
 	}
-	if err = model.DB.Create(&endpoint).Error; err != nil {
+	if err = model.CreateAssetWebhookEndpointWithinLimit(&endpoint, maxWebhookEndpointsPerUser); err != nil {
+		if errors.Is(err, model.ErrAssetWebhookEndpointLimit) {
+			return nil, &RequestError{StatusCode: http.StatusConflict, Err: errors.New("a user can have at most 5 active asset webhook endpoints")}
+		}
 		return nil, err
 	}
 	view, err := webhookEndpointView(endpoint)

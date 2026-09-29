@@ -312,17 +312,26 @@ func CreateAsset(ctx context.Context, ownerUserID int, input AssetInput) (*Asset
 		ContentType:     object.ContentType,
 		Size:            object.Size,
 		SHA256:          object.SHA256,
-		Status:          model.AssetStatusReady,
+		Status:          model.AssetStatusProcessing,
 	}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(asset).Error; err != nil {
-			return err
-		}
 		channelIDs, err := enabledChannelIDs(tx)
 		if err != nil {
 			return err
 		}
-		return model.QueueAssetReplicas(tx, asset.ID, channelIDs)
+		if len(channelIDs) == 0 {
+			asset.Status = model.AssetStatusReady
+		}
+		if err := tx.Create(asset).Error; err != nil {
+			return err
+		}
+		if err := model.QueueAssetReplicas(tx, asset.ID, channelIDs); err != nil {
+			return err
+		}
+		if asset.Status == model.AssetStatusReady {
+			return queueAssetWebhookDeliveries(tx, asset, WebhookEventAssetActive)
+		}
+		return nil
 	})
 	if err != nil {
 		_ = storageService.DeleteAssetObject(object.ID, "asset metadata transaction failed")
@@ -575,7 +584,7 @@ func SaveChannelConfig(channelID int, input ChannelConfigInput) (*ChannelConfigV
 		}
 		if config.Enabled {
 			var assetIDs []int64
-			if err := tx.Model(&model.MediaAsset{}).Where("status = ?", model.AssetStatusReady).Pluck("id", &assetIDs).Error; err != nil {
+			if err := tx.Model(&model.MediaAsset{}).Where("status IN ?", []string{model.AssetStatusProcessing, model.AssetStatusReady}).Pluck("id", &assetIDs).Error; err != nil {
 				return err
 			}
 			for _, assetID := range assetIDs {
@@ -624,7 +633,7 @@ func QueueChannelSync(channelID int) error {
 		return err
 	}
 	var assetIDs []int64
-	if err := model.DB.Model(&model.MediaAsset{}).Where("status = ?", model.AssetStatusReady).Pluck("id", &assetIDs).Error; err != nil {
+	if err := model.DB.Model(&model.MediaAsset{}).Where("status IN ?", []string{model.AssetStatusProcessing, model.AssetStatusReady}).Pluck("id", &assetIDs).Error; err != nil {
 		return err
 	}
 	return model.DB.Transaction(func(tx *gorm.DB) error {
@@ -767,7 +776,7 @@ func ListSyncJobs(page int, pageSize int, channelID int, status string) (*SyncJo
 }
 
 func RetrySyncJob(replicaID int64) error {
-	readyAssets := model.DB.Model(&model.MediaAsset{}).Select("id").Where("status = ?", model.AssetStatusReady)
+	readyAssets := model.DB.Model(&model.MediaAsset{}).Select("id").Where("status IN ?", []string{model.AssetStatusProcessing, model.AssetStatusReady})
 	result := model.DB.Model(&model.AssetReplica{}).
 		Where("id = ? AND status = ? AND asset_id IN (?)", replicaID, model.AssetReplicaStatusFailed, readyAssets).
 		Updates(map[string]any{

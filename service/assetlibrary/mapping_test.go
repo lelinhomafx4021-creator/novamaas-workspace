@@ -27,6 +27,8 @@ func setupAssetLibraryTestDB(t *testing.T) *gorm.DB {
 		&model.Channel{},
 		&model.AssetChannelConfig{},
 		&model.AssetAccessKey{},
+		&model.AssetWebhookEndpoint{},
+		&model.AssetWebhookDelivery{},
 		&model.AssetGroup{},
 		&model.MediaAsset{},
 		&model.AssetGroupReplica{},

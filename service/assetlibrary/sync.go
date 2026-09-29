@@ -18,9 +18,18 @@ import (
 )
 
 const (
-	assetSyncInterval = 10 * time.Second
-	assetSyncLease    = 2 * time.Minute
-	assetSyncBatch    = 20
+	assetSyncInterval             = 10 * time.Second
+	assetSyncLease                = 2 * time.Minute
+	assetSyncBatch                = 20
+	assetActiveReviewWindow       = 48 * time.Hour
+	assetActiveReviewInterval     = 30 * time.Minute
+	assetActiveReconcileInterval  = 24 * time.Hour
+	assetActiveRetryInterval      = 5 * time.Minute
+	assetWebhookRetentionInterval = time.Hour
+	assetWebhookRetentionBatch    = 500
+	assetWebhookRetentionPasses   = 10
+	assetWebhookSuccessRetention  = 30 * 24 * time.Hour
+	assetWebhookFailureRetention  = 90 * 24 * time.Hour
 )
 
 var assetSyncOnce sync.Once
@@ -39,18 +48,63 @@ func StartSyncTask() {
 				runSyncPass(runnerID)
 			}
 		})
+		gopool.Go(func() {
+			webhookRunnerID := runnerID + "-webhooks"
+			runWebhookDeliveryPass(webhookRunnerID)
+			ticker := time.NewTicker(assetSyncInterval)
+			defer ticker.Stop()
+			for range ticker.C {
+				runWebhookDeliveryPass(webhookRunnerID)
+			}
+		})
+		gopool.Go(func() {
+			purgeOldAssetWebhookDeliveries()
+			ticker := time.NewTicker(assetWebhookRetentionInterval)
+			defer ticker.Stop()
+			for range ticker.C {
+				purgeOldAssetWebhookDeliveries()
+			}
+		})
 	})
 }
 
-func runSyncPass(runnerID string) {
-	now := common.GetTimestamp()
-	replicas, err := model.ClaimAssetReplicas(now, now+int64(assetSyncLease/time.Second), runnerID, assetSyncBatch)
-	if err != nil {
-		logger.LogWarn(context.Background(), fmt.Sprintf("claim asset replicas failed: %v", err))
-		return
+func purgeOldAssetWebhookDeliveries() {
+	for _, policy := range []struct {
+		statuses []string
+		maxAge   time.Duration
+	}{
+		{[]string{model.AssetWebhookDeliveryStatusSucceeded, model.AssetWebhookDeliveryStatusSuperseded}, assetWebhookSuccessRetention},
+		{[]string{model.AssetWebhookDeliveryStatusExhausted}, assetWebhookFailureRetention},
+	} {
+		cutoff := time.Now().Add(-policy.maxAge).Unix()
+		for range assetWebhookRetentionPasses {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			deleted, err := model.PurgeAssetWebhookDeliveriesBefore(ctx, policy.statuses, cutoff, assetWebhookRetentionBatch)
+			cancel()
+			if err != nil {
+				logger.LogWarn(context.Background(), fmt.Sprintf("purge old asset webhook deliveries failed: %v", err))
+				break
+			}
+			if deleted < assetWebhookRetentionBatch {
+				break
+			}
+		}
 	}
-	for _, replica := range replicas {
-		syncReplica(runnerID, replica)
+}
+
+func runSyncPass(runnerID string) {
+	for range assetSyncBatch {
+		now := common.GetTimestamp()
+		attemptID := runnerID + "-" + common.GetRandomString(16)
+		replicas, err := model.ClaimAssetReplicas(now, now+int64(assetSyncLease/time.Second), attemptID, 1)
+		if err != nil {
+			logger.LogWarn(context.Background(), fmt.Sprintf("claim asset replicas failed: %v", err))
+			return
+		}
+		if len(replicas) == 0 {
+			return
+		}
+		syncReplica(attemptID, replicas[0])
 	}
 }
 
@@ -140,7 +194,7 @@ func syncReplica(runnerID string, replica *model.AssetReplica) {
 	}
 	switch strings.ToLower(result.Status) {
 	case "active", "ready", "succeeded", "success":
-		if err = model.FinishAssetReplica(replica.ID, runnerID, model.AssetReplicaStatusActive, 100, replica.UpstreamAssetID, 0, ""); err != nil {
+		if err = activateReplicaAndQueueWebhook(runnerID, replica); err != nil {
 			logger.LogWarn(context.Background(), fmt.Sprintf("finish active asset replica failed: replica_id=%d error=%v", replica.ID, err))
 		}
 	case "failed", "error", "rejected":
@@ -159,11 +213,45 @@ func syncReplica(runnerID string, replica *model.AssetReplica) {
 }
 
 func rejectReplica(runnerID string, replica *model.AssetReplica, reason string) {
-	if err := model.RejectAssetReplica(replica.ID, runnerID, reason, replica.UpstreamAssetID); err != nil {
+	if err := rejectReplicaAndQueueWebhook(runnerID, replica, reason); err != nil {
 		logger.LogWarn(context.Background(), fmt.Sprintf("record asset content rejection failed: replica_id=%d error=%v", replica.ID, err))
 		return
 	}
 	logger.LogWarn(context.Background(), fmt.Sprintf("asset content rejected by upstream: replica_id=%d channel_id=%d reason=%s", replica.ID, replica.ChannelID, reason))
+}
+
+func activateReplicaAndQueueWebhook(runnerID string, replica *model.AssetReplica) error {
+	next := common.GetTimestamp() + int64(activeReviewDelay(replica)/time.Second)
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		asset, changed, err := model.ActivateAssetReplicaWithTx(tx, replica.ID, runnerID, replica.UpstreamAssetID, next)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		return queueAssetWebhookDeliveries(tx, asset, WebhookEventAssetActive)
+	})
+}
+
+func rejectReplicaAndQueueWebhook(runnerID string, replica *model.AssetReplica, reason string) error {
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		asset, changed, err := model.RejectAssetReplicaWithTx(tx, replica.ID, runnerID, reason, replica.UpstreamAssetID)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		return queueAssetWebhookDeliveries(tx, asset, WebhookEventAssetFailed)
+	})
+}
+
+func activeReviewDelay(replica *model.AssetReplica) time.Duration {
+	if replica != nil && replica.CreatedAt > 0 && common.GetTimestamp()-replica.CreatedAt < int64(assetActiveReviewWindow/time.Second) {
+		return assetActiveReviewInterval
+	}
+	return assetActiveReconcileInterval
 }
 
 func ensureGroupReplica(ctx context.Context, client assetProvider, group *model.AssetGroup, channelID int) (*model.AssetGroupReplica, error) {
@@ -197,6 +285,11 @@ func ensureGroupReplica(ctx context.Context, client assetProvider, group *model.
 }
 
 func failReplica(runnerID string, replica *model.AssetReplica, err error) {
+	if replica.ClaimedFromStatus == model.AssetReplicaStatusActive {
+		finishReplicaLater(runnerID, replica, model.AssetReplicaStatusActive, 100, replica.UpstreamAssetID, assetActiveRetryInterval, truncateError(err))
+		logger.LogWarn(context.Background(), fmt.Sprintf("active asset review failed and will retry: replica_id=%d channel_id=%d error=%v", replica.ID, replica.ChannelID, err))
+		return
+	}
 	next := common.GetTimestamp() + int64(model.AssetReplicaBackoff(replica.Attempts)/time.Second)
 	if finishErr := model.FinishAssetReplica(replica.ID, runnerID, model.AssetReplicaStatusFailed, replica.Progress, replica.UpstreamAssetID, next, truncateError(err)); finishErr != nil {
 		logger.LogWarn(context.Background(), fmt.Sprintf("record asset replica failure: replica_id=%d error=%v", replica.ID, finishErr))

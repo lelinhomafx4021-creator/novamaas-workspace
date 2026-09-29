@@ -83,3 +83,13 @@ func TestAKSKAssetResponseExposesContentRejectionWithoutRawProviderMessage(t *te
 	assert.Equal(t, model.AssetUnavailableRealPerson, response["FailureReason"])
 	assert.NotContains(t, response, "LastError")
 }
+
+func TestAKSKAssetResponseKeepsNewAssetProcessingUntilInitialReview(t *testing.T) {
+	asset := &assetService.AssetView{
+		ID: "asset-processing", Name: "portrait", Type: model.AssetTypeImage,
+		Status: model.AssetStatusProcessing,
+	}
+	response := volcAssetResponse(asset, "https://example.com/preview")
+	assert.Equal(t, "Processing", response["Status"])
+	assert.NotContains(t, response, "FailureReason")
+}

@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	assetService "github.com/QuantumNous/new-api/service/assetlibrary"
 
@@ -41,6 +43,7 @@ type volcAssetActionRequest struct {
 	NextToken   string          `json:"NextToken"`
 	SortBy      string          `json:"SortBy"`
 	SortOrder   string          `json:"SortOrder"`
+	EventTypes  []string        `json:"EventTypes"`
 }
 
 func ListAssetAccessKeys(c *gin.Context) {
@@ -112,6 +115,27 @@ func HandleVolcAssetAction(c *gin.Context) {
 
 	var result any
 	switch action {
+	case "CreateAssetWebhookEndpoint":
+		result, err = assetService.CreateWebhookEndpoint(ownerUserID, assetService.WebhookEndpointInput{
+			Name: input.Name, URL: input.URL, EventTypes: input.EventTypes,
+		})
+	case "ListAssetWebhookEndpoints":
+		var endpoints []assetService.WebhookEndpointView
+		endpoints, err = assetService.ListWebhookEndpoints(ownerUserID)
+		result = gin.H{"Items": endpoints, "TotalCount": len(endpoints)}
+	case "UpdateAssetWebhookEndpoint":
+		result, err = assetService.UpdateWebhookEndpoint(ownerUserID, input.ID, assetService.WebhookEndpointInput{
+			Name: input.Name, URL: input.URL, EventTypes: input.EventTypes,
+		})
+	case "DeleteAssetWebhookEndpoint":
+		err = assetService.DeleteWebhookEndpoint(ownerUserID, input.ID)
+		result = gin.H{}
+	case "RotateAssetWebhookEndpointSecret":
+		result, err = assetService.RotateWebhookEndpointSecret(ownerUserID, input.ID)
+	case "TestAssetWebhookEndpoint":
+		var eventID string
+		eventID, err = assetService.QueueWebhookEndpointTest(ownerUserID, input.ID)
+		result = gin.H{"EventId": eventID}
 	case "CreateAssetGroup":
 		if input.GroupType != "" && !strings.EqualFold(input.GroupType, "AIGC") {
 			err = &assetService.RequestError{StatusCode: http.StatusBadRequest, Err: errors.New("GroupType must be AIGC")}
@@ -227,6 +251,8 @@ func listVolcAssets(c *gin.Context, ownerUserID int, input volcAssetActionReques
 		for _, status := range input.Filter.Statuses {
 			if strings.EqualFold(status, "Active") {
 				statuses = append(statuses, model.AssetStatusReady)
+			} else if strings.EqualFold(status, "Processing") {
+				statuses = append(statuses, model.AssetStatusProcessing)
 			} else if strings.EqualFold(status, "Failed") || strings.EqualFold(status, "Rejected") {
 				statuses = append(statuses, model.AssetStatusUnavailable)
 			}
@@ -294,11 +320,20 @@ func volcAssetGroup(group *model.AssetGroup) gin.H {
 }
 
 func volcAsset(c *gin.Context, asset *assetService.AssetView) (gin.H, error) {
-	previewURL, _, err := assetService.PreviewURL(c.Request.Context(), asset.ID, asset.OwnerUserID, false)
+	previewURL, expiresAt, err := assetService.PreviewURL(c.Request.Context(), asset.ID, asset.OwnerUserID, false)
 	if err != nil {
-		return nil, err
+		// Ownership and metadata were already checked by GetAsset/ListAssets.
+		// Failure to sign a preview must not hide the moderation verdict.
+		logger.LogWarn(c.Request.Context(), fmt.Sprintf("asset preview unavailable during metadata query: asset_id=%s", asset.ID))
+		result := volcAssetResponse(asset, "")
+		result["PreviewStatus"] = "Unavailable"
+		result["PreviewErrorCode"] = "preview_unavailable"
+		return result, nil
 	}
-	return volcAssetResponse(asset, previewURL), nil
+	result := volcAssetResponse(asset, previewURL)
+	result["PreviewStatus"] = "Available"
+	result["URLExpiresAt"] = expiresAt
+	return result, nil
 }
 
 func volcAssetResponse(asset *assetService.AssetView, previewURL string) gin.H {
@@ -311,6 +346,8 @@ func volcAssetResponse(asset *assetService.AssetView, previewURL string) gin.H {
 	if asset.Status == model.AssetStatusUnavailable {
 		result["Status"] = "Failed"
 		result["FailureReason"] = asset.UnavailableReason
+	} else if asset.Status == model.AssetStatusProcessing {
+		result["Status"] = "Processing"
 	}
 	return result
 }

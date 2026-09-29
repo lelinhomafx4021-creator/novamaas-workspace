@@ -32,6 +32,10 @@ func encryptAccessKeySecret(secret string) (string, error) {
 	return encryptAssetCredential(secret, "access-key")
 }
 
+func encryptWebhookEndpointSecret(secret string) (string, error) {
+	return encryptAssetCredential(secret, "webhook-endpoint")
+}
+
 func encryptAssetCredential(secret string, purpose string) (string, error) {
 	key, err := assetCredentialEncryptionKey(purpose)
 	if err != nil {
@@ -63,6 +67,10 @@ func decryptChannelCredential(payload string) (string, error) {
 
 func decryptAccessKeySecret(payload string) (string, error) {
 	return decryptAssetCredential(payload, "access-key")
+}
+
+func decryptWebhookEndpointSecret(payload string) (string, error) {
+	return decryptAssetCredential(payload, "webhook-endpoint")
 }
 
 func decryptAssetCredential(payload string, purpose string) (string, error) {

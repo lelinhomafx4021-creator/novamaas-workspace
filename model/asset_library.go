@@ -15,6 +15,7 @@ const (
 	AssetTypeVideo = "video"
 	AssetTypeAudio = "audio"
 
+	AssetStatusProcessing  = "processing"
 	AssetStatusReady       = "ready"
 	AssetStatusUnavailable = "unavailable"
 	AssetStatusDeleted     = "deleted"
@@ -132,21 +133,22 @@ type AssetGroupReplica struct {
 }
 
 type AssetReplica struct {
-	ID              int64  `json:"id" gorm:"primaryKey"`
-	AssetID         int64  `json:"-" gorm:"uniqueIndex:idx_asset_channel,priority:1"`
-	ChannelID       int    `json:"channel_id" gorm:"uniqueIndex:idx_asset_channel,priority:2;index"`
-	UpstreamAssetID string `json:"upstream_asset_id,omitempty" gorm:"type:varchar(255)"`
-	Operation       string `json:"-" gorm:"type:varchar(16);index"`
-	Status          string `json:"status" gorm:"type:varchar(32);index:idx_asset_replicas_work,priority:1"`
-	Progress        int    `json:"progress"`
-	Attempts        int    `json:"attempts"`
-	NextSyncAt      int64  `json:"next_sync_at" gorm:"bigint;index:idx_asset_replicas_work,priority:2"`
-	LockedBy        string `json:"-" gorm:"type:varchar(128);index"`
-	LeaseUntil      int64  `json:"-" gorm:"bigint;index"`
-	LastError       string `json:"last_error,omitempty" gorm:"type:text"`
-	LastSyncedAt    int64  `json:"last_synced_at" gorm:"bigint"`
-	CreatedAt       int64  `json:"created_at" gorm:"bigint;index"`
-	UpdatedAt       int64  `json:"updated_at" gorm:"bigint"`
+	ID                int64  `json:"id" gorm:"primaryKey"`
+	AssetID           int64  `json:"-" gorm:"uniqueIndex:idx_asset_channel,priority:1"`
+	ChannelID         int    `json:"channel_id" gorm:"uniqueIndex:idx_asset_channel,priority:2;index"`
+	UpstreamAssetID   string `json:"upstream_asset_id,omitempty" gorm:"type:varchar(255)"`
+	Operation         string `json:"-" gorm:"type:varchar(16);index"`
+	Status            string `json:"status" gorm:"type:varchar(32);index:idx_asset_replicas_work,priority:1"`
+	Progress          int    `json:"progress"`
+	Attempts          int    `json:"attempts"`
+	NextSyncAt        int64  `json:"next_sync_at" gorm:"bigint;index:idx_asset_replicas_work,priority:2"`
+	LockedBy          string `json:"-" gorm:"type:varchar(128);index"`
+	LeaseUntil        int64  `json:"-" gorm:"bigint;index"`
+	LastError         string `json:"last_error,omitempty" gorm:"type:text"`
+	LastSyncedAt      int64  `json:"last_synced_at" gorm:"bigint"`
+	CreatedAt         int64  `json:"created_at" gorm:"bigint;index"`
+	UpdatedAt         int64  `json:"updated_at" gorm:"bigint"`
+	ClaimedFromStatus string `json:"-" gorm:"-"`
 }
 
 func setAssetTimestamps(createdAt *int64, updatedAt *int64) {
@@ -252,22 +254,30 @@ func ClaimAssetReplicas(now int64, leaseUntil int64, lockedBy string, limit int)
 	}
 	var candidates []*AssetReplica
 	if err := DB.Where(
-		"((status IN ? AND next_sync_at <= ?) OR (status = ? AND lease_until <= ?))",
+		"((status IN ? AND next_sync_at <= ?) OR (status = ? AND next_sync_at <= ? AND lease_until <= ?) OR (status = ? AND lease_until <= ?))",
 		[]string{AssetReplicaStatusPending, AssetReplicaStatusProcessing, AssetReplicaStatusFailed, AssetReplicaStatusDeleting}, now,
+		AssetReplicaStatusActive, now, now,
 		AssetReplicaStatusSyncing, now,
 	).Order("next_sync_at asc").Limit(limit).Find(&candidates).Error; err != nil {
 		return nil, err
 	}
 	claimed := make([]*AssetReplica, 0, len(candidates))
 	for _, candidate := range candidates {
+		claimedStatus := AssetReplicaStatusSyncing
+		if candidate.Status == AssetReplicaStatusActive {
+			// Keep an already usable replica active while the periodic review is
+			// in flight so task submissions do not observe a false sync gap.
+			claimedStatus = AssetReplicaStatusActive
+		}
 		result := DB.Model(&AssetReplica{}).
-			Where("id = ? AND ((status IN ? AND next_sync_at <= ?) OR (status = ? AND lease_until <= ?))",
+			Where("id = ? AND ((status IN ? AND next_sync_at <= ?) OR (status = ? AND next_sync_at <= ? AND lease_until <= ?) OR (status = ? AND lease_until <= ?))",
 				candidate.ID,
 				[]string{AssetReplicaStatusPending, AssetReplicaStatusProcessing, AssetReplicaStatusFailed, AssetReplicaStatusDeleting}, now,
+				AssetReplicaStatusActive, now, now,
 				AssetReplicaStatusSyncing, now,
 			).
 			Updates(map[string]any{
-				"status":      AssetReplicaStatusSyncing,
+				"status":      claimedStatus,
 				"locked_by":   lockedBy,
 				"lease_until": leaseUntil,
 				"updated_at":  now,
@@ -276,7 +286,8 @@ func ClaimAssetReplicas(now int64, leaseUntil int64, lockedBy string, limit int)
 			return nil, result.Error
 		}
 		if result.RowsAffected == 1 {
-			candidate.Status = AssetReplicaStatusSyncing
+			candidate.ClaimedFromStatus = candidate.Status
+			candidate.Status = claimedStatus
 			candidate.LockedBy = lockedBy
 			candidate.LeaseUntil = leaseUntil
 			claimed = append(claimed, candidate)
@@ -304,7 +315,7 @@ func FinishAssetReplica(id int64, lockedBy string, status string, progress int, 
 		updates["attempts"] = 0
 	}
 	result := DB.Model(&AssetReplica{}).
-		Where("id = ? AND status = ? AND locked_by = ?", id, AssetReplicaStatusSyncing, lockedBy).
+		Where("id = ? AND status IN ? AND locked_by = ?", id, []string{AssetReplicaStatusSyncing, AssetReplicaStatusActive}, lockedBy).
 		Updates(updates)
 	if result.Error != nil {
 		return result.Error
@@ -315,51 +326,107 @@ func FinishAssetReplica(id int64, lockedBy string, status string, progress int, 
 	return nil
 }
 
+// ActivateAssetReplicaWithTx marks an upstream replica usable and promotes a
+// newly uploaded asset from processing to ready in the same transaction.
+func ActivateAssetReplicaWithTx(tx *gorm.DB, id int64, lockedBy string, upstreamAssetID string, nextSyncAt int64) (*MediaAsset, bool, error) {
+	now := common.GetTimestamp()
+	var replica AssetReplica
+	if err := tx.Select("asset_id").First(&replica, id).Error; err != nil {
+		return nil, false, err
+	}
+	var asset MediaAsset
+	if err := lockForUpdate(tx).First(&asset, replica.AssetID).Error; err != nil {
+		return nil, false, err
+	}
+	// Match rejection and deletion: asset first, then replica.
+	if err := lockForUpdate(tx).Where("id = ? AND status IN ? AND locked_by = ?", id, []string{AssetReplicaStatusSyncing, AssetReplicaStatusActive}, lockedBy).First(&replica).Error; err != nil {
+		return nil, false, err
+	}
+	if asset.Status != AssetStatusProcessing && asset.Status != AssetStatusReady {
+		return nil, false, errors.New("asset is no longer available for activation")
+	}
+	result := tx.Model(&AssetReplica{}).
+		Where("id = ? AND status IN ? AND locked_by = ?", id, []string{AssetReplicaStatusSyncing, AssetReplicaStatusActive}, lockedBy).
+		Updates(map[string]any{
+			"status": AssetReplicaStatusActive, "progress": 100,
+			"upstream_asset_id": upstreamAssetID, "next_sync_at": nextSyncAt,
+			"locked_by": "", "lease_until": 0, "last_error": "", "attempts": 0,
+			"last_synced_at": now, "updated_at": now,
+		})
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, false, errors.New("asset replica synchronization lease was lost")
+	}
+	if asset.Status != AssetStatusProcessing {
+		return &asset, false, nil
+	}
+	if err := tx.Model(&MediaAsset{}).Where("id = ? AND status = ?", asset.ID, AssetStatusProcessing).
+		Updates(map[string]any{"status": AssetStatusReady, "updated_at": now}).Error; err != nil {
+		return nil, false, err
+	}
+	asset.Status = AssetStatusReady
+	asset.UpdatedAt = now
+	return &asset, true, nil
+}
+
 // RejectAssetReplica makes a content-policy rejection terminal for this asset.
 // The replica lease and asset state are changed atomically, so mapping cannot
 // observe a rejected replica while the asset still appears usable.
 func RejectAssetReplica(id int64, lockedBy string, reason string, upstreamAssetID string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		_, _, err := RejectAssetReplicaWithTx(tx, id, lockedBy, reason, upstreamAssetID)
+		return err
+	})
+}
+
+// RejectAssetReplicaWithTx records a terminal content rejection while
+// allowing the caller to append durable notifications before commit.
+func RejectAssetReplicaWithTx(tx *gorm.DB, id int64, lockedBy string, reason string, upstreamAssetID string) (*MediaAsset, bool, error) {
 	if reason != AssetUnavailableRealPerson && reason != AssetUnavailableSensitiveContent && reason != AssetUnavailablePolicyRejected {
-		return errors.New("invalid asset rejection reason")
+		return nil, false, errors.New("invalid asset rejection reason")
 	}
 	now := common.GetTimestamp()
-	return DB.Transaction(func(tx *gorm.DB) error {
-		var replica AssetReplica
-		if err := tx.Select("asset_id").First(&replica, id).Error; err != nil {
-			return err
+	var replica AssetReplica
+	if err := tx.Select("asset_id").First(&replica, id).Error; err != nil {
+		return nil, false, err
+	}
+	var asset MediaAsset
+	if err := lockForUpdate(tx).First(&asset, replica.AssetID).Error; err != nil {
+		return nil, false, err
+	}
+	if asset.Status != AssetStatusProcessing && asset.Status != AssetStatusReady && asset.Status != AssetStatusUnavailable {
+		return nil, false, errors.New("asset is no longer available for synchronization")
+	}
+	if err := lockForUpdate(tx).Where("id = ? AND status IN ? AND locked_by = ?", id, []string{AssetReplicaStatusSyncing, AssetReplicaStatusActive}, lockedBy).First(&replica).Error; err != nil {
+		return nil, false, err
+	}
+	changed := asset.Status != AssetStatusUnavailable
+	if changed {
+		if err := tx.Model(&MediaAsset{}).Where("id = ?", replica.AssetID).
+			Updates(map[string]any{"status": AssetStatusUnavailable, "unavailable_reason": reason, "updated_at": now}).Error; err != nil {
+			return nil, false, err
 		}
-		var asset MediaAsset
-		if err := lockForUpdate(tx).Select("id", "status").First(&asset, replica.AssetID).Error; err != nil {
-			return err
-		}
-		if asset.Status != AssetStatusReady && asset.Status != AssetStatusUnavailable {
-			return errors.New("asset is no longer available for synchronization")
-		}
-		if err := lockForUpdate(tx).Where("id = ? AND status = ? AND locked_by = ?", id, AssetReplicaStatusSyncing, lockedBy).First(&replica).Error; err != nil {
-			return err
-		}
-		if asset.Status == AssetStatusReady {
-			if err := tx.Model(&MediaAsset{}).Where("id = ?", replica.AssetID).
-				Updates(map[string]any{"status": AssetStatusUnavailable, "unavailable_reason": reason, "updated_at": now}).Error; err != nil {
-				return err
-			}
-		}
-		result := tx.Model(&AssetReplica{}).
-			Where("id = ? AND status = ? AND locked_by = ?", id, AssetReplicaStatusSyncing, lockedBy).
-			Updates(map[string]any{
-				"status": AssetReplicaStatusRejected, "progress": replica.Progress,
-				"upstream_asset_id": upstreamAssetID, "next_sync_at": 0,
-				"locked_by": "", "lease_until": 0, "last_error": reason,
-				"last_synced_at": now, "updated_at": now,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return errors.New("asset replica synchronization lease was lost")
-		}
-		return nil
-	})
+		asset.Status = AssetStatusUnavailable
+		asset.UnavailableReason = reason
+		asset.UpdatedAt = now
+	}
+	result := tx.Model(&AssetReplica{}).
+		Where("id = ? AND status IN ? AND locked_by = ?", id, []string{AssetReplicaStatusSyncing, AssetReplicaStatusActive}, lockedBy).
+		Updates(map[string]any{
+			"status": AssetReplicaStatusRejected, "progress": replica.Progress,
+			"upstream_asset_id": upstreamAssetID, "next_sync_at": 0,
+			"locked_by": "", "lease_until": 0, "last_error": reason,
+			"last_synced_at": now, "updated_at": now,
+		})
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, false, errors.New("asset replica synchronization lease was lost")
+	}
+	return &asset, changed, nil
 }
 
 func AssetReplicaBackoff(attempts int) time.Duration {

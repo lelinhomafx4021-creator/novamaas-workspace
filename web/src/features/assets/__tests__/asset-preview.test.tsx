@@ -35,14 +35,19 @@ import type { MediaAsset } from '../types'
 vi.mock('../api', () => ({
   createAssetGroup: vi.fn(),
   createAssetAccessKey: vi.fn(),
+  createAssetWebhookEndpoint: vi.fn(),
   deleteAssetAccessKey: vi.fn(),
+  deleteAssetWebhookEndpoint: vi.fn(),
   deleteAssetGroup: vi.fn(),
   deleteMediaAsset: vi.fn(),
   getMediaAssetPreview: vi.fn(),
   listAssetAccessKeys: vi.fn(),
+  listAssetWebhookEndpoints: vi.fn(),
   listAssetGroups: vi.fn(),
   listAssetGroupsPage: vi.fn(),
   listMediaAssets: vi.fn(),
+  rotateAssetWebhookEndpointSecret: vi.fn(),
+  testAssetWebhookEndpoint: vi.fn(),
   uploadMediaAsset: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))

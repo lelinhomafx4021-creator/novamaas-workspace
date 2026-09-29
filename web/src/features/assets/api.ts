@@ -26,10 +26,62 @@ import type {
   AssetRequestLogList,
   AssetRequestLogWithDetail,
   AssetSyncJobList,
+  AssetWebhookEndpoint,
+  AssetWebhookEventType,
   CreatedAssetAccessKey,
+  CreatedAssetWebhookEndpoint,
   MediaAsset,
   MediaAssetList,
 } from './types'
+
+export async function listAssetWebhookEndpoints() {
+  const response = await api.get<AssetLibraryResponse<AssetWebhookEndpoint[]>>(
+    '/api/asset-library/webhook-endpoints'
+  )
+  return response.data
+}
+
+export async function createAssetWebhookEndpoint(input: {
+  name: string
+  url: string
+  event_types: AssetWebhookEventType[]
+}) {
+  const response = await api.post<
+    AssetLibraryResponse<CreatedAssetWebhookEndpoint>
+  >('/api/asset-library/webhook-endpoints', input, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
+  return response.data
+}
+
+export async function deleteAssetWebhookEndpoint(id: string) {
+  const response = await api.delete<AssetLibraryResponse>(
+    `/api/asset-library/webhook-endpoints/${encodeURIComponent(id)}`,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function rotateAssetWebhookEndpointSecret(id: string) {
+  const response = await api.post<
+    AssetLibraryResponse<CreatedAssetWebhookEndpoint>
+  >(
+    `/api/asset-library/webhook-endpoints/${encodeURIComponent(id)}/rotate-secret`,
+    undefined,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function testAssetWebhookEndpoint(id: string) {
+  const response = await api.post<AssetLibraryResponse<{ event_id: string }>>(
+    `/api/asset-library/webhook-endpoints/${encodeURIComponent(id)}/test`,
+    undefined,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
 
 export async function listAssetAccessKeys() {
   const response = await api.get<AssetLibraryResponse<AssetAccessKey[]>>(

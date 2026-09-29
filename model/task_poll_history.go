@@ -18,7 +18,6 @@ const taskPollHistoryPrefix = "poll:v1:"
 const MaxTaskPollResponseBytes = 64 << 10
 const maxTaskPollParseBytes = 8 << 20
 const maxTaskPollStringBytes = 4 << 10
-const taskPollHistoryScanBatchSize = 100
 const taskPollHistoryDays = 90
 
 // TaskPollHistoryEntry is stored in TaskRequestBody.Body under a separate
@@ -244,46 +243,25 @@ func ListTaskPollHistory(ctx context.Context, taskID string, beforeID int64, lim
 	if limit < 1 || limit > 101 {
 		limit = 50
 	}
-	allEntries := make([]TaskPollHistoryEntry, 0)
-	var scanBeforeID int64
-	for {
-		query := DB.WithContext(ctx).Select("id", "body").Where("task_id = ? AND reference_id LIKE ?", taskID, taskPollHistoryPrefix+"%")
-		if scanBeforeID > 0 {
-			query = query.Where("id < ?", scanBeforeID)
-		}
-		var rows []TaskRequestBody
-		if err := query.Order("id DESC").Limit(taskPollHistoryScanBatchSize).Find(&rows).Error; err != nil {
+	query := DB.WithContext(ctx).Select("id", "body").Where("task_id = ? AND reference_id LIKE ?", taskID, taskPollHistoryPrefix+"%")
+	if beforeID > 0 {
+		query = query.Where("id < ?", beforeID)
+	}
+	var rows []TaskRequestBody
+	if err := query.Order("id DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	entries := make([]TaskPollHistoryEntry, 0, len(rows))
+	for _, row := range rows {
+		var entry TaskPollHistoryEntry
+		if err := common.Unmarshal(row.Body, &entry); err != nil {
 			return nil, err
 		}
-		for _, row := range rows {
-			var entry TaskPollHistoryEntry
-			if err := common.Unmarshal(row.Body, &entry); err != nil {
-				return nil, err
-			}
-			if len(allEntries) > 0 && sameTaskPollHistoryObservation(allEntries[len(allEntries)-1], entry) {
-				mergeTaskPollHistoryObservation(&allEntries[len(allEntries)-1], entry)
-				continue
-			}
-			if entry.RepeatCount < 1 {
-				entry.RepeatCount = 1
-			}
-			entry.ID = row.ID
-			allEntries = append(allEntries, entry)
+		if entry.RepeatCount < 1 {
+			entry.RepeatCount = 1
 		}
-		if len(rows) < taskPollHistoryScanBatchSize {
-			break
-		}
-		scanBeforeID = rows[len(rows)-1].ID
-	}
-	entries := make([]TaskPollHistoryEntry, 0, min(limit, len(allEntries)))
-	for _, entry := range allEntries {
-		if beforeID > 0 && entry.ID >= beforeID {
-			continue
-		}
+		entry.ID = row.ID
 		entries = append(entries, entry)
-		if len(entries) == limit {
-			break
-		}
 	}
 	return entries, nil
 }

@@ -864,29 +864,63 @@ func TestBasicClassifiesOptionalAndContractChecks(t *testing.T) {
 	assert.Equal(t, "skip", checks[CheckToolCall].Status)
 	assert.Equal(t, "skip", checks[CheckThinking].Status)
 	assert.Equal(t, "skip", checks[CheckAuthError].Status)
-	assert.Equal(t, "skip", checks[CheckBadRequest].Status)
+	assert.Equal(t, "fail", checks[CheckBadRequest].Status)
 }
 
-func TestBasicTreatsWrappedHTTP500ByCheckAndVendor(t *testing.T) {
+func TestBasicClassifiesBadRequestHTTP500ByErrorOriginAndVendor(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = io.WriteString(w, `{"error":{"message":"relay failed"}}`)
-	}))
-	defer server.Close()
-
-	checks := []string{CheckAuthError, CheckBadRequest}
 	tests := []struct {
-		name           string
-		vendor         string
-		wantAuthStatus string
+		name                 string
+		vendor               string
+		responseBody         string
+		wantAuthStatus       string
+		wantBadRequestStatus string
 	}{
-		{name: "generic skips relay-wrapped auth errors", vendor: VendorGeneric, wantAuthStatus: "skip"},
-		{name: "selected vendor fails auth contract errors", vendor: VendorGLM, wantAuthStatus: "fail"},
+		{
+			name:                 "generic skips identified platform wrapper",
+			vendor:               VendorGeneric,
+			responseBody:         `{"error":{"type":"new_api_error","code":"invalid_request","message":"relay failed"}}`,
+			wantAuthStatus:       "skip",
+			wantBadRequestStatus: "skip",
+		},
+		{
+			name:                 "generic fails upstream server error",
+			vendor:               VendorGeneric,
+			responseBody:         `{"error":{"type":"server_error","message":"upstream unavailable"}}`,
+			wantAuthStatus:       "skip",
+			wantBadRequestStatus: "fail",
+		},
+		{
+			name:                 "generic fails platform internal error",
+			vendor:               VendorGeneric,
+			responseBody:         `{"error":{"type":"new_api_error","code":"do_request_failed","message":"gateway unavailable"}}`,
+			wantAuthStatus:       "skip",
+			wantBadRequestStatus: "fail",
+		},
+		{
+			name:                 "named vendor fails platform wrapper",
+			vendor:               VendorGLM,
+			responseBody:         `{"error":{"type":"new_api_error","code":"invalid_request","message":"relay failed"}}`,
+			wantAuthStatus:       "fail",
+			wantBadRequestStatus: "fail",
+		},
+		{
+			name:                 "named vendor fails upstream server error",
+			vendor:               VendorGLM,
+			responseBody:         `{"error":{"type":"server_error","message":"upstream unavailable"}}`,
+			wantAuthStatus:       "fail",
+			wantBadRequestStatus: "fail",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = io.WriteString(w, test.responseBody)
+			}))
+			defer server.Close()
+
 			var events []Event
 			err := Run(context.Background(), server.Client(), RunRequest{
 				BaseURL: server.URL,
@@ -894,7 +928,7 @@ func TestBasicTreatsWrappedHTTP500ByCheckAndVendor(t *testing.T) {
 				Model:   "demo",
 				Vendor:  test.vendor,
 				Modules: []string{ModuleBasic},
-				Basic:   BasicConfig{Checks: checks},
+				Basic:   BasicConfig{Checks: []string{CheckAuthError, CheckBadRequest}},
 			}, func(event Event) {
 				events = append(events, event)
 			})
@@ -903,9 +937,11 @@ func TestBasicTreatsWrappedHTTP500ByCheckAndVendor(t *testing.T) {
 			checks := latestChecksByID(events)
 			assert.Equal(t, test.wantAuthStatus, checks[CheckAuthError].Status)
 			assert.Contains(t, checks[CheckAuthError].Message, "500")
-			assert.Equal(t, "skip", checks[CheckBadRequest].Status)
+			assert.Equal(t, test.wantBadRequestStatus, checks[CheckBadRequest].Status)
 			assert.Contains(t, checks[CheckBadRequest].Message, "HTTP 500")
-			assert.Contains(t, checks[CheckBadRequest].Message, "接入平台")
+			if test.wantBadRequestStatus == "skip" {
+				assert.Contains(t, checks[CheckBadRequest].Message, "invalid_request")
+			}
 		})
 	}
 }

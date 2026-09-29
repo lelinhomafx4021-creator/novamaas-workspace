@@ -133,6 +133,8 @@ type StreamResult struct {
 	lastOutput          time.Duration
 	requestStarted      time.Time
 	ErrorMessage        string
+	ErrorType           string
+	ErrorCode           string
 	SSE                 bool
 	SSEDone             bool
 	contentBuilder      strings.Builder
@@ -480,6 +482,8 @@ func streamChat(
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
 		result.ErrorMessage = ExtractAPIError(raw, resp.Status)
+		result.ErrorType = strings.TrimSpace(gjson.GetBytes(raw, "error.type").String())
+		result.ErrorCode = strings.TrimSpace(gjson.GetBytes(raw, "error.code").String())
 		if req.StreamOptions != nil && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && streamOptionsUnsupported(result.ErrorMessage) {
 			noOptReq := req
 			noOptReq.StreamOptions = nil

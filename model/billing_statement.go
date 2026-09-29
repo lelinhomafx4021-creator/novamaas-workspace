@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -85,6 +86,63 @@ type BillingModelTotal struct {
 	ActiveDays  int64  `json:"active_days"`
 	FirstPosted int64  `json:"first_posted_at" gorm:"column:first_posted_at"`
 	LastPosted  int64  `json:"last_posted_at" gorm:"column:last_posted_at"`
+}
+
+// summarizeBillingModels uses the original model name from each ledger entry.
+// SQL GROUP BY follows the database column collation, which can merge names
+// such as Foo and foo on MySQL even though the archive compares them exactly.
+func summarizeBillingModels(entriesScope *gorm.DB, userID int, fromSequence, toSequence, start, end int64) ([]BillingModelTotal, error) {
+	const batchSize = 1000
+	totals := make(map[string]BillingModelTotal)
+	modelDays := make(map[string]map[int64]struct{})
+	cursor := fromSequence - 1
+	for {
+		var entries []BillingEntry
+		err := entriesScope.Session(&gorm.Session{}).
+			Select("sequence", "model_name", "posted_at", "quota").
+			Where("user_id = ? AND sequence >= ? AND sequence > ? AND sequence <= ? AND posted_at >= ? AND posted_at < ? AND kind <> ?", userID, fromSequence, cursor, toSequence, start, end, "funding").
+			Order("sequence asc").Limit(batchSize).Find(&entries).Error
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			total := totals[entry.ModelName]
+			total.ModelName = entry.ModelName
+			if total.Count == 0 || entry.PostedAt < total.FirstPosted {
+				total.FirstPosted = entry.PostedAt
+			}
+			if entry.PostedAt > total.LastPosted {
+				total.LastPosted = entry.PostedAt
+			}
+			day := (entry.PostedAt + 28800) / 86400
+			days := modelDays[entry.ModelName]
+			if days == nil {
+				days = make(map[int64]struct{})
+				modelDays[entry.ModelName] = days
+			}
+			days[day] = struct{}{}
+			total.ActiveDays = int64(len(days))
+			if entry.Quota >= 0 {
+				total.Charge += entry.Quota
+				total.ChargeCount++
+			} else {
+				total.Refund -= entry.Quota
+				total.RefundCount++
+			}
+			total.Count++
+			totals[entry.ModelName] = total
+		}
+		if len(entries) < batchSize {
+			break
+		}
+		cursor = entries[len(entries)-1].Sequence
+	}
+	result := make([]BillingModelTotal, 0, len(totals))
+	for _, total := range totals {
+		result = append(result, total)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ModelName < result[j].ModelName })
+	return result, nil
 }
 
 func GetBillingStatement(id string) (*BillingStatement, error) {
@@ -198,19 +256,7 @@ func CreateBillingStatement(statement *BillingStatement, buildSnapshot func(*Bil
 		}
 		modelTotals := make([]BillingModelTotal, 0)
 		if bounds.FirstSequence > 0 {
-			entryScope := tx.Model(&BillingEntry{}).
-				Where("user_id = ? AND sequence >= ? AND sequence <= ? AND posted_at >= ? AND posted_at < ? AND kind <> ?", statement.UserID, statement.FromSequence, statement.ToSequence, start, end, "funding")
-			err = entryScope.
-				Select(`model_name,
-					COALESCE(SUM(CASE WHEN quota >= 0 THEN quota ELSE 0 END), 0) AS charge,
-					COALESCE(SUM(CASE WHEN quota < 0 THEN -quota ELSE 0 END), 0) AS refund,
-					COALESCE(SUM(CASE WHEN quota >= 0 THEN 1 ELSE 0 END), 0) AS charge_count,
-					COALESCE(SUM(CASE WHEN quota < 0 THEN 1 ELSE 0 END), 0) AS refund_count,
-					COUNT(DISTINCT ((posted_at + 28800) - ((posted_at + 28800) % 86400))) AS active_days,
-					MIN(posted_at) AS first_posted_at,
-					MAX(posted_at) AS last_posted_at,
-					COUNT(*) AS records`).
-				Group("model_name").Scan(&modelTotals).Error
+			modelTotals, err = summarizeBillingModels(tx.Model(&BillingEntry{}), statement.UserID, statement.FromSequence, statement.ToSequence, start, end)
 			if err != nil {
 				return err
 			}

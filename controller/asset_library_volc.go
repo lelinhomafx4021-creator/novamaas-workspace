@@ -130,8 +130,6 @@ func HandleVolcAssetAction(c *gin.Context) {
 	case "DeleteAssetWebhookEndpoint":
 		err = assetService.DeleteWebhookEndpoint(ownerUserID, input.ID)
 		result = gin.H{}
-	case "RotateAssetWebhookEndpointSecret":
-		result, err = assetService.RotateWebhookEndpointSecret(ownerUserID, input.ID)
 	case "TestAssetWebhookEndpoint":
 		var eventID string
 		eventID, err = assetService.QueueWebhookEndpointTest(ownerUserID, input.ID)

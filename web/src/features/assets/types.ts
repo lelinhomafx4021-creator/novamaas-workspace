@@ -80,14 +80,9 @@ export type AssetWebhookEndpoint = {
   name: string
   url: string
   event_types: AssetWebhookEventType[]
-  signing_secret_hint: string
   status: string
   created_at: number
   updated_at: number
-}
-
-export type CreatedAssetWebhookEndpoint = AssetWebhookEndpoint & {
-  signing_secret: string
 }
 
 export type AssetSyncJob = {

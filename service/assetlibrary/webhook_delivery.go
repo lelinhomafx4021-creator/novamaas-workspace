@@ -3,15 +3,11 @@ package assetlibrary
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -76,17 +72,7 @@ func deliverAssetWebhook(runnerID string, delivery *model.AssetWebhookDelivery) 
 		finishWebhookDeliveryFailure(runnerID, delivery, 0, errors.New("webhook endpoint is disabled"), true)
 		return
 	}
-	secret, err := decryptWebhookEndpointSecret(endpoint.EncryptedSecret)
-	if err != nil {
-		finishWebhookDeliveryFailure(runnerID, delivery, 0, err, true)
-		return
-	}
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	signature, err := signAssetWebhook(secret, delivery.WebhookID, timestamp, []byte(delivery.Payload))
-	if err != nil {
-		finishWebhookDeliveryFailure(runnerID, delivery, 0, err, true)
-		return
-	}
 	if requestDeadline := time.Now().Add(10 * time.Second); requestDeadline.Before(deadline) {
 		deadline = requestDeadline
 	}
@@ -97,9 +83,9 @@ func deliverAssetWebhook(runnerID string, delivery *model.AssetWebhookDelivery) 
 		"User-Agent":        "New-API/1.0",
 		"webhook-id":        delivery.WebhookID,
 		"webhook-timestamp": timestamp,
-		"webhook-signature": signature,
 	}
 	var response *http.Response
+	var err error
 	if system_setting.EnableWorker() {
 		response, err = coreService.DoWorkerRequestWithContext(ctx, &coreService.WorkerRequest{
 			URL: endpoint.URL, Key: system_setting.WorkerValidKey, Method: http.MethodPost,
@@ -161,16 +147,4 @@ func assetWebhookRetryDelay(attempts int) time.Duration {
 		return 12 * time.Hour
 	}
 	return delay
-}
-
-func signAssetWebhook(secret string, webhookID string, timestamp string, payload []byte) (string, error) {
-	encodedSecret := strings.TrimPrefix(strings.TrimSpace(secret), "whsec_")
-	key, err := base64.StdEncoding.DecodeString(encodedSecret)
-	if err != nil {
-		return "", errors.New("webhook signing secret is invalid")
-	}
-	message := webhookID + "." + timestamp + "." + string(payload)
-	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte(message))
-	return "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil)), nil
 }

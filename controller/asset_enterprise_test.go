@@ -68,7 +68,7 @@ func TestEnterpriseSignedWebhookManagementAndAssetQueries(t *testing.T) {
 		Result assetService.WebhookEndpointView
 	}
 	require.NoError(t, common.Unmarshal(created.Body.Bytes(), &envelope))
-	require.NotEmpty(t, envelope.Result.SigningSecret)
+	assert.NotContains(t, created.Body.String(), `"signing_secret"`)
 	idBodyBytes, err := common.Marshal(map[string]string{"Id": envelope.Result.ID})
 	require.NoError(t, err)
 	idBody := string(idBodyBytes)
@@ -76,7 +76,7 @@ func TestEnterpriseSignedWebhookManagementAndAssetQueries(t *testing.T) {
 	require.Equal(t, http.StatusOK, listed.Code)
 	assert.Contains(t, listed.Body.String(), envelope.Result.ID)
 	assert.NotContains(t, listed.Body.String(), `"signing_secret":`)
-	for _, action := range []string{"DeleteAssetWebhookEndpoint", "RotateAssetWebhookEndpointSecret", "TestAssetWebhookEndpoint"} {
+	for _, action := range []string{"DeleteAssetWebhookEndpoint", "TestAssetWebhookEndpoint"} {
 		denied := requestSignedAssetAction(t, otherKey, action, idBody)
 		assert.Equal(t, http.StatusNotFound, denied.Code, denied.Body.String())
 	}
@@ -84,9 +84,6 @@ func TestEnterpriseSignedWebhookManagementAndAssetQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, requestSignedAssetAction(t, otherKey, "UpdateAssetWebhookEndpoint", string(updateBytes)).Code)
 	assert.Equal(t, http.StatusOK, requestSignedAssetAction(t, key, "UpdateAssetWebhookEndpoint", string(updateBytes)).Code)
-	rotated := requestSignedAssetAction(t, key, "RotateAssetWebhookEndpointSecret", idBody)
-	require.Equal(t, http.StatusOK, rotated.Code)
-	assert.NotContains(t, rotated.Body.String(), envelope.Result.SigningSecret)
 	assert.Equal(t, http.StatusOK, requestSignedAssetAction(t, key, "TestAssetWebhookEndpoint", idBody).Code)
 	var deliveries int64
 	require.NoError(t, db.Model(&model.AssetWebhookDelivery{}).Count(&deliveries).Error)

@@ -20,8 +20,7 @@ const (
 	WebhookEventAssetFailed = "asset.failed"
 	webhookEventTest        = "asset.webhook_test"
 
-	webhookEndpointSecretVersion = "aes-gcm-v1"
-	maxWebhookEndpointsPerUser   = 5
+	maxWebhookEndpointsPerUser = 5
 )
 
 var supportedAssetWebhookEvents = map[string]struct{}{
@@ -36,16 +35,14 @@ type WebhookEndpointInput struct {
 }
 
 type WebhookEndpointView struct {
-	ID                string   `json:"id"`
-	Object            string   `json:"object"`
-	Name              string   `json:"name"`
-	URL               string   `json:"url"`
-	EventTypes        []string `json:"event_types"`
-	SigningSecret     string   `json:"signing_secret,omitempty"`
-	SigningSecretHint string   `json:"signing_secret_hint"`
-	Status            string   `json:"status"`
-	CreatedAt         int64    `json:"created_at"`
-	UpdatedAt         int64    `json:"updated_at"`
+	ID         string   `json:"id"`
+	Object     string   `json:"object"`
+	Name       string   `json:"name"`
+	URL        string   `json:"url"`
+	EventTypes []string `json:"event_types"`
+	Status     string   `json:"status"`
+	CreatedAt  int64    `json:"created_at"`
+	UpdatedAt  int64    `json:"updated_at"`
 }
 
 type assetWebhookEvent struct {
@@ -102,23 +99,14 @@ func CreateWebhookEndpoint(ownerUserID int, input WebhookEndpointInput) (*Webhoo
 	if err != nil {
 		return nil, err
 	}
-	secret, err := randomWebhookSecret()
-	if err != nil {
-		return nil, err
-	}
-	encryptedSecret, err := encryptWebhookEndpointSecret(secret)
-	if err != nil {
-		return nil, &RequestError{StatusCode: http.StatusServiceUnavailable, Err: err}
-	}
 	encodedEventTypes, err := common.Marshal(eventTypes)
 	if err != nil {
 		return nil, err
 	}
 	endpoint := model.AssetWebhookEndpoint{
 		PublicID: publicID, OwnerUserID: ownerUserID, Name: name, URL: callbackURL,
-		EventTypes: string(encodedEventTypes), EncryptedSecret: encryptedSecret,
-		SecretHint: credentialHint(secret), CredentialKeyVersion: webhookEndpointSecretVersion,
-		Status: model.AssetWebhookEndpointStatusEnabled,
+		EventTypes: string(encodedEventTypes),
+		Status:     model.AssetWebhookEndpointStatusEnabled,
 	}
 	if err = model.DB.Create(&endpoint).Error; err != nil {
 		return nil, err
@@ -127,7 +115,6 @@ func CreateWebhookEndpoint(ownerUserID int, input WebhookEndpointInput) (*Webhoo
 	if err != nil {
 		return nil, err
 	}
-	view.SigningSecret = secret
 	return &view, nil
 }
 
@@ -169,39 +156,6 @@ func DeleteWebhookEndpoint(ownerUserID int, publicID string) error {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
-}
-
-func RotateWebhookEndpointSecret(ownerUserID int, publicID string) (*WebhookEndpointView, error) {
-	secret, err := randomWebhookSecret()
-	if err != nil {
-		return nil, err
-	}
-	encryptedSecret, err := encryptWebhookEndpointSecret(secret)
-	if err != nil {
-		return nil, &RequestError{StatusCode: http.StatusServiceUnavailable, Err: err}
-	}
-	result := model.DB.Model(&model.AssetWebhookEndpoint{}).
-		Where("public_id = ? AND owner_user_id = ? AND status = ?", strings.TrimSpace(publicID), ownerUserID, model.AssetWebhookEndpointStatusEnabled).
-		Updates(map[string]any{
-			"encrypted_secret": encryptedSecret, "secret_hint": credentialHint(secret),
-			"credential_key_version": webhookEndpointSecretVersion, "updated_at": common.GetTimestamp(),
-		})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return nil, gorm.ErrRecordNotFound
-	}
-	var endpoint model.AssetWebhookEndpoint
-	if err = model.DB.Where("public_id = ? AND owner_user_id = ?", publicID, ownerUserID).First(&endpoint).Error; err != nil {
-		return nil, err
-	}
-	view, err := webhookEndpointView(endpoint)
-	if err != nil {
-		return nil, err
-	}
-	view.SigningSecret = secret
-	return &view, nil
 }
 
 func QueueWebhookEndpointTest(ownerUserID int, publicID string) (string, error) {
@@ -352,7 +306,7 @@ func webhookEndpointView(endpoint model.AssetWebhookEndpoint) (WebhookEndpointVi
 	}
 	return WebhookEndpointView{
 		ID: endpoint.PublicID, Object: "webhook_endpoint", Name: endpoint.Name, URL: endpoint.URL,
-		EventTypes: eventTypes, SigningSecretHint: endpoint.SecretHint, Status: endpoint.Status,
+		EventTypes: eventTypes, Status: endpoint.Status,
 		CreatedAt: endpoint.CreatedAt, UpdatedAt: endpoint.UpdatedAt,
 	}, nil
 }
@@ -376,12 +330,4 @@ func randomWebhookValue(prefix string, bytesLength int) (string, error) {
 		return "", err
 	}
 	return prefix + base64.RawURLEncoding.EncodeToString(value), nil
-}
-
-func randomWebhookSecret() (string, error) {
-	value := make([]byte, 32)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return "whsec_" + base64.StdEncoding.EncodeToString(value), nil
 }

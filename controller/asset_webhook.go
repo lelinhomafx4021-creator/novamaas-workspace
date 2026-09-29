@@ -55,15 +55,6 @@ func DeleteAssetWebhookEndpoint(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
-func RotateAssetWebhookEndpointSecret(c *gin.Context) {
-	endpoint, err := assetService.RotateWebhookEndpointSecret(c.GetInt("id"), c.Param("id"))
-	if err != nil {
-		assetLibraryError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": endpoint})
-}
-
 func TestAssetWebhookEndpoint(c *gin.Context) {
 	eventID, err := assetService.QueueWebhookEndpointTest(c.GetInt("id"), c.Param("id"))
 	if err != nil {

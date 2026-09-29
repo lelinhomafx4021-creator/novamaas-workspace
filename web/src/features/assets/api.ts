@@ -29,7 +29,6 @@ import type {
   AssetWebhookEndpoint,
   AssetWebhookEventType,
   CreatedAssetAccessKey,
-  CreatedAssetWebhookEndpoint,
   MediaAsset,
   MediaAssetList,
 } from './types'
@@ -46,29 +45,20 @@ export async function createAssetWebhookEndpoint(input: {
   url: string
   event_types: AssetWebhookEventType[]
 }) {
-  const response = await api.post<
-    AssetLibraryResponse<CreatedAssetWebhookEndpoint>
-  >('/api/asset-library/webhook-endpoints', input, {
-    skipBusinessError: true,
-    skipErrorHandler: true,
-  })
+  const response = await api.post<AssetLibraryResponse<AssetWebhookEndpoint>>(
+    '/api/asset-library/webhook-endpoints',
+    input,
+    {
+      skipBusinessError: true,
+      skipErrorHandler: true,
+    }
+  )
   return response.data
 }
 
 export async function deleteAssetWebhookEndpoint(id: string) {
   const response = await api.delete<AssetLibraryResponse>(
     `/api/asset-library/webhook-endpoints/${encodeURIComponent(id)}`,
-    { skipBusinessError: true, skipErrorHandler: true }
-  )
-  return response.data
-}
-
-export async function rotateAssetWebhookEndpointSecret(id: string) {
-  const response = await api.post<
-    AssetLibraryResponse<CreatedAssetWebhookEndpoint>
-  >(
-    `/api/asset-library/webhook-endpoints/${encodeURIComponent(id)}/rotate-secret`,
-    undefined,
     { skipBusinessError: true, skipErrorHandler: true }
   )
   return response.data

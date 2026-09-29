@@ -314,7 +314,6 @@ func SetApiRouter(router *gin.Engine) {
 			assetWebhookRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetWebhookEndpoint)
 			assetWebhookRoute.PUT("/:id", middleware.CriticalRateLimit(), controller.UpdateAssetWebhookEndpoint)
 			assetWebhookRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetWebhookEndpoint)
-			assetWebhookRoute.POST("/:id/rotate-secret", middleware.CriticalRateLimit(), controller.RotateAssetWebhookEndpointSecret)
 			assetWebhookRoute.POST("/:id/test", middleware.CriticalRateLimit(), controller.TestAssetWebhookEndpoint)
 		}
 		assetLibraryAdminRoute := apiRouter.Group("/asset-library/admin")

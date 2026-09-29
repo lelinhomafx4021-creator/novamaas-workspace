@@ -1,9 +1,6 @@
 package assetlibrary
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,23 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAssetWebhookSignatureMatchesDocumentedHeaderContract(t *testing.T) {
-	key := []byte("01234567890123456789012345678901")
-	secret := "whsec_" + base64.StdEncoding.EncodeToString(key)
-	payload := []byte(`{"id":"evt_example","object":"event","type":"asset.failed"}`)
-
-	signature, err := signAssetWebhook(secret, "wh_example", "1790580000", payload)
-	require.NoError(t, err)
-
-	mac := hmac.New(sha256.New, key)
-	_, err = mac.Write([]byte("wh_example.1790580000." + string(payload)))
-	require.NoError(t, err)
-	assert.Equal(t, "v1,"+base64.StdEncoding.EncodeToString(mac.Sum(nil)), signature)
+type legacyAssetWebhookEndpoint struct {
+	ID                   int64 `gorm:"primaryKey"`
+	EncryptedSecret      string
+	SecretHint           string
+	CredentialKeyVersion string
 }
 
-func TestCreateWebhookEndpointReturnsSecretOnceAndStoresItEncrypted(t *testing.T) {
+func (legacyAssetWebhookEndpoint) TableName() string {
+	return "asset_webhook_endpoints"
+}
+
+func TestCreateWebhookEndpointWithoutEncryptionConfiguration(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "asset-webhook-test-master-secret")
+	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "")
+	t.Setenv("CRYPTO_SECRET", "")
+	t.Setenv("SESSION_SECRET", "")
 
 	created, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
 		Name:       "production",
@@ -37,24 +33,46 @@ func TestCreateWebhookEndpointReturnsSecretOnceAndStoresItEncrypted(t *testing.T
 		EventTypes: []string{WebhookEventAssetActive, WebhookEventAssetFailed},
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, created.SigningSecret)
+	payload, err := common.Marshal(created)
+	require.NoError(t, err)
+	assert.NotContains(t, string(payload), "signing_secret")
 
 	var stored model.AssetWebhookEndpoint
 	require.NoError(t, db.Where("public_id = ?", created.ID).First(&stored).Error)
-	assert.NotContains(t, stored.EncryptedSecret, created.SigningSecret)
 	assert.Equal(t, model.AssetWebhookEndpointStatusEnabled, stored.Status)
+	for _, column := range []string{"encrypted_secret", "secret_hint", "credential_key_version"} {
+		assert.False(t, db.Migrator().HasColumn(&model.AssetWebhookEndpoint{}, column), column)
+	}
 
 	listed, err := ListWebhookEndpoints(42)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
 	assert.Equal(t, created.ID, listed[0].ID)
-	assert.Empty(t, listed[0].SigningSecret)
 	assert.Equal(t, []string{WebhookEventAssetActive, WebhookEventAssetFailed}, listed[0].EventTypes)
+}
+
+func TestWebhookEndpointKeepsLegacyCredentialColumnsWithoutUsingThem(t *testing.T) {
+	db := setupAssetLibraryTestDB(t)
+	require.NoError(t, db.AutoMigrate(&legacyAssetWebhookEndpoint{}))
+	for _, column := range []string{"encrypted_secret", "secret_hint", "credential_key_version"} {
+		require.True(t, db.Migrator().HasColumn(&legacyAssetWebhookEndpoint{}, column), column)
+	}
+	require.NoError(t, db.AutoMigrate(&model.AssetWebhookEndpoint{}))
+
+	created, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+		Name: "legacy database", URL: "https://customer.example.com/webhooks/assets",
+		EventTypes: []string{WebhookEventAssetFailed},
+	})
+	require.NoError(t, err)
+	var stored legacyAssetWebhookEndpoint
+	require.NoError(t, db.Where("public_id = ?", created.ID).First(&stored).Error)
+	assert.Empty(t, stored.EncryptedSecret)
+	assert.Empty(t, stored.SecretHint)
+	assert.Empty(t, stored.CredentialKeyVersion)
 }
 
 func TestInitialActivationQueuesWebhookAndPromotesAsset(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "asset-webhook-activation-test-key")
 
 	_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
 		Name: "production", URL: "https://customer.example.com/webhooks/assets",
@@ -84,7 +102,6 @@ func TestInitialActivationQueuesWebhookAndPromotesAsset(t *testing.T) {
 
 func TestConfirmedDelayedRejectionQueuesWebhookAfterLocalStateChange(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "asset-webhook-rejection-test-key")
 
 	endpoint, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
 		Name:       "production",
@@ -117,7 +134,6 @@ func TestConfirmedDelayedRejectionQueuesWebhookAfterLocalStateChange(t *testing.
 
 func TestDelayedRejectionSupersedesUndeliveredActiveWebhook(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "asset-webhook-ordering-test-key")
 
 	_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
 		Name: "production", URL: "https://customer.example.com/webhooks/assets",

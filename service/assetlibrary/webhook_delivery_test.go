@@ -111,7 +111,6 @@ func TestWebhookEndpointLookupFailureRemainsRetryable(t *testing.T) {
 
 func TestWebhookPassClaimsOnlyTheDeliveryBeingSent(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "claim-at-send-key")
 	fetch := system_setting.GetFetchSetting()
 	original := *fetch
 	fetch.EnableSSRFProtection = false
@@ -132,11 +131,7 @@ func TestWebhookPassClaimsOnlyTheDeliveryBeingSent(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	secret, err := randomWebhookSecret()
-	require.NoError(t, err)
-	encrypted, err := encryptWebhookEndpointSecret(secret)
-	require.NoError(t, err)
-	endpoint := model.AssetWebhookEndpoint{PublicID: "we_claim", URL: server.URL, EncryptedSecret: encrypted, Status: model.AssetWebhookEndpointStatusEnabled}
+	endpoint := model.AssetWebhookEndpoint{PublicID: "we_claim", URL: server.URL, Status: model.AssetWebhookEndpointStatusEnabled}
 	require.NoError(t, db.Create(&endpoint).Error)
 	for _, id := range []string{"wh_claim_1", "wh_claim_2"} {
 		require.NoError(t, db.Create(&model.AssetWebhookDelivery{WebhookID: id, EndpointID: endpoint.ID,
@@ -154,9 +149,11 @@ func TestWebhookPassClaimsOnlyTheDeliveryBeingSent(t *testing.T) {
 	assert.Zero(t, second.Pending)
 }
 
-func TestWebhookDeliveryPostsVerifiableHeadersAndPersistsSuccess(t *testing.T) {
+func TestWebhookDeliveryPostsUnsignedJSONWithoutEncryptionConfiguration(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "delivery-verification-key")
+	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "")
+	t.Setenv("CRYPTO_SECRET", "")
+	t.Setenv("SESSION_SECRET", "")
 	fetchSetting := system_setting.GetFetchSetting()
 	originalFetchSetting := *fetchSetting
 	fetchSetting.EnableSSRFProtection = false
@@ -177,14 +174,10 @@ func TestWebhookDeliveryPostsVerifiableHeadersAndPersistsSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	secret, err := randomWebhookSecret()
-	require.NoError(t, err)
-	encryptedSecret, err := encryptWebhookEndpointSecret(secret)
-	require.NoError(t, err)
 	endpoint := model.AssetWebhookEndpoint{
 		PublicID: "we_verify", OwnerUserID: 42, Name: "verification", URL: server.URL,
-		EventTypes: `["asset.failed"]`, EncryptedSecret: encryptedSecret,
-		Status: model.AssetWebhookEndpointStatusEnabled,
+		EventTypes: `["asset.failed"]`,
+		Status:     model.AssetWebhookEndpointStatusEnabled,
 	}
 	require.NoError(t, db.Create(&endpoint).Error)
 	delivery := model.AssetWebhookDelivery{
@@ -199,9 +192,7 @@ func TestWebhookDeliveryPostsVerifiableHeadersAndPersistsSuccess(t *testing.T) {
 	assert.Equal(t, payload, receivedBody)
 	assert.Equal(t, delivery.WebhookID, receivedID)
 	require.NotEmpty(t, receivedTimestamp)
-	expectedSignature, err := signAssetWebhook(secret, receivedID, receivedTimestamp, []byte(payload))
-	require.NoError(t, err)
-	assert.Equal(t, expectedSignature, receivedSignature)
+	assert.Empty(t, receivedSignature)
 
 	require.NoError(t, db.First(&delivery, delivery.ID).Error)
 	assert.Equal(t, model.AssetWebhookDeliveryStatusSucceeded, delivery.Status)
@@ -212,7 +203,6 @@ func TestWebhookDeliveryPostsVerifiableHeadersAndPersistsSuccess(t *testing.T) {
 
 func TestWebhookDeliveryPersistsRetryAfterNon2xx(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "delivery-retry-verification-key")
 	fetchSetting := system_setting.GetFetchSetting()
 	originalFetchSetting := *fetchSetting
 	fetchSetting.EnableSSRFProtection = false
@@ -223,14 +213,10 @@ func TestWebhookDeliveryPersistsRetryAfterNon2xx(t *testing.T) {
 		writer.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	secret, err := randomWebhookSecret()
-	require.NoError(t, err)
-	encryptedSecret, err := encryptWebhookEndpointSecret(secret)
-	require.NoError(t, err)
 	endpoint := model.AssetWebhookEndpoint{
 		PublicID: "we_retry_verify", OwnerUserID: 42, Name: "retry verification", URL: server.URL,
-		EventTypes: `["asset.failed"]`, EncryptedSecret: encryptedSecret,
-		Status: model.AssetWebhookEndpointStatusEnabled,
+		EventTypes: `["asset.failed"]`,
+		Status:     model.AssetWebhookEndpointStatusEnabled,
 	}
 	require.NoError(t, db.Create(&endpoint).Error)
 	delivery := model.AssetWebhookDelivery{
@@ -252,7 +238,6 @@ func TestWebhookDeliveryPersistsRetryAfterNon2xx(t *testing.T) {
 
 func TestWebhookDeliveryUsesConfiguredWorker(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "delivery-worker-verification-key")
 	fetchSetting := system_setting.GetFetchSetting()
 	originalFetchSetting := *fetchSetting
 	fetchSetting.EnableSSRFProtection = false
@@ -279,14 +264,10 @@ func TestWebhookDeliveryUsesConfiguredWorker(t *testing.T) {
 	system_setting.WorkerUrl = worker.URL
 	system_setting.WorkerValidKey = "worker-verification-key"
 
-	secret, err := randomWebhookSecret()
-	require.NoError(t, err)
-	encryptedSecret, err := encryptWebhookEndpointSecret(secret)
-	require.NoError(t, err)
 	endpoint := model.AssetWebhookEndpoint{
 		PublicID: "we_worker_verify", OwnerUserID: 42, Name: "worker verification",
 		URL: "https://customer.example.com/webhooks/assets", EventTypes: `["asset.failed"]`,
-		EncryptedSecret: encryptedSecret, Status: model.AssetWebhookEndpointStatusEnabled,
+		Status: model.AssetWebhookEndpointStatusEnabled,
 	}
 	require.NoError(t, db.Create(&endpoint).Error)
 	delivery := model.AssetWebhookDelivery{
@@ -309,7 +290,7 @@ func TestWebhookDeliveryUsesConfiguredWorker(t *testing.T) {
 	assert.Equal(t, system_setting.WorkerValidKey, workerRequest.Key)
 	assert.Equal(t, http.MethodPost, workerRequest.Method)
 	assert.Equal(t, delivery.WebhookID, workerRequest.Headers["webhook-id"])
-	assert.NotEmpty(t, workerRequest.Headers["webhook-signature"])
+	assert.Empty(t, workerRequest.Headers["webhook-signature"])
 	assert.JSONEq(t, delivery.Payload, string(workerRequest.Body))
 	require.NoError(t, db.First(&delivery, delivery.ID).Error)
 	assert.Equal(t, model.AssetWebhookDeliveryStatusSucceeded, delivery.Status)

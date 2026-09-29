@@ -21,21 +21,17 @@ const (
 	AssetWebhookDeliveryStatusSuperseded = "superseded"
 )
 
-// AssetWebhookEndpoint stores one tenant-owned downstream callback. The
-// signing secret is encrypted and only revealed when created or rotated.
+// AssetWebhookEndpoint stores one tenant-owned downstream callback.
 type AssetWebhookEndpoint struct {
-	ID                   int64  `json:"-" gorm:"primaryKey"`
-	PublicID             string `json:"id" gorm:"type:varchar(64);uniqueIndex"`
-	OwnerUserID          int    `json:"owner_user_id" gorm:"index:idx_asset_webhook_owner_status,priority:1"`
-	Name                 string `json:"name" gorm:"type:varchar(128)"`
-	URL                  string `json:"url" gorm:"type:varchar(2048)"`
-	EventTypes           string `json:"-" gorm:"type:text"`
-	EncryptedSecret      string `json:"-" gorm:"type:text"`
-	SecretHint           string `json:"signing_secret_hint" gorm:"type:varchar(16)"`
-	CredentialKeyVersion string `json:"-" gorm:"type:varchar(32)"`
-	Status               string `json:"status" gorm:"type:varchar(16);index:idx_asset_webhook_owner_status,priority:2"`
-	CreatedAt            int64  `json:"created_at" gorm:"bigint;index"`
-	UpdatedAt            int64  `json:"updated_at" gorm:"bigint"`
+	ID          int64  `json:"-" gorm:"primaryKey"`
+	PublicID    string `json:"id" gorm:"type:varchar(64);uniqueIndex"`
+	OwnerUserID int    `json:"owner_user_id" gorm:"index:idx_asset_webhook_owner_status,priority:1"`
+	Name        string `json:"name" gorm:"type:varchar(128)"`
+	URL         string `json:"url" gorm:"type:varchar(2048)"`
+	EventTypes  string `json:"-" gorm:"type:text"`
+	Status      string `json:"status" gorm:"type:varchar(16);index:idx_asset_webhook_owner_status,priority:2"`
+	CreatedAt   int64  `json:"created_at" gorm:"bigint;index"`
+	UpdatedAt   int64  `json:"updated_at" gorm:"bigint"`
 }
 
 // AssetWebhookDelivery is both the durable outbox row and delivery audit.

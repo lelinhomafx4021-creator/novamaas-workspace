@@ -69,11 +69,10 @@ Content-Type: application/json
 
 | Action | JSON 请求字段 | Result |
 | --- | --- | --- |
-| CreateAssetWebhookEndpoint | Name、URL、EventTypes | 端点对象，含一次性 signing_secret |
-| ListAssetWebhookEndpoints | `{}` | Items、TotalCount；不返回密钥明文 |
+| CreateAssetWebhookEndpoint | Name、URL、EventTypes | 端点对象；不生成签名密钥 |
+| ListAssetWebhookEndpoints | `{}` | Items、TotalCount |
 | UpdateAssetWebhookEndpoint | Id、Name、URL、EventTypes | 更新后的端点对象；完整替换名称、URL、订阅类型 |
 | DeleteAssetWebhookEndpoint | Id | `{}`，禁用端点 |
-| RotateAssetWebhookEndpointSecret | Id | 端点对象，含新 signing_secret；旧密钥立即失效 |
 | TestAssetWebhookEndpoint | Id | EventId；仅表示已入队，不保证已经送达 |
 
 创建请求示例：
@@ -86,7 +85,7 @@ Content-Type: application/json
 }
 ```
 
-响应仍使用 `ResponseMetadata` / `Result` 信封。Result 内的端点对象沿用控制台接口的字段命名：`id`、`name`、`url`、`event_types`、`status`、`signing_secret_hint`、`created_at`、`updated_at` 等。后续请求中的 `Id` 填返回的 `Result.id`。端点归属由签名 AK 所属用户决定，不接受客户端指定其他用户；同一企业账号签发的 AK 共享该账号端点，不能访问其他账号的端点。
+响应仍使用 `ResponseMetadata` / `Result` 信封。Result 内的端点对象沿用控制台接口的字段命名：`id`、`name`、`url`、`event_types`、`status`、`created_at`、`updated_at` 等。后续请求中的 `Id` 填返回的 `Result.id`。端点归属由签名 AK 所属用户决定，不接受客户端指定其他用户；同一企业账号签发的 AK 共享该账号端点，不能访问其他账号的端点。
 
 ### 素材状态查询与图片预览
 
@@ -119,7 +118,6 @@ AK/SK 的 `GetAsset` 与 `ListAssets` 返回素材元数据和审核状态；查
 - `POST /api/asset-library/webhook-endpoints`
 - `PUT /api/asset-library/webhook-endpoints/{id}`
 - `DELETE /api/asset-library/webhook-endpoints/{id}`
-- `POST /api/asset-library/webhook-endpoints/{id}/rotate-secret`
 - `POST /api/asset-library/webhook-endpoints/{id}/test`
 
 创建或更新请求示例：
@@ -132,16 +130,15 @@ AK/SK 的 `GetAsset` 与 `ListAssets` 返回素材元数据和审核状态；查
 }
 ```
 
-每个用户最多可有 5 个有效端点。创建和轮换响应中的 `signing_secret` 只展示一次，后续列表仅返回尾号；密钥使用与 AK/SK 相同的 AES-GCM 主密钥体系加密保存。回调地址在投递前同时经过 URL 校验和 SSRF 防护。平台直连投递不会跟随重定向；启用请求 Worker 的部署应让 Worker 同样把 3xx 视为失败。
+每个用户最多可有 5 个有效端点。端点不生成或返回签名密钥，配置回调无需设置凭据加密主密钥；素材 AK/SK 和上游凭据的加密要求保持不变。回调地址在投递前同时经过 URL 校验和 SSRF 防护。平台直连投递不会跟随重定向；启用请求 Worker 的部署应让 Worker 同样把 3xx 视为失败。
 
-事件信封和签名头采用 OpenAI Webhook 相同的通用结构，便于下游复用现有接收逻辑：
+平台直接通过 HTTPS POST 发送 JSON，不发送 `webhook-signature`，客户无需配置签名密钥或验签。`webhook-id` 用于去重，`webhook-timestamp` 为投递时间（Unix 秒）：
 
 ```http
 POST /webhooks/assets HTTP/1.1
 Content-Type: application/json
 webhook-id: wh_...
 webhook-timestamp: 1790580000
-webhook-signature: v1,<base64-hmac-sha256>
 ```
 
 ```json
@@ -161,6 +158,6 @@ webhook-signature: v1,<base64-hmac-sha256>
 }
 ```
 
-签名原文为 `<webhook-id>.<webhook-timestamp>.<原始请求体>`，使用端点的 `whsec_...` 密钥做 HMAC-SHA256 后 Base64 编码。下游应使用原始请求体验签、校验时间戳，并以 `webhook-id` 去重；业务处理前先快速返回 2xx。非 2xx 或网络错误会指数退避重试，最长保留 72 小时；同一投递的 `webhook-id` 和请求体在重试时保持不变。
+下游应校验事件格式、按 `webhook-id` 去重，可靠保存事件后快速返回 2xx，再异步处理业务。非 2xx 或网络错误会指数退避重试，最长保留 72 小时；同一投递的 `webhook-id` 和请求体在重试时保持不变。未验签的通知无法通过密码学确认来源；客户可用现有 AK/SK 调用 `GetAsset` 核对状态。
 
 收到 `asset.failed` 后，素材 ID 不变，下游应把该 ID 标记为失败/不可用，并阻止新的生成任务继续引用它；不要删除或复用这个 ID。平台会作废排队中的旧 `asset.active`，但已发出的请求仍可能延迟到达。Webhook 可能重复或乱序，下游必须按素材 ID 在数据库中原子比较 `data.state_version`，仅在收到的版本大于已保存版本时更新状态。`asset.active` 的版本为 1，终态 `asset.failed` 的版本为 2；同一素材失败后不会恢复，重新上传使用新 ID。不要仅比较秒级 `updated_at`，因为两次状态变化可能发生在同一秒。缺少版本的历史事件应通过 `GetAsset` 查询对账，不直接覆盖本地状态。

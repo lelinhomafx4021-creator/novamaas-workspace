@@ -17,12 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  Delete02Icon,
-  RefreshIcon,
-  SentIcon,
-  WebhookIcon,
-} from '@hugeicons/core-free-icons'
+import { Delete02Icon, SentIcon, WebhookIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -31,7 +26,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
 
-import { CopyButton } from '@/components/copy-button'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,15 +69,10 @@ import {
   createAssetWebhookEndpoint,
   deleteAssetWebhookEndpoint,
   listAssetWebhookEndpoints,
-  rotateAssetWebhookEndpointSecret,
   testAssetWebhookEndpoint,
 } from '../api'
 import { assertAssetSuccess, assetErrorMessage } from '../asset-utils'
-import type {
-  AssetWebhookEndpoint,
-  AssetWebhookEventType,
-  CreatedAssetWebhookEndpoint,
-} from '../types'
+import type { AssetWebhookEndpoint, AssetWebhookEventType } from '../types'
 
 const WEBHOOKS_QUERY_KEY = ['asset-library', 'webhook-endpoints'] as const
 const MAX_WEBHOOK_ENDPOINTS = 5
@@ -107,12 +96,7 @@ export function AssetWebhookDialog(props: {
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [revealedSecret, setRevealedSecret] =
-    useState<CreatedAssetWebhookEndpoint | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AssetWebhookEndpoint | null>(
-    null
-  )
-  const [rotateTarget, setRotateTarget] = useState<AssetWebhookEndpoint | null>(
     null
   )
   const schema = z
@@ -155,9 +139,7 @@ export function AssetWebhookDialog(props: {
         })
       )
     },
-    onSuccess: async (endpoint) => {
-      setRotateTarget(null)
-      setRevealedSecret(endpoint)
+    onSuccess: async () => {
       form.reset()
       await queryClient.invalidateQueries({ queryKey: WEBHOOKS_QUERY_KEY })
       toast.success(t('Webhook endpoint created'))
@@ -174,16 +156,6 @@ export function AssetWebhookDialog(props: {
     },
     onError: (error) => toast.error(assetErrorMessage(error)),
   })
-  const rotateMutation = useMutation({
-    mutationFn: async (id: string) =>
-      assertAssetSuccess(await rotateAssetWebhookEndpointSecret(id)),
-    onSuccess: async (endpoint) => {
-      setRevealedSecret(endpoint)
-      await queryClient.invalidateQueries({ queryKey: WEBHOOKS_QUERY_KEY })
-      toast.success(t('Signing secret rotated'))
-    },
-    onError: (error) => toast.error(assetErrorMessage(error)),
-  })
   const testMutation = useMutation({
     mutationFn: async (id: string) =>
       assertAssetSuccess(await testAssetWebhookEndpoint(id)),
@@ -192,10 +164,8 @@ export function AssetWebhookDialog(props: {
   })
 
   const handleOpenChange = (open: boolean) => {
-    if (!open && revealedSecret) return
     if (!open) {
       setDeleteTarget(null)
-      setRotateTarget(null)
       form.reset()
     }
     props.onOpenChange(open)
@@ -204,52 +174,15 @@ export function AssetWebhookDialog(props: {
   return (
     <>
       <Dialog open={props.open} onOpenChange={handleOpenChange}>
-        <DialogContent
-          className='max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl'
-          showCloseButton={!revealedSecret}
-        >
+        <DialogContent className='max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl'>
           <DialogHeader>
             <DialogTitle>{t('Asset status webhooks')}</DialogTitle>
             <DialogDescription>
               {t(
-                'We will POST signed events when an asset becomes active or later fails review.'
+                'We will POST events when an asset becomes active or later fails review.'
               )}
             </DialogDescription>
           </DialogHeader>
-
-          {revealedSecret && (
-            <section
-              aria-labelledby='asset-webhook-secret-title'
-              className='border-warning/40 bg-warning/5 grid gap-3 rounded-xl border p-3'
-            >
-              <div className='grid gap-1'>
-                <h2 id='asset-webhook-secret-title' className='font-medium'>
-                  {t('Save your webhook signing secret now')}
-                </h2>
-                <p className='text-muted-foreground text-sm'>
-                  {t(
-                    'This secret is displayed only once. Use it to verify the webhook-signature header.'
-                  )}
-                </p>
-              </div>
-              <div className='flex min-w-0 items-center gap-1'>
-                <code className='bg-background min-w-0 flex-1 truncate rounded-md border px-2 py-1.5 text-xs'>
-                  {revealedSecret.signing_secret}
-                </code>
-                <CopyButton
-                  value={revealedSecret.signing_secret}
-                  aria-label={t('Copy signing secret')}
-                />
-              </div>
-              <Button
-                size='sm'
-                className='justify-self-start'
-                onClick={() => setRevealedSecret(null)}
-              >
-                {t('I have saved the signing secret')}
-              </Button>
-            </section>
-          )}
 
           <form
             className='rounded-xl border p-3'
@@ -410,10 +343,7 @@ export function AssetWebhookDialog(props: {
                       ))}
                     </div>
                     <p className='text-muted-foreground text-xs'>
-                      {t('Secret ending in {{hint}}', {
-                        hint: endpoint.signing_secret_hint,
-                      })}{' '}
-                      · {t('Created')}{' '}
+                      {t('Created')}{' '}
                       {formatTimestampToDate(endpoint.created_at)}
                     </p>
                   </div>
@@ -435,22 +365,6 @@ export function AssetWebhookDialog(props: {
                         <Spinner />
                       ) : (
                         <HugeiconsIcon icon={SentIcon} />
-                      )}
-                    </Button>
-                    <Button
-                      size='icon-sm'
-                      variant='ghost'
-                      aria-label={t('Rotate signing secret for {{name}}', {
-                        name: endpoint.name,
-                      })}
-                      disabled={rotateMutation.isPending}
-                      onClick={() => setRotateTarget(endpoint)}
-                    >
-                      {rotateMutation.isPending &&
-                      rotateMutation.variables === endpoint.id ? (
-                        <Spinner />
-                      ) : (
-                        <HugeiconsIcon icon={RefreshIcon} />
                       )}
                     </Button>
                     <Button
@@ -496,34 +410,6 @@ export function AssetWebhookDialog(props: {
             >
               {deleteMutation.isPending && <Spinner data-icon='inline-start' />}
               {t('Delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={rotateTarget !== null}
-        onOpenChange={(open) => !open && setRotateTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('Rotate signing secret?')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                'The current signing secret will stop working immediately. Update your receiver with the new secret.'
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={rotateMutation.isPending}
-              onClick={() =>
-                rotateTarget && rotateMutation.mutate(rotateTarget.id)
-              }
-            >
-              {rotateMutation.isPending && <Spinner data-icon='inline-start' />}
-              {t('Rotate secret')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

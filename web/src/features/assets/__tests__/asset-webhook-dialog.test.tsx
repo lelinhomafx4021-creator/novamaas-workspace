@@ -20,18 +20,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import {
-  createAssetWebhookEndpoint,
-  listAssetWebhookEndpoints,
-  rotateAssetWebhookEndpointSecret,
-} from '../api'
+import { createAssetWebhookEndpoint, listAssetWebhookEndpoints } from '../api'
 import { AssetWebhookDialog } from '../components/asset-webhook-dialog'
 
 vi.mock('../api', () => ({
   createAssetWebhookEndpoint: vi.fn(),
   deleteAssetWebhookEndpoint: vi.fn(),
   listAssetWebhookEndpoints: vi.fn(),
-  rotateAssetWebhookEndpointSecret: vi.fn(),
   testAssetWebhookEndpoint: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -62,7 +57,7 @@ beforeEach(() => {
 
 afterEach(() => queryClient?.clear())
 
-test('creates an HTTPS callback and reveals its signing secret only once', async () => {
+test('creates an HTTPS callback without requiring a signing secret', async () => {
   vi.mocked(createAssetWebhookEndpoint).mockResolvedValue({
     success: true,
     data: {
@@ -71,8 +66,6 @@ test('creates an HTTPS callback and reveals its signing secret only once', async
       name: 'production callback',
       url: 'https://customer.example.com/webhooks/assets',
       event_types: ['asset.active', 'asset.failed'],
-      signing_secret: 'whsec_once_only',
-      signing_secret_hint: '****only',
       status: 'enabled',
       created_at: 1,
       updated_at: 1,
@@ -96,64 +89,11 @@ test('creates an HTTPS callback and reveals its signing secret only once', async
       event_types: ['asset.active', 'asset.failed'],
     })
   )
-  expect(await screen.findByText('whsec_once_only')).toBeVisible()
-  expect(
-    screen.queryByRole('button', { name: 'Close' })
-  ).not.toBeInTheDocument()
-
-  fireEvent.click(
-    screen.getByRole('button', { name: 'I have saved the signing secret' })
-  )
-  expect(screen.queryByText('whsec_once_only')).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Close' })).toBeVisible()
-})
-
-test('confirms before rotating a signing secret', async () => {
-  vi.mocked(listAssetWebhookEndpoints).mockResolvedValue({
-    success: true,
-    data: [
-      {
-        id: 'we_example',
-        object: 'webhook_endpoint',
-        name: 'production callback',
-        url: 'https://customer.example.com/webhooks/assets',
-        event_types: ['asset.failed'],
-        signing_secret_hint: '****old1',
-        status: 'enabled',
-        created_at: 1,
-        updated_at: 1,
-      },
-    ],
-  })
-  vi.mocked(rotateAssetWebhookEndpointSecret).mockResolvedValue({
-    success: true,
-    data: {
-      id: 'we_example',
-      object: 'webhook_endpoint',
-      name: 'production callback',
-      url: 'https://customer.example.com/webhooks/assets',
-      event_types: ['asset.failed'],
-      signing_secret: 'whsec_rotated_once',
-      signing_secret_hint: '****once',
-      status: 'enabled',
-      created_at: 1,
-      updated_at: 2,
-    },
-  })
-  renderDialog()
-
-  fireEvent.click(
-    await screen.findByRole('button', {
-      name: 'Rotate signing secret for production callback',
-    })
-  )
-
-  expect(rotateAssetWebhookEndpointSecret).not.toHaveBeenCalled()
-  expect(screen.getByText('Rotate signing secret?')).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: 'Rotate secret' }))
-
   await waitFor(() =>
-    expect(rotateAssetWebhookEndpointSecret).toHaveBeenCalledWith('we_example')
+    expect(screen.getByLabelText('Endpoint name')).toHaveValue('')
   )
-  expect(await screen.findByText('whsec_rotated_once')).toBeVisible()
+  expect(
+    screen.queryByText('Save your webhook signing secret now')
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Close' })).toBeVisible()
 })

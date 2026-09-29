@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesSignedWebhook(t *testing.T) {
+func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesUnsignedWebhook(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
 	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "delayed-rejection-end-to-end-key")
 	fetchSetting := system_setting.GetFetchSetting()
@@ -110,9 +110,7 @@ func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesSignedWebhook(t *t
 	assert.Equal(t, "Failed", event.Data.Status)
 	assert.Equal(t, model.AssetUnavailableSensitiveContent, event.Data.FailureReason)
 	assert.Equal(t, 2, event.Data.StateVersion)
-	expectedSignature, err := signAssetWebhook(endpoint.SigningSecret, notification.ID, notification.Timestamp, notification.Body)
-	require.NoError(t, err)
-	assert.Equal(t, expectedSignature, notification.Signature)
+	assert.Empty(t, notification.Signature)
 
 	var delivery model.AssetWebhookDelivery
 	require.NoError(t, db.Where("asset_id = ?", asset.ID).First(&delivery).Error)

@@ -23,6 +23,7 @@ import {
   Search01Icon,
   ShieldKeyIcon,
   Upload01Icon,
+  WebhookIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
@@ -90,6 +91,7 @@ import {
 import { AssetGroupSelect } from './components/asset-group-select'
 import { AssetPreviewDialog } from './components/asset-preview-dialog'
 import { AssetUploadDialog } from './components/asset-upload-dialog'
+import { AssetWebhookDialog } from './components/asset-webhook-dialog'
 import type { AssetGroup, MediaAsset } from './types'
 
 const GROUPS_QUERY_KEY = ['asset-library', 'groups'] as const
@@ -108,6 +110,7 @@ export function AssetLibrary() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [apiAccessDialogOpen, setApiAccessDialogOpen] = useState(false)
+  const [webhookDialogOpen, setWebhookDialogOpen] = useState(false)
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [reuploadTarget, setReuploadTarget] = useState<MediaAsset | null>(null)
@@ -279,6 +282,14 @@ export function AssetLibrary() {
           >
             <HugeiconsIcon icon={ShieldKeyIcon} data-icon='inline-start' />
             {t('AK/SK access')}
+          </Button>
+          <Button
+            size='sm'
+            variant='outline'
+            onClick={() => setWebhookDialogOpen(true)}
+          >
+            <HugeiconsIcon icon={WebhookIcon} data-icon='inline-start' />
+            {t('Webhooks')}
           </Button>
           <Button
             size='sm'
@@ -460,6 +471,10 @@ export function AssetLibrary() {
       <AssetApiAccessDialog
         open={apiAccessDialogOpen}
         onOpenChange={setApiAccessDialogOpen}
+      />
+      <AssetWebhookDialog
+        open={webhookDialogOpen}
+        onOpenChange={setWebhookDialogOpen}
       />
       {previewTarget && (
         <AssetPreviewDialog

@@ -401,6 +401,11 @@ func nestedErrorMessage(result map[string]any) string {
 }
 
 func nestedErrorCode(result map[string]any) string {
+	for _, key := range []string{"FailureReason", "failure_reason"} {
+		if reason := strings.TrimSpace(stringValue(result, key)); reason != "" {
+			return reason
+		}
+	}
 	if code := stringValue(mapValue(result, "Error"), "Code"); code != "" {
 		return code
 	}

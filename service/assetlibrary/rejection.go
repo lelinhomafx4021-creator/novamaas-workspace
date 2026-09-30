@@ -27,7 +27,7 @@ func (err *upstreamAssetError) Error() string {
 // the existing retry behavior; transport and authentication failures must not
 // make an uploaded asset unusable.
 func contentRejectionReason(code string, message string) string {
-	text := strings.ToLower(code + " " + message)
+	text := strings.NewReplacer("_", " ", "-", " ").Replace(strings.ToLower(code + " " + message))
 	for _, marker := range []string{"timeout", "temporarily unavailable", "service unavailable", "serviceunavailable", "rate limit", "限流", "超时", "服务不可用", "服务异常", "稍后重试"} {
 		if strings.Contains(text, marker) {
 			return ""
@@ -43,7 +43,7 @@ func contentRejectionReason(code string, message string) string {
 			return model.AssetUnavailableSensitiveContent
 		}
 	}
-	for _, marker := range []string{"contentrejected", "policyviolation", "moderationrejected", "contentpolicy", "content policy", "审核拒绝", "审核未通过"} {
+	for _, marker := range []string{"contentrejected", "content rejected", "policyviolation", "policy violation", "policy rejected", "moderationrejected", "moderation rejected", "contentpolicy", "content policy", "审核拒绝", "审核未通过"} {
 		if strings.Contains(text, marker) {
 			return model.AssetUnavailablePolicyRejected
 		}

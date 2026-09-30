@@ -360,6 +360,8 @@ func migrateDB() error {
 		&MediaAsset{},
 		&AssetChannelConfig{},
 		&AssetAccessKey{},
+		&AssetWebhookEndpoint{},
+		&AssetWebhookDelivery{},
 		&AssetGroupReplica{},
 		&AssetReplica{},
 		&CasbinRule{},

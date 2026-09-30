@@ -175,6 +175,7 @@ export function AssetCard(props: {
   const { t } = useTranslation()
   const reference = `asset://${props.asset.id}`
   const unavailable = props.asset.status === 'unavailable'
+  const processing = props.asset.status === 'processing'
   const deleteButton = (
     <Button
       type='button'
@@ -197,7 +198,7 @@ export function AssetCard(props: {
         {unavailable && (
           <Badge
             variant='destructive'
-            className='absolute top-2 left-2 z-10 bg-card/95'
+            className='bg-card/95 absolute top-2 left-2 z-10'
             render={
               <button
                 type='button'
@@ -207,6 +208,11 @@ export function AssetCard(props: {
             }
           >
             {t('Asset unavailable')}
+          </Badge>
+        )}
+        {processing && (
+          <Badge variant='secondary' className='absolute top-2 left-2 z-10'>
+            {t('Under review')}
           </Badge>
         )}
       </div>
@@ -271,7 +277,7 @@ export function AssetCard(props: {
             {t('Re-upload')}
           </Button>
         )}
-        {!unavailable && (
+        {props.asset.status === 'ready' && (
           <CopyButton
             value={reference}
             size='icon'

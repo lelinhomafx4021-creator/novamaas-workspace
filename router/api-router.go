@@ -307,6 +307,14 @@ func SetApiRouter(router *gin.Engine) {
 			assetAccessKeyRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetAccessKey)
 			assetAccessKeyRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetAccessKey)
 		}
+		assetWebhookRoute := apiRouter.Group("/asset-library/webhook-endpoints")
+		assetWebhookRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			assetWebhookRoute.GET("", controller.ListAssetWebhookEndpoints)
+			assetWebhookRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetWebhookEndpoint)
+			assetWebhookRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetWebhookEndpoint)
+			assetWebhookRoute.POST("/:id/test", middleware.CriticalRateLimit(), controller.TestAssetWebhookEndpoint)
+		}
 		assetLibraryAdminRoute := apiRouter.Group("/asset-library/admin")
 		assetLibraryAdminRoute.Use(middleware.RootAuth(), middleware.DisableCache())
 		{

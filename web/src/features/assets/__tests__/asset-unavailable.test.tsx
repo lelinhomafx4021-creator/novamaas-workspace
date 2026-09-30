@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -18,14 +36,19 @@ import type { MediaAsset } from '../types'
 vi.mock('../api', () => ({
   createAssetGroup: vi.fn(),
   createAssetAccessKey: vi.fn(),
+  createAssetWebhookEndpoint: vi.fn(),
   deleteAssetAccessKey: vi.fn(),
+  deleteAssetWebhookEndpoint: vi.fn(),
   deleteAssetGroup: vi.fn(),
   deleteMediaAsset: vi.fn(),
   getMediaAssetPreview: vi.fn(),
   listAssetAccessKeys: vi.fn(),
+  listAssetWebhookEndpoints: vi.fn(),
   listAssetGroups: vi.fn(),
   listAssetGroupsPage: vi.fn(),
   listMediaAssets: vi.fn(),
+  rotateAssetWebhookEndpointSecret: vi.fn(),
+  testAssetWebhookEndpoint: vi.fn(),
   uploadMediaAsset: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -217,4 +240,33 @@ test('rejected asset offers compact re-upload without copying its old ID', async
   const formData = vi.mocked(uploadMediaAsset).mock.lastCall?.[0]
   expect(formData?.get('group_id')).toBe('group-1')
   expect(formData?.get('name')).toBe('Hero image')
+})
+
+test('an asset under review does not expose a usable asset reference yet', async () => {
+  vi.mocked(listMediaAssets).mockResolvedValue({
+    success: true,
+    data: {
+      items: [
+        {
+          ...rejectedAsset,
+          id: 'asset-processing',
+          status: 'processing',
+          unavailable_reason: undefined,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 40,
+    },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <AssetLibrary />
+    </QueryClientProvider>
+  )
+
+  expect(await screen.findByText('Under review')).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Copy asset reference' })
+  ).not.toBeInTheDocument()
 })

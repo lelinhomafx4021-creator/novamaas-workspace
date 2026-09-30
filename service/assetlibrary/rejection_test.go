@@ -8,10 +8,172 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	coreService "github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesUnsignedWebhook(t *testing.T) {
+	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
+	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "delayed-rejection-end-to-end-key")
+	fetchSetting := system_setting.GetFetchSetting()
+	originalFetchSetting := *fetchSetting
+	fetchSetting.EnableSSRFProtection = false
+	coreService.InitHttpClient()
+	t.Cleanup(func() { *fetchSetting = originalFetchSetting })
+
+	type receivedWebhook struct {
+		Body      []byte
+		ID        string
+		Timestamp string
+		Signature string
+	}
+	received := make(chan receivedWebhook, 1)
+	callback := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		received <- receivedWebhook{
+			Body: body, ID: request.Header.Get("webhook-id"),
+			Timestamp: request.Header.Get("webhook-timestamp"),
+			Signature: request.Header.Get("webhook-signature"),
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer callback.Close()
+
+	endpoint, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+		Name: "customer", URL: "https://customer.example.com/assets",
+		EventTypes: []string{WebhookEventAssetFailed},
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.AssetWebhookEndpoint{}).
+		Where("public_id = ?", endpoint.ID).Update("url", callback.URL).Error)
+
+	credential, err := encryptChannelCredential("provider-secret")
+	require.NoError(t, err)
+	upstreamActions := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		upstreamActions <- request.URL.Query().Get("Action")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{"Result":{"Status":"Failed","FailureReason":"sensitive_content"}}`)
+	}))
+	defer upstream.Close()
+
+	group := model.AssetGroup{PublicID: "group-end-to-end", OwnerUserID: 42, Status: model.AssetStatusReady}
+	require.NoError(t, db.Create(&group).Error)
+	asset := model.MediaAsset{
+		PublicID: "asset-end-to-end", OwnerUserID: 42, GroupID: group.ID,
+		StorageObjectID: 10001, AssetType: model.AssetTypeImage, Status: model.AssetStatusReady,
+	}
+	require.NoError(t, db.Create(&asset).Error)
+	config := model.AssetChannelConfig{
+		ChannelID: 901, Enabled: true, Protocol: model.AssetChannelProtocolVolcAction,
+		AuthType: model.AssetChannelAuthBearer, BaseURL: upstream.URL,
+		EncryptedCredential: credential, QPM: 1000000,
+	}
+	require.NoError(t, db.Create(&config).Error)
+	require.NoError(t, db.Create(&model.AssetGroupReplica{
+		GroupID: group.ID, ChannelID: config.ChannelID, UpstreamGroupID: "upstream-group-end-to-end",
+		Status: model.AssetReplicaStatusActive,
+	}).Error)
+	require.NoError(t, db.Create(&model.AssetReplica{
+		AssetID: asset.ID, ChannelID: config.ChannelID, UpstreamAssetID: "upstream-end-to-end",
+		Operation: model.AssetReplicaOperationSync, Status: model.AssetReplicaStatusActive,
+	}).Error)
+
+	runSyncPass("end-to-end-review")
+	assert.Equal(t, "GetAsset", <-upstreamActions)
+
+	require.NoError(t, db.First(&asset, asset.ID).Error)
+	assert.Equal(t, model.AssetStatusUnavailable, asset.Status)
+	assert.Equal(t, model.AssetUnavailableSensitiveContent, asset.UnavailableReason)
+	polled, err := ListAssets(AssetListInput{OwnerUserID: 42, Statuses: []string{model.AssetStatusUnavailable}})
+	require.NoError(t, err)
+	require.Len(t, polled.Items, 1)
+	assert.Equal(t, asset.PublicID, polled.Items[0].ID)
+	assert.Equal(t, model.AssetUnavailableSensitiveContent, polled.Items[0].UnavailableReason)
+
+	runWebhookDeliveryPass("end-to-end-webhook")
+
+	var notification receivedWebhook
+	select {
+	case notification = <-received:
+	default:
+		require.FailNow(t, "customer callback did not receive the failed asset event")
+	}
+	var event assetWebhookEvent
+	require.NoError(t, common.Unmarshal(notification.Body, &event))
+	assert.Equal(t, WebhookEventAssetFailed, event.Type)
+	assert.Equal(t, asset.PublicID, event.Data.ID)
+	assert.Equal(t, "Failed", event.Data.Status)
+	assert.Equal(t, model.AssetUnavailableSensitiveContent, event.Data.FailureReason)
+	assert.Equal(t, 2, event.Data.StateVersion)
+	assert.Empty(t, notification.Signature)
+
+	var delivery model.AssetWebhookDelivery
+	require.NoError(t, db.Where("asset_id = ?", asset.ID).First(&delivery).Error)
+	assert.Equal(t, model.AssetWebhookDeliveryStatusSucceeded, delivery.Status)
+	assert.Equal(t, http.StatusNoContent, delivery.ResponseStatus)
+}
+
+func TestVolcDelayedFailureReasonUpdatesAssetsAndQueuesNotifications(t *testing.T) {
+	db := setupAssetLibraryTestDB(t)
+	seedAssetWebhookOwner(t)
+	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "customer-rejection-regression")
+	credential, err := encryptChannelCredential("provider-secret")
+	require.NoError(t, err)
+	_, err = CreateWebhookEndpoint(42, WebhookEndpointInput{Name: "customer", URL: "https://customer.example.com/assets", EventTypes: []string{WebhookEventAssetFailed}})
+	require.NoError(t, err)
+	group := model.AssetGroup{PublicID: "group-customer", OwnerUserID: 42, Status: model.AssetStatusReady}
+	require.NoError(t, db.Create(&group).Error)
+	observed := make(chan int64, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("Action") != "GetAsset" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var leased int64
+		if err := db.Model(&model.AssetReplica{}).Where("locked_by <> ''").Count(&leased).Error; err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		observed <- leased
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"Result":{"Status":"Failed","FailureReason":"sensitive_content"}}`)
+	}))
+	defer server.Close()
+	config := model.AssetChannelConfig{ChannelID: 91, Enabled: true, Protocol: model.AssetChannelProtocolVolcAction,
+		AuthType: model.AssetChannelAuthBearer, BaseURL: server.URL, EncryptedCredential: credential, QPM: 1000000}
+	require.NoError(t, db.Create(&config).Error)
+	require.NoError(t, db.Create(&model.AssetGroupReplica{GroupID: group.ID, ChannelID: 91, UpstreamGroupID: "upstream-group", Status: model.AssetReplicaStatusActive}).Error)
+	for i, id := range []string{"asset-20260923163433-giwbv", "asset-20260923163435-bwgx2"} {
+		asset := model.MediaAsset{PublicID: id, OwnerUserID: 42, GroupID: group.ID, StorageObjectID: int64(9900 + i), Status: model.AssetStatusReady}
+		require.NoError(t, db.Create(&asset).Error)
+		require.NoError(t, db.Create(&model.AssetReplica{AssetID: asset.ID, ChannelID: 91, UpstreamAssetID: id, Status: model.AssetReplicaStatusActive, Operation: model.AssetReplicaOperationSync}).Error)
+	}
+	runSyncPass("customer-review")
+	require.Len(t, observed, 2)
+	assert.EqualValues(t, 1, <-observed)
+	assert.EqualValues(t, 1, <-observed)
+	var assets []model.MediaAsset
+	require.NoError(t, db.Find(&assets).Error)
+	require.Len(t, assets, 2)
+	for _, asset := range assets {
+		assert.Equal(t, model.AssetStatusUnavailable, asset.Status)
+		assert.Equal(t, model.AssetUnavailableSensitiveContent, asset.UnavailableReason)
+		var delivery model.AssetWebhookDelivery
+		require.NoError(t, db.Where("asset_id = ?", asset.ID).First(&delivery).Error)
+		var event assetWebhookEvent
+		require.NoError(t, common.UnmarshalJsonStr(delivery.Payload, &event))
+		assert.Equal(t, WebhookEventAssetFailed, event.Type)
+		assert.Equal(t, asset.PublicID, event.Data.ID)
+		assert.Equal(t, "sensitive_content", event.Data.FailureReason)
+		assert.Equal(t, 2, event.Data.StateVersion)
+	}
+}
 
 func TestContentRejectionClassificationSeparatesPolicyFromTransientFailures(t *testing.T) {
 	tests := []struct {
@@ -20,6 +182,10 @@ func TestContentRejectionClassificationSeparatesPolicyFromTransientFailures(t *t
 		want string
 	}{
 		{name: "real person in upstream code", err: &upstreamAssetError{statusCode: 400, code: "RealPersonDetected"}, want: model.AssetUnavailableRealPerson},
+		{name: "snake case sensitive content", err: &upstreamAssetError{statusCode: 400, code: "sensitive_content"}, want: model.AssetUnavailableSensitiveContent},
+		{name: "snake case real person", err: &upstreamAssetError{statusCode: 400, code: "real_person"}, want: model.AssetUnavailableRealPerson},
+		{name: "snake case policy rejection", err: &upstreamAssetError{statusCode: 400, code: "policy_rejected"}, want: model.AssetUnavailablePolicyRejected},
+		{name: "snake case service outage", err: &upstreamAssetError{statusCode: 400, code: "sensitive_content", message: "service_unavailable"}},
 		{name: "sensitive content in upstream message", err: &upstreamAssetError{statusCode: 422, message: "素材包含敏感信息"}, want: model.AssetUnavailableSensitiveContent},
 		{name: "server error remains retryable", err: &upstreamAssetError{statusCode: 503, code: "SensitiveContent"}},
 		{name: "authentication error remains retryable", err: &upstreamAssetError{statusCode: 403, code: "AccessDenied", message: "permission denied"}},

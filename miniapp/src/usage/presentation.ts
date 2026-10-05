@@ -49,6 +49,28 @@ const terminalStatuses = new Set([
   'SUCCESS',
 ])
 
+const videoTaskActions = new Set([
+  'generate',
+  'textGenerate',
+  'firstTailGenerate',
+  'referenceGenerate',
+  'remixGenerate',
+])
+
+const taskInformationPlatforms = new Set(['17', '54', '61'])
+
+export function canViewTaskInformation(task: PlatformTask) {
+  return taskInformationPlatforms.has(task.platform)
+}
+
+export function canViewTaskRequest(task: PlatformTask, isAdmin: boolean) {
+  return isAdmin && task.request_body_available
+}
+
+export function canViewTaskResponses(task: PlatformTask, isAdmin: boolean) {
+  return isAdmin && videoTaskActions.has(task.action)
+}
+
 function parseUnknownJson(value: unknown): unknown {
   if (typeof value !== 'string') return value
   try {

@@ -1,5 +1,6 @@
 import { accountResources } from './account-resources'
 import { featureResources } from './feature-resources'
+import { inspectionResources } from './inspection-resources'
 import { usageResources } from './usage-resources'
 
 export const resources = {
@@ -8,6 +9,7 @@ export const resources = {
       ...accountResources.en,
       ...featureResources.en,
       ...usageResources.en,
+      ...inspectionResources.en,
       'nav.home': 'Home',
       'nav.models': 'Models',
       'nav.playground': 'Playground',
@@ -104,6 +106,7 @@ export const resources = {
       ...accountResources.zh,
       ...featureResources.zh,
       ...usageResources.zh,
+      ...inspectionResources.zh,
       'nav.home': '首页',
       'nav.models': '模型',
       'nav.playground': '对话',
@@ -200,6 +203,7 @@ export const resources = {
       ...accountResources['zh-TW'],
       ...featureResources['zh-TW'],
       ...usageResources['zh-TW'],
+      ...inspectionResources['zh-TW'],
       'nav.home': '首頁',
       'nav.models': '模型',
       'nav.playground': '對話',
@@ -296,6 +300,7 @@ export const resources = {
       ...accountResources.fr,
       ...featureResources.fr,
       ...usageResources.fr,
+      ...inspectionResources.fr,
       'nav.home': 'Accueil',
       'nav.models': 'Modèles',
       'nav.playground': 'Dialogue',
@@ -392,6 +397,7 @@ export const resources = {
       ...accountResources.ja,
       ...featureResources.ja,
       ...usageResources.ja,
+      ...inspectionResources.ja,
       'nav.home': 'ホーム',
       'nav.models': 'モデル',
       'nav.playground': 'チャット',
@@ -488,6 +494,7 @@ export const resources = {
       ...accountResources.ru,
       ...featureResources.ru,
       ...usageResources.ru,
+      ...inspectionResources.ru,
       'nav.home': 'Главная',
       'nav.models': 'Модели',
       'nav.playground': 'Диалог',
@@ -584,6 +591,7 @@ export const resources = {
       ...accountResources.vi,
       ...featureResources.vi,
       ...usageResources.vi,
+      ...inspectionResources.vi,
       'nav.home': 'Trang chủ',
       'nav.models': 'Mô hình',
       'nav.playground': 'Trò chuyện',

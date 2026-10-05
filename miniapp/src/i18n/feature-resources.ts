@@ -10,6 +10,7 @@ const en = {
   'common.disable': 'Disable',
   'common.copy': 'Copy',
   'common.today': 'Today',
+  'common.yesterday': 'Yesterday',
   'common.7d': '7 days',
   'common.30d': '30 days',
   'home.accountSummary': 'Account summary',
@@ -148,7 +149,7 @@ type FeatureTranslations = Record<keyof typeof en, string>
 const zh: FeatureTranslations = {
   'common.loading': '加载中…', 'common.loadMore': '加载更多', 'common.all': '全部', 'common.unknown': '未知',
   'common.cancel': '取消', 'common.create': '创建', 'common.delete': '删除', 'common.enable': '启用',
-  'common.disable': '停用', 'common.copy': '复制', 'common.today': '今天', 'common.7d': '近 7 天', 'common.30d': '近 30 天',
+  'common.disable': '停用', 'common.copy': '复制', 'common.today': '今天', 'common.yesterday': '昨日', 'common.7d': '近 7 天', 'common.30d': '近 30 天',
   'home.accountSummary': '账户概览', 'home.quota': '余额', 'home.usedQuota': '已用额度', 'home.requests': '请求数',
   'home.subscription': '订阅', 'home.activeSubscriptions': '{{count}} 个生效订阅', 'home.noSubscription': '暂无生效订阅',
   'home.todayUsage': '今日用量', 'home.notice': '平台公告', 'home.moduleError': '该模块暂时无法加载，下拉即可重试。',
@@ -211,7 +212,7 @@ const zh: FeatureTranslations = {
 const zhTW: FeatureTranslations = {
   'common.loading': '載入中…', 'common.loadMore': '載入更多', 'common.all': '全部', 'common.unknown': '未知',
   'common.cancel': '取消', 'common.create': '建立', 'common.delete': '刪除', 'common.enable': '啟用',
-  'common.disable': '停用', 'common.copy': '複製', 'common.today': '今天', 'common.7d': '近 7 天', 'common.30d': '近 30 天',
+  'common.disable': '停用', 'common.copy': '複製', 'common.today': '今天', 'common.yesterday': '昨日', 'common.7d': '近 7 天', 'common.30d': '近 30 天',
   'home.accountSummary': '帳戶概覽', 'home.quota': '餘額', 'home.usedQuota': '已用額度', 'home.requests': '要求數',
   'home.subscription': '訂閱', 'home.activeSubscriptions': '{{count}} 個有效訂閱', 'home.noSubscription': '沒有有效訂閱',
   'home.todayUsage': '今日用量', 'home.notice': '平台公告', 'home.moduleError': '此區塊暫時無法載入，下拉即可重試。',
@@ -270,7 +271,7 @@ const zhTW: FeatureTranslations = {
 const fr: FeatureTranslations = {
   'common.loading': 'Chargement…', 'common.loadMore': 'Charger plus', 'common.all': 'Tout', 'common.unknown': 'Inconnu',
   'common.cancel': 'Annuler', 'common.create': 'Créer', 'common.delete': 'Supprimer', 'common.enable': 'Activer',
-  'common.disable': 'Désactiver', 'common.copy': 'Copier', 'common.today': "Aujourd’hui", 'common.7d': '7 jours', 'common.30d': '30 jours',
+  'common.disable': 'Désactiver', 'common.copy': 'Copier', 'common.today': "Aujourd’hui", 'common.yesterday': 'Hier', 'common.7d': '7 jours', 'common.30d': '30 jours',
   'home.accountSummary': 'Résumé du compte', 'home.quota': 'Solde', 'home.usedQuota': 'Quota utilisé', 'home.requests': 'Requêtes',
   'home.subscription': 'Abonnement', 'home.activeSubscriptions': '{{count}} abonnement(s) actif(s)', 'home.noSubscription': 'Aucun abonnement actif',
   'home.todayUsage': "Utilisation du jour", 'home.notice': 'Annonce de la plateforme', 'home.moduleError': 'Cette section ne peut pas être chargée. Tirez pour réessayer.',
@@ -335,7 +336,7 @@ const fr: FeatureTranslations = {
 const ja: FeatureTranslations = {
   'common.loading': '読み込み中…', 'common.loadMore': 'さらに読み込む', 'common.all': 'すべて', 'common.unknown': '不明',
   'common.cancel': 'キャンセル', 'common.create': '作成', 'common.delete': '削除', 'common.enable': '有効化',
-  'common.disable': '無効化', 'common.copy': 'コピー', 'common.today': '今日', 'common.7d': '7日間', 'common.30d': '30日間',
+  'common.disable': '無効化', 'common.copy': 'コピー', 'common.today': '今日', 'common.yesterday': '昨日', 'common.7d': '7日間', 'common.30d': '30日間',
   'home.accountSummary': 'アカウント概要', 'home.quota': '残高', 'home.usedQuota': '使用済みクォータ', 'home.requests': 'リクエスト',
   'home.subscription': 'サブスクリプション', 'home.activeSubscriptions': '有効なサブスクリプション {{count}} 件', 'home.noSubscription': '有効なサブスクリプションはありません',
   'home.todayUsage': '今日の使用量', 'home.notice': 'プラットフォームのお知らせ', 'home.moduleError': 'このセクションを読み込めません。下に引いて再試行してください。',
@@ -397,7 +398,7 @@ const ja: FeatureTranslations = {
 const ru: FeatureTranslations = {
   'common.loading': 'Загрузка…', 'common.loadMore': 'Загрузить ещё', 'common.all': 'Все', 'common.unknown': 'Неизвестно',
   'common.cancel': 'Отмена', 'common.create': 'Создать', 'common.delete': 'Удалить', 'common.enable': 'Включить',
-  'common.disable': 'Отключить', 'common.copy': 'Копировать', 'common.today': 'Сегодня', 'common.7d': '7 дней', 'common.30d': '30 дней',
+  'common.disable': 'Отключить', 'common.copy': 'Копировать', 'common.today': 'Сегодня', 'common.yesterday': 'Вчера', 'common.7d': '7 дней', 'common.30d': '30 дней',
   'home.accountSummary': 'Сводка аккаунта', 'home.quota': 'Баланс', 'home.usedQuota': 'Использованная квота', 'home.requests': 'Запросы',
   'home.subscription': 'Подписка', 'home.activeSubscriptions': 'Активных подписок: {{count}}', 'home.noSubscription': 'Нет активной подписки',
   'home.todayUsage': 'Использование сегодня', 'home.notice': 'Объявление платформы', 'home.moduleError': 'Раздел не загрузился. Потяните вниз для повтора.',
@@ -461,7 +462,7 @@ const ru: FeatureTranslations = {
 const vi: FeatureTranslations = {
   'common.loading': 'Đang tải…', 'common.loadMore': 'Tải thêm', 'common.all': 'Tất cả', 'common.unknown': 'Không rõ',
   'common.cancel': 'Hủy', 'common.create': 'Tạo', 'common.delete': 'Xóa', 'common.enable': 'Bật',
-  'common.disable': 'Tắt', 'common.copy': 'Sao chép', 'common.today': 'Hôm nay', 'common.7d': '7 ngày', 'common.30d': '30 ngày',
+  'common.disable': 'Tắt', 'common.copy': 'Sao chép', 'common.today': 'Hôm nay', 'common.yesterday': 'Hôm qua', 'common.7d': '7 ngày', 'common.30d': '30 ngày',
   'home.accountSummary': 'Tổng quan tài khoản', 'home.quota': 'Số dư', 'home.usedQuota': 'Hạn mức đã dùng', 'home.requests': 'Yêu cầu',
   'home.subscription': 'Gói đăng ký', 'home.activeSubscriptions': '{{count}} gói đang hoạt động', 'home.noSubscription': 'Không có gói đang hoạt động',
   'home.todayUsage': 'Mức dùng hôm nay', 'home.notice': 'Thông báo nền tảng', 'home.moduleError': 'Không thể tải mục này. Kéo xuống để thử lại.',

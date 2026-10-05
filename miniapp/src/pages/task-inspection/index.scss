@@ -1,0 +1,35 @@
+.task-inspection {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  min-width: 0;
+}
+
+.task-inspection__tabs,
+.task-inspection__list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.task-inspection__tabs {
+  flex-direction: row;
+}
+
+.task-inspection__tabs .mobile-button {
+  min-width: 0;
+  flex: 1;
+}
+
+.task-inspection__json {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 18rpx;
+  color: #273142;
+  background: #f7f8fb;
+  border-radius: 14rpx;
+  font-family: monospace;
+  font-size: 21rpx;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}

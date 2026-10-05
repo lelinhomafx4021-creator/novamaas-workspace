@@ -210,6 +210,9 @@ function TaskCard(props: {
   const model = getTaskModel(props.task)
   const assets = getTaskMedia(props.task)
   const failed = ['FAILURE', 'FAILED'].includes(props.task.status.toUpperCase())
+  const showInformation = canViewTaskInformation(props.task)
+  const showRequest = canViewTaskRequest(props.task, props.canInspect)
+  const showResponses = canViewTaskResponses(props.task, props.canInspect)
   return (
     <View className='mobile-card usage-task-card'>
       <View className='mobile-row'>
@@ -248,14 +251,18 @@ function TaskCard(props: {
           <DetailRow label={t('usage.startedAt')} value={formatTime(props.task.start_time)} />
           <DetailRow label={t('usage.finishedAt')} value={formatTime(props.task.finish_time)} />
           <DetailRow label={t('usage.prompt')} value={props.task.properties?.input} />
-          {canViewTaskInformation(props.task) ? (
-            <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=information&platform=${encodeURIComponent(props.task.platform)}` })}>{t('usage.viewInformation')}</Button>
-          ) : null}
-          {canViewTaskRequest(props.task, props.canInspect) ? (
-            <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=request` })}>{t('usage.viewRequest')}</Button>
-          ) : null}
-          {canViewTaskResponses(props.task, props.canInspect) ? (
-            <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=response` })}>{t('usage.viewResponses')}</Button>
+          {showInformation || showRequest || showResponses ? (
+            <View className='mobile-actions usage-task-actions'>
+              {showInformation ? (
+                <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=information&platform=${encodeURIComponent(props.task.platform)}` })}>{t('usage.viewInformation')}</Button>
+              ) : null}
+              {showRequest ? (
+                <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=request` })}>{t('usage.viewRequest')}</Button>
+              ) : null}
+              {showResponses ? (
+                <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=response` })}>{t('usage.viewResponses')}</Button>
+              ) : null}
+            </View>
           ) : null}
           <MediaActions assets={assets} onOpen={props.onOpenMedia} onSave={props.onSaveMedia} playingUrl={props.playingUrl} />
         </View>

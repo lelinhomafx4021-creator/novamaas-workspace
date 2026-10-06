@@ -44,6 +44,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { PhoneBindingCard } from '@/features/phone/components/phone-binding-card'
+import { WeChatBindingCard } from '@/features/phone/components/wechat-binding-card'
 import { api } from '@/lib/api'
 import { indexCustomOAuthBindings, type CustomOAuthBinding } from '@/lib/oauth'
 
@@ -334,6 +336,18 @@ export function UserBindingDialog(props: Props) {
           </div>
         ) : (
           <div className='space-y-3'>
+            {props.userId ? (
+              <div className='grid grid-cols-1 gap-2 lg:grid-cols-2'>
+                <WeChatBindingCard
+                  userId={props.userId ?? undefined}
+                  onChanged={props.onUnbindSuccess}
+                />
+                <PhoneBindingCard
+                  userId={props.userId}
+                  onChanged={props.onUnbindSuccess}
+                />
+              </div>
+            ) : null}
             <div className='flex items-center justify-between'>
               {user && (
                 <p className='text-muted-foreground text-sm'>

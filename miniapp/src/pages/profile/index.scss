@@ -151,3 +151,19 @@
   font-weight: 650;
   line-height: 1.35;
 }
+
+.profile-account,
+.profile-services {
+  padding: 24rpx;
+}
+.profile-account .profile-card__username {
+  margin: 8rpx 0;
+  font-size: 34rpx;
+  overflow-wrap: anywhere;
+}
+.profile-services .profile-nav {
+  margin-top: 0;
+}
+.profile-services .profile-nav__item {
+  min-height: 76rpx;
+}

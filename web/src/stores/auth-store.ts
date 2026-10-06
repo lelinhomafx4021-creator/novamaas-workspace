@@ -83,10 +83,14 @@ interface AuthState {
     accessExpiresAt: number | null
     session: LoginSession | null
     pending2FAFlowToken: string | null
+    pending2FASMSAvailable: boolean
     bootstrapState: AuthBootstrapState
     setBundle: (bundle: AuthBundle) => void
     setUser: (user: AuthUser | null) => void
-    setPending2FAFlowToken: (flowToken: string | null) => void
+    setPending2FAFlowToken: (
+      flowToken: string | null,
+      smsAvailable?: boolean
+    ) => void
     setBootstrapState: (bootstrapState: AuthBootstrapState) => void
     reset: (bootstrapState?: AuthBootstrapState) => void
   }
@@ -99,6 +103,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
     accessExpiresAt: null,
     session: null,
     pending2FAFlowToken: null,
+    pending2FASMSAvailable: false,
     bootstrapState: 'idle',
     setBundle: (bundle) =>
       set((state) => ({
@@ -110,6 +115,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
           accessExpiresAt: bundle.access_expires_at,
           session: bundle.session,
           pending2FAFlowToken: null,
+          pending2FASMSAvailable: false,
           bootstrapState: 'complete',
         },
       })),
@@ -118,10 +124,14 @@ export const useAuthStore = create<AuthState>()((set) => ({
         ...state,
         auth: { ...state.auth, user },
       })),
-    setPending2FAFlowToken: (pending2FAFlowToken) =>
+    setPending2FAFlowToken: (pending2FAFlowToken, smsAvailable = false) =>
       set((state) => ({
         ...state,
-        auth: { ...state.auth, pending2FAFlowToken },
+        auth: {
+          ...state.auth,
+          pending2FAFlowToken,
+          pending2FASMSAvailable: Boolean(pending2FAFlowToken && smsAvailable),
+        },
       })),
     setBootstrapState: (bootstrapState) =>
       set((state) => ({
@@ -138,6 +148,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
           accessExpiresAt: null,
           session: null,
           pending2FAFlowToken: null,
+          pending2FASMSAvailable: false,
           bootstrapState,
         },
       })),

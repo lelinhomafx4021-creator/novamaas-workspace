@@ -19,6 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 import { z } from 'zod'
 
 import {
+  canonicalMobilePhone,
+  nationalPhoneNumber,
+} from '@/features/phone/phone-number'
+import {
   type AdminPermissionMatrix,
   normalizeAdminPermissions,
   type PermissionCatalog,
@@ -85,7 +89,7 @@ export function transformFormDataToPayload(
   const payload: UserFormData & { id?: number } = {
     username: data.username,
     display_name: data.display_name || data.username,
-    phone: data.phone?.trim() || '',
+    phone: canonicalMobilePhone(data.phone || ''),
     password: data.password || undefined,
   }
 
@@ -123,7 +127,7 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
   return {
     username: user.username,
     display_name: user.display_name,
-    phone: user.phone || '',
+    phone: nationalPhoneNumber(user.phone || ''),
     password: '',
     role: user.role,
     quota_dollars: quotaUnitsToDollars(user.quota),
@@ -131,4 +135,19 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     remark: user.remark || '',
     admin_permissions: user.admin_permissions ?? {},
   }
+}
+
+export type ManagedPhoneVerification = {
+  challenge_token: string
+  code: string
+  security_proof: string
+  phone: string
+  username: string
+}
+export const EMPTY_PHONE_VERIFICATION: ManagedPhoneVerification = {
+  challenge_token: '',
+  code: '',
+  security_proof: '',
+  phone: '',
+  username: '',
 }

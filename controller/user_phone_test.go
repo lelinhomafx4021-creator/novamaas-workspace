@@ -29,7 +29,7 @@ func performUserMutationRequest(t *testing.T, method string, body string, handle
 	return recorder
 }
 
-func TestCreateUserPersistsNormalizedPhone(t *testing.T) {
+func TestCreateUserRejectsUnverifiedPhone(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	recorder := performUserMutationRequest(
 		t,
@@ -38,15 +38,13 @@ func TestCreateUserPersistsNormalizedPhone(t *testing.T) {
 		CreateUser,
 	)
 
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), `"success":true`)
-
-	var stored model.User
-	require.NoError(t, db.Where("username = ?", "phone-create-user").First(&stored).Error)
-	assert.Equal(t, "13800138000", stored.Phone)
+	assert.NotContains(t, recorder.Body.String(), `"success":true`)
+	var count int64
+	require.NoError(t, db.Model(&model.User{}).Where("username = ?", "phone-create-user").Count(&count).Error)
+	assert.Zero(t, count)
 }
 
-func TestUpdateUserPersistsNormalizedPhone(t *testing.T) {
+func TestUpdateUserRejectsUnverifiedPhoneChange(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	stored := model.User{
 		Username:    "phone-update-user",
@@ -70,13 +68,11 @@ func TestUpdateUserPersistsNormalizedPhone(t *testing.T) {
 		UpdateUser,
 	)
 
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), `"success":true`)
-
+	assert.NotContains(t, recorder.Body.String(), `"success":true`)
 	var updated model.User
 	require.NoError(t, db.First(&updated, stored.Id).Error)
-	assert.Equal(t, "13800138000", updated.Phone)
-	assert.Equal(t, "After", updated.DisplayName)
+	assert.Equal(t, "13900139000", updated.Phone)
+	assert.Equal(t, "Before", updated.DisplayName)
 }
 
 func TestUpdateUserPreservesPhoneWhenLegacyClientOmitsField(t *testing.T) {

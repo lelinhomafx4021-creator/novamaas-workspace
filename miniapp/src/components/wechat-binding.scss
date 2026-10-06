@@ -1,0 +1,109 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+.wechat-binding-panel {
+  padding: 24rpx;
+  .profile-card__label {
+    font-size: 24rpx;
+    font-weight: 600;
+  }
+}
+
+.wechat-binding-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+  margin-top: 20rpx;
+  overflow-wrap: anywhere;
+  color: #172033;
+}
+.wechat-binding-entry__summary {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+.wechat-binding-entry__avatar {
+  flex-shrink: 0;
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 24rpx;
+}
+.wechat-binding-entry__fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #21834c;
+  background: #e6f5eb;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+.wechat-binding-entry__identity {
+  flex: 1;
+  min-width: 0;
+}
+.wechat-binding-entry__name {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.wechat-binding-entry__status {
+  display: block;
+  margin-top: 4rpx;
+  color: #21834c;
+  font-size: 22rpx;
+}
+.wechat-binding-entry__time {
+  display: block;
+  margin-top: 6rpx;
+  color: #727b8f;
+  font-size: 20rpx;
+  line-height: 1.4;
+}
+.wechat-binding-entry__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+.wechat-binding-entry__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68rpx;
+  margin: 0;
+  padding: 12rpx 24rpx;
+  color: #3730a3;
+  background: #eef2ff;
+  border-radius: 14rpx;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+.wechat-binding-entry__action::after {
+  border: 0;
+}
+.wechat-binding-entry__editor {
+  padding-top: 20rpx;
+  border-top: 1rpx solid #e4e8f0;
+}
+.wechat-binding-entry .profile-card__hint {
+  font-size: 23rpx;
+}
+.wechat-binding-entry .profile-button {
+  margin-top: 0;
+}

@@ -94,9 +94,16 @@ export async function getUser(id: number): Promise<ApiResponse<User>> {
  * Create a new user
  */
 export async function createUser(
-  data: UserFormData
+  data: UserFormData,
+  securityProof?: string
 ): Promise<ApiResponse<User>> {
-  const res = await api.post('/api/user/', data)
+  const res = await api.post(
+    '/api/user/',
+    data,
+    securityProof
+      ? { headers: { 'X-Security-Proof': securityProof } }
+      : undefined
+  )
   return res.data
 }
 
@@ -104,9 +111,16 @@ export async function createUser(
  * Update an existing user
  */
 export async function updateUser(
-  data: UserFormData & { id: number }
+  data: UserFormData & { id: number },
+  securityProof?: string
 ): Promise<ApiResponse<Partial<User>>> {
-  const res = await api.put('/api/user/', data)
+  const res = await api.put(
+    '/api/user/',
+    data,
+    securityProof
+      ? { headers: { 'X-Security-Proof': securityProof } }
+      : undefined
+  )
   return res.data
 }
 

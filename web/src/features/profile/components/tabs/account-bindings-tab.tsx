@@ -38,6 +38,8 @@ import {
   markOAuthBindPopup,
 } from '@/features/auth/lib/oauth-callback-mode'
 import type { CustomOAuthProviderInfo } from '@/features/auth/types'
+import { PhoneBindingCard } from '@/features/phone/components/phone-binding-card'
+import { WeChatBindingCard } from '@/features/phone/components/wechat-binding-card'
 import { useDialogs } from '@/hooks/use-dialog'
 import { useStatus } from '@/hooks/use-status'
 import { api } from '@/lib/api'
@@ -420,6 +422,8 @@ export function AccountBindingsTab({
   return (
     <>
       <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3'>
+        <PhoneBindingCard onChanged={onUpdate} />
+        <WeChatBindingCard onChanged={onUpdate} />
         {bindings.map((binding) => {
           let actionLabel = t('Bind')
           if (binding.isBound && binding.id === 'email') {

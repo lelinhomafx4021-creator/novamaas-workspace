@@ -119,6 +119,8 @@ export interface SearchUsersParams {
 }
 
 export interface UserFormData {
+  phone_challenge_token?: string
+  phone_verification_code?: string
   username: string
   display_name: string
   phone?: string

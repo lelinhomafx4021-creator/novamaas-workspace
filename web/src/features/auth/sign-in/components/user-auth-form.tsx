@@ -51,6 +51,7 @@ import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import { beginPasskeyLogin, finishPasskeyLogin } from '@/features/auth/passkey'
 import type { AuthFormProps } from '@/features/auth/types'
+import { SmsLoginForm } from '@/features/phone/components/sms-login-form'
 import { useStatus } from '@/hooks/use-status'
 import { isAuthBundle } from '@/lib/api'
 import {
@@ -76,6 +77,7 @@ export function UserAuthForm({
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
   const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
+  const [smsOpen, setSmsOpen] = useState(false)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
   const loginFailedMessage = t('Login failed')
 
@@ -181,7 +183,7 @@ export function UserAuthForm({
           if (!res.data.flow_token) {
             throw new Error(t('Login flow expired. Please sign in again.'))
           }
-          setPending2FAFlowToken(res.data.flow_token)
+          setPending2FAFlowToken(res.data.flow_token, res.data.sms_available)
           redirectTo2FA()
           return
         }
@@ -420,6 +422,31 @@ export function UserAuthForm({
           checked={agreedToLegal}
           onCheckedChange={setAgreedToLegal}
         />
+
+        {status?.sms_login ? (
+          <>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+              onClick={() => setSmsOpen(true)}
+            >
+              {t('SMS sign-in')}
+            </Button>
+            <Dialog
+              open={smsOpen}
+              onOpenChange={setSmsOpen}
+              title={t('SMS sign-in')}
+            >
+              {smsOpen ? (
+                <SmsLoginForm
+                  redirectTo={redirectTo}
+                  disabled={requiresLegalConsent && !agreedToLegal}
+                />
+              ) : null}
+            </Dialog>
+          </>
+        ) : null}
 
         {passwordLoginEnabled ? (
           <>

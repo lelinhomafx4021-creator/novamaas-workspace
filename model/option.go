@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type Option struct {
@@ -276,6 +277,13 @@ func UpdateOptionsBulk(values map[string]string) error {
 		}
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Write-only SMS credentials must not appear even in DEBUG SQL logs.
+		for key := range values {
+			if strings.HasPrefix(key, "sms.") {
+				tx = tx.Session(&gorm.Session{Logger: tx.Logger.LogMode(logger.Silent)})
+				break
+			}
+		}
 		for k, v := range values {
 			option := Option{Key: k}
 			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
@@ -291,7 +299,21 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err != nil {
 		return err
 	}
+	// Publish the SMS configuration under the same lock used by its readers.
+	// A successful database transaction must not briefly expose mixed keys
+	// while enabling or rotating the provider credentials.
+	common.OptionMapRWMutex.Lock()
+	for key, value := range values {
+		if strings.HasPrefix(key, "sms.") {
+			common.OptionMap[key] = value
+			handleConfigUpdate(key, value)
+		}
+	}
+	common.OptionMapRWMutex.Unlock()
 	for k, v := range values {
+		if strings.HasPrefix(k, "sms.") {
+			continue
+		}
 		if err := updateOptionMap(k, v); err != nil {
 			return err
 		}

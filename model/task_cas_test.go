@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 		&LoginNoticeAcknowledgement{},
 		&AuthFlow{},
 		&ExternalIdentityClaim{},
-		&VerifiedPhone{},
+		&VerifiedPhone{}, &WeChatMiniAppProfile{}, &SMSChallenge{}, &SMSBudget{},
 		&Token{},
 		&PasskeyCredential{},
 		&TwoFA{},
@@ -80,6 +80,9 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM auth_flows")
 		DB.Exec("DELETE FROM external_identity_claims")
 		DB.Exec("DELETE FROM verified_phones")
+		require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&WeChatMiniAppProfile{}).Error)
+		require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&SMSChallenge{}).Error)
+		require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&SMSBudget{}).Error)
 		DB.Exec("DELETE FROM user_sessions")
 		DB.Exec("DELETE FROM login_notice_acknowledgements")
 		DB.Exec("DELETE FROM passkey_credentials")

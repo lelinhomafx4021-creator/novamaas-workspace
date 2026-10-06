@@ -98,6 +98,9 @@ func (client *WeChatMiniAppCodeClient) ExchangeCode(ctx context.Context, appId, 
 		return WeChatMiniAppIdentity{}, ErrWeChatMiniAppUpstream
 	}
 	if payload.ErrorCode != 0 {
+		if payload.ErrorCode == 40013 || payload.ErrorCode == 40125 {
+			return WeChatMiniAppIdentity{}, fmt.Errorf("%w: errcode %d", ErrWeChatMiniAppConfiguration, payload.ErrorCode)
+		}
 		return WeChatMiniAppIdentity{}, fmt.Errorf("%w: errcode %d", ErrWeChatMiniAppCodeRejected, payload.ErrorCode)
 	}
 	openId := strings.TrimSpace(payload.OpenId)

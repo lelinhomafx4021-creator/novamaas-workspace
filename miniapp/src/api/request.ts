@@ -39,12 +39,19 @@ let refreshInFlight: Promise<MiniAuthSession> | undefined
 export class ApiRequestError extends Error {
   readonly code?: string
   readonly statusCode?: number
+  readonly details?: unknown
 
-  constructor(message: string, statusCode?: number, code?: string) {
+  constructor(
+    message: string,
+    statusCode?: number,
+    code?: string,
+    details?: unknown
+  ) {
     super(message)
     this.name = 'ApiRequestError'
     this.statusCode = statusCode
     this.code = code
+    this.details = details
   }
 }
 
@@ -75,16 +82,19 @@ async function requestOnce<T>(
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw new ApiRequestError(
-      response.data?.message || `Request failed with status ${response.statusCode}`,
+      response.data?.message ||
+        `Request failed with status ${response.statusCode}`,
       response.statusCode,
-      response.data?.code
+      response.data?.code,
+      response.data?.data
     )
   }
   if (!response.data?.success) {
     throw new ApiRequestError(
       response.data?.message || 'Request failed',
       response.statusCode,
-      response.data?.code
+      response.data?.code,
+      response.data?.data
     )
   }
 
@@ -127,7 +137,11 @@ async function rotateMiniAuthSession(session: MiniAuthSession) {
 export async function getAuthorizedMiniSession() {
   const session = getMiniAuthSession()
   if (!session?.refreshToken) {
-    throw new ApiRequestError('Authentication required', 401, 'MINI_AUTH_REQUIRED')
+    throw new ApiRequestError(
+      'Authentication required',
+      401,
+      'MINI_AUTH_REQUIRED'
+    )
   }
   if (session.accessExpiresAt > Math.floor(Date.now() / 1000) + 30) {
     return session
@@ -135,7 +149,10 @@ export async function getAuthorizedMiniSession() {
   return rotateMiniAuthSession(session)
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}) {
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {}
+) {
   const session = options.auth === false ? null : getMiniAuthSession()
   try {
     return await requestOnce<T>(path, options, session)

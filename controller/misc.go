@@ -127,6 +127,7 @@ func GetStatus(c *gin.Context) {
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
 		"wechat_miniapp_login":        weChatMiniAppSetting.IsReady(),
+		"sms_login":                   system_setting.GetSMSSettings().IsReady(),
 	}
 
 	// 根据启用状态注入可选内容

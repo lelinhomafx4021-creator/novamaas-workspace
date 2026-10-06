@@ -54,6 +54,7 @@ import {
   formatBackupCode,
   cleanBackupCode,
 } from '@/features/auth/lib/validation'
+import { SmsLoginForm } from '@/features/phone/components/sms-login-form'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -64,6 +65,10 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const [useBackupCode, setUseBackupCode] = useState(false)
+  const [smsMode, setSmsMode] = useState(false)
+  const smsAvailable = useAuthStore(
+    (state) => state.auth.pending2FASMSAvailable
+  )
 
   const pending2FAFlowToken = useAuthStore(
     (state) => state.auth.pending2FAFlowToken
@@ -142,6 +147,20 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
     ? otp.length >= BACKUP_CODE_LENGTH
     : otp.length >= OTP_LENGTH
 
+  if (smsMode && smsAvailable && pending2FAFlowToken) {
+    return (
+      <div className='space-y-4'>
+        <SmsLoginForm flowToken={pending2FAFlowToken} />
+        <Button type='button' variant='link' onClick={() => setSmsMode(false)}>
+          {t('Use authenticator code')}
+        </Button>
+        <Button type='button' variant='link' onClick={handleBackToLogin}>
+          {t('Back to login')}
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <Form {...form}>
       <form
@@ -213,6 +232,17 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         </Button>
 
         <div className='flex items-center justify-center gap-2 text-sm'>
+          {smsAvailable ? (
+            <Button
+              type='button'
+              variant='link'
+              size='sm'
+              disabled={isLoading}
+              onClick={() => setSmsMode(true)}
+            >
+              {t('Use SMS code')}
+            </Button>
+          ) : null}
           <Button
             type='button'
             variant='link'

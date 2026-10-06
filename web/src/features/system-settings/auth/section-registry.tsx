@@ -23,6 +23,7 @@ import { BotProtectionSection } from './bot-protection-section'
 import { CustomOAuthSection } from './custom-oauth/custom-oauth-section'
 import { OAuthSection } from './oauth-section'
 import { PasskeySection } from './passkey-section'
+import { SMSSection } from './sms-section'
 
 const AUTH_SECTIONS = [
   {
@@ -42,6 +43,7 @@ const AUTH_SECTIONS = [
       />
     ),
   },
+  { id: 'sms', titleKey: 'SMS service', build: () => <SMSSection /> },
   {
     id: 'oauth',
     titleKey: 'OAuth Integrations',

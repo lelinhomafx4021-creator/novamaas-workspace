@@ -70,6 +70,7 @@ export interface LoginResponse {
         require_2fa?: boolean
         flow_token?: string
         expires_at?: number
+        sms_available?: boolean
       }
 }
 

@@ -1,10 +1,10 @@
-import type { PropsWithChildren, ReactNode } from 'react'
-
 import { Text, View } from '@tarojs/components'
+import type { PropsWithChildren, ReactNode } from 'react'
 
 import './page-shell.scss'
 
 interface PageShellProps extends PropsWithChildren {
+  compact?: boolean
   description: string
   eyebrow?: string
   title: string
@@ -13,7 +13,11 @@ interface PageShellProps extends PropsWithChildren {
 
 export function PageShell(props: PageShellProps) {
   return (
-    <View className='page-shell'>
+    <View
+      className={
+        props.compact ? 'page-shell page-shell--compact' : 'page-shell'
+      }
+    >
       <View className='page-shell__glow page-shell__glow--one' />
       <View className='page-shell__glow page-shell__glow--two' />
       <View className='page-shell__header'>

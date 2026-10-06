@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { DrawingTask, PlatformTask, UsageLog } from '@/api/usage'
 
 import {
+  canViewTaskRequest,
+  canViewTaskResponses,
+  canViewTaskInformation,
   getCacheTokens,
   getDrawingMedia,
   getEffectiveGroupRatio,
@@ -15,6 +18,18 @@ import {
 } from './presentation'
 
 describe('usage presentation', () => {
+  it('exposes request snapshots and video responses only to administrators', () => {
+    const videoTask = { action: 'textGenerate', request_body_available: true } as PlatformTask
+    expect(canViewTaskRequest(videoTask, true)).toBe(true)
+    expect(canViewTaskResponses(videoTask, true)).toBe(true)
+    expect(canViewTaskRequest(videoTask, false)).toBe(false)
+    expect(canViewTaskResponses(videoTask, false)).toBe(false)
+    expect(canViewTaskRequest({ ...videoTask, request_body_available: false }, true)).toBe(false)
+    expect(canViewTaskResponses({ ...videoTask, action: 'MUSIC' }, true)).toBe(false)
+    expect(canViewTaskInformation({ platform: '54' } as PlatformTask)).toBe(true)
+    expect(canViewTaskInformation({ platform: 'suno' } as PlatformTask)).toBe(false)
+  })
+
   it('maps log and task states to stable translation keys', () => {
     expect(getUsageLogTypeKey(7)).toBe('usage.logType.login')
     expect(getUsageLogTypeKey(999)).toBe('usage.logType.unknown')

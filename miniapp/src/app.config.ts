@@ -6,6 +6,7 @@ export default defineAppConfig({
     'pages/usage/index',
     'pages/profile/index',
     'pages/media-preview/index',
+    'pages/task-inspection/index',
     'pages/legal/index',
     'pages/model-detail/index',
     'pages/keys/index',

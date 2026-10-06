@@ -1,4 +1,6 @@
-import { apiRequest, getAuthorizedMiniSession, getConfiguredApiBaseUrl } from './request'
+import Taro from '@tarojs/taro'
+
+import { ApiRequestError, apiRequest, getAuthorizedMiniSession, getConfiguredApiBaseUrl } from './request'
 import { buildQuery } from './query'
 import { buildApiUrl } from './url'
 
@@ -52,6 +54,30 @@ export interface PlatformTask {
   updated_at: number
   user_id: number
   username?: string
+}
+
+export interface TaskRequestSnapshots {
+  original?: unknown
+  upstream?: unknown
+}
+
+export interface TaskPollHistoryEntry {
+  id: number
+  first_seen_at: number
+  last_seen_at: number
+  repeat_count: number
+  status?: string
+  http_status?: number
+  error?: string
+  response?: unknown
+  response_size?: number
+  response_omitted?: boolean
+  response_truncated?: boolean
+}
+
+export interface TaskPollHistoryPage {
+  items: TaskPollHistoryEntry[]
+  next_before_id: number
 }
 
 export interface DrawingTask {
@@ -183,14 +209,43 @@ export function getTasks(filter: MediaFilter = {}) {
   return apiRequest<Page<PlatformTask>>(`${filter.isAdmin ? '/api/task/' : '/api/task/self'}?${query}`)
 }
 
+export function getTaskRequestSnapshots(taskId: string) {
+  return apiRequest<TaskRequestSnapshots>(`/api/task/${encodeURIComponent(taskId)}/request-snapshots`)
+}
+
+export function getTaskPollHistory(taskId: string, beforeId = 0) {
+  const query = buildQuery({ before_id: beforeId, limit: 50 })
+  return apiRequest<TaskPollHistoryPage>(`/api/task/${encodeURIComponent(taskId)}/poll-history?${query}`)
+}
+
+export async function getTaskInformation(taskId: string, platform: string) {
+  const encodedTaskId = encodeURIComponent(taskId)
+  const path = platform === '17' || platform === '54'
+    ? `/v1/video/generations/${encodedTaskId}`
+    : platform === '61'
+      ? `/api/v3/contents/generations/tasks/${encodedTaskId}`
+      : ''
+  if (!path) throw new Error('TASK_INFORMATION_UNSUPPORTED')
+  const session = await getAuthorizedMiniSession()
+  const response = await Taro.request<unknown>({
+    url: buildApiUrl(getConfiguredApiBaseUrl(), path),
+    method: 'GET',
+    header: { Authorization: `Bearer ${session.accessToken}`, Accept: 'application/json' },
+  })
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new ApiRequestError('Task information unavailable', response.statusCode)
+  }
+  return response.data
+}
+
 export function getDrawingTasks(filter: MediaFilter = {}) {
   const query = buildQuery({
     channel_id: filter.channelId,
-    end_timestamp: filter.endTimestamp,
+    end_timestamp: filter.endTimestamp === undefined ? undefined : filter.endTimestamp * 1000 + 999,
     mj_id: filter.id,
     p: filter.page ?? 1,
     page_size: filter.pageSize ?? 20,
-    start_timestamp: filter.startTimestamp,
+    start_timestamp: filter.startTimestamp === undefined ? undefined : filter.startTimestamp * 1000,
   })
   return apiRequest<Page<DrawingTask>>(`${filter.isAdmin ? '/api/mj/' : '/api/mj/self'}?${query}`)
 }

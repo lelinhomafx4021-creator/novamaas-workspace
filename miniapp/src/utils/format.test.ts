@@ -7,6 +7,9 @@ import {
   formatDuration,
   formatLocalCurrencyAmount,
   formatQuota,
+  formatTime,
+  getTodayRange,
+  getYesterdayRange,
 } from './format'
 
 describe('quota and duration formatting', () => {
@@ -48,5 +51,34 @@ describe('quota and duration formatting', () => {
         quotaDisplayType: 'TOKENS',
       })
     ).toBe('$2')
+  })
+})
+
+describe('device-local time display and usage ranges', () => {
+  it('formats Unix seconds in the device time zone with fixed-width fields', () => {
+    expect(formatTime(new Date(2026, 9, 5, 0, 0, 0).getTime() / 1000)).toBe('2026-10-05 00:00:00')
+    expect(formatTime(new Date(2026, 9, 5, 23, 59, 59).getTime() / 1000)).toBe('2026-10-05 23:59:59')
+    expect(formatTime(0)).toBe('—')
+  })
+
+  it('uses complete device-local calendar days across a month boundary', () => {
+    const now = new Date(2026, 9, 1, 8, 15).getTime()
+    const todayStart = new Date(2026, 9, 1).getTime()
+    expect(getTodayRange(now)).toEqual({
+      startTimestamp: todayStart / 1000,
+      endTimestamp: now / 1000,
+    })
+    expect(getYesterdayRange(now)).toEqual({
+      startTimestamp: new Date(2026, 8, 30).getTime() / 1000,
+      endTimestamp: todayStart / 1000 - 1,
+    })
+  })
+
+  it('uses local date boundaries when a time zone changes daylight saving time', () => {
+    const todayStart = new Date(2026, 2, 9).getTime()
+    expect(getYesterdayRange(new Date(2026, 2, 9, 12).getTime())).toEqual({
+      startTimestamp: new Date(2026, 2, 8).getTime() / 1000,
+      endTimestamp: todayStart / 1000 - 1,
+    })
   })
 })

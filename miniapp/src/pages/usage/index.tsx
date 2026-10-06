@@ -23,7 +23,11 @@ import { PageShell } from '@/components/page-shell'
 import { useQuotaDisplay } from '@/currency/context'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { buildMediaPreviewRoute } from '@/usage/media-preview-route'
+import { getPreviewErrorCode } from '@/usage/preview-error'
 import {
+  canViewTaskRequest,
+  canViewTaskResponses,
+  canViewTaskInformation,
   getCacheTokens,
   getDrawingDuration,
   getDrawingMedia,
@@ -38,12 +42,12 @@ import {
   showsUsageCost,
   type MediaAsset,
 } from '@/usage/presentation'
-import { formatDuration, formatNumber, formatTime, getRecentRange, getTodayRange } from '@/utils/format'
+import { formatDuration, formatNumber, formatTime, getRecentRange, getTodayRange, getYesterdayRange } from '@/utils/format'
 
 import './index.scss'
 
 type Tab = 'logs' | 'tasks' | 'statements'
-type Range = 'today' | '7d' | '30d'
+type Range = 'today' | 'yesterday' | '7d' | '30d'
 type Scope = 'personal' | 'platform'
 type MediaKind = 'tasks' | 'drawings'
 
@@ -51,6 +55,7 @@ const logTypeValues = [0, 2, 5, 6, 7, 1, 3, 4]
 
 function rangeFilter(range: Range) {
   if (range === 'today') return getTodayRange()
+  if (range === 'yesterday') return getYesterdayRange()
   return getRecentRange(range === '7d' ? 7 : 30)
 }
 
@@ -191,6 +196,7 @@ function MediaActions(props: {
 }
 
 function TaskCard(props: {
+  canInspect: boolean
   expanded: boolean
   isAdmin: boolean
   onOpenMedia: (asset: MediaAsset) => void
@@ -204,6 +210,9 @@ function TaskCard(props: {
   const model = getTaskModel(props.task)
   const assets = getTaskMedia(props.task)
   const failed = ['FAILURE', 'FAILED'].includes(props.task.status.toUpperCase())
+  const showInformation = canViewTaskInformation(props.task)
+  const showRequest = canViewTaskRequest(props.task, props.canInspect)
+  const showResponses = canViewTaskResponses(props.task, props.canInspect)
   return (
     <View className='mobile-card usage-task-card'>
       <View className='mobile-row'>
@@ -242,6 +251,19 @@ function TaskCard(props: {
           <DetailRow label={t('usage.startedAt')} value={formatTime(props.task.start_time)} />
           <DetailRow label={t('usage.finishedAt')} value={formatTime(props.task.finish_time)} />
           <DetailRow label={t('usage.prompt')} value={props.task.properties?.input} />
+          {showInformation || showRequest || showResponses ? (
+            <View className='mobile-actions usage-task-actions'>
+              {showInformation ? (
+                <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=information&platform=${encodeURIComponent(props.task.platform)}` })}>{t('usage.viewInformation')}</Button>
+              ) : null}
+              {showRequest ? (
+                <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=request` })}>{t('usage.viewRequest')}</Button>
+              ) : null}
+              {showResponses ? (
+                <Button className='mobile-button mobile-button--small mobile-button--secondary' onClick={() => Taro.navigateTo({ url: `/pages/task-inspection/index?task_id=${encodeURIComponent(props.task.task_id)}&mode=response` })}>{t('usage.viewResponses')}</Button>
+              ) : null}
+            </View>
+          ) : null}
           <MediaActions assets={assets} onOpen={props.onOpenMedia} onSave={props.onSaveMedia} playingUrl={props.playingUrl} />
         </View>
       ) : null}
@@ -490,10 +512,14 @@ export default function UsagePage() {
     }
     try {
       const result = await Taro.downloadFile(await getTaskResultDownloadOptions(asset.url))
-      if (result.statusCode < 200 || result.statusCode >= 300) throw new Error('MEDIA_DOWNLOAD_FAILED')
+      if (result.statusCode < 200 || result.statusCode >= 300) {
+        await Taro.showModal({ title: t('usage.previewFailed'), content: t('usage.previewErrorCode', { code: result.statusCode }), showCancel: false })
+        return
+      }
       await Taro.navigateTo({ url: buildMediaPreviewRoute(asset.kind, result.tempFilePath) })
-    } catch {
-      setError(true)
+    } catch (error) {
+      const code = getPreviewErrorCode(error)
+      await Taro.showModal({ title: t('usage.previewFailed'), content: code ? t('usage.previewErrorCode', { code }) : t('usage.previewError'), showCancel: false })
     }
   }
 
@@ -559,7 +585,7 @@ export default function UsagePage() {
         <>
           <View className='mobile-card usage-filter-card'>
             <View className='usage-ranges'>
-              {(['today', '7d', '30d'] as Range[]).map((item) => (
+              {(['today', 'yesterday', '7d', '30d'] as Range[]).map((item) => (
                 <Button key={item} className={`mobile-button mobile-button--small ${range === item ? '' : 'mobile-button--secondary'}`} onClick={() => setRange(item)}>{t(`common.${item}`)}</Button>
               ))}
             </View>
@@ -631,7 +657,7 @@ export default function UsagePage() {
           </View>
           <View className='mobile-card usage-filter-card'>
             <View className='usage-ranges'>
-              {(['today', '7d', '30d'] as Range[]).map((item) => (
+              {(['today', 'yesterday', '7d', '30d'] as Range[]).map((item) => (
                 <Button key={item} className={`mobile-button mobile-button--small ${appliedMediaFilter.range === item ? '' : 'mobile-button--secondary'}`} onClick={() => setAppliedMediaFilter((filter) => ({ ...filter, range: item }))}>{t(`common.${item}`)}</Button>
               ))}
             </View>
@@ -665,7 +691,7 @@ export default function UsagePage() {
           {mediaKind === 'drawings' && drawings.length === 0 && !loading ? <Text className='mobile-empty'>{t('usage.noTasks')}</Text> : null}
           <View className='mobile-stack usage-list'>
             {mediaKind === 'tasks' ? tasks.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin={isAdmin && scope === 'platform'} expanded={expandedId === `task-${task.id}`} onToggle={() => setExpandedId((value) => value === `task-${task.id}` ? '' : `task-${task.id}`)} onOpenMedia={openMedia} onSaveMedia={saveMedia} playingUrl={playingUrl} />
+              <TaskCard key={task.id} task={task} isAdmin={isAdmin && scope === 'platform'} canInspect={isAdmin} expanded={expandedId === `task-${task.id}`} onToggle={() => setExpandedId((value) => value === `task-${task.id}` ? '' : `task-${task.id}`)} onOpenMedia={openMedia} onSaveMedia={saveMedia} playingUrl={playingUrl} />
             )) : drawings.map((task) => (
               <DrawingCard key={task.id} task={task} isAdmin={isAdmin && scope === 'platform'} expanded={expandedId === `drawing-${task.id}`} onToggle={() => setExpandedId((value) => value === `drawing-${task.id}` ? '' : `drawing-${task.id}`)} onOpenMedia={openMedia} onSaveMedia={saveMedia} playingUrl={playingUrl} />
             ))}

@@ -102,8 +102,11 @@ export function formatNumber(value: number | undefined) {
 }
 
 export function formatTime(timestamp: number | undefined) {
-  if (!timestamp) return '—'
-  return new Date(timestamp * 1000).toLocaleString()
+  if (!Number.isFinite(timestamp) || Number(timestamp) <= 0) return '—'
+  const date = new Date(Number(timestamp) * 1000)
+  if (!Number.isFinite(date.getTime())) return '—'
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
 export function formatDuration(seconds: number | undefined) {
@@ -116,12 +119,23 @@ export function formatDuration(seconds: number | undefined) {
   return `${minutes}m ${remainder}s`
 }
 
-export function getTodayRange() {
-  const start = new Date()
+export function getTodayRange(now = Date.now()) {
+  const start = new Date(now)
   start.setHours(0, 0, 0, 0)
   return {
     startTimestamp: Math.floor(start.getTime() / 1000),
-    endTimestamp: Math.floor(Date.now() / 1000),
+    endTimestamp: Math.floor(now / 1000),
+  }
+}
+
+export function getYesterdayRange(now = Date.now()) {
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
+  const yesterdayStart = new Date(todayStart)
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+  return {
+    startTimestamp: Math.floor(yesterdayStart.getTime() / 1000),
+    endTimestamp: Math.floor(todayStart.getTime() / 1000) - 1,
   }
 }
 

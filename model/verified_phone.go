@@ -11,6 +11,29 @@ import (
 
 var ErrVerifiedPhoneAlreadyClaimed = errors.New("verified phone is already claimed")
 var ErrVerifiedPhoneInvalid = errors.New("verified phone is invalid")
+var ErrVerifiedPhoneProtected = errors.New("Use phone verification to change a bound phone number")
+
+// EnsureVerifiedPhoneUnchangedWithTx prevents generic profile mutations from
+// changing a login identity without going through the phone verification flow.
+func EnsureVerifiedPhoneUnchangedWithTx(tx *gorm.DB, userId int, phone string) error {
+	var user User
+	if err := lockForUpdate(tx).Select("id").Where("id = ?", userId).First(&user).Error; err != nil {
+		return err
+	}
+	var claim VerifiedPhone
+	err := lockForUpdate(tx).Where("user_id = ?", userId).First(&claim).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	canonical, err := CanonicalMobilePhone(phone)
+	if err != nil || canonical != claim.Phone {
+		return ErrVerifiedPhoneProtected
+	}
+	return nil
+}
 
 // VerifiedPhone owns the phone-login identity. System-assigned users.phone can
 // be trusted as a provisional owner only after WeChat proves possession.
@@ -109,7 +132,7 @@ func GetTrustedPhoneOwnerWithTx(tx *gorm.DB, phone string) (*User, error) {
 	candidates := []string{phone}
 	if strings.HasPrefix(phone, "+86") && len(phone) == 14 {
 		national := strings.TrimPrefix(phone, "+86")
-		candidates = append(candidates, national, "86"+national)
+		candidates = append(candidates, national, "86"+national, "0086"+national)
 	}
 	var assigned []User
 	if err := lockForUpdate(tx).Where("phone IN ?", candidates).Limit(2).Find(&assigned).Error; err != nil {
@@ -151,4 +174,34 @@ func GetUserIdByVerifiedPhone(phone string) (int, error) {
 		return 0, err
 	}
 	return claim.UserId, nil
+}
+
+// EditWithPhoneVerificationWithTx is used only after a purpose-bound SMS code
+// has been checked in this same transaction. The old claim, user fields and
+// credential epoch change together, including verification of a legacy number.
+func (user *User) EditWithPhoneVerificationWithTx(tx *gorm.DB, updatePassword bool, expectedAuthVersion int64) error {
+	var current User
+	if err := lockForUpdate(tx).Where("id = ?", user.Id).First(&current).Error; err != nil {
+		return err
+	}
+	if current.AuthVersion != expectedAuthVersion {
+		return ErrSMSInvalid
+	}
+	if err := tx.Where("user_id = ?", user.Id).Delete(&VerifiedPhone{}).Error; err != nil {
+		return err
+	}
+	if err := ClaimVerifiedPhoneWithTx(tx, user.Phone, user.Id, "aliyun_sms"); err != nil {
+		return err
+	}
+	if err := user.EditWithTx(tx, updatePassword); err != nil {
+		return err
+	}
+	if user.AuthVersion == expectedAuthVersion {
+		version, err := IncrementUserAuthVersionWithTx(tx, user.Id)
+		if err != nil {
+			return err
+		}
+		user.AuthVersion = version
+	}
+	return nil
 }

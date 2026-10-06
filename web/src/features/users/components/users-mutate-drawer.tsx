@@ -62,6 +62,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import { phoneErrorMessage } from '@/features/phone/api'
+import { WeChatBindingCard } from '@/features/phone/components/wechat-binding-card'
+import { canonicalMobilePhone } from '@/features/phone/phone-number'
 import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
@@ -89,7 +92,12 @@ import {
   transformFormDataToPayload,
   transformUserToFormDefaults,
 } from '../lib'
+import {
+  EMPTY_PHONE_VERIFICATION,
+  type ManagedPhoneVerification,
+} from '../lib/user-form'
 import type { User } from '../types'
+import { ManagedPhoneField } from './managed-phone-field'
 import { UserQuotaDialog } from './user-quota-dialog'
 import { useUsers } from './users-provider'
 
@@ -109,6 +117,11 @@ export function UsersMutateDrawer({
   const { triggerRefresh } = useUsers()
   const currentUser = useAuthStore((s) => s.auth.user)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [originalPhone, setOriginalPhone] = useState(currentRow?.phone || '')
+  const [userLoaded, setUserLoaded] = useState(!isUpdate)
+  const [loadedUser, setLoadedUser] = useState<User | undefined>(currentRow)
+  const [phoneVerification, setPhoneVerification] =
+    useState<ManagedPhoneVerification>(EMPTY_PHONE_VERIFICATION)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
 
   // Fetch groups
@@ -134,11 +147,18 @@ export function UsersMutateDrawer({
 
   // Load existing data when updating
   useEffect(() => {
+    let active = true
+    if (open) setPhoneVerification(EMPTY_PHONE_VERIFICATION)
     if (open && isUpdate && currentRow) {
+      setUserLoaded(false)
+      setLoadedUser(undefined)
       // For update, fetch fresh data
       getUser(currentRow.id)
         .then((result) => {
-          if (result.success && result.data) {
+          if (active && result.success && result.data) {
+            setOriginalPhone(result.data.phone || '')
+            setUserLoaded(true)
+            setLoadedUser(result.data)
             form.reset(transformUserToFormDefaults(result.data))
           }
         })
@@ -146,6 +166,11 @@ export function UsersMutateDrawer({
     } else if (open && !isUpdate) {
       // For create, reset to defaults
       form.reset(USER_FORM_DEFAULT_VALUES)
+      setOriginalPhone('')
+      setUserLoaded(true)
+    }
+    return () => {
+      active = false
     }
   }, [open, isUpdate, currentRow, form, t])
 
@@ -159,6 +184,27 @@ export function UsersMutateDrawer({
   const targetIsAdmin = (selectedRole ?? currentRow?.role ?? 0) >= ROLE.ADMIN
 
   const onSubmit = async (data: UserFormValues) => {
+    if (!userLoaded) return
+    const phone = canonicalMobilePhone(data.phone || '')
+    const verifyPhone =
+      !!phone &&
+      (phone !== canonicalMobilePhone(originalPhone) ||
+        !!phoneVerification.challenge_token)
+    if (
+      verifyPhone &&
+      (!phoneVerification.challenge_token ||
+        !/^\d{6}$/.test(phoneVerification.code) ||
+        phoneVerification.phone !== phone ||
+        (!isUpdate && phoneVerification.username !== data.username.trim()))
+    ) {
+      form.setError('phone', {
+        type: 'manual',
+        message: t(
+          'Request a code for this phone number and enter it before saving.'
+        ),
+      })
+      return
+    }
     if (!isUpdate) {
       const passwordLength = data.password?.length || 0
       if (passwordLength < 8 || passwordLength > 20) {
@@ -177,9 +223,19 @@ export function UsersMutateDrawer({
         currentRow?.id,
         permissionCatalog
       )
+      if (verifyPhone) {
+        payload.phone_challenge_token = phoneVerification.challenge_token
+        payload.phone_verification_code = phoneVerification.code
+      }
+      const securityProof = verifyPhone
+        ? phoneVerification.security_proof
+        : undefined
       const result = isUpdate
-        ? await updateUser(payload as typeof payload & { id: number })
-        : await createUser(payload)
+        ? await updateUser(
+            payload as typeof payload & { id: number },
+            securityProof
+          )
+        : await createUser(payload, securityProof)
 
       if (result.success) {
         toast.success(
@@ -197,8 +253,18 @@ export function UsersMutateDrawer({
               : t(ERROR_MESSAGES.CREATE_FAILED))
         )
       }
-    } catch {
-      toast.error(t(ERROR_MESSAGES.UNEXPECTED))
+    } catch (error) {
+      if (
+        verifyPhone ||
+        (error as { response?: { data?: { code?: string } } })?.response?.data
+          ?.code === 'PHONE_BINDING_PROTECTED'
+      ) {
+        const message = phoneErrorMessage(error, t)
+        form.setError('phone', { type: 'manual', message })
+        toast.error(message)
+      } else {
+        toast.error(t(ERROR_MESSAGES.UNEXPECTED))
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -208,6 +274,7 @@ export function UsersMutateDrawer({
     if (!currentRow) return
     const result = await getUser(currentRow.id)
     if (result.success && result.data) {
+      setLoadedUser(result.data)
       form.reset(transformUserToFormDefaults(result.data))
     }
     triggerRefresh()
@@ -221,6 +288,7 @@ export function UsersMutateDrawer({
           onOpenChange(v)
           if (!v) {
             form.reset()
+            setPhoneVerification(EMPTY_PHONE_VERIFICATION)
           }
         }}
       >
@@ -259,7 +327,11 @@ export function UsersMutateDrawer({
                         <Input
                           {...field}
                           placeholder={t('Enter username')}
-                          disabled={isUpdate}
+                          disabled={isUpdate || isSubmitting || !userLoaded}
+                          onChange={(event) => {
+                            field.onChange(event)
+                            setPhoneVerification(EMPTY_PHONE_VERIFICATION)
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -328,29 +400,11 @@ export function UsersMutateDrawer({
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name='phone'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Phone Number')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='tel'
-                          autoComplete='tel'
-                          maxLength={32}
-                          placeholder={t('Enter phone number')}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t(
-                          'Optional. Users can sign in with this phone number.'
-                        )}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                <ManagedPhoneField
+                  userId={currentRow?.id}
+                  disabled={isSubmitting || !userLoaded}
+                  verification={phoneVerification}
+                  onVerificationChange={setPhoneVerification}
                 />
 
                 <FormField
@@ -573,6 +627,12 @@ export function UsersMutateDrawer({
                   <h3 className='text-sm font-medium'>
                     {t('Binding Information')}
                   </h3>
+                  <WeChatBindingCard
+                    key={currentRow.id}
+                    userId={currentRow.id}
+                    showDetails
+                    onChanged={triggerRefresh}
+                  />
                   <p className='text-muted-foreground text-xs'>
                     {t(
                       'Third-party account bindings (read-only, managed by user in profile settings)'
@@ -587,7 +647,7 @@ export function UsersMutateDrawer({
                         </Label>
                         <Input
                           value={
-                            (currentRow?.[key as keyof User] as string) || '-'
+                            (loadedUser?.[key as keyof User] as string) || '-'
                           }
                           disabled
                           className='mt-1'
@@ -603,7 +663,11 @@ export function UsersMutateDrawer({
             <SheetClose render={<Button variant='outline' />}>
               {t('Close')}
             </SheetClose>
-            <Button form='user-form' type='submit' disabled={isSubmitting}>
+            <Button
+              form='user-form'
+              type='submit'
+              disabled={isSubmitting || !userLoaded}
+            >
               {isSubmitting ? t('Saving...') : t('Save changes')}
             </Button>
           </SheetFooter>

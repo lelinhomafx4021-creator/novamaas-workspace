@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-
 import { Button, Text, View } from '@tarojs/components'
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -36,9 +35,15 @@ export default function HomePage() {
   const { t } = useTranslation()
   const { formatQuota } = useQuotaDisplay()
   const [signedIn, setSignedIn] = useState(() => !!getMiniAuthSession())
-  const [connection, setConnection] = useState<ConnectionState>({ phase: 'loading' })
-  const [account, setAccount] = useState<Loadable<AccountSummary>>({ phase: 'idle' })
-  const [subscription, setSubscription] = useState<Loadable<SubscriptionSummary>>({ phase: 'idle' })
+  const [connection, setConnection] = useState<ConnectionState>({
+    phase: 'loading',
+  })
+  const [account, setAccount] = useState<Loadable<AccountSummary>>({
+    phase: 'idle',
+  })
+  const [subscription, setSubscription] = useState<
+    Loadable<SubscriptionSummary>
+  >({ phase: 'idle' })
   const [usage, setUsage] = useState<Loadable<UsageStats>>({ phase: 'idle' })
   const [notice, setNotice] = useState<Loadable<string>>({ phase: 'loading' })
   const [reloadCount, setReloadCount] = useState(0)
@@ -75,7 +80,10 @@ export default function HomePage() {
         ? [
             getAccountSummary(),
             getSubscriptionSummary(),
-            getUsageStats({ startTimestamp: today.startTimestamp, endTimestamp: today.endTimestamp }),
+            getUsageStats({
+              startTimestamp: today.startTimestamp,
+              endTimestamp: today.endTimestamp,
+            }),
           ]
         : []),
     ]
@@ -83,7 +91,11 @@ export default function HomePage() {
     const statusResult = results[0]
     setConnection(
       statusResult.status === 'fulfilled'
-        ? { phase: 'ready', apiBaseUrl, data: statusResult.value as PlatformStatus }
+        ? {
+            phase: 'ready',
+            apiBaseUrl,
+            data: statusResult.value as PlatformStatus,
+          }
         : { phase: 'error', apiBaseUrl }
     )
     const noticeResult = results[1]
@@ -103,7 +115,10 @@ export default function HomePage() {
       )
       setSubscription(
         subscriptionResult.status === 'fulfilled'
-          ? { phase: 'ready', data: subscriptionResult.value as SubscriptionSummary }
+          ? {
+              phase: 'ready',
+              data: subscriptionResult.value as SubscriptionSummary,
+            }
           : { phase: 'error' }
       )
       setUsage(
@@ -142,16 +157,22 @@ export default function HomePage() {
       : 'home-status__signal home-status__signal--warning'
     statusText = connection.data.setup
       ? t('home.statusConnected', {
-          systemName: connection.data.system_name || t('home.defaultSystemName'),
+          systemName:
+            connection.data.system_name || t('home.defaultSystemName'),
         })
       : t('home.statusSetupRequired')
   }
 
-  const moduleError = <Text className='mobile-error'>{t('home.moduleError')}</Text>
-  const activeSubscriptions = subscription.phase === 'ready'
-    ? subscription.data.subscriptions.map((item) => item.subscription)
-    : []
-  const hasUnlimitedSubscription = activeSubscriptions.some((item) => item.amount_total <= 0)
+  const moduleError = (
+    <Text className='mobile-error'>{t('home.moduleError')}</Text>
+  )
+  const activeSubscriptions =
+    subscription.phase === 'ready'
+      ? subscription.data.subscriptions.map((item) => item.subscription)
+      : []
+  const hasUnlimitedSubscription = activeSubscriptions.some(
+    (item) => item.amount_total <= 0
+  )
   const subscriptionRemaining = activeSubscriptions.reduce(
     (total, item) => total + Math.max(0, item.amount_total - item.amount_used),
     0
@@ -164,7 +185,11 @@ export default function HomePage() {
     : 0
 
   return (
-    <PageShell eyebrow={t('home.eyebrow')} title={t('home.title')} description={t('home.description')}>
+    <PageShell
+      eyebrow={t('home.eyebrow')}
+      title={t('home.title')}
+      description={t('home.description')}
+    >
       <View className='home-status'>
         <View className='home-status__heading'>
           <Text className='home-status__title'>{t('home.statusTitle')}</Text>
@@ -177,7 +202,10 @@ export default function HomePage() {
           </Text>
         ) : null}
         {connection.phase === 'error' ? (
-          <Button className='home-status__button' onClick={() => setReloadCount((count) => count + 1)}>
+          <Button
+            className='home-status__button'
+            onClick={() => setReloadCount((count) => count + 1)}
+          >
             {t('common.retry')}
           </Button>
         ) : null}
@@ -190,7 +218,9 @@ export default function HomePage() {
         </View>
       ) : (
         <>
-          <Text className='mobile-section-title'>{t('home.accountSummary')}</Text>
+          <Text className='mobile-section-title'>
+            {t('home.accountSummary')}
+          </Text>
           {account.phase === 'idle' || account.phase === 'loading' ? (
             <Text className='mobile-muted'>{t('common.loading')}</Text>
           ) : null}
@@ -198,46 +228,97 @@ export default function HomePage() {
           {account.phase === 'ready' ? (
             <>
               <View className='home-account-heading'>
-                <Text className='mobile-card__title'>{account.data.display_name || account.data.username}</Text>
-                <Text className='mobile-card__meta'>{t('home.accountGroup', { group: account.data.group })}</Text>
+                <Text className='mobile-card__title'>
+                  {account.data.display_name || account.data.username}
+                </Text>
+                <Text className='mobile-card__meta'>
+                  {t('home.accountGroup', { group: account.data.group })}
+                </Text>
               </View>
               <View className='home-metrics'>
                 <View className='mobile-card home-metric'>
-                  <Text className='home-metric__value'>{formatQuota(account.data.quota)}</Text>
+                  <Text className='home-metric__value'>
+                    {formatQuota(account.data.quota)}
+                  </Text>
                   <Text className='mobile-card__meta'>{t('home.quota')}</Text>
                 </View>
                 <View className='mobile-card home-metric'>
-                  <Text className='home-metric__value'>{usage.phase === 'ready' ? formatQuota(usage.data.quota) : '—'}</Text>
-                  <Text className='mobile-card__meta'>{t('home.todayUsage')}</Text>
+                  <Text className='home-metric__value'>
+                    {usage.phase === 'ready'
+                      ? formatQuota(usage.data.quota)
+                      : '—'}
+                  </Text>
+                  <Text className='mobile-card__meta'>
+                    {t('home.todayUsage')}
+                  </Text>
                 </View>
                 <View className='mobile-card home-metric'>
-                  <Text className='home-metric__value'>{usage.phase === 'ready' ? formatNumber(usage.data.requests) : '—'}</Text>
-                  <Text className='mobile-card__meta'>{t('home.todayRequests')}</Text>
+                  <Text className='home-metric__value'>
+                    {usage.phase === 'ready'
+                      ? formatNumber(usage.data.requests)
+                      : '—'}
+                  </Text>
+                  <Text className='mobile-card__meta'>
+                    {t('home.todayRequests')}
+                  </Text>
                 </View>
                 <View className='mobile-card home-metric'>
-                  <Text className='home-metric__value'>{subscription.phase === 'ready' ? formatNumber(subscription.data.subscriptions.length) : '—'}</Text>
-                  <Text className='mobile-card__meta'>{t('home.activePlans')}</Text>
+                  <Text className='home-metric__value'>
+                    {subscription.phase === 'ready'
+                      ? formatNumber(subscription.data.subscriptions.length)
+                      : '—'}
+                  </Text>
+                  <Text className='mobile-card__meta'>
+                    {t('home.activePlans')}
+                  </Text>
                 </View>
               </View>
             </>
           ) : null}
 
-          {subscription.phase === 'idle' || subscription.phase === 'loading' ? <Text className='mobile-muted'>{t('common.loading')}</Text> : null}
+          {subscription.phase === 'idle' || subscription.phase === 'loading' ? (
+            <Text className='mobile-muted'>{t('common.loading')}</Text>
+          ) : null}
           {subscription.phase === 'error' ? moduleError : null}
           {subscription.phase === 'ready' ? (
             <View className='mobile-card home-subscription'>
               <View className='mobile-row'>
-                <Text className='mobile-card__title'>{t('home.subscription')}</Text>
-                <Text className='mobile-chip'>{activeSubscriptions.length ? t('home.activeSubscriptions', { count: activeSubscriptions.length }) : t('home.noSubscription')}</Text>
+                <Text className='mobile-card__title'>
+                  {t('home.subscription')}
+                </Text>
+                <Text className='mobile-chip'>
+                  {activeSubscriptions.length
+                    ? t('home.activeSubscriptions', {
+                        count: activeSubscriptions.length,
+                      })
+                    : t('home.noSubscription')}
+                </Text>
               </View>
               {activeSubscriptions.length ? (
                 <>
-                  <Text className='home-subscription__value'>{hasUnlimitedSubscription ? t('common.unlimited') : formatQuota(subscriptionRemaining)}</Text>
-                  <Text className='mobile-card__meta'>{t('home.subscriptionRemaining')}</Text>
-                  {nextSubscriptionExpiry ? <Text className='mobile-card__meta'>{t('home.nextExpiry', { time: formatTime(nextSubscriptionExpiry) })}</Text> : null}
+                  <Text className='home-subscription__value'>
+                    {hasUnlimitedSubscription
+                      ? t('common.unlimited')
+                      : formatQuota(subscriptionRemaining)}
+                  </Text>
+                  <Text className='mobile-card__meta'>
+                    {t('home.subscriptionRemaining')}
+                  </Text>
+                  {nextSubscriptionExpiry ? (
+                    <Text className='mobile-card__meta'>
+                      {t('home.nextExpiry', {
+                        time: formatTime(nextSubscriptionExpiry),
+                      })}
+                    </Text>
+                  ) : null}
                 </>
               ) : null}
-              <Button className='mobile-button mobile-button--secondary' onClick={() => Taro.navigateTo({ url: '/pages/wallet/index' })}>{t('home.openWallet')}</Button>
+              <Button
+                className='mobile-button mobile-button--secondary'
+                onClick={() => Taro.navigateTo({ url: '/pages/wallet/index' })}
+              >
+                {t('home.openWallet')}
+              </Button>
             </View>
           ) : null}
           {usage.phase === 'error' ? moduleError : null}

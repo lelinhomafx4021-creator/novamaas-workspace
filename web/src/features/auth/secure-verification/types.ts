@@ -22,6 +22,8 @@ export type SecurityProofScope =
   | 'channel.key.read'
   | 'passkey.register'
   | 'passkey.delete'
+  | 'phone.manage'
+  | 'wechat.manage'
 
 export interface SecurityProof {
   proof_token: string

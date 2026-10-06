@@ -45,6 +45,8 @@ func TestWeChatMiniAppCodeClientMapsProviderErrorsAndEmptyOpenId(t *testing.T) {
 		expected error
 	}{
 		{name: "provider rejection", body: `{"errcode":40029,"errmsg":"invalid code"}`, expected: ErrWeChatMiniAppCodeRejected},
+		{name: "invalid app id", body: `{"errcode":40013,"errmsg":"invalid appid contains private text"}`, expected: ErrWeChatMiniAppConfiguration},
+		{name: "invalid app secret", body: `{"errcode":40125,"errmsg":"invalid appsecret top-secret"}`, expected: ErrWeChatMiniAppConfiguration},
 		{name: "empty open id", body: `{"session_key":"hidden"}`, expected: ErrWeChatMiniAppEmptyOpenId},
 		{name: "invalid json", body: `{`, expected: ErrWeChatMiniAppUpstream},
 	}

@@ -1,11 +1,13 @@
 import { accountResources } from './account-resources'
 import { featureResources } from './feature-resources'
 import { inspectionResources } from './inspection-resources'
+import { phoneResources } from './phone-resources'
 import { usageResources } from './usage-resources'
 
 export const resources = {
   en: {
     translation: {
+      ...phoneResources['en'],
       ...accountResources.en,
       ...featureResources.en,
       ...usageResources.en,
@@ -19,22 +21,30 @@ export const resources = {
       'common.retry': 'Retry',
       'auth.eyebrow': 'Account security',
       'auth.signedOutTitle': 'Sign in to your account',
-      'auth.signedOutDescription': 'Use your WeChat phone number for quick sign-in, or sign in with your existing account and password.',
+      'auth.signedOutDescription':
+        'Use your WeChat phone number for quick sign-in, or sign in with your existing account and password.',
       'auth.wechatLogin': 'Continue with WeChat',
       'auth.wechatPhoneLogin': 'Continue with WeChat phone number',
       'auth.existingWeChatLogin': 'Use existing account login',
       'auth.accountLoginTitle': 'Sign in to your account',
-      'auth.accountLoginDescription': 'Enter your phone number, username, or email and password. WeChat authorization is not required.',
+      'auth.accountLoginDescription':
+        'Enter your phone number, username, or email and password. WeChat authorization is not required.',
       'auth.accountLoginSubmit': 'Sign in',
       'auth.accountLoginBack': 'Back to sign-in options',
-      'auth.error.phoneUnavailable': 'Could not get your WeChat phone number. Sign in with your account credentials instead.',
-      'auth.error.phoneCancelled': 'Phone authorization was cancelled. You can use an existing account instead.',
-      'auth.error.phoneCodeInvalid': 'Phone authorization expired. Please try again.',
-      'auth.error.phoneConflict': 'This verified phone belongs to another account. Verify that account before connecting.',
-      'auth.error.phoneRequired': 'A verified phone number is required to create a new account.',
+      'auth.error.phoneUnavailable':
+        'Could not get your WeChat phone number. Sign in with your account credentials instead.',
+      'auth.error.phoneCancelled':
+        'Phone authorization was cancelled. You can use an existing account instead.',
+      'auth.error.phoneCodeInvalid':
+        'Phone authorization expired. Please try again.',
+      'auth.error.phoneConflict':
+        'This verified phone belongs to another account. Verify that account before connecting.',
+      'auth.error.phoneRequired':
+        'A verified phone number is required to create a new account.',
       'auth.signingIn': 'Connecting…',
       'auth.bindTitle': 'Connect your account',
-      'auth.bindDescription': 'Verify an existing account or create a new one. The WeChat identity is claimed only after verification succeeds.',
+      'auth.bindDescription':
+        'Verify an existing account or create a new one. The WeChat identity is claimed only after verification succeeds.',
       'auth.existingAccount': 'Existing account',
       'auth.createAccount': 'Create account',
       'auth.username': 'Username, email, or phone',
@@ -42,67 +52,96 @@ export const resources = {
       'auth.email': 'Verified email',
       'auth.verificationCode': 'Email verification code',
       'auth.sendVerificationCode': 'Send verification code',
-      'auth.verificationCodeSent': 'The verification code was sent. Check your inbox.',
+      'auth.verificationCodeSent':
+        'The verification code was sent. Check your inbox.',
       'auth.twoFactorCode': 'Two-factor or backup code',
       'auth.affCode': 'Referral code (optional)',
-      'auth.acceptTerms': 'I have read and agree to the applicable terms and privacy policy.',
+      'auth.acceptTerms':
+        'I have read and agree to the applicable terms and privacy policy.',
       'auth.viewAgreement': 'View user agreement',
       'auth.viewPrivacy': 'View privacy policy',
       'auth.bind': 'Verify and connect',
       'auth.register': 'Create and connect',
       'auth.back': 'Use another WeChat login',
       'auth.signedInAs': 'Signed in as',
-      'auth.sessionReady': 'This device has a protected, renewable mobile session.',
+      'auth.sessionReady':
+        'This device has a protected, renewable mobile session.',
       'auth.logout': 'Sign out on this device',
       'auth.busy': 'Please wait…',
-      'auth.error.generic': 'The request could not be completed. Please try again.',
-      'auth.error.notConfigured': 'WeChat mini program login is not enabled on the platform.',
-      'auth.error.invalidCode': 'The WeChat login code expired. Start the login again.',
-      'auth.error.credentials': 'The account credentials are incorrect or the account is unavailable.',
-      'auth.error.twoFactorRequired': 'Enter your two-factor or backup code to continue.',
-      'auth.error.twoFactorInvalid': 'The two-factor or backup code is invalid.',
-      'auth.error.flowExpired': 'This connection attempt expired. Start the WeChat login again.',
-      'auth.error.conflict': 'This WeChat identity or account is already connected elsewhere.',
+      'auth.error.generic':
+        'The request could not be completed. Please try again.',
+      'auth.error.notConfigured':
+        'WeChat mini program login is not enabled on the platform.',
+      'auth.error.invalidCode':
+        'The WeChat login code expired. Start the login again.',
+      'auth.error.credentials':
+        'The account credentials are incorrect or the account is unavailable.',
+      'auth.error.twoFactorRequired':
+        'Enter your two-factor or backup code to continue.',
+      'auth.error.twoFactorInvalid':
+        'The two-factor or backup code is invalid.',
+      'auth.error.flowExpired':
+        'This connection attempt expired. Start the WeChat login again.',
+      'auth.error.conflict':
+        'This WeChat identity or account is already connected elsewhere.',
       'auth.error.terms': 'Accept the applicable terms before continuing.',
-      'auth.error.accountExists': 'That username or verified email is already in use.',
-      'auth.error.emailVerification': 'The email verification code is missing or invalid.',
-      'auth.error.emailVerificationDisabled': 'Email verification is not available right now.',
+      'auth.error.accountExists':
+        'That username or verified email is already in use.',
+      'auth.error.emailVerification':
+        'The email verification code is missing or invalid.',
+      'auth.error.emailVerificationDisabled':
+        'Email verification is not available right now.',
       'auth.error.unavailable': 'WeChat login is temporarily unavailable.',
-      'auth.error.registrationDisabled': 'New account registration is currently disabled.',
-      'auth.error.accountUnavailable': 'This account is disabled or unavailable.',
-      'auth.error.passwordLoginDisabled': 'Password login is currently disabled.',
-      'auth.error.noAvailableMethod': 'No account connection method is currently available.',
+      'auth.error.registrationDisabled':
+        'New account registration is currently disabled.',
+      'auth.error.accountUnavailable':
+        'This account is disabled or unavailable.',
+      'auth.error.passwordLoginDisabled':
+        'Password login is currently disabled.',
+      'auth.error.noAvailableMethod':
+        'No account connection method is currently available.',
       'legal.titleAgreement': 'User agreement',
       'legal.titlePrivacy': 'Privacy policy',
-      'legal.description': 'Review the current platform terms before connecting your account.',
+      'legal.description':
+        'Review the current platform terms before connecting your account.',
       'legal.loading': 'Loading the document…',
       'legal.error': 'The document could not be loaded.',
       'legal.empty': 'No document is currently published.',
       'home.eyebrow': 'Mobile workspace',
       'home.title': 'Your AI services, close at hand',
-      'home.description': 'This foundation connects the mini program to the existing platform without duplicating identity, billing, or authorization rules.',
+      'home.description':
+        'This foundation connects the mini program to the existing platform without duplicating identity, billing, or authorization rules.',
       'home.statusTitle': 'Platform connection',
       'home.statusLoading': 'Checking the platform status…',
       'home.statusConnected': 'Connected to {{systemName}}',
       'home.backendAddress': 'Backend: {{address}}',
-      'home.statusSetupRequired': 'The platform is reachable and still needs initial setup.',
-      'home.statusUnavailable': 'The platform could not be reached. Check the backend and request domain.',
-      'home.statusNotConfigured': 'Set MINIAPP_API_BASE_URL when building to connect this mini program.',
+      'home.statusSetupRequired':
+        'The platform is reachable and still needs initial setup.',
+      'home.statusUnavailable':
+        'The platform could not be reached. Check the backend and request domain.',
+      'home.statusNotConfigured':
+        'Set MINIAPP_API_BASE_URL when building to connect this mini program.',
       'home.version': 'Server version {{version}}',
       'home.defaultSystemName': 'the platform',
       'models.title': 'Model catalog',
-      'models.description': 'Browse available models, capabilities, endpoints, groups, and pricing in a mobile-first catalog.',
+      'models.description':
+        'Browse available models, capabilities, endpoints, groups, and pricing in a mobile-first catalog.',
       'playground.title': 'Playground',
-      'playground.description': 'Run metered conversations through the existing relay and billing pipeline with streaming responses.',
+      'playground.description':
+        'Run metered conversations through the existing relay and billing pipeline with streaming responses.',
       'usage.title': 'Usage and tasks',
-      'usage.description': 'Review usage logs, image and video tasks, billing statements, and their current status.',
+      'usage.description':
+        'Review usage logs, image and video tasks, billing statements, and their current status.',
       'profile.title': 'Profile and access',
-      'profile.description': 'Manage API keys, subscriptions, wallet actions, devices, language, and account security.',
-      'feature.nextStep': 'This navigation entry is ready. Its complete vertical slice is tracked in the project plan.',
+      'profile.description':
+        'Manage API keys, subscriptions, wallet actions, devices, language, and account security.',
+      'feature.nextStep':
+        'This navigation entry is ready. Its complete vertical slice is tracked in the project plan.',
     },
   },
   zh: {
     translation: {
+      ...phoneResources['zh'],
       ...accountResources.zh,
       ...featureResources.zh,
       ...usageResources.zh,
@@ -116,22 +155,27 @@ export const resources = {
       'common.retry': '重试',
       'auth.eyebrow': '账号安全',
       'auth.signedOutTitle': '登录平台账号',
-      'auth.signedOutDescription': '可授权微信手机号快捷登录，也可使用已有账号和密码登录。',
+      'auth.signedOutDescription':
+        '可授权微信手机号快捷登录，也可使用已有账号和密码登录。',
       'auth.wechatLogin': '微信快捷登录',
       'auth.wechatPhoneLogin': '授权微信手机号快捷登录',
       'auth.existingWeChatLogin': '使用已有账号登录',
       'auth.accountLoginTitle': '登录平台账号',
-      'auth.accountLoginDescription': '输入手机号、用户名或邮箱及密码，无需微信授权。',
+      'auth.accountLoginDescription':
+        '输入手机号、用户名或邮箱及密码，无需微信授权。',
       'auth.accountLoginSubmit': '登录',
       'auth.accountLoginBack': '返回登录方式',
-      'auth.error.phoneUnavailable': '未能获取微信手机号，请使用手机号或账号密码登录。',
+      'auth.error.phoneUnavailable':
+        '未能获取微信手机号，请使用手机号或账号密码登录。',
       'auth.error.phoneCancelled': '已取消手机号授权，你仍可使用已有账号登录。',
       'auth.error.phoneCodeInvalid': '手机号授权已失效，请重试。',
-      'auth.error.phoneConflict': '该已验证手机号属于其他账号，请先验证该账号后再绑定。',
+      'auth.error.phoneConflict':
+        '该已验证手机号属于其他账号，请先验证该账号后再绑定。',
       'auth.error.phoneRequired': '创建新账号需要已验证手机号。',
       'auth.signingIn': '正在连接…',
       'auth.bindTitle': '连接平台账号',
-      'auth.bindDescription': '验证已有账号或创建新账号；只有验证成功后才会绑定微信身份。',
+      'auth.bindDescription':
+        '验证已有账号或创建新账号；只有验证成功后才会绑定微信身份。',
       'auth.existingAccount': '已有账号',
       'auth.createAccount': '创建账号',
       'auth.username': '用户名、邮箱或手机号',
@@ -177,20 +221,25 @@ export const resources = {
       'legal.empty': '当前未发布相关文档。',
       'home.eyebrow': '移动工作台',
       'home.title': '随时使用你的 AI 服务',
-      'home.description': '此工程基础连接现有平台，不重复实现身份、计费或权限规则。',
+      'home.description':
+        '此工程基础连接现有平台，不重复实现身份、计费或权限规则。',
       'home.statusTitle': '平台连接',
       'home.statusLoading': '正在检查平台状态…',
       'home.statusConnected': '已连接到 {{systemName}}',
       'home.backendAddress': '后端地址：{{address}}',
       'home.statusSetupRequired': '平台可以访问，但仍需完成初始设置。',
-      'home.statusUnavailable': '暂时无法访问平台，请检查后端和 request 合法域名。',
-      'home.statusNotConfigured': '构建时请设置 MINIAPP_API_BASE_URL 以连接平台。',
+      'home.statusUnavailable':
+        '暂时无法访问平台，请检查后端和 request 合法域名。',
+      'home.statusNotConfigured':
+        '构建时请设置 MINIAPP_API_BASE_URL 以连接平台。',
       'home.version': '服务端版本 {{version}}',
       'home.defaultSystemName': '平台',
       'models.title': '模型广场',
-      'models.description': '以移动端方式浏览可用模型、能力、端点、分组和价格。',
+      'models.description':
+        '以移动端方式浏览可用模型、能力、端点、分组和价格。',
       'playground.title': '移动对话',
-      'playground.description': '通过现有 Relay 与计费链运行支持流式响应的对话。',
+      'playground.description':
+        '通过现有 Relay 与计费链运行支持流式响应的对话。',
       'usage.title': '用量与任务',
       'usage.description': '查看用量日志、图片和视频任务、账单及当前状态。',
       'profile.title': '个人与访问',
@@ -200,6 +249,7 @@ export const resources = {
   },
   'zh-TW': {
     translation: {
+      ...phoneResources['zh-TW'],
       ...accountResources['zh-TW'],
       ...featureResources['zh-TW'],
       ...usageResources['zh-TW'],
@@ -213,22 +263,27 @@ export const resources = {
       'common.retry': '重試',
       'auth.eyebrow': '帳號安全',
       'auth.signedOutTitle': '登入平台帳號',
-      'auth.signedOutDescription': '可授權微信手機號碼快速登入，也可使用現有帳號和密碼登入。',
+      'auth.signedOutDescription':
+        '可授權微信手機號碼快速登入，也可使用現有帳號和密碼登入。',
       'auth.wechatLogin': '微信快速登入',
       'auth.wechatPhoneLogin': '授權微信手機號碼快速登入',
       'auth.existingWeChatLogin': '使用現有帳號登入',
       'auth.accountLoginTitle': '登入平台帳號',
-      'auth.accountLoginDescription': '輸入手機號碼、使用者名稱或電子郵件及密碼，無需微信授權。',
+      'auth.accountLoginDescription':
+        '輸入手機號碼、使用者名稱或電子郵件及密碼，無需微信授權。',
       'auth.accountLoginSubmit': '登入',
       'auth.accountLoginBack': '返回登入方式',
-      'auth.error.phoneUnavailable': '無法取得微信手機號碼，請使用手機號碼或帳號密碼登入。',
+      'auth.error.phoneUnavailable':
+        '無法取得微信手機號碼，請使用手機號碼或帳號密碼登入。',
       'auth.error.phoneCancelled': '已取消手機號碼授權，仍可使用現有帳號登入。',
       'auth.error.phoneCodeInvalid': '手機號碼授權已失效，請重試。',
-      'auth.error.phoneConflict': '此已驗證手機號碼屬於其他帳號，請先驗證該帳號再連結。',
+      'auth.error.phoneConflict':
+        '此已驗證手機號碼屬於其他帳號，請先驗證該帳號再連結。',
       'auth.error.phoneRequired': '建立新帳號需要已驗證手機號碼。',
       'auth.signingIn': '正在連接…',
       'auth.bindTitle': '連結平台帳號',
-      'auth.bindDescription': '驗證既有帳號或建立新帳號；只有驗證成功後才會綁定微信身分。',
+      'auth.bindDescription':
+        '驗證既有帳號或建立新帳號；只有驗證成功後才會綁定微信身分。',
       'auth.existingAccount': '既有帳號',
       'auth.createAccount': '建立帳號',
       'auth.username': '使用者名稱、信箱或手機號碼',
@@ -274,20 +329,25 @@ export const resources = {
       'legal.empty': '目前未發布相關文件。',
       'home.eyebrow': '行動工作臺',
       'home.title': '隨時使用你的 AI 服務',
-      'home.description': '此工程基礎連接現有平台，不重複實作身分、計費或權限規則。',
+      'home.description':
+        '此工程基礎連接現有平台，不重複實作身分、計費或權限規則。',
       'home.statusTitle': '平台連接',
       'home.statusLoading': '正在檢查平台狀態…',
       'home.statusConnected': '已連接到 {{systemName}}',
       'home.backendAddress': '後端位址：{{address}}',
       'home.statusSetupRequired': '平台可以存取，但仍需完成初始設定。',
-      'home.statusUnavailable': '暫時無法存取平台，請檢查後端和 request 合法網域。',
-      'home.statusNotConfigured': '建置時請設定 MINIAPP_API_BASE_URL 以連接平台。',
+      'home.statusUnavailable':
+        '暫時無法存取平台，請檢查後端和 request 合法網域。',
+      'home.statusNotConfigured':
+        '建置時請設定 MINIAPP_API_BASE_URL 以連接平台。',
       'home.version': '伺服器版本 {{version}}',
       'home.defaultSystemName': '平台',
       'models.title': '模型廣場',
-      'models.description': '以行動端方式瀏覽可用模型、能力、端點、群組和價格。',
+      'models.description':
+        '以行動端方式瀏覽可用模型、能力、端點、群組和價格。',
       'playground.title': '行動對話',
-      'playground.description': '透過現有 Relay 與計費鏈執行支援串流回應的對話。',
+      'playground.description':
+        '透過現有 Relay 與計費鏈執行支援串流回應的對話。',
       'usage.title': '用量與任務',
       'usage.description': '查看用量記錄、圖片和影片任務、帳單及目前狀態。',
       'profile.title': '個人與存取',
@@ -297,6 +357,7 @@ export const resources = {
   },
   fr: {
     translation: {
+      ...phoneResources['fr'],
       ...accountResources.fr,
       ...featureResources.fr,
       ...usageResources.fr,
@@ -310,22 +371,30 @@ export const resources = {
       'common.retry': 'Réessayer',
       'auth.eyebrow': 'Sécurité du compte',
       'auth.signedOutTitle': 'Se connecter à son compte',
-      'auth.signedOutDescription': 'Utilisez votre numéro WeChat pour une connexion rapide, ou votre compte et mot de passe existants.',
+      'auth.signedOutDescription':
+        'Utilisez votre numéro WeChat pour une connexion rapide, ou votre compte et mot de passe existants.',
       'auth.wechatLogin': 'Continuer avec WeChat',
       'auth.wechatPhoneLogin': 'Continuer avec le numéro WeChat',
       'auth.existingWeChatLogin': 'Utiliser un compte existant',
       'auth.accountLoginTitle': 'Se connecter à son compte',
-      'auth.accountLoginDescription': 'Saisissez votre numéro, identifiant ou e-mail et votre mot de passe. Aucune autorisation WeChat n’est requise.',
+      'auth.accountLoginDescription':
+        'Saisissez votre numéro, identifiant ou e-mail et votre mot de passe. Aucune autorisation WeChat n’est requise.',
       'auth.accountLoginSubmit': 'Se connecter',
       'auth.accountLoginBack': 'Retour aux options de connexion',
-      'auth.error.phoneUnavailable': 'Impossible d’obtenir votre numéro WeChat. Connectez-vous avec vos identifiants.',
-      'auth.error.phoneCancelled': 'Autorisation du numéro annulée. Vous pouvez utiliser un compte existant.',
-      'auth.error.phoneCodeInvalid': 'L’autorisation du numéro a expiré. Réessayez.',
-      'auth.error.phoneConflict': 'Ce numéro vérifié appartient à un autre compte. Vérifiez ce compte avant de l’associer.',
-      'auth.error.phoneRequired': 'Un numéro vérifié est requis pour créer un compte.',
+      'auth.error.phoneUnavailable':
+        'Impossible d’obtenir votre numéro WeChat. Connectez-vous avec vos identifiants.',
+      'auth.error.phoneCancelled':
+        'Autorisation du numéro annulée. Vous pouvez utiliser un compte existant.',
+      'auth.error.phoneCodeInvalid':
+        'L’autorisation du numéro a expiré. Réessayez.',
+      'auth.error.phoneConflict':
+        'Ce numéro vérifié appartient à un autre compte. Vérifiez ce compte avant de l’associer.',
+      'auth.error.phoneRequired':
+        'Un numéro vérifié est requis pour créer un compte.',
       'auth.signingIn': 'Connexion…',
       'auth.bindTitle': 'Associer votre compte',
-      'auth.bindDescription': "Vérifiez un compte existant ou créez-en un. L’identité WeChat n’est associée qu’après validation.",
+      'auth.bindDescription':
+        'Vérifiez un compte existant ou créez-en un. L’identité WeChat n’est associée qu’après validation.',
       'auth.existingAccount': 'Compte existant',
       'auth.createAccount': 'Créer un compte',
       'auth.username': 'Identifiant, e-mail ou téléphone',
@@ -333,67 +402,95 @@ export const resources = {
       'auth.email': 'E-mail vérifié',
       'auth.verificationCode': 'Code de vérification e-mail',
       'auth.sendVerificationCode': 'Envoyer le code',
-      'auth.verificationCodeSent': 'Le code a été envoyé. Consultez votre boîte de réception.',
+      'auth.verificationCodeSent':
+        'Le code a été envoyé. Consultez votre boîte de réception.',
       'auth.twoFactorCode': 'Code 2FA ou de secours',
       'auth.affCode': 'Code de parrainage (facultatif)',
-      'auth.acceptTerms': "J’ai lu et j’accepte les conditions et la politique de confidentialité applicables.",
-      'auth.viewAgreement': "Voir les conditions d’utilisation",
+      'auth.acceptTerms':
+        'J’ai lu et j’accepte les conditions et la politique de confidentialité applicables.',
+      'auth.viewAgreement': 'Voir les conditions d’utilisation',
       'auth.viewPrivacy': 'Voir la politique de confidentialité',
       'auth.bind': 'Vérifier et associer',
       'auth.register': 'Créer et associer',
       'auth.back': 'Utiliser une autre connexion WeChat',
       'auth.signedInAs': 'Connecté en tant que',
-      'auth.sessionReady': 'Cet appareil dispose d’une session mobile protégée et renouvelable.',
+      'auth.sessionReady':
+        'Cet appareil dispose d’une session mobile protégée et renouvelable.',
       'auth.logout': 'Se déconnecter de cet appareil',
       'auth.busy': 'Veuillez patienter…',
       'auth.error.generic': 'La demande a échoué. Veuillez réessayer.',
-      'auth.error.notConfigured': 'La connexion par mini-programme WeChat n’est pas activée.',
-      'auth.error.invalidCode': 'Le code WeChat a expiré. Relancez la connexion.',
-      'auth.error.credentials': 'Les identifiants sont incorrects ou le compte est indisponible.',
+      'auth.error.notConfigured':
+        'La connexion par mini-programme WeChat n’est pas activée.',
+      'auth.error.invalidCode':
+        'Le code WeChat a expiré. Relancez la connexion.',
+      'auth.error.credentials':
+        'Les identifiants sont incorrects ou le compte est indisponible.',
       'auth.error.twoFactorRequired': 'Saisissez votre code 2FA ou de secours.',
       'auth.error.twoFactorInvalid': 'Le code 2FA ou de secours est invalide.',
-      'auth.error.flowExpired': 'Cette tentative a expiré. Relancez la connexion WeChat.',
-      'auth.error.conflict': 'Cette identité WeChat ou ce compte est déjà associé ailleurs.',
-      'auth.error.terms': 'Acceptez les conditions applicables avant de continuer.',
-      'auth.error.accountExists': 'Cet identifiant ou e-mail vérifié est déjà utilisé.',
-      'auth.error.emailVerification': 'Le code de vérification e-mail est absent ou invalide.',
-      'auth.error.emailVerificationDisabled': 'La vérification par e-mail est indisponible actuellement.',
-      'auth.error.unavailable': 'La connexion WeChat est temporairement indisponible.',
-      'auth.error.registrationDisabled': 'La création de compte est actuellement désactivée.',
-      'auth.error.accountUnavailable': 'Ce compte est désactivé ou indisponible.',
-      'auth.error.passwordLoginDisabled': 'La connexion par mot de passe est désactivée.',
-      'auth.error.noAvailableMethod': 'Aucune méthode d’association de compte n’est disponible.',
-      'legal.titleAgreement': "Conditions d’utilisation",
+      'auth.error.flowExpired':
+        'Cette tentative a expiré. Relancez la connexion WeChat.',
+      'auth.error.conflict':
+        'Cette identité WeChat ou ce compte est déjà associé ailleurs.',
+      'auth.error.terms':
+        'Acceptez les conditions applicables avant de continuer.',
+      'auth.error.accountExists':
+        'Cet identifiant ou e-mail vérifié est déjà utilisé.',
+      'auth.error.emailVerification':
+        'Le code de vérification e-mail est absent ou invalide.',
+      'auth.error.emailVerificationDisabled':
+        'La vérification par e-mail est indisponible actuellement.',
+      'auth.error.unavailable':
+        'La connexion WeChat est temporairement indisponible.',
+      'auth.error.registrationDisabled':
+        'La création de compte est actuellement désactivée.',
+      'auth.error.accountUnavailable':
+        'Ce compte est désactivé ou indisponible.',
+      'auth.error.passwordLoginDisabled':
+        'La connexion par mot de passe est désactivée.',
+      'auth.error.noAvailableMethod':
+        'Aucune méthode d’association de compte n’est disponible.',
+      'legal.titleAgreement': 'Conditions d’utilisation',
       'legal.titlePrivacy': 'Politique de confidentialité',
-      'legal.description': 'Consultez les conditions actuelles avant d’associer votre compte.',
+      'legal.description':
+        'Consultez les conditions actuelles avant d’associer votre compte.',
       'legal.loading': 'Chargement du document…',
       'legal.error': 'Impossible de charger le document.',
       'legal.empty': 'Aucun document n’est publié actuellement.',
       'home.eyebrow': 'Espace mobile',
       'home.title': 'Vos services IA à portée de main',
-      'home.description': "Cette base relie le mini-programme à la plateforme existante sans dupliquer l’identité, la facturation ni les autorisations.",
+      'home.description':
+        'Cette base relie le mini-programme à la plateforme existante sans dupliquer l’identité, la facturation ni les autorisations.',
       'home.statusTitle': 'Connexion à la plateforme',
       'home.statusLoading': 'Vérification de la plateforme…',
       'home.statusConnected': 'Connecté à {{systemName}}',
       'home.backendAddress': 'Adresse du serveur : {{address}}',
-      'home.statusSetupRequired': 'La plateforme est accessible mais nécessite encore sa configuration initiale.',
-      'home.statusUnavailable': 'La plateforme est inaccessible. Vérifiez le serveur et le domaine de requête.',
-      'home.statusNotConfigured': 'Définissez MINIAPP_API_BASE_URL lors de la compilation pour connecter ce mini-programme.',
+      'home.statusSetupRequired':
+        'La plateforme est accessible mais nécessite encore sa configuration initiale.',
+      'home.statusUnavailable':
+        'La plateforme est inaccessible. Vérifiez le serveur et le domaine de requête.',
+      'home.statusNotConfigured':
+        'Définissez MINIAPP_API_BASE_URL lors de la compilation pour connecter ce mini-programme.',
       'home.version': 'Version du serveur {{version}}',
       'home.defaultSystemName': 'la plateforme',
       'models.title': 'Catalogue de modèles',
-      'models.description': 'Parcourez les modèles, capacités, points de terminaison, groupes et tarifs sur mobile.',
+      'models.description':
+        'Parcourez les modèles, capacités, points de terminaison, groupes et tarifs sur mobile.',
       'playground.title': 'Espace de dialogue',
-      'playground.description': 'Lancez des conversations en flux via le relais et la facturation existants.',
+      'playground.description':
+        'Lancez des conversations en flux via le relais et la facturation existants.',
       'usage.title': 'Utilisation et tâches',
-      'usage.description': 'Consultez les journaux, tâches image et vidéo, relevés et états.',
+      'usage.description':
+        'Consultez les journaux, tâches image et vidéo, relevés et états.',
       'profile.title': 'Profil et accès',
-      'profile.description': 'Gérez les clés API, abonnements, portefeuille, appareils, langue et sécurité.',
-      'feature.nextStep': 'Cette entrée est prête. Son parcours complet est suivi dans le plan du projet.',
+      'profile.description':
+        'Gérez les clés API, abonnements, portefeuille, appareils, langue et sécurité.',
+      'feature.nextStep':
+        'Cette entrée est prête. Son parcours complet est suivi dans le plan du projet.',
     },
   },
   ja: {
     translation: {
+      ...phoneResources['ja'],
       ...accountResources.ja,
       ...featureResources.ja,
       ...usageResources.ja,
@@ -407,22 +504,30 @@ export const resources = {
       'common.retry': '再試行',
       'auth.eyebrow': 'アカウント保護',
       'auth.signedOutTitle': 'アカウントにログイン',
-      'auth.signedOutDescription': 'WeChat の電話番号で簡単にログインするか、既存のアカウントとパスワードでログインできます。',
+      'auth.signedOutDescription':
+        'WeChat の電話番号で簡単にログインするか、既存のアカウントとパスワードでログインできます。',
       'auth.wechatLogin': 'WeChat で続行',
       'auth.wechatPhoneLogin': 'WeChat の電話番号で続行',
       'auth.existingWeChatLogin': '既存アカウントでログイン',
       'auth.accountLoginTitle': 'アカウントにログイン',
-      'auth.accountLoginDescription': '電話番号、ユーザー名またはメールアドレスとパスワードを入力してください。WeChat 認証は不要です。',
+      'auth.accountLoginDescription':
+        '電話番号、ユーザー名またはメールアドレスとパスワードを入力してください。WeChat 認証は不要です。',
       'auth.accountLoginSubmit': 'ログイン',
       'auth.accountLoginBack': 'ログイン方法に戻る',
-      'auth.error.phoneUnavailable': 'WeChat の電話番号を取得できませんでした。アカウント情報でログインしてください。',
-      'auth.error.phoneCancelled': '電話番号の認証がキャンセルされました。既存アカウントでもログインできます。',
-      'auth.error.phoneCodeInvalid': '電話番号の認証が期限切れです。もう一度お試しください。',
-      'auth.error.phoneConflict': 'この認証済み電話番号は別のアカウントに属しています。先にそのアカウントを確認してください。',
-      'auth.error.phoneRequired': '新規アカウントの作成には認証済み電話番号が必要です。',
+      'auth.error.phoneUnavailable':
+        'WeChat の電話番号を取得できませんでした。アカウント情報でログインしてください。',
+      'auth.error.phoneCancelled':
+        '電話番号の認証がキャンセルされました。既存アカウントでもログインできます。',
+      'auth.error.phoneCodeInvalid':
+        '電話番号の認証が期限切れです。もう一度お試しください。',
+      'auth.error.phoneConflict':
+        'この認証済み電話番号は別のアカウントに属しています。先にそのアカウントを確認してください。',
+      'auth.error.phoneRequired':
+        '新規アカウントの作成には認証済み電話番号が必要です。',
       'auth.signingIn': '接続中…',
       'auth.bindTitle': 'アカウントを連携',
-      'auth.bindDescription': '既存アカウントを確認するか新規作成します。確認成功後にのみ WeChat ID を連携します。',
+      'auth.bindDescription':
+        '既存アカウントを確認するか新規作成します。確認成功後にのみ WeChat ID を連携します。',
       'auth.existingAccount': '既存アカウント',
       'auth.createAccount': '新規作成',
       'auth.username': 'ユーザー名、メール、電話番号',
@@ -430,36 +535,50 @@ export const resources = {
       'auth.email': '確認済みメール',
       'auth.verificationCode': 'メール確認コード',
       'auth.sendVerificationCode': '確認コードを送信',
-      'auth.verificationCodeSent': '確認コードを送信しました。受信箱を確認してください。',
+      'auth.verificationCodeSent':
+        '確認コードを送信しました。受信箱を確認してください。',
       'auth.twoFactorCode': '2FA またはバックアップコード',
       'auth.affCode': '紹介コード（任意）',
-      'auth.acceptTerms': '適用される利用規約とプライバシーポリシーを確認し、同意します。',
+      'auth.acceptTerms':
+        '適用される利用規約とプライバシーポリシーを確認し、同意します。',
       'auth.viewAgreement': '利用規約を見る',
       'auth.viewPrivacy': 'プライバシーポリシーを見る',
       'auth.bind': '確認して連携',
       'auth.register': '作成して連携',
       'auth.back': '別の WeChat ログインを使う',
       'auth.signedInAs': 'ログイン中',
-      'auth.sessionReady': 'この端末には保護され更新可能なモバイルセッションがあります。',
+      'auth.sessionReady':
+        'この端末には保護され更新可能なモバイルセッションがあります。',
       'auth.logout': 'この端末からログアウト',
       'auth.busy': 'お待ちください…',
       'auth.error.generic': '処理できませんでした。もう一度お試しください。',
-      'auth.error.notConfigured': 'WeChat ミニプログラムログインは有効になっていません。',
-      'auth.error.invalidCode': 'WeChat ログインコードが期限切れです。再度ログインしてください。',
-      'auth.error.credentials': '認証情報が正しくないか、アカウントを利用できません。',
-      'auth.error.twoFactorRequired': '2FA またはバックアップコードを入力してください。',
+      'auth.error.notConfigured':
+        'WeChat ミニプログラムログインは有効になっていません。',
+      'auth.error.invalidCode':
+        'WeChat ログインコードが期限切れです。再度ログインしてください。',
+      'auth.error.credentials':
+        '認証情報が正しくないか、アカウントを利用できません。',
+      'auth.error.twoFactorRequired':
+        '2FA またはバックアップコードを入力してください。',
       'auth.error.twoFactorInvalid': '2FA またはバックアップコードが無効です。',
-      'auth.error.flowExpired': '連携操作が期限切れです。WeChat ログインをやり直してください。',
-      'auth.error.conflict': 'この WeChat ID またはアカウントは既に連携されています。',
+      'auth.error.flowExpired':
+        '連携操作が期限切れです。WeChat ログインをやり直してください。',
+      'auth.error.conflict':
+        'この WeChat ID またはアカウントは既に連携されています。',
       'auth.error.terms': '続行する前に規約へ同意してください。',
-      'auth.error.accountExists': 'そのユーザー名または確認済みメールは使用済みです。',
+      'auth.error.accountExists':
+        'そのユーザー名または確認済みメールは使用済みです。',
       'auth.error.emailVerification': 'メール確認コードがないか無効です。',
-      'auth.error.emailVerificationDisabled': '現在、メール確認を利用できません。',
+      'auth.error.emailVerificationDisabled':
+        '現在、メール確認を利用できません。',
       'auth.error.unavailable': 'WeChat ログインは一時的に利用できません。',
       'auth.error.registrationDisabled': '現在、新規登録は無効です。',
-      'auth.error.accountUnavailable': 'このアカウントは無効または利用できません。',
-      'auth.error.passwordLoginDisabled': '現在、パスワードログインは無効です。',
-      'auth.error.noAvailableMethod': '現在、利用できるアカウント連携方法がありません。',
+      'auth.error.accountUnavailable':
+        'このアカウントは無効または利用できません。',
+      'auth.error.passwordLoginDisabled':
+        '現在、パスワードログインは無効です。',
+      'auth.error.noAvailableMethod':
+        '現在、利用できるアカウント連携方法がありません。',
       'legal.titleAgreement': '利用規約',
       'legal.titlePrivacy': 'プライバシーポリシー',
       'legal.description': 'アカウント連携前に現在の規約を確認してください。',
@@ -468,29 +587,39 @@ export const resources = {
       'legal.empty': '現在公開されている文書はありません。',
       'home.eyebrow': 'モバイルワークスペース',
       'home.title': 'AI サービスをいつでも手元に',
-      'home.description': '既存の本人確認、課金、認可ルールを重複させず、ミニプログラムを既存プラットフォームに接続します。',
+      'home.description':
+        '既存の本人確認、課金、認可ルールを重複させず、ミニプログラムを既存プラットフォームに接続します。',
       'home.statusTitle': 'プラットフォーム接続',
       'home.statusLoading': 'プラットフォームの状態を確認中…',
       'home.statusConnected': '{{systemName}} に接続しました',
       'home.backendAddress': '接続先: {{address}}',
-      'home.statusSetupRequired': 'プラットフォームには接続できますが、初期設定が必要です。',
-      'home.statusUnavailable': 'プラットフォームに接続できません。バックエンドとリクエストドメインを確認してください。',
-      'home.statusNotConfigured': 'ビルド時に MINIAPP_API_BASE_URL を設定してください。',
+      'home.statusSetupRequired':
+        'プラットフォームには接続できますが、初期設定が必要です。',
+      'home.statusUnavailable':
+        'プラットフォームに接続できません。バックエンドとリクエストドメインを確認してください。',
+      'home.statusNotConfigured':
+        'ビルド時に MINIAPP_API_BASE_URL を設定してください。',
       'home.version': 'サーバーバージョン {{version}}',
       'home.defaultSystemName': 'プラットフォーム',
       'models.title': 'モデルカタログ',
-      'models.description': '利用可能なモデル、機能、エンドポイント、グループ、価格をモバイル向けに閲覧します。',
+      'models.description':
+        '利用可能なモデル、機能、エンドポイント、グループ、価格をモバイル向けに閲覧します。',
       'playground.title': 'プレイグラウンド',
-      'playground.description': '既存のリレーと課金経路を通じてストリーミング会話を実行します。',
+      'playground.description':
+        '既存のリレーと課金経路を通じてストリーミング会話を実行します。',
       'usage.title': '使用量とタスク',
-      'usage.description': '使用ログ、画像・動画タスク、請求明細、現在の状態を確認します。',
+      'usage.description':
+        '使用ログ、画像・動画タスク、請求明細、現在の状態を確認します。',
       'profile.title': 'プロフィールとアクセス',
-      'profile.description': 'API キー、サブスクリプション、ウォレット、端末、言語、セキュリティを管理します。',
-      'feature.nextStep': 'ナビゲーションは準備済みです。完全な実装はプロジェクト計画で追跡します。',
+      'profile.description':
+        'API キー、サブスクリプション、ウォレット、端末、言語、セキュリティを管理します。',
+      'feature.nextStep':
+        'ナビゲーションは準備済みです。完全な実装はプロジェクト計画で追跡します。',
     },
   },
   ru: {
     translation: {
+      ...phoneResources['ru'],
       ...accountResources.ru,
       ...featureResources.ru,
       ...usageResources.ru,
@@ -504,22 +633,30 @@ export const resources = {
       'common.retry': 'Повторить',
       'auth.eyebrow': 'Безопасность аккаунта',
       'auth.signedOutTitle': 'Вход в аккаунт',
-      'auth.signedOutDescription': 'Войдите быстро по номеру WeChat либо через существующий аккаунт и пароль.',
+      'auth.signedOutDescription':
+        'Войдите быстро по номеру WeChat либо через существующий аккаунт и пароль.',
       'auth.wechatLogin': 'Продолжить с WeChat',
       'auth.wechatPhoneLogin': 'Продолжить с номером WeChat',
       'auth.existingWeChatLogin': 'Войти в существующий аккаунт',
       'auth.accountLoginTitle': 'Вход в аккаунт',
-      'auth.accountLoginDescription': 'Введите номер телефона, имя пользователя или почту и пароль. Разрешение WeChat не требуется.',
+      'auth.accountLoginDescription':
+        'Введите номер телефона, имя пользователя или почту и пароль. Разрешение WeChat не требуется.',
       'auth.accountLoginSubmit': 'Войти',
       'auth.accountLoginBack': 'Назад к способам входа',
-      'auth.error.phoneUnavailable': 'Не удалось получить номер WeChat. Войдите с помощью данных аккаунта.',
-      'auth.error.phoneCancelled': 'Доступ к номеру отменён. Можно войти в существующий аккаунт.',
-      'auth.error.phoneCodeInvalid': 'Срок подтверждения номера истёк. Повторите попытку.',
-      'auth.error.phoneConflict': 'Этот подтверждённый номер принадлежит другому аккаунту. Сначала подтвердите его.',
-      'auth.error.phoneRequired': 'Для создания аккаунта нужен подтверждённый номер телефона.',
+      'auth.error.phoneUnavailable':
+        'Не удалось получить номер WeChat. Войдите с помощью данных аккаунта.',
+      'auth.error.phoneCancelled':
+        'Доступ к номеру отменён. Можно войти в существующий аккаунт.',
+      'auth.error.phoneCodeInvalid':
+        'Срок подтверждения номера истёк. Повторите попытку.',
+      'auth.error.phoneConflict':
+        'Этот подтверждённый номер принадлежит другому аккаунту. Сначала подтвердите его.',
+      'auth.error.phoneRequired':
+        'Для создания аккаунта нужен подтверждённый номер телефона.',
       'auth.signingIn': 'Подключение…',
       'auth.bindTitle': 'Привязка аккаунта',
-      'auth.bindDescription': 'Подтвердите существующий аккаунт или создайте новый. WeChat будет привязан только после проверки.',
+      'auth.bindDescription':
+        'Подтвердите существующий аккаунт или создайте новый. WeChat будет привязан только после проверки.',
       'auth.existingAccount': 'Есть аккаунт',
       'auth.createAccount': 'Создать аккаунт',
       'auth.username': 'Имя, e-mail или телефон',
@@ -527,67 +664,90 @@ export const resources = {
       'auth.email': 'Подтверждённый e-mail',
       'auth.verificationCode': 'Код из e-mail',
       'auth.sendVerificationCode': 'Отправить код',
-      'auth.verificationCodeSent': 'Код отправлен. Проверьте входящие сообщения.',
+      'auth.verificationCodeSent':
+        'Код отправлен. Проверьте входящие сообщения.',
       'auth.twoFactorCode': 'Код 2FA или резервный код',
       'auth.affCode': 'Реферальный код (необязательно)',
-      'auth.acceptTerms': 'Я прочитал и принимаю применимые условия и политику конфиденциальности.',
+      'auth.acceptTerms':
+        'Я прочитал и принимаю применимые условия и политику конфиденциальности.',
       'auth.viewAgreement': 'Открыть соглашение',
       'auth.viewPrivacy': 'Открыть политику конфиденциальности',
       'auth.bind': 'Проверить и привязать',
       'auth.register': 'Создать и привязать',
       'auth.back': 'Использовать другой вход WeChat',
       'auth.signedInAs': 'Выполнен вход',
-      'auth.sessionReady': 'На устройстве создана защищённая обновляемая мобильная сессия.',
+      'auth.sessionReady':
+        'На устройстве создана защищённая обновляемая мобильная сессия.',
       'auth.logout': 'Выйти на этом устройстве',
       'auth.busy': 'Подождите…',
       'auth.error.generic': 'Не удалось выполнить запрос. Повторите попытку.',
-      'auth.error.notConfigured': 'Вход через мини-приложение WeChat не включён.',
+      'auth.error.notConfigured':
+        'Вход через мини-приложение WeChat не включён.',
       'auth.error.invalidCode': 'Код WeChat истёк. Начните вход заново.',
       'auth.error.credentials': 'Данные неверны или аккаунт недоступен.',
       'auth.error.twoFactorRequired': 'Введите код 2FA или резервный код.',
-      'auth.error.twoFactorInvalid': 'Код 2FA или резервный код недействителен.',
-      'auth.error.flowExpired': 'Попытка привязки истекла. Начните вход WeChat заново.',
-      'auth.error.conflict': 'Этот WeChat или аккаунт уже привязан в другом месте.',
+      'auth.error.twoFactorInvalid':
+        'Код 2FA или резервный код недействителен.',
+      'auth.error.flowExpired':
+        'Попытка привязки истекла. Начните вход WeChat заново.',
+      'auth.error.conflict':
+        'Этот WeChat или аккаунт уже привязан в другом месте.',
       'auth.error.terms': 'Примите применимые условия, чтобы продолжить.',
-      'auth.error.accountExists': 'Это имя или подтверждённый e-mail уже используется.',
-      'auth.error.emailVerification': 'Код подтверждения e-mail отсутствует или неверен.',
-      'auth.error.emailVerificationDisabled': 'Подтверждение e-mail сейчас недоступно.',
+      'auth.error.accountExists':
+        'Это имя или подтверждённый e-mail уже используется.',
+      'auth.error.emailVerification':
+        'Код подтверждения e-mail отсутствует или неверен.',
+      'auth.error.emailVerificationDisabled':
+        'Подтверждение e-mail сейчас недоступно.',
       'auth.error.unavailable': 'Вход WeChat временно недоступен.',
-      'auth.error.registrationDisabled': 'Регистрация новых аккаунтов отключена.',
+      'auth.error.registrationDisabled':
+        'Регистрация новых аккаунтов отключена.',
       'auth.error.accountUnavailable': 'Этот аккаунт отключён или недоступен.',
       'auth.error.passwordLoginDisabled': 'Вход по паролю сейчас отключён.',
-      'auth.error.noAvailableMethod': 'Сейчас нет доступного способа привязки аккаунта.',
+      'auth.error.noAvailableMethod':
+        'Сейчас нет доступного способа привязки аккаунта.',
       'legal.titleAgreement': 'Пользовательское соглашение',
       'legal.titlePrivacy': 'Политика конфиденциальности',
-      'legal.description': 'Ознакомьтесь с условиями платформы перед привязкой аккаунта.',
+      'legal.description':
+        'Ознакомьтесь с условиями платформы перед привязкой аккаунта.',
       'legal.loading': 'Загрузка документа…',
       'legal.error': 'Не удалось загрузить документ.',
       'legal.empty': 'Документ пока не опубликован.',
       'home.eyebrow': 'Мобильное рабочее место',
       'home.title': 'Ваши ИИ-сервисы всегда под рукой',
-      'home.description': 'Эта основа подключает мини-приложение к платформе без дублирования правил идентификации, биллинга и доступа.',
+      'home.description':
+        'Эта основа подключает мини-приложение к платформе без дублирования правил идентификации, биллинга и доступа.',
       'home.statusTitle': 'Подключение к платформе',
       'home.statusLoading': 'Проверяем состояние платформы…',
       'home.statusConnected': 'Подключено к {{systemName}}',
       'home.backendAddress': 'Адрес сервера: {{address}}',
-      'home.statusSetupRequired': 'Платформа доступна, но требует начальной настройки.',
-      'home.statusUnavailable': 'Платформа недоступна. Проверьте сервер и домен запросов.',
-      'home.statusNotConfigured': 'Задайте MINIAPP_API_BASE_URL при сборке для подключения.',
+      'home.statusSetupRequired':
+        'Платформа доступна, но требует начальной настройки.',
+      'home.statusUnavailable':
+        'Платформа недоступна. Проверьте сервер и домен запросов.',
+      'home.statusNotConfigured':
+        'Задайте MINIAPP_API_BASE_URL при сборке для подключения.',
       'home.version': 'Версия сервера {{version}}',
       'home.defaultSystemName': 'платформе',
       'models.title': 'Каталог моделей',
-      'models.description': 'Просматривайте модели, возможности, конечные точки, группы и цены с мобильного устройства.',
+      'models.description':
+        'Просматривайте модели, возможности, конечные точки, группы и цены с мобильного устройства.',
       'playground.title': 'Диалог',
-      'playground.description': 'Запускайте потоковые диалоги через существующий контур ретрансляции и биллинга.',
+      'playground.description':
+        'Запускайте потоковые диалоги через существующий контур ретрансляции и биллинга.',
       'usage.title': 'Расход и задачи',
-      'usage.description': 'Просматривайте журналы, задачи изображений и видео, счета и их статусы.',
+      'usage.description':
+        'Просматривайте журналы, задачи изображений и видео, счета и их статусы.',
       'profile.title': 'Профиль и доступ',
-      'profile.description': 'Управляйте API-ключами, подписками, кошельком, устройствами, языком и безопасностью.',
-      'feature.nextStep': 'Раздел готов к развитию. Полная реализация отслеживается в плане проекта.',
+      'profile.description':
+        'Управляйте API-ключами, подписками, кошельком, устройствами, языком и безопасностью.',
+      'feature.nextStep':
+        'Раздел готов к развитию. Полная реализация отслеживается в плане проекта.',
     },
   },
   vi: {
     translation: {
+      ...phoneResources['vi'],
       ...accountResources.vi,
       ...featureResources.vi,
       ...usageResources.vi,
@@ -601,22 +761,30 @@ export const resources = {
       'common.retry': 'Thử lại',
       'auth.eyebrow': 'Bảo mật tài khoản',
       'auth.signedOutTitle': 'Đăng nhập tài khoản',
-      'auth.signedOutDescription': 'Đăng nhập nhanh bằng số điện thoại WeChat hoặc bằng tài khoản và mật khẩu hiện có.',
+      'auth.signedOutDescription':
+        'Đăng nhập nhanh bằng số điện thoại WeChat hoặc bằng tài khoản và mật khẩu hiện có.',
       'auth.wechatLogin': 'Tiếp tục với WeChat',
       'auth.wechatPhoneLogin': 'Tiếp tục bằng số điện thoại WeChat',
       'auth.existingWeChatLogin': 'Đăng nhập bằng tài khoản hiện có',
       'auth.accountLoginTitle': 'Đăng nhập tài khoản',
-      'auth.accountLoginDescription': 'Nhập số điện thoại, tên người dùng hoặc email và mật khẩu. Không cần cấp quyền WeChat.',
+      'auth.accountLoginDescription':
+        'Nhập số điện thoại, tên người dùng hoặc email và mật khẩu. Không cần cấp quyền WeChat.',
       'auth.accountLoginSubmit': 'Đăng nhập',
       'auth.accountLoginBack': 'Quay lại các cách đăng nhập',
-      'auth.error.phoneUnavailable': 'Không lấy được số điện thoại WeChat. Hãy đăng nhập bằng thông tin tài khoản.',
-      'auth.error.phoneCancelled': 'Đã hủy cấp quyền số điện thoại. Bạn vẫn có thể dùng tài khoản hiện có.',
-      'auth.error.phoneCodeInvalid': 'Quyền xác minh số điện thoại đã hết hạn. Vui lòng thử lại.',
-      'auth.error.phoneConflict': 'Số điện thoại đã xác minh này thuộc tài khoản khác. Hãy xác minh tài khoản đó trước khi liên kết.',
-      'auth.error.phoneRequired': 'Cần số điện thoại đã xác minh để tạo tài khoản mới.',
+      'auth.error.phoneUnavailable':
+        'Không lấy được số điện thoại WeChat. Hãy đăng nhập bằng thông tin tài khoản.',
+      'auth.error.phoneCancelled':
+        'Đã hủy cấp quyền số điện thoại. Bạn vẫn có thể dùng tài khoản hiện có.',
+      'auth.error.phoneCodeInvalid':
+        'Quyền xác minh số điện thoại đã hết hạn. Vui lòng thử lại.',
+      'auth.error.phoneConflict':
+        'Số điện thoại đã xác minh này thuộc tài khoản khác. Hãy xác minh tài khoản đó trước khi liên kết.',
+      'auth.error.phoneRequired':
+        'Cần số điện thoại đã xác minh để tạo tài khoản mới.',
       'auth.signingIn': 'Đang kết nối…',
       'auth.bindTitle': 'Liên kết tài khoản',
-      'auth.bindDescription': 'Xác minh tài khoản hiện có hoặc tạo tài khoản mới. Danh tính WeChat chỉ được liên kết sau khi xác minh.',
+      'auth.bindDescription':
+        'Xác minh tài khoản hiện có hoặc tạo tài khoản mới. Danh tính WeChat chỉ được liên kết sau khi xác minh.',
       'auth.existingAccount': 'Tài khoản hiện có',
       'auth.createAccount': 'Tạo tài khoản',
       'auth.username': 'Tên, email hoặc số điện thoại',
@@ -627,60 +795,85 @@ export const resources = {
       'auth.verificationCodeSent': 'Đã gửi mã xác minh. Hãy kiểm tra hộp thư.',
       'auth.twoFactorCode': 'Mã 2FA hoặc mã dự phòng',
       'auth.affCode': 'Mã giới thiệu (không bắt buộc)',
-      'auth.acceptTerms': 'Tôi đã đọc và đồng ý với điều khoản cùng chính sách quyền riêng tư áp dụng.',
+      'auth.acceptTerms':
+        'Tôi đã đọc và đồng ý với điều khoản cùng chính sách quyền riêng tư áp dụng.',
       'auth.viewAgreement': 'Xem thỏa thuận người dùng',
       'auth.viewPrivacy': 'Xem chính sách quyền riêng tư',
       'auth.bind': 'Xác minh và liên kết',
       'auth.register': 'Tạo và liên kết',
       'auth.back': 'Dùng đăng nhập WeChat khác',
       'auth.signedInAs': 'Đang đăng nhập với',
-      'auth.sessionReady': 'Thiết bị này có phiên di động được bảo vệ và có thể gia hạn.',
+      'auth.sessionReady':
+        'Thiết bị này có phiên di động được bảo vệ và có thể gia hạn.',
       'auth.logout': 'Đăng xuất trên thiết bị này',
       'auth.busy': 'Vui lòng đợi…',
       'auth.error.generic': 'Không thể hoàn tất yêu cầu. Vui lòng thử lại.',
-      'auth.error.notConfigured': 'Đăng nhập chương trình nhỏ WeChat chưa được bật.',
-      'auth.error.invalidCode': 'Mã đăng nhập WeChat đã hết hạn. Hãy đăng nhập lại.',
-      'auth.error.credentials': 'Thông tin tài khoản sai hoặc tài khoản không khả dụng.',
-      'auth.error.twoFactorRequired': 'Nhập mã 2FA hoặc mã dự phòng để tiếp tục.',
+      'auth.error.notConfigured':
+        'Đăng nhập chương trình nhỏ WeChat chưa được bật.',
+      'auth.error.invalidCode':
+        'Mã đăng nhập WeChat đã hết hạn. Hãy đăng nhập lại.',
+      'auth.error.credentials':
+        'Thông tin tài khoản sai hoặc tài khoản không khả dụng.',
+      'auth.error.twoFactorRequired':
+        'Nhập mã 2FA hoặc mã dự phòng để tiếp tục.',
       'auth.error.twoFactorInvalid': 'Mã 2FA hoặc mã dự phòng không hợp lệ.',
-      'auth.error.flowExpired': 'Lần liên kết này đã hết hạn. Hãy đăng nhập WeChat lại.',
-      'auth.error.conflict': 'Danh tính WeChat hoặc tài khoản này đã được liên kết nơi khác.',
-      'auth.error.terms': 'Hãy đồng ý với các điều khoản áp dụng trước khi tiếp tục.',
-      'auth.error.accountExists': 'Tên hoặc email đã xác minh này đã được sử dụng.',
-      'auth.error.emailVerification': 'Mã xác minh email bị thiếu hoặc không hợp lệ.',
-      'auth.error.emailVerificationDisabled': 'Xác minh email hiện không khả dụng.',
+      'auth.error.flowExpired':
+        'Lần liên kết này đã hết hạn. Hãy đăng nhập WeChat lại.',
+      'auth.error.conflict':
+        'Danh tính WeChat hoặc tài khoản này đã được liên kết nơi khác.',
+      'auth.error.terms':
+        'Hãy đồng ý với các điều khoản áp dụng trước khi tiếp tục.',
+      'auth.error.accountExists':
+        'Tên hoặc email đã xác minh này đã được sử dụng.',
+      'auth.error.emailVerification':
+        'Mã xác minh email bị thiếu hoặc không hợp lệ.',
+      'auth.error.emailVerificationDisabled':
+        'Xác minh email hiện không khả dụng.',
       'auth.error.unavailable': 'Đăng nhập WeChat tạm thời không khả dụng.',
       'auth.error.registrationDisabled': 'Đăng ký tài khoản mới hiện đang tắt.',
-      'auth.error.accountUnavailable': 'Tài khoản này đã bị tắt hoặc không khả dụng.',
-      'auth.error.passwordLoginDisabled': 'Đăng nhập bằng mật khẩu hiện đang tắt.',
-      'auth.error.noAvailableMethod': 'Hiện không có cách liên kết tài khoản nào khả dụng.',
+      'auth.error.accountUnavailable':
+        'Tài khoản này đã bị tắt hoặc không khả dụng.',
+      'auth.error.passwordLoginDisabled':
+        'Đăng nhập bằng mật khẩu hiện đang tắt.',
+      'auth.error.noAvailableMethod':
+        'Hiện không có cách liên kết tài khoản nào khả dụng.',
       'legal.titleAgreement': 'Thỏa thuận người dùng',
       'legal.titlePrivacy': 'Chính sách quyền riêng tư',
-      'legal.description': 'Xem điều khoản hiện hành trước khi liên kết tài khoản.',
+      'legal.description':
+        'Xem điều khoản hiện hành trước khi liên kết tài khoản.',
       'legal.loading': 'Đang tải tài liệu…',
       'legal.error': 'Không thể tải tài liệu.',
       'legal.empty': 'Hiện chưa có tài liệu được công bố.',
       'home.eyebrow': 'Không gian di động',
       'home.title': 'Dịch vụ AI luôn trong tầm tay',
-      'home.description': 'Nền tảng này kết nối chương trình nhỏ với hệ thống hiện có mà không lặp lại quy tắc danh tính, tính phí hay phân quyền.',
+      'home.description':
+        'Nền tảng này kết nối chương trình nhỏ với hệ thống hiện có mà không lặp lại quy tắc danh tính, tính phí hay phân quyền.',
       'home.statusTitle': 'Kết nối nền tảng',
       'home.statusLoading': 'Đang kiểm tra trạng thái nền tảng…',
       'home.statusConnected': 'Đã kết nối với {{systemName}}',
       'home.backendAddress': 'Địa chỉ máy chủ: {{address}}',
-      'home.statusSetupRequired': 'Có thể truy cập nền tảng nhưng vẫn cần hoàn tất thiết lập ban đầu.',
-      'home.statusUnavailable': 'Không thể truy cập nền tảng. Hãy kiểm tra máy chủ và tên miền request.',
-      'home.statusNotConfigured': 'Hãy đặt MINIAPP_API_BASE_URL khi build để kết nối chương trình nhỏ.',
+      'home.statusSetupRequired':
+        'Có thể truy cập nền tảng nhưng vẫn cần hoàn tất thiết lập ban đầu.',
+      'home.statusUnavailable':
+        'Không thể truy cập nền tảng. Hãy kiểm tra máy chủ và tên miền request.',
+      'home.statusNotConfigured':
+        'Hãy đặt MINIAPP_API_BASE_URL khi build để kết nối chương trình nhỏ.',
       'home.version': 'Phiên bản máy chủ {{version}}',
       'home.defaultSystemName': 'nền tảng',
       'models.title': 'Danh mục mô hình',
-      'models.description': 'Duyệt mô hình, khả năng, endpoint, nhóm và giá theo trải nghiệm di động.',
+      'models.description':
+        'Duyệt mô hình, khả năng, endpoint, nhóm và giá theo trải nghiệm di động.',
       'playground.title': 'Khu trò chuyện',
-      'playground.description': 'Chạy hội thoại dạng luồng qua chuỗi chuyển tiếp và tính phí hiện có.',
+      'playground.description':
+        'Chạy hội thoại dạng luồng qua chuỗi chuyển tiếp và tính phí hiện có.',
       'usage.title': 'Sử dụng và tác vụ',
-      'usage.description': 'Xem nhật ký sử dụng, tác vụ ảnh và video, bảng kê và trạng thái.',
+      'usage.description':
+        'Xem nhật ký sử dụng, tác vụ ảnh và video, bảng kê và trạng thái.',
       'profile.title': 'Hồ sơ và truy cập',
-      'profile.description': 'Quản lý API Key, gói đăng ký, ví, thiết bị, ngôn ngữ và bảo mật.',
-      'feature.nextStep': 'Mục điều hướng đã sẵn sàng. Luồng hoàn chỉnh được theo dõi trong kế hoạch dự án.',
+      'profile.description':
+        'Quản lý API Key, gói đăng ký, ví, thiết bị, ngôn ngữ và bảo mật.',
+      'feature.nextStep':
+        'Mục điều hướng đã sẵn sàng. Luồng hoàn chỉnh được theo dõi trong kế hoạch dự án.',
     },
   },
 } as const

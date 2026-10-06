@@ -89,7 +89,7 @@ func GetOptions(c *gin.Context) {
 			strings.HasSuffix(k, "Secret") ||
 			strings.HasSuffix(k, "Key") ||
 			strings.HasSuffix(k, "secret") ||
-			strings.HasSuffix(k, "api_key")
+			strings.HasSuffix(k, "api_key") || k == "sms.access_key_id" || k == "sms.security_token"
 		if isSensitiveKey {
 			continue
 		}
@@ -131,6 +131,11 @@ func UpdateOption(c *gin.Context) {
 		})
 		return
 	}
+	if strings.HasPrefix(option.Key, "sms.") {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "SMS_CONFIG_ATOMIC_UPDATE_REQUIRED"})
+		return
+	}
+
 	switch option.Value.(type) {
 	case bool:
 		option.Value = common.Interface2String(option.Value.(bool))

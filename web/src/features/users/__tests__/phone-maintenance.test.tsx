@@ -17,8 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import { afterEach, expect, test, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+
+import * as phoneAPI from '@/features/phone/api'
+import { api } from '@/lib/api'
 
 import { UsersMutateDrawer } from '../components/users-mutate-drawer'
 import { UsersProvider } from '../components/users-provider'
@@ -35,7 +39,7 @@ const apiMocks = vi.hoisted(() => ({
   createUser: vi.fn(async () => ({ success: true })),
   getGroups: vi.fn(async () => ({ success: true, data: ['default'] })),
   getPermissionCatalog: vi.fn(async () => ({ resources: [], roles: [] })),
-  getUser: vi.fn(async () => ({ success: false })),
+  getUser: vi.fn(),
   updateUser: vi.fn(async () => ({ success: true })),
 }))
 
@@ -43,7 +47,23 @@ vi.mock('../api', () => apiMocks)
 
 let queryClient: QueryClient
 
+beforeEach(() => {
+  vi.spyOn(phoneAPI, 'getPhoneStatus').mockResolvedValue({
+    phone: '',
+    verified: null,
+    sms_enabled: true,
+  })
+  vi.spyOn(phoneAPI, 'verifyAccountSecurity').mockResolvedValue('admin-proof')
+  vi.spyOn(phoneAPI, 'sendUserMutationSMS').mockResolvedValue({
+    challenge_token: 'phone-challenge',
+    expires_in: 300,
+    retry_after: 60,
+  })
+})
+
 afterEach(() => {
+  vi.clearAllMocks()
+  vi.restoreAllMocks()
   queryClient?.clear()
 })
 
@@ -76,7 +96,7 @@ test('create-user payload trims and preserves the phone number', () => {
 
   expect(transformFormDataToPayload(values)).toMatchObject({
     username: 'phone-create-user',
-    phone: '13800138000',
+    phone: '+8613800138000',
   })
 })
 
@@ -99,4 +119,264 @@ test('edit-user form loads the phone number and can clear it', () => {
   expect(
     transformFormDataToPayload({ ...defaults, phone: '' }, user.id)
   ).toMatchObject({ id: user.id, phone: '' })
+})
+
+const existingUser: User = {
+  id: 42,
+  username: 'phone-edit-user',
+  display_name: 'Before',
+  phone: '+8613800138000',
+  quota: 0,
+  used_quota: 0,
+  request_count: 0,
+  group: 'default',
+  status: 1,
+  role: 1,
+}
+
+async function showUserForm(currentRow?: User) {
+  if (currentRow) {
+    apiMocks.getUser.mockResolvedValue({ success: true, data: currentRow })
+  }
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <UsersProvider>
+        <UsersMutateDrawer
+          open
+          currentRow={currentRow}
+          onOpenChange={vi.fn()}
+        />
+      </UsersProvider>
+    </QueryClientProvider>
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText('Username')).toHaveValue(
+      currentRow?.username || ''
+    )
+  )
+}
+
+async function requestPhoneCode() {
+  await userEvent.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  expect(
+    screen.queryByRole('button', { name: 'Verify current phone' })
+  ).not.toBeInTheDocument()
+  await userEvent.type(
+    screen.getByLabelText('Current account password'),
+    'admin-password'
+  )
+  await userEvent.click(screen.getByRole('button', { name: /^Verify$/ }))
+  return screen.findByLabelText('SMS verification code')
+}
+
+test('create-user phone is verified at save and prefix stays outside the editable value', async () => {
+  const user = userEvent.setup()
+  await showUserForm()
+  await user.type(screen.getByLabelText('Username'), 'phone-create-user')
+  await user.type(screen.getByLabelText('Password'), 'NewPassword123')
+  await user.type(screen.getByLabelText('Phone Number'), '13800138000')
+  expect(screen.getByLabelText('Country calling code')).toHaveTextContent('+86')
+  expect(screen.getByLabelText('Phone Number')).toHaveValue('13800138000')
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(
+    await screen.findByText(
+      'Request a code for this phone number and enter it before saving.'
+    )
+  ).toBeVisible()
+  expect(apiMocks.createUser).not.toHaveBeenCalled()
+  const code = await requestPhoneCode()
+  expect(phoneAPI.sendUserMutationSMS).toHaveBeenCalledWith(
+    {
+      phone: '+8613800138000',
+      user_id: undefined,
+      username: 'phone-create-user',
+    },
+    'admin-proof'
+  )
+  await user.type(code, '123456')
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  await waitFor(() =>
+    expect(apiMocks.createUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone: '+8613800138000',
+        phone_challenge_token: 'phone-challenge',
+        phone_verification_code: '123456',
+      }),
+      'admin-proof'
+    )
+  )
+})
+
+test('changing the destination or draft username invalidates the collected phone code', async () => {
+  const user = userEvent.setup()
+  await showUserForm()
+  await user.type(screen.getByLabelText('Username'), 'phone-create-user')
+  await user.type(screen.getByLabelText('Password'), 'NewPassword123')
+  await user.type(screen.getByLabelText('Phone Number'), '13800138000')
+  await user.type(await requestPhoneCode(), '123456')
+  await user.type(screen.getByLabelText('Username'), '-new')
+  expect(
+    screen.queryByLabelText('SMS verification code')
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(apiMocks.createUser).not.toHaveBeenCalled()
+  await user.clear(screen.getByLabelText('Phone Number'))
+  await user.type(screen.getByLabelText('Phone Number'), '13900139000')
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(apiMocks.createUser).not.toHaveBeenCalled()
+})
+
+test('an unchanged bound number saves other profile fields without sending SMS', async () => {
+  vi.mocked(phoneAPI.getPhoneStatus).mockResolvedValue({
+    phone: '+8613800138000',
+    verified: {
+      phone: '+8613800138000',
+      source: 'aliyun_sms',
+      verified_at: '2026-10-06T00:00:00Z',
+    },
+    sms_enabled: true,
+  })
+  const user = userEvent.setup()
+  await showUserForm(existingUser)
+  expect(screen.getByLabelText('Phone Number')).toHaveValue('13800138000')
+  expect(await screen.findByText('Bound')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Send SMS code' })).toBeDisabled()
+  await user.clear(screen.getByLabelText('Display Name'))
+  await user.type(screen.getByLabelText('Display Name'), 'After')
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  await waitFor(() =>
+    expect(apiMocks.updateUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 42,
+        phone: '+8613800138000',
+        display_name: 'After',
+      }),
+      undefined
+    )
+  )
+  expect(phoneAPI.sendUserMutationSMS).not.toHaveBeenCalled()
+})
+
+test('editing a bound number requires a new code and keeps a rejected code visible for correction', async () => {
+  vi.mocked(phoneAPI.getPhoneStatus).mockResolvedValue({
+    phone: '+8613800138000',
+    verified: {
+      phone: '+8613800138000',
+      source: 'aliyun_sms',
+      verified_at: '2026-10-06T00:00:00Z',
+    },
+    sms_enabled: true,
+  })
+  apiMocks.updateUser.mockRejectedValueOnce({
+    response: { data: { code: 'PHONE_VERIFICATION_INVALID' } },
+  })
+  const user = userEvent.setup()
+  await showUserForm(existingUser)
+  await user.clear(screen.getByLabelText('Phone Number'))
+  await user.type(screen.getByLabelText('Phone Number'), '13900139000')
+  expect(screen.getByText('Phone verification pending')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(apiMocks.updateUser).not.toHaveBeenCalled()
+  await user.type(await requestPhoneCode(), '123456')
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(
+    await screen.findByText(
+      'Phone verification failed. Check the code or request a new one.'
+    )
+  ).toBeVisible()
+  expect(screen.getByLabelText('Phone Number')).toHaveValue('13900139000')
+  expect(screen.getByLabelText('SMS verification code')).toHaveValue('123456')
+  expect(apiMocks.updateUser).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: 42,
+      phone: '+8613900139000',
+      phone_challenge_token: 'phone-challenge',
+      phone_verification_code: '123456',
+    }),
+    'admin-proof'
+  )
+})
+
+test('a late SMS response cannot verify a renamed user draft', async () => {
+  let deliver: ((challenge: phoneAPI.SmsChallenge) => void) | undefined
+  vi.mocked(phoneAPI.sendUserMutationSMS).mockReturnValue(
+    new Promise((resolve) => {
+      deliver = resolve
+    })
+  )
+  const user = userEvent.setup()
+  await showUserForm()
+  await user.type(screen.getByLabelText('Username'), 'phone-create-user')
+  await user.type(screen.getByLabelText('Password'), 'NewPassword123')
+  await user.type(screen.getByLabelText('Phone Number'), '13800138000')
+  await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  await user.type(
+    screen.getByLabelText('Current account password'),
+    'admin-password'
+  )
+  await user.click(screen.getByRole('button', { name: /^Verify$/ }))
+  await waitFor(() =>
+    expect(phoneAPI.sendUserMutationSMS).toHaveBeenCalledOnce()
+  )
+  await user.type(screen.getByLabelText('Username'), '-new')
+  expect(deliver).toBeDefined()
+  deliver?.({
+    challenge_token: 'late-challenge',
+    expires_in: 300,
+    retry_after: 60,
+  })
+  await screen.findByRole('button', { name: 'Resend in 60s' })
+  expect(
+    screen.queryByLabelText('SMS verification code')
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
+  expect(apiMocks.createUser).not.toHaveBeenCalled()
+})
+
+test('edit-user drawer shows mini program binding independently of the legacy WeChat ID', async () => {
+  apiMocks.getUser.mockResolvedValue({ success: true, data: existingUser })
+  const request = vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: [
+        {
+          app_id: 'wx-app',
+          nickname: 'Bound WeChat Name',
+          has_avatar: false,
+          openid: 'mini-openid',
+          unionid: 'mini-unionid',
+          bound_at: '2026-10-06T00:00:00Z',
+          last_login_at: '2026-10-06T01:00:00Z',
+        },
+      ],
+    },
+  })
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <UsersProvider>
+        <UsersMutateDrawer
+          open
+          currentRow={existingUser}
+          onOpenChange={vi.fn()}
+        />
+      </UsersProvider>
+    </QueryClientProvider>
+  )
+  expect(
+    (await screen.findAllByText('Bound WeChat Name')).length
+  ).toBeGreaterThan(0)
+  expect(request).toHaveBeenCalledWith('/api/user/42/wechat-miniapp')
+  expect(screen.getByText('OpenID: mini-openid')).toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Manage WeChat binding' })
+  )
+  expect(
+    await screen.findByRole('button', { name: 'Disconnect WeChat' })
+  ).toBeInTheDocument()
 })

@@ -22,6 +22,8 @@ func TestHardDeleteUserFailsClosedWhenAuthFenceCannotPublish(t *testing.T) {
 
 	user := User{Username: "hard-delete-user", Password: "password", TelegramId: "hard-delete-telegram"}
 	require.NoError(t, DB.Create(&user).Error)
+	require.NoError(t, DB.Create(&WeChatMiniAppProfile{UserId: user.Id, AppId: "wx-delete-test", Nickname: "private nickname", Avatar: []byte("private avatar"), BoundAt: time.Now()}).Error)
+	require.NoError(t, DB.Create(&SMSChallenge{UserId: user.Id, TokenHash: "sms-" + user.Username, CodeHash: "code-hash", Purpose: "phone_bind", Phone: "+8613800138000", AuthVersion: 1, ExpiresAt: time.Now().Add(time.Minute)}).Error)
 	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
 		return ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, user.TelegramId, user.Id)
 	}))
@@ -62,6 +64,7 @@ func TestHardDeleteUserFailsClosedWhenAuthFenceCannotPublish(t *testing.T) {
 	require.NoError(t, DB.Unscoped().Model(&User{}).Where("id = ?", user.Id).Count(&count).Error)
 	assert.EqualValues(t, 1, count)
 	for _, record := range []any{
+		&WeChatMiniAppProfile{}, &SMSChallenge{},
 		&Token{},
 		&TwoFA{},
 		&TwoFABackupCode{},
@@ -86,6 +89,8 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 		TelegramId: "hard-delete-success-telegram",
 	}
 	require.NoError(t, DB.Create(&user).Error)
+	require.NoError(t, DB.Create(&WeChatMiniAppProfile{UserId: user.Id, AppId: "wx-delete-test", Nickname: "private nickname", Avatar: []byte("private avatar"), BoundAt: time.Now()}).Error)
+	require.NoError(t, DB.Create(&SMSChallenge{UserId: user.Id, TokenHash: "sms-" + user.Username, CodeHash: "code-hash", Purpose: "phone_bind", Phone: "+8613800138000", AuthVersion: 1, ExpiresAt: time.Now().Add(time.Minute)}).Error)
 	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
 		return ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, user.TelegramId, user.Id)
 	}))
@@ -117,6 +122,7 @@ func TestHardDeleteUserPublishesTombstoneAndPurgesAuthenticationData(t *testing.
 	require.NoError(t, DB.Unscoped().Model(&User{}).Where("id = ?", user.Id).Count(&count).Error)
 	assert.Zero(t, count)
 	for _, record := range []any{
+		&WeChatMiniAppProfile{}, &SMSChallenge{},
 		&Token{},
 		&TwoFA{},
 		&TwoFABackupCode{},

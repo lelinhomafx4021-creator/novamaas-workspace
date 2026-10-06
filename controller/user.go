@@ -34,7 +34,9 @@ type LoginRequest struct {
 
 type userMutationRequest struct {
 	model.User
-	Phone *string `json:"phone"`
+	Phone                 *string `json:"phone"`
+	PhoneChallengeToken   string  `json:"phone_challenge_token"`
+	PhoneVerificationCode string  `json:"phone_verification_code"`
 }
 
 var (
@@ -106,9 +108,10 @@ func Login(c *gin.Context) {
 			"message": i18n.T(c, i18n.MsgUserRequire2FA),
 			"success": true,
 			"data": map[string]interface{}{
-				"require_2fa": true,
-				"flow_token":  flowToken,
-				"expires_at":  expiresAt.Unix(),
+				"require_2fa":   true,
+				"flow_token":    flowToken,
+				"expires_at":    expiresAt.Unix(),
+				"sms_available": smsLoginAvailable(user.Id),
 			},
 		})
 		return
@@ -124,16 +127,24 @@ func loginMethodFromContext(c *gin.Context) string {
 		return "password"
 	case "/api/user/login/2fa":
 		return "2fa"
+	case "/api/user/login/sms":
+		return "sms"
+	case "/api/user/login/sms/mfa":
+		return "password_sms"
 	case "/api/user/passkey/login/finish":
 		return "passkey"
 	case "/api/oauth/wechat":
 		return "wechat"
 	case "/api/oauth/telegram/login":
 		return "telegram"
-	case "/api/mini/auth/login", "/api/mini/auth/bind", "/api/mini/auth/register":
+	case "/api/mini/auth/login", "/api/mini/auth/phone", "/api/mini/auth/bind", "/api/mini/auth/register":
 		return "wechat_miniapp"
 	case "/api/mini/auth/password":
 		return "password_miniapp"
+	case "/api/mini/auth/sms":
+		return "sms_miniapp"
+	case "/api/mini/auth/sms/mfa":
+		return "password_sms_miniapp"
 	case "/api/oauth/:provider":
 		if provider := c.Param("provider"); provider != "" {
 			return "oauth:" + provider
@@ -525,6 +536,7 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
 		"role":              user.Role,
 		"status":            user.Status,
 		"email":             user.Email,
+		"phone":             user.Phone,
 		"github_id":         user.GitHubId,
 		"discord_id":        user.DiscordId,
 		"oidc_id":           user.OidcId,
@@ -716,15 +728,49 @@ func UpdateUser(c *gin.Context) {
 		updatedUser.Password = "" // rollback to what it should be
 	}
 	updatePassword := updatedUser.Password != ""
+	originPhone := model.NormalizePhone(originUser.Phone)
+	if canonical, err := model.CanonicalMobilePhone(originPhone); err == nil {
+		originPhone = canonical
+	}
+	if canonical, err := model.CanonicalMobilePhone(updatedUser.Phone); err == nil {
+		updatedUser.Phone = canonical
+	}
+	phoneChanged := request.Phone != nil && updatedUser.Phone != originPhone
+	verifyPhone := updatedUser.Phone != "" && (phoneChanged || request.PhoneChallengeToken != "")
+	if verifyPhone {
+		canonical, err := model.CanonicalMobilePhone(updatedUser.Phone)
+		if err != nil {
+			phoneError(c, err)
+			return
+		}
+		updatedUser.Phone = canonical
+	} else if !phoneChanged {
+		updatedUser.Phone = originUser.Phone
+	}
 	authzTouched := false
-	if err := model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := updatedUser.EditWithTx(tx, updatePassword); err != nil {
+	save := func(tx *gorm.DB) error {
+		var err error
+		if verifyPhone {
+			err = updatedUser.EditWithPhoneVerificationWithTx(tx, updatePassword, originUser.AuthVersion)
+		} else {
+			err = updatedUser.EditWithTx(tx, updatePassword)
+		}
+		if err != nil {
 			return err
 		}
 		touched, err := updateAdminPermissionsForUserInTx(c, tx, updatedUser.Id, originUser.Role, updatedUser.AdminPermissions)
 		authzTouched = touched
 		return err
-	}); err != nil {
+	}
+	if verifyPhone {
+		if !commitManagedPhoneMutation(c, request, updatedUser.Phone, originUser, save) {
+			return
+		}
+	} else if err := model.DB.Transaction(save); err != nil {
+		if errors.Is(err, model.ErrVerifiedPhoneProtected) {
+			phoneError(c, err)
+			return
+		}
 		if errors.Is(err, model.ErrPhoneAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyTaken)
 			return
@@ -1044,6 +1090,14 @@ func CreateUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)
 		return
 	}
+	if user.Phone != "" {
+		canonical, err := model.CanonicalMobilePhone(user.Phone)
+		if err != nil {
+			phoneError(c, err)
+			return
+		}
+		user.Phone = canonical
+	}
 	// Even for admin users, we cannot fully trust them!
 	cleanUser := model.User{
 		Username:    user.Username,
@@ -1053,14 +1107,24 @@ func CreateUser(c *gin.Context) {
 		Role:        user.Role, // 保持管理员设置的角色
 	}
 	authzTouched := false
-	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+	save := func(tx *gorm.DB) error {
 		if err := cleanUser.InsertWithTx(tx, 0); err != nil {
 			return err
+		}
+		if cleanUser.Phone != "" {
+			if err := model.ClaimVerifiedPhoneWithTx(tx, cleanUser.Phone, cleanUser.Id, "aliyun_sms"); err != nil {
+				return err
+			}
 		}
 		touched, err := updateAdminPermissionsForUserInTx(c, tx, cleanUser.Id, cleanUser.Role, user.AdminPermissions)
 		authzTouched = touched
 		return err
-	}); err != nil {
+	}
+	if cleanUser.Phone != "" {
+		if !commitManagedPhoneMutation(c, request, cleanUser.Phone, nil, save) {
+			return
+		}
+	} else if err := model.DB.Transaction(save); err != nil {
 		if errors.Is(err, model.ErrPhoneAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyTaken)
 			return

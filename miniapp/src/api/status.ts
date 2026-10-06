@@ -1,6 +1,8 @@
 import { apiRequest } from './request'
 
 export interface PlatformStatus {
+  sms_login?: boolean
+  wechat_miniapp_login?: boolean
   custom_currency_exchange_rate?: number
   custom_currency_symbol?: string
   display_in_currency?: boolean
@@ -15,9 +17,10 @@ export interface PlatformStatus {
 let statusRequest: Promise<PlatformStatus> | undefined
 
 export function getPlatformStatus() {
-  statusRequest ??= apiRequest<PlatformStatus>('/api/status', { auth: false })
-    .finally(() => {
-      statusRequest = undefined
-    })
+  statusRequest ??= apiRequest<PlatformStatus>('/api/status', {
+    auth: false,
+  }).finally(() => {
+    statusRequest = undefined
+  })
   return statusRequest
 }

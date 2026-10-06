@@ -361,6 +361,11 @@ func phoneQuery(tx *gorm.DB, phone string) *gorm.DB {
 	if tx == nil {
 		tx = DB
 	}
+	if canonical, err := CanonicalMobilePhone(phone); err == nil {
+		national := strings.TrimPrefix(canonical, "+86")
+		claims := tx.Model(&VerifiedPhone{}).Select("user_id").Where("phone = ?", canonical)
+		return tx.Unscoped().Model(&User{}).Where("(phone IN ? OR id IN (?))", []string{canonical, national, "86" + national, "0086" + national}, claims)
+	}
 	return tx.Unscoped().Model(&User{}).Where("phone = ?", NormalizePhone(phone))
 }
 
@@ -877,6 +882,11 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 	if err = tx.First(&current, user.Id).Error; err != nil {
 		return err
 	}
+	if newUser.Phone != "" && newUser.Phone != current.Phone {
+		if err := EnsureVerifiedPhoneUnchangedWithTx(tx, user.Id, newUser.Phone); err != nil {
+			return err
+		}
+	}
 	// Updates(struct) ignores zero values. Match that behavior when deciding
 	// whether this request actually changes authentication-sensitive state;
 	// partial self-profile updates intentionally leave role/status/group empty.
@@ -955,6 +965,11 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 		current := User{}
 		if err = tx.First(&current, user.Id).Error; err != nil {
 			return err
+		}
+		if newUser.Phone != current.Phone {
+			if err := EnsureVerifiedPhoneUnchangedWithTx(tx, user.Id, newUser.Phone); err != nil {
+				return err
+			}
 		}
 		authChanged := (updatePassword && current.Password != newUser.Password) ||
 			current.Phone != newUser.Phone || current.Group != newUser.Group
@@ -1079,6 +1094,8 @@ func deleteUserAuthenticationData(tx *gorm.DB, userId int) error {
 		return err
 	}
 	for _, authenticationData := range []any{
+		&WeChatMiniAppProfile{},
+		&SMSChallenge{},
 		&TwoFABackupCode{},
 		&TwoFA{},
 		&UserSession{},
@@ -1116,6 +1133,21 @@ func (user *User) ValidateAndFill() (err error) {
 		result = DB.Where("LOWER(email) = ?", NormalizeEmail(username)).Limit(1).Find(&matchedUser)
 		if result.Error != nil {
 			return fmt.Errorf("%w: %v", ErrDatabase, result.Error)
+		}
+	}
+	if result.RowsAffected == 0 {
+		if phone, err := CanonicalMobilePhone(username); err == nil {
+			var claim VerifiedPhone
+			lookup := DB.Where("phone = ?", phone).Limit(1).Find(&claim)
+			if lookup.Error != nil {
+				return fmt.Errorf("%w: %v", ErrDatabase, lookup.Error)
+			}
+			if lookup.RowsAffected > 0 {
+				result = DB.Where("id = ?", claim.UserId).Limit(1).Find(&matchedUser)
+				if result.Error != nil {
+					return fmt.Errorf("%w: %v", ErrDatabase, result.Error)
+				}
+			}
 		}
 	}
 	if result.RowsAffected == 0 {

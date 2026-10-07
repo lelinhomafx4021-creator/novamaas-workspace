@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export const phoneResources = {
   en: {
+    'auth.error.phoneServiceRejected': "WeChat could not provide your phone number. Try again or sign in with your account; ask the administrator to check the WeChat error code.",
     'wechat.editProfile': 'Edit profile',
     'wechat.cancelEdit': 'Cancel editing',
     'wechat.displayProfile': 'Avatar and nickname (optional)',
@@ -90,6 +91,7 @@ export const phoneResources = {
       'Your verified phone matches account {{account}}. Connect this WeChat identity to that account?',
   },
   zh: {
+    'auth.error.phoneServiceRejected': "微信未能返回手机号。请重试或使用账号登录，并联系管理员检查微信错误码。",
     'wechat.editProfile': '编辑微信资料',
     'wechat.cancelEdit': '取消编辑',
     'wechat.displayProfile': '头像与昵称（可选）',
@@ -154,6 +156,7 @@ export const phoneResources = {
       '你的已验证手机号匹配账号 {{account}}。确认将当前微信身份绑定到该账号。',
   },
   'zh-TW': {
+    'auth.error.phoneServiceRejected': "微信未能傳回手機號碼。請重試或使用帳號登入，並聯絡管理員檢查微信錯誤碼。",
     'wechat.editProfile': '編輯微信資料',
     'wechat.cancelEdit': '取消編輯',
     'wechat.displayProfile': '頭像與暱稱（選填）',
@@ -218,6 +221,7 @@ export const phoneResources = {
       '你的已驗證手機號碼符合帳號 {{account}}。確認將目前微信身分綁定至該帳號。',
   },
   fr: {
+    'auth.error.phoneServiceRejected': "WeChat n’a pas pu fournir votre numéro. Réessayez ou connectez-vous avec votre compte ; demandez à l’administrateur de vérifier le code d’erreur WeChat.",
     'wechat.editProfile': 'Modifier le profil',
     'wechat.cancelEdit': 'Annuler les modifications',
     'wechat.displayProfile': 'Avatar et pseudo (facultatifs)',
@@ -290,6 +294,7 @@ export const phoneResources = {
       'Votre numéro vérifié correspond au compte {{account}}. Liez cette identité WeChat à ce compte.',
   },
   ja: {
+    'auth.error.phoneServiceRejected': "WeChatから電話番号を取得できませんでした。再試行するかアカウントでログインし、管理者にWeChatのエラーコードの確認を依頼してください。",
     'wechat.editProfile': 'プロフィールを編集',
     'wechat.cancelEdit': '編集をキャンセル',
     'wechat.displayProfile': 'アバターとニックネーム（任意）',
@@ -362,6 +367,7 @@ export const phoneResources = {
       '確認済み電話番号はアカウント{{account}}と一致します。このWeChatを連携します。',
   },
   ru: {
+    'auth.error.phoneServiceRejected': "WeChat не предоставил номер телефона. Повторите попытку или войдите через аккаунт и попросите администратора проверить код ошибки WeChat.",
     'wechat.editProfile': 'Изменить профиль',
     'wechat.cancelEdit': 'Отменить изменения',
     'wechat.displayProfile': 'Аватар и имя (необязательно)',
@@ -433,6 +439,7 @@ export const phoneResources = {
       'Подтверждённый номер соответствует аккаунту {{account}}. Привяжите к нему WeChat.',
   },
   vi: {
+    'auth.error.phoneServiceRejected': "WeChat không trả về số điện thoại. Hãy thử lại hoặc đăng nhập bằng tài khoản và nhờ quản trị viên kiểm tra mã lỗi WeChat.",
     'wechat.editProfile': 'Sửa hồ sơ',
     'wechat.cancelEdit': 'Hủy chỉnh sửa',
     'wechat.displayProfile': 'Ảnh và biệt danh (tùy chọn)',

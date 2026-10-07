@@ -45,6 +45,7 @@ const authErrorKeys: Record<string, string> = {
   MINI_AUTH_ACCOUNT_UNAVAILABLE: 'auth.error.accountUnavailable',
   MINI_AUTH_PASSWORD_LOGIN_DISABLED: 'auth.error.passwordLoginDisabled',
   MINI_AUTH_PHONE_CODE_INVALID: 'auth.error.phoneCodeInvalid',
+  MINI_AUTH_PHONE_SERVICE_REJECTED: 'auth.error.phoneServiceRejected',
   MINI_AUTH_PHONE_CONFLICT: 'auth.error.phoneConflict',
   MINI_AUTH_PHONE_REQUIRED: 'wechat.platformRequiredHint',
   MINI_AUTH_PHONE_ACCOUNT_NOT_FOUND: 'wechat.platformRequiredHint',
@@ -107,7 +108,7 @@ export default function ProfilePage() {
 
   const startPhoneLogin = async (phoneCode?: string) => {
     if (!phoneCode) {
-      setAccountLoginOpen(true)
+      setAccountLoginOpen(false)
       setErrorKey('auth.error.phoneUnavailable')
       return
     }
@@ -125,7 +126,7 @@ export default function ProfilePage() {
         setAccountLoginOpen(false)
         setPlatformRequired(true)
       } else {
-        setAccountLoginOpen(true)
+        setAccountLoginOpen(false)
         showError(error)
       }
     } finally {

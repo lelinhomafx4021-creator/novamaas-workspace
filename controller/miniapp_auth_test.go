@@ -554,3 +554,42 @@ func TestMiniAppPhoneLoginChecksNativeAppIDBeforeConsumingCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestMiniAppPhoneErrorsPreserveNumericDiagnosticsWithoutCallingEveryRejectionExpired(t *testing.T) {
+	setupMiniAppAuthTest(t)
+	originalLogin, originalPhone := exchangeMiniAppCode, exchangeMiniAppPhoneCode
+	t.Cleanup(func() { exchangeMiniAppCode, exchangeMiniAppPhoneCode = originalLogin, originalPhone })
+	exchangeMiniAppCode = func(context.Context, string) (service.WeChatMiniAppIdentity, error) {
+		return service.WeChatMiniAppIdentity{AppId: "wx-test-app", OpenId: "test-openid"}, nil
+	}
+	for _, tc := range []struct {
+		stage   string
+		errcode int
+		code    string
+		status  int
+	}{
+		{"phone", 40029, "MINI_AUTH_PHONE_CODE_INVALID", http.StatusUnauthorized},
+		{"phone", 48001, "MINI_AUTH_PHONE_SERVICE_REJECTED", http.StatusBadGateway},
+		{"access_token", 40125, "MINI_AUTH_PHONE_SERVICE_REJECTED", http.StatusBadGateway},
+		{"watermark", 0, "MINI_AUTH_APP_ID_MISMATCH", http.StatusConflict},
+	} {
+		t.Run(fmt.Sprintf("%s-%d", tc.stage, tc.errcode), func(t *testing.T) {
+			exchangeMiniAppPhoneCode = func(context.Context, string) (string, error) {
+				return "", &service.WeChatPhoneExchangeError{Stage: tc.stage, Code: tc.errcode}
+			}
+			recorder, result := callMiniAppAuthHandler(t, http.MethodPost, "/api/mini/auth/phone", `{"code":"login-code","phone_code":"private-phone-code"}`, MiniAppPhoneLogin)
+			assert.Equal(t, tc.status, recorder.Code)
+			assert.Equal(t, tc.code, result.Code)
+			var body struct {
+				Data struct {
+					Stage string `json:"stage"`
+					Code  int    `json:"wechat_errcode"`
+				} `json:"data"`
+			}
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
+			assert.Equal(t, tc.stage, body.Data.Stage)
+			assert.Equal(t, tc.errcode, body.Data.Code)
+			assert.NotContains(t, recorder.Body.String(), "private-phone-code")
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -52,6 +53,7 @@ type Task struct {
 	ID                   int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT;index:idx_task_submit_id,priority:2;index:idx_task_user_submit_id,priority:3"`
 	CreatedAt            int64                 `json:"created_at" gorm:"index"`
 	UpdatedAt            int64                 `json:"updated_at"`
+	WebhookVersion       int64                 `json:"-" gorm:"bigint"`
 	TaskID               string                `json:"task_id" gorm:"type:varchar(191);index"` // 第三方id，不一定有/ song id\ Task id
 	Platform             constant.TaskPlatform `json:"platform" gorm:"type:varchar(30);index"` // 平台
 	UserId               int                   `json:"user_id" gorm:"index;index:idx_task_user_submit_id,priority:1"`
@@ -420,9 +422,13 @@ func GetByTaskIds(userId int, taskIds []any) ([]*Task, error) {
 }
 
 func (Task *Task) Insert() error {
-	var err error
-	err = DB.Create(Task).Error
-	return err
+	return DB.Transaction(func(tx *gorm.DB) error {
+		Task.WebhookVersion = 1
+		if err := tx.Create(Task).Error; err != nil {
+			return err
+		}
+		return Task.queueStatusWebhook(tx)
+	})
 }
 
 type taskSnapshot struct {
@@ -458,8 +464,14 @@ func (t *Task) Snapshot() taskSnapshot {
 }
 
 func (Task *Task) Update() error {
-	var err error
-	err = DB.Save(Task).Error
+	if Task.ID == 0 {
+		return Task.Insert()
+	}
+	var previous struct{ Status TaskStatus }
+	if err := DB.Model(Task).Select("status").First(&previous).Error; err != nil {
+		return err
+	}
+	_, err := Task.UpdateWithStatus(previous.Status)
 	return err
 }
 
@@ -477,11 +489,34 @@ func (t *Task) UpdateQuota() error {
 // falls back to INSERT ON CONFLICT when the WHERE-guarded UPDATE matches
 // zero rows, which silently bypasses the CAS guard.
 func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
-	result := DB.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
+	won := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var previous Task
+		if err := lockForUpdate(tx).Select("id", "status", "webhook_version").First(&previous, t.ID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if previous.Status != fromStatus {
+			return nil
+		}
+		t.WebhookVersion = previous.WebhookVersion
+		changed := t.Status != previous.Status
+		if changed {
+			t.WebhookVersion++
+		}
+		result := tx.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
+		if result.Error != nil {
+			return result.Error
+		}
+		won = result.RowsAffected > 0
+		if won && changed {
+			return t.queueStatusWebhook(tx)
+		}
+		return nil
+	})
+	return won && err == nil, err
 }
 
 // TaskBulkUpdateByID performs an unconditional bulk UPDATE by primary key IDs.
@@ -493,9 +528,39 @@ func TaskBulkUpdateByID(ids []int64, params map[string]any) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	return DB.Model(&Task{}).
-		Where("id in (?)", ids).
-		Updates(params).Error
+	if _, changesStatus := params["status"]; !changesStatus {
+		return DB.Model(&Task{}).Where("id in (?)", ids).Updates(params).Error
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var tasks []Task
+		if err := lockForUpdate(tx).Where("id IN ?", ids).Find(&tasks).Error; err != nil {
+			return err
+		}
+		for _, task := range tasks {
+			previousStatus := task.Status
+			result := tx.Model(&task).Where("status = ?", previousStatus).Updates(params)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			if err := tx.First(&task, task.ID).Error; err != nil {
+				return err
+			}
+			if task.Status == previousStatus {
+				continue
+			}
+			task.WebhookVersion++
+			if err := tx.Model(&task).Update("webhook_version", task.WebhookVersion).Error; err != nil {
+				return err
+			}
+			if err := task.queueStatusWebhook(tx); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type TaskQuotaUsage struct {

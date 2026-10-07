@@ -156,6 +156,7 @@ func main() {
 	storageService.StartCleanupTask()
 	assetLibraryService.StartAssetRequestLogWriter()
 	assetLibraryService.StartSyncTask()
+	service.StartWebhookDeliveryTask()
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true

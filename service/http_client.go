@@ -68,7 +68,15 @@ func validateURLWithCurrentFetchSetting(urlStr string, applyDomainIPFilter bool)
 }
 
 func ValidateSSRFProtectedFetchURL(urlStr string) error {
-	return validateURLWithCurrentFetchSetting(urlStr, true)
+	return ValidateSSRFProtectedFetchURLWithContext(context.Background(), urlStr)
+}
+
+func ValidateSSRFProtectedFetchURLWithContext(ctx context.Context, urlStr string) error {
+	protection, enabled, err := currentFetchProtection()
+	if err != nil || !enabled {
+		return err
+	}
+	return protection.ValidateURLWithContext(ctx, urlStr)
 }
 
 func newRelayHTTPTransport() *http.Transport {

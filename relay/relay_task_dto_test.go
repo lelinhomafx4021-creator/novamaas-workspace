@@ -97,7 +97,7 @@ func TestVideoFetchByIDRefreshesAliTaskFromUpstream(t *testing.T) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.Channel{}))
+	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.AssetWebhookEndpoint{}, &model.AssetWebhookDelivery{}, &model.Channel{}))
 	previousDB := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = previousDB })

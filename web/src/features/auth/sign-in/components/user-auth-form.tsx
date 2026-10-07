@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+// oxlint-disable react/iframe-missing-sandbox -- The official cross-origin WeChat frame needs scripts and its own cookies; its URL is fixed by the backend to open.weixin.qq.com.
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowRight01Icon, Key01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -27,7 +28,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { z } from 'zod'
 
-import { Dialog } from '@/components/dialog'
 import { PasswordInput } from '@/components/password-input'
 import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { login, wechatLoginByCode } from '@/features/auth/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
@@ -53,7 +54,7 @@ import { beginPasskeyLogin, finishPasskeyLogin } from '@/features/auth/passkey'
 import type { AuthFormProps } from '@/features/auth/types'
 import { SmsLoginForm } from '@/features/phone/components/sms-login-form'
 import { useStatus } from '@/hooks/use-status'
-import { isAuthBundle } from '@/lib/api'
+import { api, isAuthBundle } from '@/lib/api'
 import {
   buildAssertionResult,
   prepareCredentialRequestOptions,
@@ -71,13 +72,19 @@ export function UserAuthForm({
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const [wechatCode, setWeChatCode] = useState('')
+  const [wechatAuthorizationUrl, setWeChatAuthorizationUrl] = useState('')
   const [agreedToLegal, setAgreedToLegal] = useState(false)
   const [passkeySupported, setPasskeySupported] = useState(false)
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false)
-  const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
   const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
-  const [smsOpen, setSmsOpen] = useState(false)
+  const [savedMethod, setSavedMethod] = useState(() => {
+    try {
+      return localStorage.getItem('new-api:login-method:v1') ?? 'password'
+    } catch {
+      return 'password'
+    }
+  })
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
   const loginFailedMessage = t('Login failed')
 
@@ -108,7 +115,40 @@ export function UserAuthForm({
     isPasskeyLoading ||
     !passkeySupported ||
     (requiresLegalConsent && !agreedToLegal)
-  const hasWeChatLogin = Boolean(status?.wechat_login)
+  const hasWeChatWebLogin = Boolean(status?.wechat_web_login)
+  const hasWeChatLogin = Boolean(status?.wechat_login || hasWeChatWebLogin)
+  let loginMethod = savedMethod
+  const methodAvailable =
+    (savedMethod === 'password' && passwordLoginEnabled) ||
+    (savedMethod === 'sms' && Boolean(status?.sms_login)) ||
+    (savedMethod === 'wechat' && hasWeChatLogin)
+  if (!methodAvailable) {
+    loginMethod = 'password'
+    if (!passwordLoginEnabled) {
+      loginMethod = 'none'
+      if (status?.sms_login) loginMethod = 'sms'
+      else if (hasWeChatLogin) loginMethod = 'wechat'
+    }
+  }
+  const selectLoginMethod = (method: string) => {
+    setSavedMethod(method)
+    try {
+      localStorage.setItem('new-api:login-method:v1', method)
+    } catch {
+      /* Storage may be disabled. */
+    }
+  }
+  const startWeChatWebLogin = async () => {
+    setIsWeChatSubmitting(true)
+    try {
+      const response = await api.post('/api/oauth/wechat-web/start')
+      setWeChatAuthorizationUrl(response.data.data.authorize_url)
+    } catch {
+      toast.error(t('Failed to start WeChat sign-in'))
+    } finally {
+      setIsWeChatSubmitting(false)
+    }
+  }
   const hasOAuthLogin = Boolean(
     status?.github_oauth ||
     status?.discord_oauth ||
@@ -117,8 +157,7 @@ export function UserAuthForm({
     status?.telegram_oauth ||
     (status?.custom_oauth_providers?.length ?? 0) > 0
   )
-  const hasAlternativeLogin =
-    passkeyLoginEnabled || hasWeChatLogin || hasOAuthLogin
+  const hasAlternativeLogin = passkeyLoginEnabled || hasOAuthLogin
 
   useEffect(() => {
     if (requiresLegalConsent) {
@@ -202,23 +241,6 @@ export function UserAuthForm({
     }
   }
 
-  const handleOpenWeChatDialog = () => {
-    if (requiresLegalConsent && !agreedToLegal) {
-      toast.error(legalConsentErrorMessage)
-      return
-    }
-
-    setIsWeChatDialogOpen(true)
-  }
-
-  const handleWeChatDialogChange = (open: boolean) => {
-    setIsWeChatDialogOpen(open)
-    if (!open) {
-      setWeChatCode('')
-      setIsWeChatSubmitting(false)
-    }
-  }
-
   async function handleWeChatLogin() {
     if (!wechatCode.trim()) {
       toast.error(t('Please enter the verification code'))
@@ -231,7 +253,7 @@ export function UserAuthForm({
       if (res?.success && isAuthBundle(res.data)) {
         await handleLoginSuccess(res.data, redirectTo)
         toast.success(t('Signed in via WeChat'))
-        handleWeChatDialogChange(false)
+        setWeChatCode('')
       } else {
         if (getServerErrorMessageKey(res)) return
         toast.error(res?.message || loginFailedMessage)
@@ -351,105 +373,122 @@ export function UserAuthForm({
         status={status}
         redirectTo={redirectTo}
         disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
-        onWeChatLogin={hasWeChatLogin ? handleOpenWeChatDialog : undefined}
-        isWeChatLoading={isWeChatSubmitting}
         showSeparator={false}
       />
     </div>
   )
 
+  const legalConsent = (
+    <LegalConsent
+      status={status}
+      checked={agreedToLegal}
+      onCheckedChange={setAgreedToLegal}
+    />
+  )
+
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={(event) => {
+          if (loginMethod === 'password') {
+            void form.handleSubmit(onSubmit)(event)
+          } else {
+            event.preventDefault()
+          }
+        }}
         className={cn('flex flex-col gap-5', className)}
         {...props}
       >
-        {passwordLoginEnabled && (
-          <FieldGroup className='gap-4'>
-            {/* Login identifier field */}
-            <FormField
-              control={form.control}
-              name='username'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Username, Email or Phone Number')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={t(
-                        'Enter your username, email or phone number'
-                      )}
-                      className='h-11 px-3'
-                      autoComplete='username'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        {loginMethod === 'none' && legalConsent}
+        <Tabs
+          value={loginMethod}
+          onValueChange={(value) => selectLoginMethod(String(value))}
+        >
+          <TabsList
+            className={cn(
+              'min-h-11 w-full',
+              loginMethod === 'none' && 'hidden'
+            )}
+            aria-label={t('Sign-in method')}
+          >
+            {passwordLoginEnabled && (
+              <TabsTrigger
+                className='min-w-0 text-center leading-4 whitespace-normal'
+                value='password'
+              >
+                {t('Account and password')}
+              </TabsTrigger>
+            )}
+            {Boolean(status?.sms_login) && (
+              <TabsTrigger
+                className='min-w-0 text-center leading-4 whitespace-normal'
+                value='sms'
+              >
+                {t('SMS sign-in')}
+              </TabsTrigger>
+            )}
+            {hasWeChatLogin && (
+              <TabsTrigger
+                className='min-w-0 text-center leading-4 whitespace-normal'
+                value='wechat'
+              >
+                {t('WeChat sign in')}
+              </TabsTrigger>
+            )}
+          </TabsList>
+          <TabsContent value='password' className='flex flex-col gap-5'>
+            <FieldGroup className='gap-4'>
+              {/* Login identifier field */}
+              <FormField
+                control={form.control}
+                name='username'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Username, Email or Phone Number')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t(
+                          'Enter your username, email or phone number'
+                        )}
+                        className='h-11 px-3'
+                        autoComplete='username'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Password Field */}
-            <FormField
-              control={form.control}
-              name='password'
-              render={({ field }) => (
-                <FormItem className='relative'>
-                  <FormLabel>{t('Password')}</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder={t('Enter password')}
-                      className='[&_input]:h-11 [&_input]:px-3'
-                      autoComplete='current-password'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                  <Link
-                    to='/forgot-password'
-                    className='text-muted-foreground hover:text-foreground absolute end-0 -top-0.5 text-sm font-medium transition-colors'
-                  >
-                    {t('Forgot password?')}
-                  </Link>
-                </FormItem>
-              )}
-            />
-          </FieldGroup>
-        )}
-
-        <LegalConsent
-          status={status}
-          checked={agreedToLegal}
-          onCheckedChange={setAgreedToLegal}
-        />
-
-        {status?.sms_login ? (
-          <>
-            <Button
-              type='button'
-              variant='outline'
-              disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
-              onClick={() => setSmsOpen(true)}
-            >
-              {t('SMS sign-in')}
-            </Button>
-            <Dialog
-              open={smsOpen}
-              onOpenChange={setSmsOpen}
-              title={t('SMS sign-in')}
-            >
-              {smsOpen ? (
-                <SmsLoginForm
-                  redirectTo={redirectTo}
-                  disabled={requiresLegalConsent && !agreedToLegal}
-                />
-              ) : null}
-            </Dialog>
-          </>
-        ) : null}
-
-        {passwordLoginEnabled ? (
-          <>
+              {/* Password Field */}
+              <FormField
+                control={form.control}
+                name='password'
+                render={({ field }) => (
+                  <FormItem className='relative'>
+                    <FormLabel>{t('Password')}</FormLabel>
+                    <FormControl>
+                      <PasswordInput
+                        placeholder={t('Enter password')}
+                        className='[&_input]:h-11 [&_input]:px-3'
+                        autoComplete='current-password'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <Link
+                      to='/forgot-password'
+                      className='text-muted-foreground hover:text-foreground absolute end-0 -top-0.5 text-sm font-medium transition-colors'
+                    >
+                      {t('Forgot password?')}
+                    </Link>
+                  </FormItem>
+                )}
+              />
+            </FieldGroup>
+            {legalConsent}
             {/* Submit Button */}
             <Button
               type='submit'
@@ -474,77 +513,87 @@ export function UserAuthForm({
                 />
               </div>
             )}
-          </>
-        ) : null}
-
+          </TabsContent>
+          <TabsContent value='sms' className='flex flex-col gap-5'>
+            {legalConsent}
+            <SmsLoginForm
+              redirectTo={redirectTo}
+              disabled={requiresLegalConsent && !agreedToLegal}
+            />
+          </TabsContent>
+          <TabsContent value='wechat' className='flex flex-col gap-5'>
+            {legalConsent}
+            {hasWeChatWebLogin ? (
+              <>
+                <p className='text-muted-foreground text-sm'>
+                  {t(
+                    'Authorize with WeChat to sign in to your linked account.'
+                  )}
+                </p>
+                {wechatAuthorizationUrl && (
+                  <iframe
+                    src={wechatAuthorizationUrl}
+                    title={t('WeChat sign in')}
+                    className='h-[420px] w-full border-0'
+                    referrerPolicy='no-referrer'
+                    sandbox='allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation'
+                  />
+                )}
+                <Button
+                  type='button'
+                  onClick={startWeChatWebLogin}
+                  disabled={
+                    isWeChatSubmitting ||
+                    (requiresLegalConsent && !agreedToLegal)
+                  }
+                >
+                  {isWeChatSubmitting && <Spinner />}
+                  {t('Continue with WeChat')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className='text-muted-foreground text-sm'>
+                  {t(
+                    'Scan the QR code to follow the official account and reply with “验证码” to receive your verification code.'
+                  )}
+                </p>
+                {wechatQrCodeUrl ? (
+                  <img
+                    src={wechatQrCodeUrl}
+                    alt={t('WeChat login QR code')}
+                    className='mx-auto h-40 w-40 rounded-md border object-contain'
+                  />
+                ) : (
+                  <p>
+                    {t('QR code is not configured. Please contact support.')}
+                  </p>
+                )}
+                <Label htmlFor='wechat-code'>{t('Verification code')}</Label>
+                <Input
+                  id='wechat-code'
+                  value={wechatCode}
+                  onChange={(event) => setWeChatCode(event.target.value)}
+                  autoComplete='one-time-code'
+                  placeholder={t('Enter the verification code')}
+                />
+                <Button
+                  type='button'
+                  onClick={handleWeChatLogin}
+                  disabled={
+                    isWeChatSubmitting ||
+                    !wechatCode.trim() ||
+                    (requiresLegalConsent && !agreedToLegal)
+                  }
+                >
+                  {t('Sign in')}
+                </Button>
+              </>
+            )}
+          </TabsContent>
+        </Tabs>
         {hasAlternativeLogin ? alternativeLoginMethods : null}
       </form>
-
-      {hasWeChatLogin && (
-        <Dialog
-          open={isWeChatDialogOpen}
-          onOpenChange={handleWeChatDialogChange}
-          title={t('WeChat sign in')}
-          description={t(
-            'Scan the QR code to follow the official account and reply with “验证码” to receive your verification code.'
-          )}
-          contentClassName='max-w-sm'
-          headerClassName='text-left'
-          contentHeight='auto'
-          bodyClassName='space-y-4'
-          footer={
-            <>
-              <Button
-                type='button'
-                variant='outline'
-                onClick={() => handleWeChatDialogChange(false)}
-                disabled={isWeChatSubmitting}
-              >
-                {t('Cancel')}
-              </Button>
-              <Button
-                type='button'
-                onClick={handleWeChatLogin}
-                disabled={
-                  isWeChatSubmitting ||
-                  !wechatCode.trim() ||
-                  (requiresLegalConsent && !agreedToLegal)
-                }
-                className='gap-2'
-              >
-                {isWeChatSubmitting ? (
-                  <Spinner data-icon='inline-start' />
-                ) : null}
-                {t('Confirm')}
-              </Button>
-            </>
-          }
-        >
-          {wechatQrCodeUrl ? (
-            <div className='flex justify-center'>
-              <img
-                src={wechatQrCodeUrl}
-                alt={t('WeChat login QR code')}
-                className='h-40 w-40 rounded-md border object-contain'
-              />
-            </div>
-          ) : (
-            <p className='text-muted-foreground text-sm'>
-              {t('QR code is not configured. Please contact support.')}
-            </p>
-          )}
-          <div className='grid gap-2'>
-            <Label htmlFor='wechat-code'>{t('Verification code')}</Label>
-            <Input
-              id='wechat-code'
-              placeholder={t('Enter the verification code')}
-              value={wechatCode}
-              onChange={(event) => setWeChatCode(event.target.value)}
-              autoComplete='one-time-code'
-            />
-          </div>
-        </Dialog>
-      )}
     </Form>
   )
 }

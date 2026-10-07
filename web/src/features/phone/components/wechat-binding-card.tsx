@@ -18,17 +18,18 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { MessageCircle } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { SecurityConfirmationDialog } from '@/features/auth/secure-verification'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { SecurityVerificationForm } from './security-verification-form'
+import { WeChatAvatar } from './wechat-avatar'
 
 interface WeChatBinding {
   app_id: string
@@ -39,47 +40,6 @@ interface WeChatBinding {
   bound_at: string
   updated_at?: string
   last_login_at?: string
-}
-
-function WeChatAvatar(props: { binding: WeChatBinding; base: string }) {
-  const [url, setUrl] = useState('')
-  useEffect(() => {
-    setUrl('')
-    if (!props.binding.has_avatar) return
-    let cancelled = false
-    let objectUrl = ''
-    void api
-      .get<Blob>(
-        `${props.base}/avatar?app_id=${encodeURIComponent(props.binding.app_id)}`,
-        { responseType: 'blob' }
-      )
-      .then((response) => {
-        if (!cancelled) {
-          objectUrl = URL.createObjectURL(response.data)
-          setUrl(objectUrl)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setUrl('')
-      })
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [
-    props.binding.app_id,
-    props.binding.has_avatar,
-    props.binding.updated_at,
-    props.base,
-  ])
-  return (
-    <Avatar>
-      <AvatarImage src={url} alt={props.binding.nickname} />
-      <AvatarFallback>
-        {props.binding.nickname.slice(0, 2) || 'WX'}
-      </AvatarFallback>
-    </Avatar>
-  )
 }
 
 export function WeChatBindingCard(props: {
@@ -229,7 +189,7 @@ export function WeChatBindingCard(props: {
           : null}
       </section>
       <Dialog
-        open={open}
+        open={open && !unlinking}
         onOpenChange={(value) => {
           if (!busy) {
             setOpen(value)
@@ -289,30 +249,6 @@ export function WeChatBindingCard(props: {
               </Button>
             </div>
           ))}
-          {unlinking ? (
-            <div className='space-y-3'>
-              <p>
-                {t(
-                  'Disconnecting WeChat signs this account out on all devices.'
-                )}
-              </p>
-              <SecurityVerificationForm
-                scope='wechat.manage'
-                allowSMS={!props.userId}
-                onVerified={(proof) => {
-                  void unbind(proof)
-                }}
-              />
-              <Button
-                type='button'
-                variant='ghost'
-                disabled={busy}
-                onClick={() => setUnlinking('')}
-              >
-                {t('Cancel')}
-              </Button>
-            </div>
-          ) : null}
           {error ? (
             <p role='alert' className='text-destructive text-sm'>
               {error}
@@ -320,6 +256,44 @@ export function WeChatBindingCard(props: {
           ) : null}
         </div>
       </Dialog>
+      <SecurityConfirmationDialog
+        open={Boolean(unlinking)}
+        onOpenChange={(value) => {
+          if (!busy && !value) {
+            setUnlinking('')
+            setError('')
+          }
+        }}
+        title={t('Disconnect WeChat')}
+        description={t(
+          'Disconnecting WeChat signs this account out on all devices.'
+        )}
+        showCloseButton={!busy}
+      >
+        <SecurityVerificationForm
+          scope='wechat.manage'
+          allowSMS={!props.userId}
+          onVerified={(proof) => {
+            void unbind(proof)
+          }}
+        />
+        {error ? (
+          <p role='alert' className='text-destructive text-sm'>
+            {error}
+          </p>
+        ) : null}
+        <Button
+          type='button'
+          variant='ghost'
+          disabled={busy}
+          onClick={() => {
+            setUnlinking('')
+            setError('')
+          }}
+        >
+          {t('Cancel')}
+        </Button>
+      </SecurityConfirmationDialog>
     </>
   )
 }

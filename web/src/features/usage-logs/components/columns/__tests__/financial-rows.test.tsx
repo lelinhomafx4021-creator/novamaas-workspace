@@ -79,7 +79,7 @@ describe('common log financial rows', () => {
     useAuthStore.getState().auth.setUser(null)
   })
 
-  test('financial viewer sees revenue, cost and profit for a linked log', () => {
+  test('financial permission does not add turnover, cost or profit columns to usage logs', () => {
     useAuthStore.getState().auth.setUser({
       id: 1,
       username: 'finance-admin',
@@ -88,25 +88,16 @@ describe('common log financial rows', () => {
         admin_permissions: { financial_accounting: { view: true } },
       },
     })
-
     render(
       <UsageLogsProvider>
         <FinancialRow log={log} />
       </UsageLogsProvider>
     )
-
-    expect(
-      screen.getByRole('columnheader', { name: 'Turnover' })
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('columnheader', { name: 'Cost amount' })
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('columnheader', { name: 'Profit amount' })
-    ).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '$0.002' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '$0.0016' })).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: '$0.0004' })).toBeInTheDocument()
+    for (const name of ['Turnover', 'Cost amount', 'Profit amount']) {
+      expect(
+        screen.queryByRole('columnheader', { name })
+      ).not.toBeInTheDocument()
+    }
   })
 
   test('an administrator without financial permission has no financial columns', () => {

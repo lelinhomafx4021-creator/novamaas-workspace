@@ -334,14 +334,14 @@ export default function UsagePage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [scope, setScope] = useState<Scope>('personal')
   const [tab, setTab] = useState<Tab>('logs')
-  const [range, setRange] = useState<Range>('7d')
+  const [range, setRange] = useState<Range>('today')
   const [modelName, setModelName] = useState('')
   const [requestId, setRequestId] = useState('')
   const [username, setUsername] = useState('')
   const [channel, setChannel] = useState('')
   const [logType, setLogType] = useState(0)
   const [logFiltersExpanded, setLogFiltersExpanded] = useState(false)
-  const [appliedFilter, setAppliedFilter] = useState({ channel: '', logType: 0, modelName: '', range: '7d' as Range, requestId: '', username: '' })
+  const [appliedFilter, setAppliedFilter] = useState({ channel: '', logType: 0, modelName: '', range: 'today' as Range, requestId: '', username: '' })
   const [logs, setLogs] = useState<UsageLog[]>([])
   const [logPage, setLogPage] = useState(1)
   const [logTotal, setLogTotal] = useState(0)
@@ -352,7 +352,7 @@ export default function UsagePage() {
   const [mediaStatus, setMediaStatus] = useState('')
   const [mediaChannel, setMediaChannel] = useState('')
   const [mediaFiltersExpanded, setMediaFiltersExpanded] = useState(false)
-  const [appliedMediaFilter, setAppliedMediaFilter] = useState({ channel: '', id: '', platform: '', range: '30d' as Range, status: '' })
+  const [appliedMediaFilter, setAppliedMediaFilter] = useState({ channel: '', id: '', platform: '', range: 'today' as Range, status: '' })
   const [tasks, setTasks] = useState<PlatformTask[]>([])
   const [drawings, setDrawings] = useState<DrawingTask[]>([])
   const [mediaPage, setMediaPage] = useState(1)
@@ -366,6 +366,12 @@ export default function UsagePage() {
   const pollingTimer = useRef<ReturnType<typeof setTimeout>>()
   const audio = useRef<ReturnType<typeof Taro.createInnerAudioContext> | null>(null)
   usePageTitle('nav.usage')
+
+  const selectRange = (nextRange: Range) => {
+    setRange(nextRange)
+    setAppliedFilter((filter) => ({ ...filter, range: nextRange }))
+    setAppliedMediaFilter((filter) => ({ ...filter, range: nextRange }))
+  }
 
   const loadRole = useCallback(async () => {
     try {
@@ -586,7 +592,7 @@ export default function UsagePage() {
           <View className='mobile-card usage-filter-card'>
             <View className='usage-ranges'>
               {(['today', 'yesterday', '7d', '30d'] as Range[]).map((item) => (
-                <Button key={item} className={`mobile-button mobile-button--small ${range === item ? '' : 'mobile-button--secondary'}`} onClick={() => setRange(item)}>{t(`common.${item}`)}</Button>
+                <Button key={item} className={`mobile-button mobile-button--small ${range === item ? '' : 'mobile-button--secondary'}`} onClick={() => selectRange(item)}>{t(`common.${item}`)}</Button>
               ))}
             </View>
             <View className='usage-filter-row'>
@@ -658,7 +664,7 @@ export default function UsagePage() {
           <View className='mobile-card usage-filter-card'>
             <View className='usage-ranges'>
               {(['today', 'yesterday', '7d', '30d'] as Range[]).map((item) => (
-                <Button key={item} className={`mobile-button mobile-button--small ${appliedMediaFilter.range === item ? '' : 'mobile-button--secondary'}`} onClick={() => setAppliedMediaFilter((filter) => ({ ...filter, range: item }))}>{t(`common.${item}`)}</Button>
+                <Button key={item} className={`mobile-button mobile-button--small ${appliedMediaFilter.range === item ? '' : 'mobile-button--secondary'}`} onClick={() => selectRange(item)}>{t(`common.${item}`)}</Button>
               ))}
             </View>
             <View className='usage-filter-row'>

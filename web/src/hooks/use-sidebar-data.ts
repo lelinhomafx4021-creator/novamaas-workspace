@@ -111,6 +111,11 @@ export function useSidebarData(): SidebarData {
         title: t('Personal'),
         items: [
           {
+            title: t('Profile'),
+            url: '/profile',
+            icon: User,
+          },
+          {
             title: t('Billing statements'),
             url: '/billing',
             icon: FileText,
@@ -119,11 +124,6 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
-          },
-          {
-            title: t('Profile'),
-            url: '/profile',
-            icon: User,
           },
         ],
       },

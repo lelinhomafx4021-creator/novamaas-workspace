@@ -98,7 +98,7 @@ func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, 
 		ExpiresAt:       time.Unix(now, 0).Add(LoginSessionTTL).Unix(),
 	}
 	if session.LoginMethod == "" {
-		session.LoginMethod = "unknown"
+		session.LoginMethod = "browser"
 	}
 	if err := model.CreateUserSession(session); err != nil {
 		return nil, err

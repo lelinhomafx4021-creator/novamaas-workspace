@@ -21,7 +21,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useFormContext } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
-import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,6 +33,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SecurityConfirmationDialog } from '@/features/auth/secure-verification'
 import {
   getPhoneStatus,
   phoneErrorMessage,
@@ -224,7 +224,7 @@ export function ManagedPhoneField(props: {
           </FormItem>
         )}
       />
-      <Dialog
+      <SecurityConfirmationDialog
         open={checkingSecurity}
         onOpenChange={setCheckingSecurity}
         title={t('Verify')}
@@ -238,7 +238,7 @@ export function ManagedPhoneField(props: {
             void send(proof)
           }}
         />
-      </Dialog>
+      </SecurityConfirmationDialog>
     </>
   )
 }

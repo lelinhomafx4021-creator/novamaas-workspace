@@ -60,6 +60,7 @@ import {
   useApiInfo,
   useDashboardContentVisibility,
 } from '../../hooks/use-status-data'
+import { AccountSummaryPanel } from './account-summary-panel'
 import { AnnouncementsPanel } from './announcements-panel'
 import { ApiInfoPanel } from './api-info-panel'
 import { FAQPanel } from './faq-panel'
@@ -608,7 +609,11 @@ export function OverviewDashboard() {
   const setupGuideExpanded =
     manualSetupGuideExpanded ?? (setupStatusReady && !setupComplete)
   const showLeftContentPanels =
-    isAdmin || showApiInfoPanel || showAnnouncementsPanel || showFAQPanel
+    Boolean(user) ||
+    isAdmin ||
+    showApiInfoPanel ||
+    showAnnouncementsPanel ||
+    showFAQPanel
   const showContentPanels = showLeftContentPanels || showUptimePanel
 
   const handleSetupGuideToggle = () => {
@@ -764,13 +769,21 @@ export function OverviewDashboard() {
             <div
               className={cn(
                 'grid min-w-0 grid-cols-1 gap-4',
-                (showApiInfoPanel || showAnnouncementsPanel || showFAQPanel) &&
+                (Boolean(user) ||
+                  showApiInfoPanel ||
+                  showAnnouncementsPanel ||
+                  showFAQPanel) &&
                   'lg:grid-cols-2'
               )}
             >
               {isAdmin && (
-                <CardStaggerItem className='lg:col-span-2'>
+                <CardStaggerItem>
                   <PerformanceHealthPanel />
+                </CardStaggerItem>
+              )}
+              {user && (
+                <CardStaggerItem>
+                  <AccountSummaryPanel />
                 </CardStaggerItem>
               )}
               {showApiInfoPanel && (

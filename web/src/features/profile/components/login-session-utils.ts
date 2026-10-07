@@ -53,13 +53,16 @@ export function loginMethodLabel(method: string, t: TFunction): string {
       return t('Two-factor Authentication')
     case 'passkey':
       return t('Passkey')
+    case 'wechat_web':
     case 'wechat':
       return t('WeChat')
     case 'telegram':
       return t('Telegram')
     case 'oauth':
       return t('OAuth')
+    case 'browser':
     case 'unknown':
+      return t('Browser sign-in')
     case '':
       return t('Unknown')
     default:

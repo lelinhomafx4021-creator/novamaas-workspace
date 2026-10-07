@@ -20,7 +20,6 @@ import { ShieldCheck, KeyRound, Loader2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -30,6 +29,7 @@ import type {
   VerificationMethod,
   VerificationMethods,
 } from '../types'
+import { SecurityConfirmationDialog } from './security-confirmation-dialog'
 
 interface SecureVerificationDialogProps {
   open: boolean
@@ -86,24 +86,12 @@ export function SecureVerificationDialog({
     (activeMethod === '2fa' && (!state.code.trim() || state.code.length < 6))
 
   return (
-    <Dialog
+    <SecurityConfirmationDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={
-        <>
-          <ShieldCheck className='text-primary h-5 w-5' />
-          {title}
-        </>
-      }
-      description={description}
-      contentClassName='top-[8vh] max-w-[calc(100%-1.5rem)] translate-y-0 overflow-hidden border-none shadow-xl sm:top-1/2 sm:max-w-md sm:translate-y-[-50%] sm:rounded-xl'
-      headerClassName='border-b pb-4 text-left'
-      titleClassName='flex items-center gap-2 text-lg font-semibold'
-      descriptionClassName='text-left'
-      contentHeight='auto'
-      bodyClassName='px-1 py-1'
+      title={t(title)}
+      description={t(description)}
       showCloseButton={!state.loading}
-      footerClassName='bg-muted/30 border-t px-6 py-4 sm:flex-row sm:justify-end'
       footer={
         <>
           <Button
@@ -125,6 +113,11 @@ export function SecureVerificationDialog({
         </>
       }
     >
+      {state.error ? (
+        <p role='alert' className='text-destructive text-sm'>
+          {state.error}
+        </p>
+      ) : null}
       {availableTabs.length === 0 ? (
         <div className='grid place-items-center gap-4 text-center'>
           <div className='bg-muted flex h-16 w-16 items-center justify-center rounded-2xl'>
@@ -158,7 +151,10 @@ export function SecureVerificationDialog({
               )}
             </p>
             <Input
-              inputMode='numeric'
+              aria-label={t('Authenticator code')}
+              autoComplete='one-time-code'
+              className='h-11'
+              inputMode='text'
               maxLength={8}
               value={state.code}
               onChange={(event) => onCodeChange(event.target.value)}
@@ -198,6 +194,6 @@ export function SecureVerificationDialog({
           </TabsContent>
         </Tabs>
       )}
-    </Dialog>
+    </SecurityConfirmationDialog>
   )
 }

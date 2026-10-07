@@ -26,10 +26,13 @@ import {
   InputGroupText,
 } from '@/components/ui/input-group'
 
-export function PhoneNumberInput(props: ComponentProps<'input'>) {
+export function PhoneNumberInput(
+  props: ComponentProps<'input'> & { groupClassName?: string }
+) {
   const { t } = useTranslation()
+  const { groupClassName, ...inputProps } = props
   return (
-    <InputGroup>
+    <InputGroup className={groupClassName}>
       <InputGroupAddon
         className='border-r pr-3'
         aria-label={t('Country calling code')}
@@ -37,7 +40,7 @@ export function PhoneNumberInput(props: ComponentProps<'input'>) {
         <InputGroupText>+86</InputGroupText>
       </InputGroupAddon>
       <InputGroupInput
-        {...props}
+        {...inputProps}
         type='tel'
         inputMode='numeric'
         autoComplete='tel-national'

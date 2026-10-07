@@ -25,9 +25,10 @@ import {
 } from '@tanstack/react-router'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import type { SystemStatus } from '@/features/auth/types'
+import { api } from '@/lib/api'
 
 import { UserAuthForm } from '../components/user-auth-form'
 
@@ -55,6 +56,7 @@ async function renderForm(status: Partial<SystemStatus>) {
 
 afterEach(() => {
   queryClient?.clear()
+  localStorage.clear()
 })
 
 test('legal consent appears before sign-in actions and unlocks them when accepted', async () => {
@@ -103,4 +105,79 @@ test('password sign-in accepts a username, email address, or phone number', asyn
       name: 'Username, Email or Phone Number',
     })
   ).toHaveAttribute('placeholder', 'Enter your username, email or phone number')
+})
+
+test('SMS tab shows phone input inline and remembers the selected login method', async () => {
+  localStorage.clear()
+  await renderForm({ password_login_enabled: true, sms_login: true })
+  await userEvent
+    .setup()
+    .click(screen.getByRole('tab', { name: 'SMS sign-in' }))
+  expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('textbox', { name: 'Phone Number' })
+  ).toBeInTheDocument()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(localStorage.getItem('new-api:login-method:v1')).toBe('sms')
+})
+
+test('invalid saved login method falls back to account password', async () => {
+  localStorage.setItem('new-api:login-method:v1', 'invalid')
+  await renderForm({ password_login_enabled: true, sms_login: true })
+  expect(
+    screen.getByRole('tab', { name: 'Account and password' })
+  ).toHaveAttribute('aria-selected', 'true')
+})
+
+test('opening sign-in again restores the saved SMS tab', async () => {
+  localStorage.setItem('new-api:login-method:v1', 'sms')
+  await renderForm({ password_login_enabled: true, sms_login: true })
+  expect(screen.getByRole('tab', { name: 'SMS sign-in' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  )
+  expect(
+    screen.getByRole('textbox', { name: 'Phone Number' })
+  ).toBeInTheDocument()
+  expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+})
+
+test('keyboard navigation switches login tabs without opening a phone dialog', async () => {
+  await renderForm({ password_login_enabled: true, sms_login: true })
+  screen.getByRole('tab', { name: 'Account and password' }).focus()
+  await userEvent.setup().keyboard('[ArrowRight][Enter]')
+  expect(screen.getByRole('tab', { name: 'SMS sign-in' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  )
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('WeChat tab opens the official authorization frame without a nested dialog', async () => {
+  vi.spyOn(api, 'post').mockResolvedValue({
+    data: {
+      data: {
+        authorize_url:
+          'https://open.weixin.qq.com/connect/qrconnect?state=test',
+      },
+    },
+  })
+  await renderForm({ password_login_enabled: true, wechat_web_login: true })
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('tab', { name: 'WeChat sign in' }))
+  await user.click(screen.getByRole('button', { name: 'Continue with WeChat' }))
+  expect(await screen.findByTitle('WeChat sign in')).toHaveAttribute(
+    'src',
+    'https://open.weixin.qq.com/connect/qrconnect?state=test'
+  )
+  expect(api.post).toHaveBeenCalledWith('/api/oauth/wechat-web/start')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('a saved disabled SMS method falls back to account password', async () => {
+  localStorage.setItem('new-api:login-method:v1', 'sms')
+  await renderForm({ password_login_enabled: true, sms_login: false })
+  expect(
+    screen.getByRole('tab', { name: 'Account and password' })
+  ).toHaveAttribute('aria-selected', 'true')
 })

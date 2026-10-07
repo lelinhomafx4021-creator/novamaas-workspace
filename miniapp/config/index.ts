@@ -51,6 +51,13 @@ const baseConfig: UserConfigExport<'webpack5'> = {
     options: {},
   },
   mini: {
+    webpackChain(chain) {
+      // WeChat bundles have a 2 MiB package budget; webpack's 244 KiB
+      // browser heuristic does not apply to synchronous mini program chunks.
+      chain.performance.maxAssetSize(512 * 1024)
+      chain.performance.maxEntrypointSize(2 * 1024 * 1024)
+      chain.performance.hints('error')
+    },
     postcss: {
       pxtransform: {
         enable: true,

@@ -1,10 +1,9 @@
 import { Button, Input, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ApiRequestError } from '@/api/request'
-import { getPlatformStatus } from '@/api/status'
 import {
   bindMiniAppAccount,
   loginWithPassword,
@@ -63,19 +62,6 @@ export default function ProfilePage() {
   const [smsOpen, setSmsOpen] = useState(false)
   const [smsFlow, setSmsFlow] = useState('')
   const [smsAvailable, setSmsAvailable] = useState(false)
-  const [smsEnabled, setSmsEnabled] = useState(false)
-  useEffect(() => {
-    let cancelled = false
-    void getPlatformStatus()
-      .then((status) => {
-        if (!cancelled)
-          setSmsEnabled(!!status.sms_login && !!status.wechat_miniapp_login)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [twoFactorCode, setTwoFactorCode] = useState('')
@@ -414,19 +400,6 @@ export default function ProfilePage() {
           >
             {busy ? t('auth.signingIn') : t('auth.wechatPhoneLogin')}
           </Button>
-          {smsEnabled ? (
-            <Button
-              className='profile-button profile-button--secondary'
-              disabled={busy}
-              onClick={() => {
-                setSmsFlow('')
-                setSmsOpen(true)
-                setErrorKey('')
-              }}
-            >
-              {t('phone.login')}
-            </Button>
-          ) : null}
           <Button
             className='profile-button profile-button--secondary'
             disabled={busy}

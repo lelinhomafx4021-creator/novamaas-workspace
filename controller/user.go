@@ -133,6 +133,8 @@ func loginMethodFromContext(c *gin.Context) string {
 		return "password_sms"
 	case "/api/user/passkey/login/finish":
 		return "passkey"
+	case "/api/oauth/wechat-web":
+		return "wechat_web"
 	case "/api/oauth/wechat":
 		return "wechat"
 	case "/api/oauth/telegram/login":
@@ -151,7 +153,7 @@ func loginMethodFromContext(c *gin.Context) string {
 		}
 		return "oauth"
 	default:
-		return "unknown"
+		return "browser"
 	}
 }
 

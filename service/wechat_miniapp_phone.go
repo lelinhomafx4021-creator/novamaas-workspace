@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,6 +21,20 @@ const weChatMiniAppPhoneEndpoint = "https://api.weixin.qq.com/wxa/business/getus
 
 var ErrWeChatMiniAppPhoneRejected = errors.New("WeChat rejected the phone authorization code")
 var ErrWeChatMiniAppPhoneUpstream = errors.New("WeChat phone service is unavailable")
+
+// Only numeric diagnostics cross the service boundary; URLs and raw WeChat
+// messages may contain credentials, authorization codes or personal data.
+type WeChatPhoneExchangeError struct {
+	Stage  string
+	Code   int
+	reason error
+	token  string
+}
+
+func (err *WeChatPhoneExchangeError) Error() string {
+	return fmt.Sprintf("WeChat phone exchange failed: stage=%s errcode=%d", err.Stage, err.Code)
+}
+func (err *WeChatPhoneExchangeError) Unwrap() error { return err.reason }
 
 type WeChatMiniAppPhoneClient struct {
 	httpClient    *http.Client
@@ -84,7 +99,13 @@ func (client *WeChatMiniAppPhoneClient) accessToken(ctx context.Context, appId, 
 		return "", ErrWeChatMiniAppPhoneUpstream
 	}
 	var payload weChatMiniAppAccessTokenResponse
-	if err := common.DecodeJson(response.Body, &payload); err != nil || payload.ErrorCode != 0 || payload.AccessToken == "" || payload.ExpiresIn <= 0 {
+	if err := common.DecodeJson(response.Body, &payload); err != nil {
+		return "", ErrWeChatMiniAppPhoneUpstream
+	}
+	if payload.ErrorCode != 0 {
+		return "", &WeChatPhoneExchangeError{Stage: "access_token", Code: payload.ErrorCode, reason: ErrWeChatMiniAppPhoneUpstream}
+	}
+	if payload.AccessToken == "" || payload.ExpiresIn <= 0 {
 		return "", ErrWeChatMiniAppPhoneUpstream
 	}
 	client.token = payload.AccessToken
@@ -98,6 +119,25 @@ func (client *WeChatMiniAppPhoneClient) accessToken(ctx context.Context, appId, 
 }
 
 func (client *WeChatMiniAppPhoneClient) ExchangeCode(ctx context.Context, appId, appSecret, code string) (string, error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		phone, err := client.exchangeCode(ctx, appId, appSecret, code)
+		var rejected *WeChatPhoneExchangeError
+		if attempt != 0 || !errors.As(err, &rejected) || rejected.Stage != "phone" || (rejected.Code != 40001 && rejected.Code != 40014 && rejected.Code != 42001) {
+			return phone, err
+		}
+		// A token rejection does not consume the phone code. Refresh once, never
+		// retry invalid/consumed codes or uncertain transport failures.
+		client.mutex.Lock()
+		if client.token == rejected.token && client.tokenAppId == appId {
+			client.token = ""
+			client.tokenExpiry = time.Time{}
+		}
+		client.mutex.Unlock()
+	}
+	return "", ErrWeChatMiniAppPhoneUpstream
+}
+
+func (client *WeChatMiniAppPhoneClient) exchangeCode(ctx context.Context, appId, appSecret, code string) (string, error) {
 	if client == nil || client.httpClient == nil || strings.TrimSpace(appId) == "" || strings.TrimSpace(appSecret) == "" {
 		return "", ErrWeChatMiniAppConfiguration
 	}
@@ -138,14 +178,14 @@ func (client *WeChatMiniAppPhoneClient) ExchangeCode(ctx context.Context, appId,
 		return "", ErrWeChatMiniAppPhoneUpstream
 	}
 	if payload.ErrorCode != 0 {
-		return "", ErrWeChatMiniAppPhoneRejected
+		return "", &WeChatPhoneExchangeError{Stage: "phone", Code: payload.ErrorCode, reason: ErrWeChatMiniAppPhoneRejected, token: token}
 	}
 	if payload.PhoneInfo.Watermark.AppId != appId {
-		return "", ErrWeChatMiniAppPhoneRejected
+		return "", &WeChatPhoneExchangeError{Stage: "watermark", reason: ErrWeChatMiniAppPhoneRejected}
 	}
 	phone, err := model.WeChatVerifiedPhone(payload.PhoneInfo.CountryCode, payload.PhoneInfo.PurePhoneNumber)
 	if err != nil {
-		return "", ErrWeChatMiniAppPhoneRejected
+		return "", &WeChatPhoneExchangeError{Stage: "phone_number", reason: ErrWeChatMiniAppPhoneRejected}
 	}
 	return phone, nil
 }

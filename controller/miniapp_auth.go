@@ -201,6 +201,19 @@ func MiniAppPhoneLogin(c *gin.Context) {
 	}
 	phone, err := exchangeMiniAppPhoneCode(c.Request.Context(), request.PhoneCode)
 	if err != nil {
+		var diagnostic *service.WeChatPhoneExchangeError
+		if errors.As(err, &diagnostic) {
+			logger.LogWarn(c.Request.Context(), diagnostic.Error())
+			status, code := http.StatusBadGateway, "MINI_AUTH_PHONE_SERVICE_REJECTED"
+			if diagnostic.Stage == "watermark" {
+				status, code = http.StatusConflict, "MINI_AUTH_APP_ID_MISMATCH"
+			}
+			if diagnostic.Stage == "phone" && (diagnostic.Code == 40029 || diagnostic.Code == 40163) {
+				status, code = http.StatusUnauthorized, "MINI_AUTH_PHONE_CODE_INVALID"
+			}
+			c.JSON(status, gin.H{"success": false, "code": code, "message": http.StatusText(status), "data": gin.H{"wechat_errcode": diagnostic.Code, "stage": diagnostic.Stage}})
+			return
+		}
 		switch {
 		case errors.Is(err, service.ErrWeChatMiniAppPhoneRejected):
 			writeMiniAppAuthError(c, http.StatusUnauthorized, "MINI_AUTH_PHONE_CODE_INVALID")

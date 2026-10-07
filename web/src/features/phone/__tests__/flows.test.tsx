@@ -53,6 +53,9 @@ let queryClient: QueryClient
 
 beforeEach(() => {
   useAuthStore.getState().auth.reset()
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: { enabled: false } },
+  })
   vi.mocked(phoneAPI.getPhoneStatus).mockResolvedValue({
     phone: '13800138000',
     verified: null,
@@ -191,14 +194,18 @@ test('binding requires current account proof and invalidates the code when the d
   await user.click(
     await screen.findByRole('button', { name: 'Verify phone number' })
   )
+  expect(screen.getByLabelText('New phone number (+86)')).toBeVisible()
+  expect(screen.getByLabelText('SMS verification code')).toBeVisible()
   expect(
-    screen.queryByLabelText('New phone number (+86)')
+    screen.queryByRole('button', { name: 'Passkey' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByLabelText('Authenticator or backup code, if enabled')
   ).not.toBeInTheDocument()
   await user.type(
     screen.getByLabelText('Current account password'),
     'correct-password'
   )
-  await user.click(screen.getByRole('button', { name: /^Verify$/ }))
   const phone = await screen.findByLabelText('New phone number (+86)')
   await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
   await user.type(screen.getByLabelText('SMS verification code'), '123456')
@@ -212,7 +219,7 @@ test('binding requires current account proof and invalidates the code when the d
   ).toBeDisabled()
   expect(screen.getByLabelText('SMS verification code')).toHaveValue('')
   expect(phoneAPI.sendBindingSMS).toHaveBeenCalledWith(
-    '13800138000',
+    '+8613800138000',
     'current-session-proof',
     undefined
   )
@@ -229,7 +236,6 @@ test('successful administrator verification binds the selected user and refreshe
     screen.getByLabelText('Current account password'),
     'admin-password'
   )
-  await user.click(screen.getByRole('button', { name: /^Verify$/ }))
   await screen.findByLabelText('New phone number (+86)')
   await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
   await user.type(screen.getByLabelText('SMS verification code'), '123456')
@@ -274,8 +280,12 @@ test('failed SMS delivery never enables sign-in', async () => {
   })
   const user = userEvent.setup()
   await show(() => <SmsLoginForm />)
+  expect(screen.getByText('+86')).toBeVisible()
   await user.type(await screen.findByLabelText('Phone Number'), '13800138000')
   await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  expect(phoneAPI.sendLoginSMS).toHaveBeenCalledWith(
+    expect.objectContaining({ phone: '+8613800138000' })
+  )
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'SMS service is unavailable. Use another sign-in method.'
   )
@@ -305,4 +315,109 @@ test('MFA SMS uses the password login flow and can switch back to the authentica
     screen.getByRole('button', { name: 'Use authenticator code' })
   )
   expect(screen.getByRole('button', { name: 'Use backup code' })).toBeVisible()
+})
+
+test('enabled MFA opens the shared confirmation window before sending a binding code', async () => {
+  vi.mocked(api.get).mockResolvedValue({
+    data: { success: true, data: { enabled: true } },
+  })
+  const user = userEvent.setup()
+  await show(() => <PhoneBindingCard />)
+  await user.click(
+    await screen.findByRole('button', { name: 'Verify phone number' })
+  )
+  await user.type(
+    screen.getByLabelText('Current account password'),
+    'correct-password'
+  )
+  await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  expect(
+    await screen.findByPlaceholderText('Enter verification code')
+  ).toBeVisible()
+  expect(phoneAPI.sendBindingSMS).not.toHaveBeenCalled()
+  await user.type(
+    screen.getByPlaceholderText('Enter verification code'),
+    '123456'
+  )
+  await user.click(screen.getByRole('button', { name: /^Verify$/ }))
+  await waitFor(() => expect(phoneAPI.sendBindingSMS).toHaveBeenCalledOnce())
+  expect(phoneAPI.verifyAccountSecurity).toHaveBeenCalledWith({
+    scope: 'phone.manage',
+    password: 'correct-password',
+    two_factor_code: '123456',
+  })
+  expect(
+    screen.queryByPlaceholderText('Enter verification code')
+  ).not.toBeInTheDocument()
+})
+
+test('unavailable MFA status fails closed and never sends a binding code', async () => {
+  vi.mocked(api.get).mockRejectedValue(new Error('Network unavailable'))
+  const user = userEvent.setup()
+  await show(() => <PhoneBindingCard />)
+  await user.click(
+    await screen.findByRole('button', { name: 'Verify phone number' })
+  )
+  await user.type(
+    screen.getByLabelText('Current account password'),
+    'correct-password'
+  )
+  await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  expect(await screen.findByRole('alert')).toBeVisible()
+  expect(phoneAPI.verifyAccountSecurity).not.toHaveBeenCalled()
+  expect(phoneAPI.sendBindingSMS).not.toHaveBeenCalled()
+})
+
+test('canceling MFA returns to the three-field binding form without sending a code', async () => {
+  vi.mocked(api.get).mockResolvedValue({
+    data: { success: true, data: { enabled: true } },
+  })
+  const user = userEvent.setup()
+  await show(() => <PhoneBindingCard />)
+  await user.click(
+    await screen.findByRole('button', { name: 'Verify phone number' })
+  )
+  await user.type(
+    screen.getByLabelText('Current account password'),
+    'correct-password'
+  )
+  await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  await screen.findByPlaceholderText('Enter verification code')
+  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(await screen.findByLabelText('Current account password')).toHaveValue(
+    ''
+  )
+  expect(screen.getByLabelText('New phone number (+86)')).toHaveValue(
+    '13800138000'
+  )
+  expect(phoneAPI.sendBindingSMS).not.toHaveBeenCalled()
+  expect(phoneAPI.confirmPhoneBinding).not.toHaveBeenCalled()
+})
+
+test('invalid MFA stays in the shared window and cannot send SMS or bind the account', async () => {
+  vi.mocked(api.get).mockResolvedValue({
+    data: { success: true, data: { enabled: true } },
+  })
+  vi.mocked(phoneAPI.verifyAccountSecurity).mockRejectedValue({
+    response: { data: { code: 'PHONE_VERIFICATION_INVALID' } },
+  })
+  const user = userEvent.setup()
+  await show(() => <PhoneBindingCard />)
+  await user.click(
+    await screen.findByRole('button', { name: 'Verify phone number' })
+  )
+  await user.type(
+    screen.getByLabelText('Current account password'),
+    'correct-password'
+  )
+  await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  await user.type(
+    await screen.findByPlaceholderText('Enter verification code'),
+    '654321'
+  )
+  await user.click(screen.getByRole('button', { name: /^Verify$/ }))
+  expect(await screen.findByRole('alert')).toBeVisible()
+  expect(screen.getByPlaceholderText('Enter verification code')).toBeVisible()
+  expect(phoneAPI.sendBindingSMS).not.toHaveBeenCalled()
+  expect(phoneAPI.confirmPhoneBinding).not.toHaveBeenCalled()
 })

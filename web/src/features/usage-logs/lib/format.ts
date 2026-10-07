@@ -516,5 +516,11 @@ export function renderAuditContent(
   if (!op?.action) return null
   const template = AUDIT_TEMPLATES[op.action]
   if (!template) return null
-  return t(template, (op.params ?? {}) as Record<string, unknown>)
+  const params = { ...op.params } as Record<string, unknown>
+  if (op.action === 'login') {
+    if (params.method === 'unknown' || params.method === 'browser') {
+      params.method = t('Browser sign-in')
+    }
+  }
+  return t(template, params)
 }

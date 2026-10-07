@@ -24,7 +24,7 @@ import {
 } from '@tanstack/react-router'
 import type { AxiosRequestConfig } from 'axios'
 import i18next from 'i18next'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { OAuthCallbackScreen } from '@/features/auth/components/oauth-callback-screen'
@@ -59,6 +59,7 @@ interface OAuthBindingResult {
 
 function OAuthCallback() {
   const navigate = useNavigate()
+  const startedLogin = useRef('')
   const { provider } = useParams({ from: '/oauth/$provider' }) as {
     provider: string
   }
@@ -186,6 +187,9 @@ function OAuthCallback() {
       return
     }
 
+    const loginRequestKey = `${provider}:${state}:${code}`
+    if (startedLogin.current === loginRequestKey) return
+    startedLogin.current = loginRequestKey
     void (async () => {
       try {
         const config: OAuthRequestConfig = {
@@ -202,6 +206,15 @@ function OAuthCallback() {
           applyAuthBundle(response.data.data)
           safeNavigate(search.redirect)
           toast.success(i18next.t('Signed in successfully!'))
+          return
+        }
+        if (response.data?.code === 'WECHAT_BINDING_REQUIRED') {
+          toast.error(
+            i18next.t(
+              'Link this WeChat account in the mini program before signing in'
+            )
+          )
+          safeNavigate('/sign-in', '/sign-in')
           return
         }
         const messageKey = getServerErrorMessageKey(response.data)

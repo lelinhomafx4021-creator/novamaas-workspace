@@ -24,7 +24,9 @@ export function nationalPhoneNumber(value: string): string {
 
 export function formatMobilePhone(value: string): string {
   const national = nationalPhoneNumber(value)
-  return /^1[3-9]\d{9}$/.test(national) ? `+86 ${national}` : value.trim()
+  return /^1[3-9]\d{9}$/.test(national)
+    ? `+86 ${national.slice(0, 3)} ${national.slice(3, 7)} ${national.slice(7)}`
+    : value.trim()
 }
 
 export function canonicalMobilePhone(value: string): string {

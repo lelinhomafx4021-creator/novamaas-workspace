@@ -84,3 +84,9 @@ describe('login session presentation', () => {
     )
   })
 })
+
+test('browser sessions and historical unknown sessions use the browser sign-in label', () => {
+  expect(loginMethodLabel('browser', translate)).toBe('Browser sign-in')
+  expect(loginMethodLabel('unknown', translate)).toBe('Browser sign-in')
+  expect(loginMethodLabel('wechat_web', translate)).toBe('WeChat')
+})

@@ -26,17 +26,23 @@ import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SecureVerificationDialog } from '@/features/auth/secure-verification'
+import { get2FAStatus } from '@/lib/api'
 
 import {
   confirmPhoneBinding,
   getPhoneStatus,
   phoneErrorMessage,
   sendBindingSMS,
+  verifyAccountSecurity,
 } from '../api'
-import { formatMobilePhone, nationalPhoneNumber } from '../phone-number'
+import {
+  canonicalMobilePhone,
+  formatMobilePhone,
+  nationalPhoneNumber,
+} from '../phone-number'
 import { useSmsCountdown } from '../use-sms-countdown'
 import { PhoneNumberInput } from './phone-number-input'
-import { SecurityVerificationForm } from './security-verification-form'
 
 export function PhoneBindingCard(props: {
   userId?: number
@@ -44,6 +50,11 @@ export function PhoneBindingCard(props: {
 }) {
   const { t } = useTranslation()
   const phoneInputId = useId()
+  const passwordId = useId()
+  const codeId = useId()
+  const [password, setPassword] = useState('')
+  const [securityOpen, setSecurityOpen] = useState(false)
+  const [securityCode, setSecurityCode] = useState('')
   const status = useQuery({
     queryKey: ['phone-binding', props.userId ?? 'self'],
     queryFn: () => getPhoneStatus(props.userId),
@@ -57,15 +68,43 @@ export function PhoneBindingCard(props: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const send = async () => {
+  const send = async (twoFactorCode?: string) => {
     setBusy(true)
     setError('')
     setToken('')
     try {
-      const challenge = await sendBindingSMS(phone, proof, props.userId)
+      let securityProof = proof
+      if (!securityProof) {
+        if (!twoFactorCode) {
+          const result = await get2FAStatus()
+          if (!result.success || typeof result.data?.enabled !== 'boolean') {
+            throw new Error('Unable to determine security requirements')
+          }
+          if (result.data.enabled) {
+            setSecurityCode('')
+            setSecurityOpen(true)
+            return
+          }
+        }
+        securityProof = await verifyAccountSecurity({
+          scope: 'phone.manage',
+          password,
+          two_factor_code: twoFactorCode,
+        })
+        setProof(securityProof)
+      }
+      setSecurityOpen(false)
+      setSecurityCode('')
+      const challenge = await sendBindingSMS(
+        canonicalMobilePhone(phone),
+        securityProof,
+        props.userId
+      )
       setToken(challenge.challenge_token)
       setCode('')
       countdown.start(challenge.retry_after)
+      setSecurityOpen(false)
+      setSecurityCode('')
     } catch (error) {
       setError(phoneErrorMessage(error, t))
       setProof('')
@@ -80,6 +119,7 @@ export function PhoneBindingCard(props: {
     try {
       await confirmPhoneBinding(token, code, proof, props.userId)
       setEditing(false)
+      setPassword('')
       setProof('')
       setToken('')
       setCode('')
@@ -95,6 +135,9 @@ export function PhoneBindingCard(props: {
 
   const close = () => {
     setEditing(false)
+    setPassword('')
+    setSecurityOpen(false)
+    setSecurityCode('')
     setProof('')
     setToken('')
     setCode('')
@@ -178,7 +221,7 @@ export function PhoneBindingCard(props: {
         )}
       </section>
       <Dialog
-        open={editing}
+        open={editing && !securityOpen}
         onOpenChange={(open) => {
           if (!busy && !open) close()
         }}
@@ -187,70 +230,81 @@ export function PhoneBindingCard(props: {
             ? t('Change phone number')
             : t('Verify phone number')
         }
-        description={t('Verify your account before binding a phone number.')}
         contentClassName='sm:max-w-md'
         showCloseButton={!busy}
       >
         <div className='space-y-3'>
-          {status.data?.verified ? (
-            <p className='text-muted-foreground text-xs'>
-              {t('Verified at')}:{' '}
-              {new Date(status.data.verified.verified_at).toLocaleString()}
-            </p>
-          ) : null}
-          {!proof ? (
-            <SecurityVerificationForm
-              scope='phone.manage'
-              allowSMS={!props.userId}
-              onVerified={setProof}
+          <div className='grid gap-2'>
+            <Label htmlFor={passwordId}>{t('Current account password')}</Label>
+            <Input
+              id={passwordId}
+              type='password'
+              autoComplete='current-password'
+              className='h-11 px-3'
+              value={password}
+              disabled={busy}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setProof('')
+                setToken('')
+                setCode('')
+              }}
             />
-          ) : (
-            <div className='space-y-3'>
-              <div className='grid gap-2'>
-                <Label htmlFor={phoneInputId}>
-                  {t('New phone number (+86)')}
-                </Label>
-                <PhoneNumberInput
-                  id={phoneInputId}
-                  value={phone}
-                  disabled={busy}
-                  onChange={(event) => {
-                    setPhone(nationalPhoneNumber(event.target.value))
-                    setToken('')
-                    setCode('')
-                  }}
-                />
-              </div>
+          </div>
+          <div className='grid gap-2'>
+            <Label htmlFor={phoneInputId}>{t('New phone number (+86)')}</Label>
+            <PhoneNumberInput
+              id={phoneInputId}
+              groupClassName='h-11'
+              className='h-full px-3'
+              value={phone}
+              disabled={busy}
+              onChange={(event) => {
+                setPhone(nationalPhoneNumber(event.target.value))
+                setToken('')
+                setCode('')
+              }}
+            />
+          </div>
+          <div className='grid gap-2'>
+            <Label htmlFor={codeId}>{t('SMS verification code')}</Label>
+            <div className='flex gap-2'>
+              <Input
+                id={codeId}
+                className='h-11 min-w-0 flex-1 px-3'
+                inputMode='numeric'
+                autoComplete='one-time-code'
+                maxLength={6}
+                value={code}
+                disabled={busy || !token}
+                onChange={(event) => setCode(event.target.value)}
+              />
               <Button
                 type='button'
                 variant='outline'
-                disabled={busy || !phone.trim() || countdown.seconds > 0}
-                onClick={send}
+                className='h-11 shrink-0'
+                disabled={
+                  busy ||
+                  (!proof && !password) ||
+                  !phone.trim() ||
+                  countdown.seconds > 0
+                }
+                onClick={() => void send()}
               >
                 {countdown.seconds > 0
                   ? t('Resend in {{seconds}}s', { seconds: countdown.seconds })
                   : t('Send SMS code')}
               </Button>
-              <Label className='grid gap-2'>
-                {t('SMS verification code')}
-                <Input
-                  inputMode='numeric'
-                  autoComplete='one-time-code'
-                  maxLength={6}
-                  value={code}
-                  disabled={busy || !token}
-                  onChange={(event) => setCode(event.target.value)}
-                />
-              </Label>
-              <Button
-                type='button'
-                disabled={busy || !token || !/^\d{6}$/.test(code)}
-                onClick={confirm}
-              >
-                {t('Confirm phone binding')}
-              </Button>
             </div>
-          )}
+          </div>
+          <Button
+            type='button'
+            className='h-11 w-full'
+            disabled={busy || !proof || !token || !/^\d{6}$/.test(code)}
+            onClick={confirm}
+          >
+            {t('Confirm phone binding')}
+          </Button>
           <Button type='button' variant='ghost' disabled={busy} onClick={close}>
             {t('Cancel')}
           </Button>
@@ -261,6 +315,29 @@ export function PhoneBindingCard(props: {
           ) : null}
         </div>
       </Dialog>
+      <SecureVerificationDialog
+        open={securityOpen}
+        onOpenChange={(open) => {
+          if (!busy && !open) {
+            setSecurityOpen(false)
+            setSecurityCode('')
+            setPassword('')
+            setError('')
+          }
+        }}
+        methods={{ has2FA: true, hasPasskey: false, passkeySupported: false }}
+        state={{ method: '2fa', code: securityCode, loading: busy, error }}
+        onVerify={(_method, code) => send(code)}
+        onCancel={() => {
+          if (busy) return
+          setSecurityOpen(false)
+          setSecurityCode('')
+          setPassword('')
+          setError('')
+        }}
+        onCodeChange={setSecurityCode}
+        onMethodChange={() => setSecurityCode('')}
+      />
     </>
   )
 }

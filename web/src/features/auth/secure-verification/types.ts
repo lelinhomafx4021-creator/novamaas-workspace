@@ -39,6 +39,7 @@ export interface VerificationMethods {
 }
 
 export interface SecureVerificationState {
+  error?: string
   method: VerificationMethod | null
   scope?: SecurityProofScope
   loading: boolean

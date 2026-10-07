@@ -49,3 +49,14 @@ describe('asset library audit content', () => {
     )
   })
 })
+
+test('historical unknown browser login is displayed as browser sign-in', () => {
+  const t = vi.fn((key: string) => key)
+  renderAuditContent(
+    { op: { action: 'login', params: { method: 'unknown' } } },
+    t
+  )
+  expect(t).toHaveBeenCalledWith('Logged in successfully via {{method}}', {
+    method: 'Browser sign-in',
+  })
+})

@@ -10,7 +10,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-3157d5.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-QuantumNous%2Fnew--api-7357d9.svg)](https://github.com/QuantumNous/new-api)
 
-[平台定位](#平台定位) · [能力版图](#能力版图) · [产品路线图](#产品路线图) · [与上游差异](#novamaas-与上游差异) · [版本与上游维护](#版本与上游维护) · [快速开始](#快速开始) · [项目文档](#项目文档)
+[快速开始](#快速开始) · [主要能力](#主要能力) · [与上游差异](#novamaas-与上游差异) · [项目文档](#项目文档)
 
 </div>
 
@@ -23,78 +23,48 @@
 
 **NovaMaaS Workspace is an independently maintained fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api), initially based on exactly `v1.0.0-rc.26`. The repository retains its upstream Git history, license notices, attribution, and provenance records.**
 
-## 平台定位
+## 快速开始
 
-星枢 MaaS 平台面向需要长期运营 AI 服务的组织，为异构模型供应、Token 资源、客户访问与商业结算提供统一的管理基础。平台以 new-api 成熟的多模型网关能力为技术起点，在兼容现有生态的基础上，逐步构建从 **Token 聚合与分销** 到 **算力纳管与租赁** 的完整供应网络。
+克隆本仓库并使用 Docker 构建当前源码。默认使用 SQLite；数据保存在 `novamaas-data` 卷中。
 
-NovaMaaS 的核心目标不是增加孤立功能，而是将供应、产品、租户和结算连接为可运营的业务闭环：
+```bash
+git clone https://github.com/yeruyi1024/novamaas-workspace.git
+cd novamaas-workspace
+docker build -t novamaas:local .
+docker run -d --name novamaas --restart unless-stopped \
+  -p 3000:3000 \
+  -e TZ=Asia/Shanghai \
+  -v novamaas-data:/data \
+  novamaas:local
+```
 
-- 对供应侧，统一接入和管理不同模型供应商、Token 库存及未来的算力资源。
-- 对运营侧，提供路由、权限、定价、额度、用量与结算能力。
-- 对分销侧，支持直客、渠道合作伙伴、企业团队等多种商业交付模式。
-- 对使用侧，以统一接口屏蔽上游差异，降低 AI 应用与团队的接入成本。
+打开 [http://localhost:3000](http://localhost:3000) 完成初始化。升级前请备份数据卷。仓库根目录的 `docker-compose.yml` 仍使用上游镜像 `calciumion/new-api:latest`；运行本仓库请使用上述命令，或在 Compose 中明确替换为本仓库镜像。
 
-## 能力版图
+也可从 [GitHub Packages](https://github.com/yeruyi1024/novamaas-workspace/pkgs/container/novamaas-workspace) 复制已发布的固定标签，使用 `ghcr.io/yeruyi1024/novamaas-workspace:build_YYYYMMDDTHHMMSSZ_multiarch` 替代上方的 `novamaas:local`。镜像权限、版本标签与生产部署说明见 [构建文档](docs/BUILD.zh_CN.md)。
 
-| 能力层 | 建设内容 | 当前阶段 |
-| --- | --- | --- |
-| 统一 AI 网关 | 多供应商接入、协议转换、模型路由、失败重试与访问控制 | 已具备基础能力 |
-| Token 聚合 | 统一管理多来源 Token、渠道、模型能力、额度和使用策略 | 持续增强 |
-| Token 分销 | 面向客户、团队和合作渠道封装访问能力，并支持计量与费用管理 | 持续增强 |
-| 客户消费对账 | 按日/小时查询、月度凭证归档、管理员下发、客户确认与历史核验导入 | 已实现一期，部署前需完成环境验收 |
-| 多租户商业化 | 租户隔离、组织权限、产品定价、渠道策略、账单与经营分析 | 产品路线图 |
-| 算力纳管 | 统一登记、分组、监控和调度异构算力资源 | 产品路线图 |
-| 算力租赁 | 将可调度算力封装为可分配、可计量、可结算的供应产品 | 产品路线图 |
+## 主要能力
 
-> [!NOTE]
-> “持续增强”与“产品路线图”用于区分已经交付的基础能力和后续建设方向，不代表尚未发布的功能已经可用于生产环境。正式能力范围以对应版本说明和实际界面为准。
+- **统一模型网关**：接入多家模型供应商，提供协议转换、模型路由、权限、额度与用量管理。
+- **多模态与视频任务**：支持火山方舟、DoubaoVideo 等渠道的视频任务、模型映射、请求审计与媒体交付；通过 Webhook 推送任务状态和响应。
+- **素材与对象存储**：私有素材库、下游 Action API，以及对 Base64 图片和视频输入的临时存储转换。
+- **商业运营**：渠道成本与利润视图、客户消费查询、正式记账和月度对账凭证。
+- **客户端与身份**：浏览器管理界面、独立微信小程序及移动登录能力。
 
-### 对象存储与火山视频 Base64 兼容增强
-
-系统设置新增通用“存储配置（Profile）+ 用途策略（Policy）”模型，首个驱动为阿里云 OSS。火山原生和 DoubaoVideo 渠道均可按渠道及模型开启 Base64 媒体暂存：平台校验并上传 `content[].image_url.url` 中的 JPEG、PNG、WebP Data URI，以及 `content[].video_url.url` 中的 MP4、WebM、MOV Data URI，并在发往上游的请求副本中替换为限时签名 HTTPS 地址。任务日志保存并展示实际发送给上游的转换后请求；使用日志为管理员保留原始 Base64 请求并标记“已被临时存储转换”，非管理员无法查看请求体。
-
-- OSS Bucket 应保持私有，不需要设置公共读；平台使用 OSS V4 签名地址提供临时访问，最长有效期为 168 小时。
-- 静态 AccessKey 在数据库中使用 AES-GCM 加密。生产部署应显式配置稳定的 `STORAGE_CREDENTIAL_ENCRYPTION_KEY`；未配置时会依次尝试复用 `CRYPTO_SECRET`、`SESSION_SECRET`，三者均缺失则拒绝保存静态凭证，并在“测试配置”时返回明确的服务配置错误。输入校验、服务配置和 OSS 连通性失败分别返回 `400`、`503` 和 `502`，前端会展示后端返回的具体原因。
-- 对象路径包含用途前缀、UTC 日期、不可逆用户标识和任务 ID，实现用户与任务隔离；Data URI 声明的 MIME 类型必须与解码后的文件特征一致，并受单文件、单请求总量和文件数限制。
-- 为保证 SQLite、MySQL 和 PostgreSQL 默认部署下都能完整记录原始请求，当前视频任务请求体（包括图片和视频 Data URI）仍执行 2 MiB 审计写入上限；超限请求会在上传前明确拒绝，不会以丢弃或改写 Base64 日志换取继续执行。
-- 任务成功、失败或确认取消后会触发清理；上传失败、进程中断和上游状态不确定时由数据库租约重试与最长保留期限兜底，成功删除后的对象账本墓碑保留 30 天再分批清理。建议同时在 OSS 配置生命周期规则，按 `temporary/relay-media/` 前缀做更长周期的灾难兜底清理。
-- 本次只新增 `storage_profiles`、`storage_credentials`、`storage_policies`、`storage_objects` 四张表，不修改既有数据库表字段。Profile 的服务商类型已为腾讯云 COS 和 S3 兼容存储（包括 MinIO）预留，当前尚未启用对应驱动；后续素材库可复用同一存储层并按用途生成临时授权地址。
-- 火山原生和 DoubaoVideo 任务日志支持直接查询任务信息，分别复用 `/api/v3/contents/generations/tasks/{taskID}` 和 `/v1/video/generations/{taskID}`；普通用户只能查询自己的任务，管理员可从任务日志跨用户诊断。
-
-配置顺序：先在“系统设置 → 存储 → 对象存储”创建并测试 OSS 配置，再启用“中转媒体临时存储”策略，最后在目标火山原生或 DoubaoVideo 渠道的高级设置中开启“Base64 媒体暂存”。阿里云侧最小权限需覆盖目标业务前缀以及 `temporary/relay-media/healthcheck/` 测试前缀的上传、签名读取和删除；接口行为参考[阿里云 OSS Go SDK V2 文档](https://help.aliyun.com/zh/oss/developer-reference/manual-for-go-sdk-v2/)、[V4 预签名下载文档](https://help.aliyun.com/en/oss/developer-reference/v2-presign-download)和[生命周期规则文档](https://help.aliyun.com/zh/oss/user-guide/lifecycle-rules-based-on-the-last-modified-time/)，火山请求格式参考[火山方舟原生内容生成接口](https://docs.volcengine.com/docs/82379/1520757?lang=zh)。
-
-### 素材库与下游 Action API
-
-平台素材库支持控制台直传、私有对象存储、渠道副本同步和请求时素材 ID 映射。下游客户还可使用平台签发并加密保存的 AK/SK，通过火山方舟同形态的 `POST /?Action=...&Version=2024-01-01` 管理素材组与素材；`CreateAsset` 会安全导入公网 URL，返回的平台素材 ID 可继续用于视频生成。素材列表采用服务端检索和每页 40 条分页，预览签名地址按可视区域延迟获取，并展示上传时间和不可用状态。完整接口、签名、部署与容量边界见[素材库与火山 Action API 兼容说明](docs/ASSET_LIBRARY_API.zh_CN.md)。
-
-### 客户消费对账（一期）
-
-`/billing` 提供管理员与下游客户之间的服务消费对账；当前业务前提是管理员充值的钱包额度，不包含资金余额总账、订阅/赠送核算、发票、银行凭证或电子签章。
-
-- **消费查询**：默认当天，按小时查看消费、退款和净额，可下钻请求明细；管理员默认查询自己，可切换客户。月度历史参考按日展示，金额遵循系统货币配置。
-- **正式记账**：管理员设置客户的正式记账起点，客户可维护企业抬头和税号。起点之前的日志只作为历史参考，不会因更改日期自动补入正式账本。
-- **月度对账**：月结束满 24 小时、出单条件通过后创建归档草稿；管理员核对主体、逐日金额与 PDF 后下发，客户通过自己的登录会话确认或提出异议。确认时间与版本留痕，不再次扣款，也不自动到期确认。
-- **凭证固化**：复用系统中启用的私有阿里云 OSS 配置，异步保存明细分片、冻结快照、原始 PDF 与 SHA-256 清单，上传回读校验完成后才成为可下发草稿。确认回执在首次下载时另行生成归档，原件不变。新草稿冻结系统徽标和页脚，PDF 下载名称使用中文名称加时间戳。
-- **历史核验导入**：先只读预览来源、金额和阻断条件，再由管理员填写依据、勾选并二次确认。导入追加可追溯账目与云端来源副本，不重复扣费、不覆盖已有单据、不自动下发；在线入口仅支持正式账本为空的已关闭月份，每月最多 10,000 条。
-
-正式钱包结算、账务明细和小时汇总在同一主库事务内更新；正式月预览读取最多 744 个小时桶。历史消费查询仍在日志库按用户和日期索引范围聚合，并使用每进程 15 秒有界缓存，不是 OSS 计算或离线全历史汇总。未配置独立 `LOG_SQL_DSN` 时，这部分查询使用主库；`LOG_SQL_DSN` 需要可写日志库，不能指向只读从库。
-
-上线前先备份并在隔离数据库验证迁移，统一升级参与计费的节点、排空旧请求与批量额度更新后，再为客户开启正式记账。使用日志禁止应用层清理；账务数据继续保留在主库，OSS 是永久凭证副本，不会自动删除热库。必须确认临时媒体生命周期规则不覆盖 `billing/statements/`，并保留原存储配置、凭据及加密密钥。当前没有新增读副本路由、自动冷归档恢复或生产容量压测承诺。
-
-操作路径、已验证范围与部署边界见[一期实施说明](docs/design/BILLING_STATEMENTS_IMPLEMENTATION.zh_CN.md)、[验收指南](docs/design/BILLING_STATEMENTS_ACCEPTANCE.zh_CN.md)和[历史核验与统计说明](docs/design/BILLING_HISTORY_REVIEW.zh_CN.md)。
-
-## 产品路线图
-
-NovaMaaS 将围绕供应聚合、商业运营和算力资源三个方向持续演进。路线图不绑定未经验证的交付日期，每项能力会在完成实现、测试与版本记录后正式发布。
-
-| 阶段 | 建设目标 | 重点能力 |
-| --- | --- | --- |
-| 第一阶段：平台基础 | 建立可独立维护、可追溯、可发布的 NovaMaaS 基线 | 上游来源治理、本土化适配、统一构建、版本标识、前端产品化呈现 |
-| 第二阶段：Token 供应网络 | 将分散的模型和 Token 供应转化为统一资源池 | 供应接入、库存管理、智能路由、额度策略、用量观测与分销能力 |
-| 第三阶段：多租户商业化 | 支撑企业客户、内部团队和渠道合作伙伴的规模化运营 | 租户隔离、组织权限、产品目录、差异化定价、渠道分润与账单结算 |
-| 第四阶段：算力资源平台 | 将 GPU 等算力资源纳入统一供应与交易体系 | 算力纳管、资源监控、任务调度、容量编排、算力租赁与统一计费 |
+已交付范围、上线条件和后续路线图见 [平台能力说明](docs/PLATFORM_OVERVIEW.zh_CN.md)。
 
 ## NovaMaaS 与上游差异
+
+以下是相对 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 需要长期维护的主要运行时差异；完整 PR 台账保留在下方，供上游同步时核对。
+
+| 领域 | 主要区别 |
+| --- | --- |
+| 模型与视频协议 | 火山原生渠道、视频任务审计与交付，以及 Moonshot/Kimi 兼容入口和用量结构。 |
+| 素材与存储 | 私有素材库、下游 Action API、渠道副本同步和 Base64 媒体暂存。 |
+| 计费与对账 | 渠道成本快照、利润视图、正式消费账本和月度凭证。 |
+| 用户与客户端 | 手机号身份、微信小程序登录、多媒体对话及受控模型能力。 |
+
+<details>
+<summary>查看完整的长期运行时差异台账</summary>
 
 此处不是完整 Changelog，而是 NovaMaaS 相对 `QuantumNous/new-api` 的**关键、长期运行时差异**清单，用于上游同步时判断哪些能力必须保留、重做或移除。PR 只有同时满足以下条件才收录：
 
@@ -107,9 +77,10 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
-| [#52](https://github.com/yeruyi1024/novamaas-workspace/pull/52) | 2026-10-07 | `fix` | 微信手机号认证 | 保留服务端数字 errcode 与兑换阶段，区分授权码无效和其他拒绝；仅明确 access_token 失效时刷新重试一次，阻止微信错误进入密码登录页面。 | #50、#51 的 NovaMaaS 下游扩展；上游没有等价手机号兑换链，同步时需保留诊断脱敏和不可盲重试授权码的边界；状态：待合并。 |
-| [#51](https://github.com/yeruyi1024/novamaas-workspace/pull/51) | 2026-10-07 | `feat` | 登录认证 / 微信身份联合 | 浏览器通过微信网站应用可信 UnionID 登录唯一已绑定平台账号，拒绝未绑定、失效或冲突身份且不自动注册；统一绑定安全确认与登录入口，移除通用日志财务列表列。 | #50 的 NovaMaaS 下游扩展；上游当前没有等价的微信网站应用与小程序已绑定身份联合登录边界，后续同步需保留或重新评估；状态：待合并。 |
+| [#52](https://github.com/yeruyi1024/novamaas-workspace/pull/52) | 2026-10-07 | `fix` | 微信手机号认证 | 保留服务端数字 errcode 与兑换阶段，区分授权码无效和其他拒绝；仅明确 access_token 失效时刷新重试一次，阻止微信错误进入密码登录页面。 | #50、#51 的 NovaMaaS 下游扩展；上游没有等价手机号兑换链，同步时需保留诊断脱敏和不可盲重试授权码的边界。 |
+| [#51](https://github.com/yeruyi1024/novamaas-workspace/pull/51) | 2026-10-07 | `feat` | 登录认证 / 微信身份联合 | 浏览器通过微信网站应用可信 UnionID 登录唯一已绑定平台账号，拒绝未绑定、失效或冲突身份且不自动注册；统一绑定安全确认与登录入口，移除通用日志财务列表列。 | #50 的 NovaMaaS 下游扩展；上游当前没有等价的微信网站应用与小程序已绑定身份联合登录边界，后续同步需保留或重新评估。 |
 | [#50](https://github.com/yeruyi1024/novamaas-workspace/pull/50) | 2026-10-06 | `feat` | 用户 / 短信认证 / 微信小程序 | 通过短信核验 +86 手机号绑定与换绑，提供短信登录和密码登录后的短信替代 MFA；微信服务端手机号仅匹配已核验平台账号，经确认建立身份绑定，并支持资料展示、受控解绑及会话失效。 | #25、#33、#41 的 NovaMaaS 下游扩展；上游当前没有等价的短信手机号核验、微信手机号匹配确认与受控解绑组合实现。 |
+| [#48](https://github.com/yeruyi1024/novamaas-workspace/pull/48) | 2026-10-07 | `feat/fix` | 素材审核 / 媒体任务通知 | 保留素材投递租约接管防护，按类别隔离个人与系统 Webhook；任务状态和素材审核事件经持久队列异步投递，管理员控制类别开关、全量地址及客户手册下载，并支持即时连通性测试。 | #46 的 NovaMaaS 下游扩展；上游当前没有等价的跨素材与媒体任务通知、系统级订阅和配置控制组合实现。 |
 | [#47](https://github.com/yeruyi1024/novamaas-workspace/pull/47) | 2026-09-30 | `feat` | 财务核算 / 通用日志 | 有财务核算查看权限时，逐条日志关联不可变成本快照及追加调整，展示营业额、成本与利润；无权限视图不返回这些字段，缺失快照的历史记录不推断成本。 | #31 财务核算能力的 NovaMaaS 下游展示与权限补全；上游当前没有等价的渠道成本快照和逐条日志财务视图。 |
 | [#46](https://github.com/yeruyi1024/novamaas-workspace/pull/46) | 2026-09-29 | `feat` | 素材审核 / 状态通知 | 持续复核已可用素材的上游审核状态，同步明确拒绝结果并拦截不可用素材；用户在平台配置 HTTPS Webhook，状态与通知事务保存，支持失败重试及版本去重。 | NovaMaaS 下游专属；扩展现有素材同步机制，上游当前没有等价的延迟复审对账与客户状态推送组合实现。 |
 | [#43](https://github.com/yeruyi1024/novamaas-workspace/pull/43) | 2026-09-28 | `feat` | 计费 / 对账 PDF / 供应商测试 | 新增运营主体品牌配置，将裁切后的 Logo 固定在新版对账单快照，并统一普通与视频测试报告的 PDF 页头；管理员可设置过去或远期的记账起点，历史用量仍需核验导入。 | NovaMaaS 下游专属；上游当前没有等价的正式对账快照、运营主体品牌及供应商报告统一输出能力。 |
@@ -122,8 +93,8 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | [#33](https://github.com/yeruyi1024/novamaas-workspace/pull/33) | 2026-09-21 | `feat` | 用户 / 微信小程序 | 新增独立 Taro 微信小程序客户端、小程序专属外部身份与可轮换移动会话，复用现有权限和计费规则；AppSecret、OpenID 与 session_key 不进入客户端，公开状态仅暴露登录就绪状态。 | NovaMaaS 下游专属；上游当前没有等价的微信小程序身份、移动会话与完整客户端组合实现。 |
 | [#32](https://github.com/yeruyi1024/novamaas-workspace/pull/32) | 2026-09-20 | `feat` | 模型协议 / Kimi KVV | 为 OpenAI 渠道的 `/moonshot/v1/chat/completions` 增加 Kimi 兼容透传模式，保留上游 Kimi 请求与 JSON/SSE 扩展字段、原始 usage 和模型映射语义，不向普通 OpenAI 上游伪造 KVV 能力。 | #28 Moonshot 兼容入口的 NovaMaaS 下游扩展；上游当前没有等价的 OpenAI 渠道 Kimi 透传模式。 |
 | [#31](https://github.com/yeruyi1024/novamaas-workspace/pull/31) | 2026-09-20 | `feat` | 计费 / 财务核算 | 新增渠道级上游成本折扣、不可变成本快照与追加式调整、历史回填重算、财务核算权限，以及日志、首页和账单中的营业额、成本与利润视图；未配置成本折扣时按成本等于营业额处理。 | NovaMaaS 下游专属；上游当前没有将渠道成本配置、历史成本证据、权限隔离和利润报表组合起来，同时保持客户售价与钱包扣费不变的等价实现。 |
-| [#30](https://github.com/yeruyi1024/novamaas-workspace/pull/30) | 2026-09-18 | `fix` | 模型协议 / Moonshot 兼容 | 补齐 Kimi Chat `prompt_tokens_details`、Responses 缓存与推理明细，以及 Messages `cache_creation` 分档字段；区分缺失值与显式零值，不生成未知用量。 | #28 的下游兼容性补充；上游当前没有跨 OpenAI、Responses 与 Anthropic Messages 输出 Kimi 用量结构的等价实现；状态：长期维护。 |
-| [#28](https://github.com/yeruyi1024/novamaas-workspace/pull/28) | 2026-09-18 | `feat` | 模型协议 / Moonshot 兼容 | 新增同域名 `/moonshot` Chat Completions、Responses、Anthropic Messages 与模型列表入口，复用 OpenAI 上游并输出 Kimi 兼容结构；无法真实复现的 Kimi 专属语义明确拒绝。 | NovaMaaS 下游专属；上游当前没有以 OpenAI 渠道为数据源、按独立路径输出 Kimi 格式并拒绝伪造专属能力的等价实现；状态：长期维护。 |
+| [#30](https://github.com/yeruyi1024/novamaas-workspace/pull/30) | 2026-09-18 | `fix` | 模型协议 / Moonshot 兼容 | 补齐 Kimi Chat `prompt_tokens_details`、Responses 缓存与推理明细，以及 Messages `cache_creation` 分档字段；区分缺失值与显式零值，不生成未知用量。 | #28 的下游兼容性补充；上游当前没有跨 OpenAI、Responses 与 Anthropic Messages 输出 Kimi 用量结构的等价实现。 |
+| [#28](https://github.com/yeruyi1024/novamaas-workspace/pull/28) | 2026-09-18 | `feat` | 模型协议 / Moonshot 兼容 | 新增同域名 `/moonshot` Chat Completions、Responses、Anthropic Messages 与模型列表入口，复用 OpenAI 上游并输出 Kimi 兼容结构；无法真实复现的 Kimi 专属语义明确拒绝。 | NovaMaaS 下游专属；上游当前没有以 OpenAI 渠道为数据源、按独立路径输出 Kimi 格式并拒绝伪造专属能力的等价实现。 |
 | [#26](https://github.com/yeruyi1024/novamaas-workspace/pull/26) | 2026-09-11 | `feat` | 视频任务 / 请求审计 | 为 DoubaoVideo、火山原生和阿里百炼分别归档客户端原始请求与实际上游请求，并在管理员日志详情中对照展示；Base64 暂存场景记录转换后的地址。 | NovaMaaS 下游专属；上游当前没有视频任务双请求快照、暂存后正文审计与管理员对照查看的等价实现。 |
 | [#25](https://github.com/yeruyi1024/novamaas-workspace/pull/25) | 2026-09-10 | `feat` | 用户 / 登录认证 | 为用户增加可维护且全局唯一的手机号，并支持手机号密码登录与认证版本失效；同步管理界面与登录文案。 | NovaMaaS 下游专属；上游当前没有等价的手机号身份字段、唯一性保护及密码登录组合能力。 |
 | [#23](https://github.com/yeruyi1024/novamaas-workspace/pull/23) | 2026-09-10 | `feat` | 对象存储 / 火山方舟视频 | 将 Base64 暂存接入 DoubaoVideo，并把火山原生与 DoubaoVideo 的暂存范围从图片扩展到 MP4、WebM、MOV 视频输入；保留签名 URL、重试复用、任务清理和请求审计边界。 | NovaMaaS 下游专属；上游当前没有等价的 DoubaoVideo Base64 暂存及双渠道视频 Data URI 对象存储转换能力。 |
@@ -141,53 +112,18 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 
 维护方式：台账由作者和评审按长期运行时差异标准人工维护，不作为 PR 或 CI 的合并门禁。记录使用真实 PR 链接，不再维护容易过期的审核状态；上游同步类 PR 仍需更新 [UPSTREAM.md](UPSTREAM.md)。
 
-## 版本与上游维护
-
-NovaMaaS 采用“固定基线、定期评估、选择性合并、完整记录”的长期维护方式：
-
-1. 定期检查 QuantumNous/new-api 的新版本、重要修复和兼容性改进。
-2. 对候选改动进行代码审查、依赖分析和数据库兼容性评估，不自动全量追随上游主分支。
-3. 通过独立分支和 Pull Request 合并上游改动，并完成 Go、前端、数据库与容器构建验证。
-4. 每次上游同步都在 [UPSTREAM.md](UPSTREAM.md) 中记录来源提交、合并原因、适配内容和验证结果。
-5. 正式能力随 NovaMaaS 版本统一发布，在版本说明中建立“上游提交—NovaMaaS 版本—构建产物”的对应关系。
-
-## 快速开始
-
-### 使用容器镜像
-
-下面展示 PR 合并构建的标签格式。请将 `YYYYMMDDTHHMMSSZ` 替换为 CI Summary 或 [Packages](https://github.com/yeruyi1024/novamaas-workspace/pkgs/container/novamaas-workspace) 中的实际 UTC 合并时间戳；生产部署应选择经过验证的固定标签或镜像 digest。
-
-```bash
-NOVAMAAS_IMAGE=ghcr.io/yeruyi1024/novamaas-workspace:build_YYYYMMDDTHHMMSSZ_multiarch
-docker pull "$NOVAMAAS_IMAGE"
-docker run -d --name novamaas --restart unless-stopped \
-  -p 3000:3000 \
-  -e TZ=Asia/Shanghai \
-  -v novamaas-data:/data \
-  "$NOVAMAAS_IMAGE"
-```
-
-部署完成后访问 `http://localhost:3000`，按照初始化页面完成管理员和数据库配置。SQLite 数据保存在挂载的数据卷中；升级或迁移前必须先备份数据库。
-
-### 从源码构建
-
-```bash
-git clone https://github.com/yeruyi1024/novamaas-workspace.git
-cd novamaas-workspace
-docker build -t novamaas:local .
-docker run --rm -p 3000:3000 -v novamaas-data:/data novamaas:local
-```
-
-完整的构建、安装包、双架构镜像和腾讯云 CCR 配置说明见 [NovaMaaS 构建文档](docs/BUILD.zh_CN.md)。
+</details>
 
 ## 项目文档
 
 | 文档 | 用途 |
 | --- | --- |
+| [平台能力与路线图](docs/PLATFORM_OVERVIEW.zh_CN.md) | 已交付能力、详细边界、路线图与上游维护方式 |
 | [UPSTREAM.md](UPSTREAM.md) | 上游基线、同步记录、来源提交与维护策略 |
 | [docs/BUILD.zh_CN.md](docs/BUILD.zh_CN.md) | 本地构建、CI、安装包、GHCR 与腾讯云 CCR 发布说明 |
 | [docs/VOLC_NATIVE.zh_CN.md](docs/VOLC_NATIVE.zh_CN.md) | 火山方舟原生 API 渠道、任务接口和兼容性边界 |
 | [docs/ASSET_LIBRARY_API.zh_CN.md](docs/ASSET_LIBRARY_API.zh_CN.md) | 素材库、下游 AK/SK、火山 Action API 兼容与大列表性能边界 |
+| [媒体任务与素材审核 Webhook](docs/MEDIA_TASK_WEBHOOKS.zh_CN.md) | 个人与系统通知、实时测试、品牌化 PDF 手册、异步投递 |
 | [对账单一期实施说明](docs/design/BILLING_STATEMENTS_IMPLEMENTATION.zh_CN.md) | 实际交付范围、记账/归档机制、迁移和部署边界 |
 | [对账单验收指南](docs/design/BILLING_STATEMENTS_ACCEPTANCE.zh_CN.md) | 历史查询、正式记账、创建草稿、下发与客户确认操作 |
 | [历史核验与统计说明](docs/design/BILLING_HISTORY_REVIEW.zh_CN.md) | 历史导入确认边界、空单防护、MySQL 聚合与 PDF 固化 |

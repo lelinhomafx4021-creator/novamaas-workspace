@@ -17,13 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
+import { WebhookDialog } from '@/features/webhooks/components/webhook-dialog'
+import { WebhookSettingsButton } from '@/features/webhooks/components/webhook-settings-button'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
@@ -57,6 +59,7 @@ const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
 
 function UsageLogsContent() {
   const { t } = useTranslation()
+  const [webhookDialogOpen, setWebhookDialogOpen] = useState(false)
   const navigate = useNavigate()
   const params = route.useParams()
   const activeCategory: UsageLogsSectionId =
@@ -128,14 +131,22 @@ function UsageLogsContent() {
         <SectionPageLayout.Title>
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
-        {canManageScope && (
+        {(canManageScope || activeCategory === 'task') && (
           <SectionPageLayout.Actions>
-            <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
-              <TabsList>
-                <TabsTrigger value='all'>{t('All')}</TabsTrigger>
-                <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {activeCategory === 'task' && (
+              <WebhookSettingsButton
+                scope='tasks'
+                onClick={() => setWebhookDialogOpen(true)}
+              />
+            )}
+            {canManageScope && (
+              <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
+                <TabsList>
+                  <TabsTrigger value='all'>{t('All')}</TabsTrigger>
+                  <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
           </SectionPageLayout.Actions>
         )}
         <SectionPageLayout.Content>
@@ -157,6 +168,12 @@ function UsageLogsContent() {
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
+
+      <WebhookDialog
+        scope='tasks'
+        open={webhookDialogOpen}
+        onOpenChange={setWebhookDialogOpen}
+      />
 
       <UserInfoDialog
         userId={selectedUserId}

@@ -18,6 +18,7 @@ import (
 func TestCommonUserConfiguresOwnWebhookWithDashboardSession(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.AssetWebhookEndpoint{}))
+	require.NoError(t, db.Create(&model.AssetWebhookEndpoint{PublicID: model.SystemAssetWebhookEndpointID, OwnerUserID: 0, Status: model.AssetWebhookEndpointStatusEnabled, EventTypes: `["asset.failed"]`}).Error)
 	previousSecret := common.SessionSecret
 	common.SessionSecret = "asset-webhook-dashboard-test-secret"
 	t.Cleanup(func() { common.SessionSecret = previousSecret })
@@ -37,6 +38,8 @@ func TestCommonUserConfiguresOwnWebhookWithDashboardSession(t *testing.T) {
 	webhookRoutes.Use(middleware.UserAuth())
 	webhookRoutes.POST("", CreateAssetWebhookEndpoint)
 	webhookRoutes.GET("", ListAssetWebhookEndpoints)
+	webhookRoutes.PUT("/:id", UpdateWebhookEndpoint)
+	webhookRoutes.POST("/:id/test", TestAssetWebhookEndpoint)
 	webhookRoutes.DELETE("/:id", DeleteAssetWebhookEndpoint)
 
 	createRequest := httptest.NewRequest(http.MethodPost, "/api/asset-library/webhook-endpoints", strings.NewReader(`{"name":"production","url":"https://customer.example.com/assets","event_types":["asset.failed"]}`))
@@ -71,4 +74,13 @@ func TestCommonUserConfiguresOwnWebhookWithDashboardSession(t *testing.T) {
 	unsignedRecorder := httptest.NewRecorder()
 	router.ServeHTTP(unsignedRecorder, httptest.NewRequest(http.MethodPost, "/api/asset-library/webhook-endpoints", nil))
 	assert.Equal(t, http.StatusUnauthorized, unsignedRecorder.Code)
+
+	require.NoError(t, db.Model(&model.AssetWebhookEndpoint{}).Where("public_id = ?", model.SystemAssetWebhookEndpointID).Update("status", model.AssetWebhookEndpointStatusDisabled).Error)
+	for _, route := range []struct{ method, suffix string }{{http.MethodPost, ""}, {http.MethodPut, "/" + created.Data.ID}, {http.MethodPost, "/" + created.Data.ID + "/test"}} {
+		request := httptest.NewRequest(route.method, "/api/asset-library/webhook-endpoints"+route.suffix, strings.NewReader(`{"name":"production","url":"https://customer.example.com/assets","event_types":["asset.failed"]}`))
+		request.Header.Set("Authorization", "Bearer "+ownerSession.AccessToken)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		assert.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	}
 }

@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 	if err := db.AutoMigrate(
 		&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{},
 		&CostAccountingSnapshot{}, &CostAccountingAdjustment{},
-		&Task{},
+		&Task{}, &AssetWebhookEndpoint{}, &AssetWebhookDelivery{},
 		&TaskRequestBody{},
 		&User{},
 		&UserSession{},

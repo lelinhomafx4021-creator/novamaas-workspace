@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	coreService "github.com/QuantumNous/new-api/service"
+	webhookService "github.com/QuantumNous/new-api/service/asyncwebhook"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,7 +45,7 @@ func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesUnsignedWebhook(t 
 	}))
 	defer callback.Close()
 
-	endpoint, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+	endpoint, err := webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{
 		Name: "customer", URL: "https://customer.example.com/assets",
 		EventTypes: []string{WebhookEventAssetFailed},
 	})
@@ -96,7 +97,7 @@ func TestDelayedUpstreamRejectionUpdatesPollingStateAndReachesUnsignedWebhook(t 
 	assert.Equal(t, asset.PublicID, polled.Items[0].ID)
 	assert.Equal(t, model.AssetUnavailableSensitiveContent, polled.Items[0].UnavailableReason)
 
-	runWebhookDeliveryPass("end-to-end-webhook")
+	coreService.RunWebhookDeliveryPass("end-to-end-webhook")
 
 	var notification receivedWebhook
 	select {
@@ -125,7 +126,7 @@ func TestVolcDelayedFailureReasonUpdatesAssetsAndQueuesNotifications(t *testing.
 	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "customer-rejection-regression")
 	credential, err := encryptChannelCredential("provider-secret")
 	require.NoError(t, err)
-	_, err = CreateWebhookEndpoint(42, WebhookEndpointInput{Name: "customer", URL: "https://customer.example.com/assets", EventTypes: []string{WebhookEventAssetFailed}})
+	_, err = webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{Name: "customer", URL: "https://customer.example.com/assets", EventTypes: []string{WebhookEventAssetFailed}})
 	require.NoError(t, err)
 	group := model.AssetGroup{PublicID: "group-customer", OwnerUserID: 42, Status: model.AssetStatusReady}
 	require.NoError(t, db.Create(&group).Error)

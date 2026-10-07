@@ -72,19 +72,6 @@ export type CreatedAssetAccessKey = AssetAccessKey & {
   secret_access_key: string
 }
 
-export type AssetWebhookEventType = 'asset.active' | 'asset.failed'
-
-export type AssetWebhookEndpoint = {
-  id: string
-  object: 'webhook_endpoint'
-  name: string
-  url: string
-  event_types: AssetWebhookEventType[]
-  status: string
-  created_at: number
-  updated_at: number
-}
-
 export type AssetSyncJob = {
   id: number
   asset_id: string

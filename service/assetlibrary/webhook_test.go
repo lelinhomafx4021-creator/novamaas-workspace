@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	webhookService "github.com/QuantumNous/new-api/service/asyncwebhook"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,12 +27,13 @@ func (legacyAssetWebhookEndpoint) TableName() string {
 func seedAssetWebhookOwner(t *testing.T) {
 	t.Helper()
 	require.NoError(t, model.DB.Create(&model.User{Id: 42, Username: "asset-webhook-owner", Password: "password"}).Error)
+	require.NoError(t, model.DB.Create(&model.AssetWebhookEndpoint{PublicID: model.SystemAssetWebhookEndpointID, OwnerUserID: 0, Status: model.AssetWebhookEndpointStatusEnabled, EventTypes: `["asset.active","asset.failed"]`}).Error)
 }
 
 func TestConcurrentWebhookCreationCannotExceedEndpointLimit(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
 	seedAssetWebhookOwner(t)
-	for index := 0; index < maxWebhookEndpointsPerUser-1; index++ {
+	for index := 0; index < webhookService.MaxWebhookEndpointsPerUser-1; index++ {
 		endpoint := model.AssetWebhookEndpoint{
 			PublicID: fmt.Sprintf("we_existing_%d", index), OwnerUserID: 42,
 			Name: "existing", URL: "https://customer.example.com/assets",
@@ -48,7 +50,7 @@ func TestConcurrentWebhookCreationCannotExceedEndpointLimit(t *testing.T) {
 		go func() {
 			defer workers.Done()
 			<-start
-			_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+			_, err := webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{
 				Name: "concurrent", URL: "https://customer.example.com/assets",
 				EventTypes: []string{WebhookEventAssetFailed},
 			})
@@ -66,7 +68,7 @@ func TestConcurrentWebhookCreationCannotExceedEndpointLimit(t *testing.T) {
 			created++
 			continue
 		}
-		var requestErr *RequestError
+		var requestErr *webhookService.RequestError
 		require.ErrorAs(t, err, &requestErr)
 		assert.Equal(t, 409, requestErr.HTTPStatusCode())
 		conflicts++
@@ -78,7 +80,7 @@ func TestConcurrentWebhookCreationCannotExceedEndpointLimit(t *testing.T) {
 	require.NoError(t, db.Model(&model.AssetWebhookEndpoint{}).
 		Where("owner_user_id = ? AND status = ?", 42, model.AssetWebhookEndpointStatusEnabled).
 		Count(&count).Error)
-	assert.EqualValues(t, maxWebhookEndpointsPerUser, count)
+	assert.EqualValues(t, webhookService.MaxWebhookEndpointsPerUser, count)
 }
 
 func TestCreateWebhookEndpointWithoutEncryptionConfiguration(t *testing.T) {
@@ -88,7 +90,7 @@ func TestCreateWebhookEndpointWithoutEncryptionConfiguration(t *testing.T) {
 	t.Setenv("CRYPTO_SECRET", "")
 	t.Setenv("SESSION_SECRET", "")
 
-	created, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+	created, err := webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{
 		Name:       "production",
 		URL:        "https://customer.example.com/webhooks/assets",
 		EventTypes: []string{WebhookEventAssetActive, WebhookEventAssetFailed},
@@ -105,7 +107,7 @@ func TestCreateWebhookEndpointWithoutEncryptionConfiguration(t *testing.T) {
 		assert.False(t, db.Migrator().HasColumn(&model.AssetWebhookEndpoint{}, column), column)
 	}
 
-	listed, err := ListWebhookEndpoints(42)
+	listed, err := webhookService.ListWebhookEndpoints(42)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
 	assert.Equal(t, created.ID, listed[0].ID)
@@ -121,7 +123,7 @@ func TestWebhookEndpointKeepsLegacyCredentialColumnsWithoutUsingThem(t *testing.
 	}
 	require.NoError(t, db.AutoMigrate(&model.AssetWebhookEndpoint{}))
 
-	created, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+	created, err := webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{
 		Name: "legacy database", URL: "https://customer.example.com/webhooks/assets",
 		EventTypes: []string{WebhookEventAssetFailed},
 	})
@@ -137,7 +139,7 @@ func TestInitialActivationQueuesWebhookAndPromotesAsset(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
 	seedAssetWebhookOwner(t)
 
-	_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+	_, err := webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{
 		Name: "production", URL: "https://customer.example.com/webhooks/assets",
 		EventTypes: []string{WebhookEventAssetActive},
 	})
@@ -167,7 +169,7 @@ func TestConfirmedDelayedRejectionQueuesWebhookAfterLocalStateChange(t *testing.
 	db := setupAssetLibraryTestDB(t)
 	seedAssetWebhookOwner(t)
 
-	endpoint, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+	endpoint, err := webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{
 		Name:       "production",
 		URL:        "https://customer.example.com/webhooks/assets",
 		EventTypes: []string{WebhookEventAssetFailed},
@@ -200,7 +202,7 @@ func TestDelayedRejectionSupersedesUndeliveredActiveWebhook(t *testing.T) {
 	db := setupAssetLibraryTestDB(t)
 	seedAssetWebhookOwner(t)
 
-	_, err := CreateWebhookEndpoint(42, WebhookEndpointInput{
+	_, err := webhookService.CreateWebhookEndpoint(42, webhookService.WebhookEndpointInput{
 		Name: "production", URL: "https://customer.example.com/webhooks/assets",
 		EventTypes: []string{WebhookEventAssetActive, WebhookEventAssetFailed},
 	})

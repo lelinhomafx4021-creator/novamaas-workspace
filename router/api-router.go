@@ -335,13 +335,21 @@ func SetApiRouter(router *gin.Engine) {
 			assetAccessKeyRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetAccessKey)
 			assetAccessKeyRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetAccessKey)
 		}
-		assetWebhookRoute := apiRouter.Group("/asset-library/webhook-endpoints")
-		assetWebhookRoute.Use(middleware.UserAuth(), middleware.DisableCache())
-		{
-			assetWebhookRoute.GET("", controller.ListAssetWebhookEndpoints)
-			assetWebhookRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetWebhookEndpoint)
-			assetWebhookRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetWebhookEndpoint)
-			assetWebhookRoute.POST("/:id/test", middleware.CriticalRateLimit(), controller.TestAssetWebhookEndpoint)
+		systemWebhookRoute := apiRouter.Group("/webhooks/system")
+		apiRouter.GET("/webhooks/capabilities", middleware.UserAuth(), middleware.DisableCache(), controller.GetWebhookCapabilities)
+		apiRouter.GET("/webhooks/manual.pdf", middleware.UserAuth(), middleware.DisableCache(), middleware.CriticalRateLimit(), controller.DownloadWebhookManual)
+		systemWebhookRoute.Use(middleware.RootAuth(), middleware.DisableCache())
+		systemWebhookRoute.GET("", controller.GetSystemWebhookSettings)
+		systemWebhookRoute.PUT("", middleware.CriticalRateLimit(), controller.SaveSystemWebhookSettings)
+		systemWebhookRoute.POST("/:topic/test", middleware.CriticalRateLimit(), controller.TestSystemWebhook)
+		for _, path := range []string{"/webhook-endpoints", "/asset-library/webhook-endpoints"} {
+			webhookRoute := apiRouter.Group(path)
+			webhookRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+			webhookRoute.GET("", controller.ListAssetWebhookEndpoints)
+			webhookRoute.POST("", middleware.CriticalRateLimit(), controller.CreateAssetWebhookEndpoint)
+			webhookRoute.PUT("/:id", middleware.CriticalRateLimit(), controller.UpdateWebhookEndpoint)
+			webhookRoute.DELETE("/:id", middleware.CriticalRateLimit(), controller.DeleteAssetWebhookEndpoint)
+			webhookRoute.POST("/:id/test", middleware.CriticalRateLimit(), controller.TestAssetWebhookEndpoint)
 		}
 		assetLibraryAdminRoute := apiRouter.Group("/asset-library/admin")
 		assetLibraryAdminRoute.Use(middleware.RootAuth(), middleware.DisableCache())

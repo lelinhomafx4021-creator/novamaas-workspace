@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -325,6 +326,11 @@ func (p *SSRFProtection) ValidateResolvedIP(host string, ip net.IP) error {
 
 // ValidateURL 验证URL是否安全
 func (p *SSRFProtection) ValidateURL(urlStr string) error {
+	return p.ValidateURLWithContext(context.Background(), urlStr)
+}
+
+// ValidateURLWithContext includes DNS policy validation in the request budget.
+func (p *SSRFProtection) ValidateURLWithContext(ctx context.Context, urlStr string) error {
 	// 解析URL
 	u, err := url.Parse(urlStr)
 	if err != nil {
@@ -364,12 +370,12 @@ func (p *SSRFProtection) ValidateURL(urlStr string) error {
 	}
 
 	// 解析域名对应IP并检查
-	ips, err := net.LookupIP(host)
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return fmt.Errorf("DNS resolution failed for %s: %v", host, err)
+		return fmt.Errorf("DNS resolution failed for %s: %w", host, err)
 	}
 	for _, ip := range ips {
-		if err := p.ValidateResolvedIP(host, ip); err != nil {
+		if err := p.ValidateResolvedIP(host, ip.IP); err != nil {
 			return err
 		}
 	}

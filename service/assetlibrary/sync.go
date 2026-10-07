@@ -18,18 +18,13 @@ import (
 )
 
 const (
-	assetSyncInterval             = 10 * time.Second
-	assetSyncLease                = 2 * time.Minute
-	assetSyncBatch                = 20
-	assetActiveReviewWindow       = 48 * time.Hour
-	assetActiveReviewInterval     = 30 * time.Minute
-	assetActiveReconcileInterval  = 24 * time.Hour
-	assetActiveRetryInterval      = 5 * time.Minute
-	assetWebhookRetentionInterval = time.Hour
-	assetWebhookRetentionBatch    = 500
-	assetWebhookRetentionPasses   = 10
-	assetWebhookSuccessRetention  = 30 * 24 * time.Hour
-	assetWebhookFailureRetention  = 90 * 24 * time.Hour
+	assetSyncInterval            = 10 * time.Second
+	assetSyncLease               = 2 * time.Minute
+	assetSyncBatch               = 20
+	assetActiveReviewWindow      = 48 * time.Hour
+	assetActiveReviewInterval    = 30 * time.Minute
+	assetActiveReconcileInterval = 24 * time.Hour
+	assetActiveRetryInterval     = 5 * time.Minute
 )
 
 var assetSyncOnce sync.Once
@@ -48,48 +43,7 @@ func StartSyncTask() {
 				runSyncPass(runnerID)
 			}
 		})
-		gopool.Go(func() {
-			webhookRunnerID := runnerID + "-webhooks"
-			runWebhookDeliveryPass(webhookRunnerID)
-			ticker := time.NewTicker(assetSyncInterval)
-			defer ticker.Stop()
-			for range ticker.C {
-				runWebhookDeliveryPass(webhookRunnerID)
-			}
-		})
-		gopool.Go(func() {
-			purgeOldAssetWebhookDeliveries()
-			ticker := time.NewTicker(assetWebhookRetentionInterval)
-			defer ticker.Stop()
-			for range ticker.C {
-				purgeOldAssetWebhookDeliveries()
-			}
-		})
 	})
-}
-
-func purgeOldAssetWebhookDeliveries() {
-	for _, policy := range []struct {
-		statuses []string
-		maxAge   time.Duration
-	}{
-		{[]string{model.AssetWebhookDeliveryStatusSucceeded, model.AssetWebhookDeliveryStatusSuperseded}, assetWebhookSuccessRetention},
-		{[]string{model.AssetWebhookDeliveryStatusExhausted}, assetWebhookFailureRetention},
-	} {
-		cutoff := time.Now().Add(-policy.maxAge).Unix()
-		for range assetWebhookRetentionPasses {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			deleted, err := model.PurgeAssetWebhookDeliveriesBefore(ctx, policy.statuses, cutoff, assetWebhookRetentionBatch)
-			cancel()
-			if err != nil {
-				logger.LogWarn(context.Background(), fmt.Sprintf("purge old asset webhook deliveries failed: %v", err))
-				break
-			}
-			if deleted < assetWebhookRetentionBatch {
-				break
-			}
-		}
-	}
 }
 
 func runSyncPass(runnerID string) {

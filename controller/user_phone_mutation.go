@@ -26,9 +26,6 @@ func managedPhoneMutationFlow(username string, target *model.User) string {
 
 func SendUserMutationPhoneCode(c *gin.Context) {
 	setAuthNoStore(c)
-	if !middleware.RequireSecurityProof(c, "phone.manage", []string{"password", "2fa", "passkey"}) {
-		return
-	}
 	identity, ok := middleware.GetSessionAuthIdentity(c)
 	if !ok {
 		phoneMutationError(c, model.ErrSMSInvalid)
@@ -101,9 +98,6 @@ func SendUserMutationPhoneCode(c *gin.Context) {
 func commitManagedPhoneMutation(c *gin.Context, request userMutationRequest, phone string, target *model.User, save func(*gorm.DB) error) bool {
 	if !system_setting.GetSMSSettings().IsReady() {
 		phoneMutationError(c, service.ErrSMSUnavailable)
-		return false
-	}
-	if !middleware.RequireSecurityProof(c, "phone.manage", []string{"password", "2fa", "passkey"}) {
 		return false
 	}
 	identity, ok := middleware.GetSessionAuthIdentity(c)

@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupManagedPhoneTest(t *testing.T) (*gorm.DB, *model.User, service.AuthIdentity, string) {
+func setupManagedPhoneTest(t *testing.T) (*gorm.DB, *model.User, service.AuthIdentity) {
 	t.Helper()
 	db, admin := setupSMSControllerTest(t)
 	admin.Role = common.RoleAdminUser
@@ -23,12 +23,10 @@ func setupManagedPhoneTest(t *testing.T) (*gorm.DB, *model.User, service.AuthIde
 	require.NoError(t, err)
 	identity, err := service.ParseAccessToken(bundle.AccessToken)
 	require.NoError(t, err)
-	proof, _, err := service.IssueSecurityProof(identity, "password", []string{"phone.manage"})
-	require.NoError(t, err)
-	return db, admin, identity, proof
+	return db, admin, identity
 }
 
-func sendManagedPhoneTestCode(t *testing.T, admin *model.User, identity service.AuthIdentity, proof, username, phone string, userID int) (string, string) {
+func sendManagedPhoneTestCode(t *testing.T, admin *model.User, identity service.AuthIdentity, username, phone string, userID int) (string, string) {
 	t.Helper()
 	previous := sendPhoneSMS
 	t.Cleanup(func() { sendPhoneSMS = previous })
@@ -40,7 +38,7 @@ func sendManagedPhoneTestCode(t *testing.T, admin *model.User, identity service.
 	}
 	body, err := common.Marshal(map[string]any{"username": username, "phone": phone, "user_id": userID})
 	require.NoError(t, err)
-	recorder := callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/phone/code", string(body), SendUserMutationPhoneCode)
+	recorder := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/phone/code", string(body), SendUserMutationPhoneCode)
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	var response struct {
 		Success bool `json:"success"`
@@ -55,15 +53,15 @@ func sendManagedPhoneTestCode(t *testing.T, admin *model.User, identity service.
 }
 
 func TestCreateUserVerifiesPhoneAtSaveAndRejectsDraftReuse(t *testing.T) {
-	db, admin, identity, proof := setupManagedPhoneTest(t)
-	missing := callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/", `{"username":"phone-create-user","password":"NewPassword123","role":1,"phone":"13800138000"}`, CreateUser)
+	db, admin, identity := setupManagedPhoneTest(t)
+	missing := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/", `{"username":"phone-create-user","password":"NewPassword123","role":1,"phone":"13800138000"}`, CreateUser)
 	assert.Equal(t, http.StatusBadRequest, missing.Code)
 	assert.Contains(t, missing.Body.String(), `"success":false`)
-	token, code := sendManagedPhoneTestCode(t, admin, identity, proof, "phone-create-user", "+86 13800138000", 0)
+	token, code := sendManagedPhoneTestCode(t, admin, identity, "phone-create-user", "+86 13800138000", 0)
 	body := map[string]any{"username": "another-draft", "password": "NewPassword123", "role": 1, "phone": "+86 13800138000", "phone_challenge_token": token, "phone_verification_code": code}
 	encoded, err := common.Marshal(body)
 	require.NoError(t, err)
-	rejected := callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/", string(encoded), CreateUser)
+	rejected := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/", string(encoded), CreateUser)
 	assert.Contains(t, rejected.Body.String(), `"success":false`)
 	var count int64
 	require.NoError(t, db.Model(&model.User{}).Where("username = ?", "another-draft").Count(&count).Error)
@@ -71,7 +69,7 @@ func TestCreateUserVerifiesPhoneAtSaveAndRejectsDraftReuse(t *testing.T) {
 	body["username"] = "phone-create-user"
 	encoded, err = common.Marshal(body)
 	require.NoError(t, err)
-	recorder := callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/", string(encoded), CreateUser)
+	recorder := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/", string(encoded), CreateUser)
 	require.Contains(t, recorder.Body.String(), `"success":true`)
 	var created model.User
 	require.NoError(t, db.Where("username = ?", "phone-create-user").First(&created).Error)
@@ -83,14 +81,14 @@ func TestCreateUserVerifiesPhoneAtSaveAndRejectsDraftReuse(t *testing.T) {
 	var challenge model.SMSChallenge
 	require.NoError(t, db.First(&challenge).Error)
 	assert.NotNil(t, challenge.ConsumedAt)
-	recorder = callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/", string(encoded), CreateUser)
+	recorder = callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/", string(encoded), CreateUser)
 	assert.Contains(t, recorder.Body.String(), `"success":false`)
 }
 
 func TestUpdateUserPhoneVerificationCommitsClaimAndRevokesSessions(t *testing.T) {
 	for _, scenario := range []string{"bound-replacement", "legacy-verification", "disabled-account"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, admin, identity, proof := setupManagedPhoneTest(t)
+			db, admin, identity := setupManagedPhoneTest(t)
 			target := createMiniAppPasswordUser(t, db, "phone-update-user", "password123")
 			oldPhone := "+8613900139000"
 			if scenario == "legacy-verification" {
@@ -105,9 +103,9 @@ func TestUpdateUserPhoneVerificationCommitsClaimAndRevokesSessions(t *testing.T)
 			if scenario == "disabled-account" {
 				require.NoError(t, db.Model(target).Update("status", common.UserStatusDisabled).Error)
 			}
-			token, code := sendManagedPhoneTestCode(t, admin, identity, proof, target.Username, "13800138000", target.Id)
+			token, code := sendManagedPhoneTestCode(t, admin, identity, target.Username, "13800138000", target.Id)
 			body := fmt.Sprintf(`{"id":%d,"username":%q,"display_name":"After","group":"default","phone":"+86 13800138000","phone_challenge_token":%q,"phone_verification_code":%q}`, target.Id, target.Username, token, code)
-			recorder := callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/", body, UpdateUser)
+			recorder := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/", body, UpdateUser)
 			require.Contains(t, recorder.Body.String(), `"success":true`)
 			var updated model.User
 			require.NoError(t, db.First(&updated, target.Id).Error)
@@ -129,12 +127,12 @@ func TestUpdateUserPhoneVerificationCommitsClaimAndRevokesSessions(t *testing.T)
 func TestManagedPhoneFailuresKeepUserAndOldClaimIntact(t *testing.T) {
 	for _, scenario := range []string{"wrong-code", "wrong-phone", "wrong-target", "expired-code", "stale-target", "foreign-session", "permissions-failure", "number-claimed"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, admin, identity, proof := setupManagedPhoneTest(t)
+			db, admin, identity := setupManagedPhoneTest(t)
 			target := createMiniAppPasswordUser(t, db, "phone-update-user", "password123")
 			oldPhone := "+8613900139000"
 			require.NoError(t, db.Model(target).Updates(map[string]any{"phone": oldPhone, "display_name": "Before"}).Error)
 			require.NoError(t, db.Transaction(func(tx *gorm.DB) error { return model.ClaimVerifiedPhoneWithTx(tx, oldPhone, target.Id, "aliyun_sms") }))
-			token, code := sendManagedPhoneTestCode(t, admin, identity, proof, target.Username, "13800138000", target.Id)
+			token, code := sendManagedPhoneTestCode(t, admin, identity, target.Username, "13800138000", target.Id)
 			body := map[string]any{"id": target.Id, "username": target.Username, "display_name": "After", "group": "default", "phone": "+8613800138000", "phone_challenge_token": token, "phone_verification_code": code}
 			expectedVersion := int64(1)
 			switch scenario {
@@ -158,8 +156,6 @@ func TestManagedPhoneFailuresKeepUserAndOldClaimIntact(t *testing.T) {
 				require.NoError(t, err)
 				identity, err = service.ParseAccessToken(bundle.AccessToken)
 				require.NoError(t, err)
-				proof, _, err = service.IssueSecurityProof(identity, "password", []string{"phone.manage"})
-				require.NoError(t, err)
 			case "permissions-failure":
 				body["admin_permissions"] = map[string]any{}
 			case "number-claimed":
@@ -168,7 +164,7 @@ func TestManagedPhoneFailuresKeepUserAndOldClaimIntact(t *testing.T) {
 			}
 			encoded, err := common.Marshal(body)
 			require.NoError(t, err)
-			recorder := callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/", string(encoded), UpdateUser)
+			recorder := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/", string(encoded), UpdateUser)
 			require.Contains(t, recorder.Body.String(), `"success":false`)
 			if scenario == "wrong-code" {
 				assert.Equal(t, http.StatusBadRequest, recorder.Code)
@@ -189,7 +185,7 @@ func TestManagedPhoneFailuresKeepUserAndOldClaimIntact(t *testing.T) {
 }
 
 func TestUnchangedBoundPhoneNeedsNoSMSAndCannotBeCleared(t *testing.T) {
-	db, admin, identity, _ := setupManagedPhoneTest(t)
+	db, admin, identity := setupManagedPhoneTest(t)
 	target := createMiniAppPasswordUser(t, db, "unchanged-phone", "password123")
 	require.NoError(t, db.Model(target).Update("phone", "+8613800138000").Error)
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
@@ -212,7 +208,7 @@ func TestUnchangedBoundPhoneNeedsNoSMSAndCannotBeCleared(t *testing.T) {
 }
 
 func TestCreateWithoutPhoneRemainsAvailableWhenSMSIsDisabled(t *testing.T) {
-	db, admin, identity, _ := setupManagedPhoneTest(t)
+	db, admin, identity := setupManagedPhoneTest(t)
 	t.Setenv("SMS_ENABLED", "false")
 	recorder := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/", `{"username":"no-phone-user","password":"NewPassword123","role":1}`, CreateUser)
 	require.Contains(t, recorder.Body.String(), `"success":true`)
@@ -226,7 +222,7 @@ func TestCreateWithoutPhoneRemainsAvailableWhenSMSIsDisabled(t *testing.T) {
 func TestManagedPhoneCodeRejectsPeerAccountAndOccupiedNumber(t *testing.T) {
 	for _, scenario := range []string{"peer-account", "occupied-number"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, admin, identity, proof := setupManagedPhoneTest(t)
+			db, admin, identity := setupManagedPhoneTest(t)
 			target := createMiniAppPasswordUser(t, db, "code-target", "password123")
 			userID := target.Id
 			if scenario == "peer-account" {
@@ -240,7 +236,7 @@ func TestManagedPhoneCodeRejectsPeerAccountAndOccupiedNumber(t *testing.T) {
 			sends := 0
 			sendPhoneSMS = func(phone, code string) error { sends++; return nil }
 			body := fmt.Sprintf(`{"user_id":%d,"username":"new-draft","phone":"13800138000"}`, userID)
-			recorder := callWeChatAccountHandler(t, admin, identity, proof, "", "/api/user/phone/code", body, SendUserMutationPhoneCode)
+			recorder := callWeChatAccountHandler(t, admin, identity, "", "", "/api/user/phone/code", body, SendUserMutationPhoneCode)
 			expectedStatus := http.StatusForbidden
 			if scenario == "occupied-number" {
 				expectedStatus = http.StatusConflict

@@ -52,14 +52,11 @@ func ReviewBillingHistory(ctx context.Context, userID int, month string) (*Billi
 	if !exists {
 		return nil, gorm.ErrRecordNotFound
 	}
-	records, err := model.GetBillingHistoryRecords(ctx, userID, month)
+	records, err := model.GetBillingHistoryRecords(ctx, userID, month, state.Account.AccountingStartAt)
 	if err != nil {
 		return nil, err
 	}
 	review := &BillingHistoryReview{UserID: userID, Month: month, Customer: customer, Ready: true, SourceCount: len(records), RecordLimit: model.MaxBillingHistoryRecords, Account: state.Account, ExistingStatement: state.ActiveStatement, OldStartAt: state.Account.AccountingStartAt, NewStartAt: state.Account.AccountingStartAt}
-	if review.NewStartAt == 0 || review.NewStartAt > start {
-		review.NewStartAt = start
-	}
 	review.Checks = []BillingCheck{
 		{Code: "month_closed", Passed: common.GetTimestamp() >= end+86400},
 		{Code: "identity_complete", Passed: state.Account.CompanyTitle != "" && state.Account.TaxID != ""},
@@ -67,7 +64,7 @@ func ReviewBillingHistory(ctx context.Context, userID int, month string) (*Billi
 		{Code: "history_empty_ledger", Passed: state.Entries == 0 && state.Hours == 0},
 		{Code: "operations_settled", Passed: state.Pending == 0},
 		{Code: "no_active_statement", Passed: state.ActiveStatement == ""},
-		{Code: "history_start_safe", Passed: state.CanExtendStart},
+		{Code: "history_start_safe", Passed: state.PeriodCovered},
 	}
 	for _, check := range review.Checks {
 		if !check.Passed {

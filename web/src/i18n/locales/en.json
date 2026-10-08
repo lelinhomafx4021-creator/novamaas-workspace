@@ -4030,6 +4030,7 @@
     "Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.": "Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.",
     "Only configured combinations are overridden. All other calls keep the billing group base ratio.": "Only configured combinations are overridden. All other calls keep the billing group base ratio.",
     "Only configured combinations are overridden. All other calls keep the token group base ratio.": "Only configured combinations are overridden. All other calls keep the token group base ratio.",
+    "Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.": "Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.",
     "Only enabled parameters are sent with the request.": "Only enabled parameters are sent with the request.",
     "Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.": "Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.",
     "Only Mine": "Only Mine",

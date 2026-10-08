@@ -227,15 +227,9 @@ export function UsersMutateDrawer({
         payload.phone_challenge_token = phoneVerification.challenge_token
         payload.phone_verification_code = phoneVerification.code
       }
-      const securityProof = verifyPhone
-        ? phoneVerification.security_proof
-        : undefined
       const result = isUpdate
-        ? await updateUser(
-            payload as typeof payload & { id: number },
-            securityProof
-          )
-        : await createUser(payload, securityProof)
+        ? await updateUser(payload as typeof payload & { id: number })
+        : await createUser(payload)
 
       if (result.success) {
         toast.success(

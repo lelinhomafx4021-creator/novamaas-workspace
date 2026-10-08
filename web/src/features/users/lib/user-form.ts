@@ -140,14 +140,12 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
 export type ManagedPhoneVerification = {
   challenge_token: string
   code: string
-  security_proof: string
   phone: string
   username: string
 }
 export const EMPTY_PHONE_VERIFICATION: ManagedPhoneVerification = {
   challenge_token: '',
   code: '',
-  security_proof: '',
   phone: '',
   username: '',
 }

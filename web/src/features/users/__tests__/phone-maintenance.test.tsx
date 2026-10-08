@@ -53,7 +53,6 @@ beforeEach(() => {
     verified: null,
     sms_enabled: true,
   })
-  vi.spyOn(phoneAPI, 'verifyAccountSecurity').mockResolvedValue('admin-proof')
   vi.spyOn(phoneAPI, 'sendUserMutationSMS').mockResolvedValue({
     challenge_token: 'phone-challenge',
     expires_in: 300,
@@ -164,11 +163,9 @@ async function requestPhoneCode() {
   expect(
     screen.queryByRole('button', { name: 'Verify current phone' })
   ).not.toBeInTheDocument()
-  await userEvent.type(
-    screen.getByLabelText('Current account password'),
-    'admin-password'
-  )
-  await userEvent.click(screen.getByRole('button', { name: /^Verify$/ }))
+  expect(
+    screen.queryByLabelText('Current account password')
+  ).not.toBeInTheDocument()
   return screen.findByLabelText('SMS verification code')
 }
 
@@ -188,14 +185,11 @@ test('create-user phone is verified at save and prefix stays outside the editabl
   ).toBeVisible()
   expect(apiMocks.createUser).not.toHaveBeenCalled()
   const code = await requestPhoneCode()
-  expect(phoneAPI.sendUserMutationSMS).toHaveBeenCalledWith(
-    {
-      phone: '+8613800138000',
-      user_id: undefined,
-      username: 'phone-create-user',
-    },
-    'admin-proof'
-  )
+  expect(phoneAPI.sendUserMutationSMS).toHaveBeenCalledWith({
+    phone: '+8613800138000',
+    user_id: undefined,
+    username: 'phone-create-user',
+  })
   await user.type(code, '123456')
   await user.click(screen.getByRole('button', { name: 'Save changes' }))
   await waitFor(() =>
@@ -204,8 +198,7 @@ test('create-user phone is verified at save and prefix stays outside the editabl
         phone: '+8613800138000',
         phone_challenge_token: 'phone-challenge',
         phone_verification_code: '123456',
-      }),
-      'admin-proof'
+      })
     )
   )
 })
@@ -253,8 +246,7 @@ test('an unchanged bound number saves other profile fields without sending SMS',
         id: 42,
         phone: '+8613800138000',
         display_name: 'After',
-      }),
-      undefined
+      })
     )
   )
   expect(phoneAPI.sendUserMutationSMS).not.toHaveBeenCalled()
@@ -295,8 +287,7 @@ test('editing a bound number requires a new code and keeps a rejected code visib
       phone: '+8613900139000',
       phone_challenge_token: 'phone-challenge',
       phone_verification_code: '123456',
-    }),
-    'admin-proof'
+    })
   )
 })
 
@@ -313,11 +304,6 @@ test('a late SMS response cannot verify a renamed user draft', async () => {
   await user.type(screen.getByLabelText('Password'), 'NewPassword123')
   await user.type(screen.getByLabelText('Phone Number'), '13800138000')
   await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
-  await user.type(
-    screen.getByLabelText('Current account password'),
-    'admin-password'
-  )
-  await user.click(screen.getByRole('button', { name: /^Verify$/ }))
   await waitFor(() =>
     expect(phoneAPI.sendUserMutationSMS).toHaveBeenCalledOnce()
   )
@@ -379,4 +365,28 @@ test('edit-user drawer shows mini program binding independently of the legacy We
   expect(
     await screen.findByRole('button', { name: 'Disconnect WeChat' })
   ).toBeInTheDocument()
+})
+
+test('a failed SMS request shows an error and allows retry without account verification', async () => {
+  vi.mocked(phoneAPI.sendUserMutationSMS).mockRejectedValueOnce({
+    response: { data: { code: 'PHONE_SMS_UNAVAILABLE' } },
+  })
+  const user = userEvent.setup()
+  await showUserForm()
+  await user.type(screen.getByLabelText('Username'), 'phone-create-user')
+  await user.type(screen.getByLabelText('Phone Number'), '13800138000')
+  await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'SMS service is unavailable. Use another sign-in method.'
+  )
+  expect(
+    screen.queryByLabelText('Current account password')
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByLabelText('SMS verification code')
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Send SMS code' })).toBeEnabled()
+  await user.click(screen.getByRole('button', { name: 'Send SMS code' }))
+  expect(await screen.findByLabelText('SMS verification code')).toBeVisible()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })

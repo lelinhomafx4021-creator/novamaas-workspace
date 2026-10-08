@@ -29,7 +29,7 @@ func (*BillingArtifact) BeforeUpdate(*gorm.DB) error       { return ErrBillingEv
 func (*BillingArtifact) BeforeDelete(*gorm.DB) error       { return ErrBillingEvidenceImmutable }
 func (*BillingStatement) BeforeDelete(*gorm.DB) error      { return ErrBillingEvidenceImmutable }
 func (*BillingStatement) BeforeUpdate(tx *gorm.DB) error {
-	if tx.Statement.Changed("UserID", "Month", "Revision", "StartAt", "EndAt", "FromSequence", "ToSequence", "ProfileVersion", "Snapshot", "SnapshotSHA256", "StorageProfileID", "CreatedBy", "CreatedAt") {
+	if tx.Statement.Changed("UserID", "Month", "Revision", "StartAt", "EndAt", "FromSequence", "ToSequence", "ProfileVersion", "Snapshot", "SnapshotSHA256", "StorageProfileID", "CreatedBy", "CreatedAt", "SourceStatementID") {
 		return ErrBillingEvidenceImmutable
 	}
 	return nil

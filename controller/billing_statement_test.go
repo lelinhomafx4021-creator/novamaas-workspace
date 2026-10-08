@@ -71,12 +71,13 @@ func TestBillingControllerOwnershipAndSessionBoundary(t *testing.T) {
 	saved := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = saved })
-	require.NoError(t, db.AutoMigrate(&model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}))
+	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}))
 	statement := &model.BillingStatement{ID: "private", UserID: 2, Month: "2026-02", Revision: 1, Status: model.StatementIssued, IssuedAt: 100, ManifestSHA256: "frozen", PDFSHA256: "pdf"}
 	statement.Snapshot = `{"total":{"count":1}}`
 	hash := sha256.Sum256([]byte(statement.Snapshot))
 	statement.SnapshotSHA256 = hex.EncodeToString(hash[:])
 	require.NoError(t, db.Create(statement).Error)
+	require.NoError(t, db.Create(&model.BillingAccount{UserID: 2}).Error)
 	for _, test := range []struct {
 		name, method, path, body, session string
 		actor, role, status               int
@@ -85,6 +86,10 @@ func TestBillingControllerOwnershipAndSessionBoundary(t *testing.T) {
 		{"cross-account usage details", "GET", "/usage-details?user_id=2&date=2020-02-03&hour=9", "", "", 3, common.RoleCommonUser, 403},
 		{"cross-account document", "GET", "/statements/private", "", "", 3, common.RoleCommonUser, 404},
 		{"admin on behalf", "POST", "/statements/private/actions", `{"action":"confirm","manifest_sha256":"frozen"}`, "admin", 1, common.RoleAdminUser, 403},
+		{"customer financial revision forbidden", "POST", "/statements/private/actions", `{"action":"reconcile"}`, "owner", 2, common.RoleCommonUser, 403},
+		{"administrator financial update retired", "POST", "/statements/private/actions", `{"action":"reconcile"}`, "admin", 1, common.RoleAdminUser, 400},
+		{"administrator regeneration retired", "POST", "/statements/private/actions", `{"action":"regenerate"}`, "admin", 1, common.RoleAdminUser, 400},
+		{"customer regeneration forbidden", "POST", "/statements/private/actions", `{"action":"regenerate"}`, "owner", 2, common.RoleCommonUser, 403},
 		{"personal access token", "POST", "/statements/private/actions", `{"action":"confirm","manifest_sha256":"frozen"}`, "", 2, common.RoleCommonUser, 403},
 		{"owner live session", "POST", "/statements/private/actions", `{"action":"confirm","manifest_sha256":"frozen"}`, "owner", 2, common.RoleCommonUser, 200},
 	} {
@@ -133,7 +138,7 @@ func TestBillingMonthPreviewDistinguishesUnconfiguredFromZeroConsumption(t *test
 	savedDB, savedLogDB := model.DB, model.LOG_DB
 	model.DB, model.LOG_DB = db, db
 	t.Cleanup(func() { model.DB, model.LOG_DB = savedDB, savedLogDB })
-	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingHour{}, &model.BillingOperation{}, &model.BillingStatement{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.BillingAccount{}, &model.BillingHour{}, &model.BillingOperation{}, &model.BillingStatement{}, &model.Log{}))
 	start := time.Date(2020, 2, 3, 12, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*3600)).Unix()
 	require.NoError(t, db.Create(&model.Log{UserId: 4, Type: model.LogTypeConsume, Quota: 500000, CreatedAt: start}).Error)
 	router := gin.New()
@@ -161,7 +166,7 @@ func TestBillingStatementDetailResolvesCustomerAndOperatorWithoutPrivateUserFiel
 	saved := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = saved })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}))
+	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.User{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}))
 	require.NoError(t, db.Create(&[]model.User{{Id: 1, Username: "admin", DisplayName: "Administrator", Password: "private-hash", Email: "private@example.com", AffCode: "test-admin"}, {Id: 4, Username: "example_customer", DisplayName: "Customer", AffCode: "test-customer"}}).Error)
 	snapshot := `{"user_id":4,"models":[{"model_name":"customer-visible-model","charge":"1.000000","refund":"0.000000","amount":"1.000000","count":1,"charge_quota":500000,"refund_quota":0}],"total":{"count":13}}`
 	hash := sha256.Sum256([]byte(snapshot))
@@ -203,7 +208,7 @@ func TestBillingLegacyEmptyDraftCannotBeIssuedWithHistoricalConsumption(t *testi
 	savedDB, savedLogs := model.DB, model.LOG_DB
 	model.DB, model.LOG_DB = db, db
 	t.Cleanup(func() { model.DB, model.LOG_DB = savedDB, savedLogs })
-	require.NoError(t, db.AutoMigrate(&model.BillingStatement{}, &model.BillingStatementEvent{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.Log{}))
 	start, end, err := model.BillingMonthBounds("2020-05")
 	require.NoError(t, err)
 	snapshot := `{"total":{"count":0}}`

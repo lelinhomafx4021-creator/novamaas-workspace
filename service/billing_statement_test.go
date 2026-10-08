@@ -186,6 +186,38 @@ func TestBillingPDFV8PaginatesLargeModelSummary(t *testing.T) {
 	if output := os.Getenv("BILLING_PDF_V8_PAGINATION_TEST_OUTPUT"); output != "" {
 		require.NoError(t, os.WriteFile(output, pdf, 0600))
 	}
+	snapshot.PDFTemplateVersion = 9
+	statement.ExcelSHA256 = strings.Repeat("2", 64)
+	snapshot.RateReferenceAt = statement.CreatedAt
+	for i := range snapshot.Models {
+		snapshot.Models[i].ModelName = fmt.Sprintf("企业超长上下文分析模型专业版本-model-%02d", i)
+		snapshot.Models[i].CurrentRates = []BillingGroupRate{{Group: "vip", Ratio: "0.65"}}
+	}
+	expanded, err := RenderBillingStatementPDF(statement, snapshot, false)
+	require.NoError(t, err, "the expanded rate/price table must paginate without clipping rows or notes")
+	assert.Greater(t, strings.Count(string(expanded), "\n  /Type /Page\n"), strings.Count(string(pdf), "\n  /Type /Page\n"))
+	if output := os.Getenv("BILLING_PDF_V9_PAGINATION_TEST_OUTPUT"); output != "" {
+		require.NoError(t, os.WriteFile(output, expanded, 0600))
+	}
+	snapshot.PDFTemplateVersion = 10
+	for i := range snapshot.Models {
+		snapshot.Models[i].BillingGroup = strings.Repeat("历史计费组", 8)
+		snapshot.Models[i].BillingRate = "0.86"
+	}
+	historical, err := RenderBillingStatementPDF(statement, snapshot, false)
+	require.NoError(t, err, "historical group descriptions must paginate without clipping totals")
+	if output := os.Getenv("BILLING_PDF_V10_PAGINATION_TEST_OUTPUT"); output != "" {
+		require.NoError(t, os.WriteFile(output, historical, 0600))
+	}
+	snapshot.PDFTemplateVersion = 11
+	for index := range snapshot.Models {
+		snapshot.Models[index].ModelName = fmt.Sprintf("model-%02d-very-long-model-name-to-check-wrapping-and-pagination", index)
+	}
+	wrapped, err := RenderBillingStatementPDF(statement, snapshot, false)
+	require.NoError(t, err, "long model names must wrap without clipping totals or losing rows")
+	if output := os.Getenv("BILLING_PDF_V11_PAGINATION_TEST_OUTPUT"); output != "" {
+		require.NoError(t, os.WriteFile(output, wrapped, 0600))
+	}
 }
 
 func TestBillingPDFV2SupportsTheAcceptedCorporateIdentityLength(t *testing.T) {

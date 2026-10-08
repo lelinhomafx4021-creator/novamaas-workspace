@@ -31,6 +31,8 @@ func RenderBillingStatementPDF(statement *model.BillingStatement, snapshot *Bill
 		return renderBillingStatementPDFV6(statement, snapshot, receipt)
 	case 7:
 		return renderBillingStatementPDFV7(statement, snapshot, receipt)
+	case 9, 10, 11, 12, 13, 14:
+		return renderBillingStatementPDFV3(statement, snapshot, receipt)
 	case 8:
 		return renderBillingStatementPDFV8(statement, snapshot, receipt)
 	default:

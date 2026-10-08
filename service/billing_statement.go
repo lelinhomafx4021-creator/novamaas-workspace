@@ -16,6 +16,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const billingDiscountAmountNote = "本对账单中消费金额、退款金额、净消费金额已包含计费折扣，各项金额为折扣后的费用"
+
 type BillingCurrency struct {
 	Code         string `json:"code"`
 	Symbol       string `json:"symbol"`
@@ -37,21 +39,29 @@ type BillingRow struct {
 	State       string `json:"state,omitempty"`
 }
 type BillingModelRow struct {
-	ModelName   string `json:"model_name"`
-	Charge      string `json:"charge"`
-	Refund      string `json:"refund"`
-	Amount      string `json:"amount"`
-	ChargeShare string `json:"charge_share,omitempty"`
-	Count       int64  `json:"count"`
-	ChargeCount int64  `json:"charge_count,omitempty"`
-	RefundCount int64  `json:"refund_count,omitempty"`
-	ActiveDays  int64  `json:"active_days,omitempty"`
-	FirstPosted int64  `json:"first_posted_at,omitempty"`
-	LastPosted  int64  `json:"last_posted_at,omitempty"`
-	ChargeQuota int64  `json:"charge_quota"`
-	RefundQuota int64  `json:"refund_quota"`
+	ModelName    string             `json:"model_name"`
+	BillingGroup string             `json:"billing_group,omitempty"`
+	BillingRate  string             `json:"billing_rate,omitempty"`
+	Charge       string             `json:"charge"`
+	Refund       string             `json:"refund"`
+	Amount       string             `json:"amount"`
+	ChargeShare  string             `json:"charge_share,omitempty"`
+	Count        int64              `json:"count"`
+	ChargeCount  int64              `json:"charge_count,omitempty"`
+	RefundCount  int64              `json:"refund_count,omitempty"`
+	ActiveDays   int64              `json:"active_days,omitempty"`
+	FirstPosted  int64              `json:"first_posted_at,omitempty"`
+	LastPosted   int64              `json:"last_posted_at,omitempty"`
+	ChargeQuota  int64              `json:"charge_quota"`
+	RefundQuota  int64              `json:"refund_quota"`
+	CurrentRates []BillingGroupRate `json:"current_rates,omitempty"`
+}
+type BillingGroupRate struct {
+	Group string `json:"group"`
+	Ratio string `json:"ratio"`
 }
 type BillingSnapshot struct {
+	AccountingBasis     string            `json:"accounting_basis,omitempty"`
 	SchemaVersion       int               `json:"schema_version"`
 	PDFTemplateVersion  int               `json:"pdf_template_version,omitempty"`
 	PDFLogoPNG          []byte            `json:"pdf_logo_png,omitempty"`
@@ -76,6 +86,7 @@ type BillingSnapshot struct {
 	ChargeQuota         int64             `json:"charge_quota"`
 	RefundQuota         int64             `json:"refund_quota"`
 	RoundingDifference  string            `json:"rounding_difference"`
+	RateReferenceAt     int64             `json:"rate_reference_at,omitempty"`
 }
 
 func attachBillingModelRows(snapshot *BillingSnapshot, totals []model.BillingModelTotal) error {
@@ -103,7 +114,7 @@ func attachBillingModelRows(snapshot *BillingSnapshot, totals []model.BillingMod
 			chargeShare = decimal.NewFromInt(total.Charge).Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(snapshot.ChargeQuota)).StringFixed(2) + "%"
 		}
 		rows = append(rows, BillingModelRow{
-			ModelName: total.ModelName, Charge: amounts.Charge, Refund: amounts.Refund,
+			ModelName: total.ModelName, BillingGroup: total.BillingGroup, BillingRate: total.BillingRate, Charge: amounts.Charge, Refund: amounts.Refund,
 			Amount: amounts.Amount, ChargeShare: chargeShare, Count: amounts.Count,
 			ChargeCount: total.ChargeCount, RefundCount: total.RefundCount,
 			ActiveDays: total.ActiveDays, FirstPosted: total.FirstPosted, LastPosted: total.LastPosted,
@@ -122,7 +133,13 @@ func attachBillingModelRows(snapshot *BillingSnapshot, totals []model.BillingMod
 		if left != right {
 			return left > right
 		}
-		return rows[i].ModelName < rows[j].ModelName
+		if rows[i].ModelName != rows[j].ModelName {
+			return rows[i].ModelName < rows[j].ModelName
+		}
+		if rows[i].BillingGroup != rows[j].BillingGroup {
+			return rows[i].BillingGroup < rows[j].BillingGroup
+		}
+		return rows[i].BillingRate < rows[j].BillingRate
 	})
 	snapshot.Models = rows
 	return nil
@@ -446,7 +463,8 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		if snapshot.Total.Count == 0 && hasHistory {
 			return "", "", ErrBillingHistoricalDataUnreconciled
 		}
-		snapshot.PDFTemplateVersion = 8
+		snapshot.PDFTemplateVersion = 14
+		snapshot.AccountingBasis = model.BillingSourcePeriodCorrections
 		snapshot.Issuer, snapshot.PDFLogoPNG, snapshot.PDFFooter = branding.Issuer, branding.LogoPNG, branding.Footer
 		snapshot.OperatingName, snapshot.PDFOperatingLogoPNG = branding.OperatingName, branding.OperatingLogoPNG
 		snapshot.Username, snapshot.DisplayName = customer.Username, customer.DisplayName
@@ -463,6 +481,6 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		}
 		hash := sha256.Sum256(body)
 		return string(body), hex.EncodeToString(hash[:]), nil
-	})
+	}, true)
 	return statement, err
 }

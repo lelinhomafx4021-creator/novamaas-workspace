@@ -77,6 +77,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#55](https://github.com/yeruyi1024/novamaas-workspace/pull/55) | 2026-10-08 | `feat` | 月度对账 / 永久凭证 | PDF 与 Excel 共用冻结正式账本并永久归档，PDF 和清单绑定 Excel 指纹；模型明细按实际消费组和历史费率拆行并冻结，PDF 与 Excel 移除原价列；超级管理员可预览、幂等执行及撤销固定单价钱包任务的费率纠错，保留原证据并仅在管理员日志显示；新账单将差额归入原消费/退款账期，防止操作月份重复计入；同一客户同月最多一份有效账单，管理员先作废原版再按最新账务创建草稿，保留历史导入凭证、旧文件与确认，新版重新下发确认。 | #22、#43 正式对账与品牌能力的 NovaMaaS 下游扩展；上游无等价双文件联合确认、账单作废后重建与历史费率差额纠错，同步时须保留不可变证据及原范围边界。 |
 | [#54](https://github.com/yeruyi1024/novamaas-workspace/pull/54) | 2026-10-08 | `fix` | 用户短信核验 / 正式对账 | 已登录管理员直接发送目标手机号验证码，保存时原子核验；历史补录仅覆盖正式起点及之后的消费/退款，保持起点、起始序号和钱包余额不变，起点前消费不阻止零消费正式单。 | #50 短信认证与既有正式对账能力的 NovaMaaS 下游调整；上游没有等价的管理员短信保存核验和正式账本补录链，同步时需保留时间边界及防重复补录校验。 |
 | [#52](https://github.com/yeruyi1024/novamaas-workspace/pull/52) | 2026-10-07 | `fix` | 微信手机号认证 | 保留服务端数字 errcode 与兑换阶段，区分授权码无效和其他拒绝；仅明确 access_token 失效时刷新重试一次，阻止微信错误进入密码登录页面。 | #50、#51 的 NovaMaaS 下游扩展；上游没有等价手机号兑换链，同步时需保留诊断脱敏和不可盲重试授权码的边界。 |
 | [#51](https://github.com/yeruyi1024/novamaas-workspace/pull/51) | 2026-10-07 | `feat` | 登录认证 / 微信身份联合 | 浏览器通过微信网站应用可信 UnionID 登录唯一已绑定平台账号，拒绝未绑定、失效或冲突身份且不自动注册；统一绑定安全确认与登录入口，移除通用日志财务列表列。 | #50 的 NovaMaaS 下游扩展；上游当前没有等价的微信网站应用与小程序已绑定身份联合登录边界，后续同步需保留或重新评估。 |
@@ -126,6 +127,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | [docs/ASSET_LIBRARY_API.zh_CN.md](docs/ASSET_LIBRARY_API.zh_CN.md) | 素材库、下游 AK/SK、火山 Action API 兼容与大列表性能边界 |
 | [媒体任务与素材审核 Webhook](docs/MEDIA_TASK_WEBHOOKS.zh_CN.md) | 个人与系统通知、实时测试、品牌化 PDF 手册、异步投递 |
 | [对账单一期实施说明](docs/design/BILLING_STATEMENTS_IMPLEMENTATION.zh_CN.md) | 实际交付范围、记账/归档机制、迁移和部署边界 |
+| [对账单 PDF/Excel 导出说明](docs/design/BILLING_STATEMENT_EXPORTS.zh_CN.md) | 附件字段支持情况、历史实际费率拆分、双文件指纹与作废后创建版本规则 |
 | [对账单验收指南](docs/design/BILLING_STATEMENTS_ACCEPTANCE.zh_CN.md) | 历史查询、正式记账、创建草稿、下发与客户确认操作 |
 | [历史核验与统计说明](docs/design/BILLING_HISTORY_REVIEW.zh_CN.md) | 历史导入确认边界、空单防护、MySQL 聚合与 PDF 固化 |
 | [对账产品方案](docs/design/BILLING_STATEMENTS_PRD.zh_CN.md) / [技术方案](docs/design/BILLING_STATEMENTS_TECH.zh_CN.md) / [数据专项方案](docs/design/BILLING_STATEMENTS_DATA_PIPELINE.zh_CN.md) | 设计基线与后续演进建议；不代表全部能力已实现 |

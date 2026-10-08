@@ -87,14 +87,15 @@ type Log struct {
 
 // don't use iota, avoid change log type value
 const (
-	LogTypeUnknown = 0
-	LogTypeTopup   = 1
-	LogTypeConsume = 2
-	LogTypeManage  = 3
-	LogTypeSystem  = 4
-	LogTypeError   = 5
-	LogTypeRefund  = 6
-	LogTypeLogin   = 7
+	LogTypeUnknown           = 0
+	LogTypeTopup             = 1
+	LogTypeConsume           = 2
+	LogTypeManage            = 3
+	LogTypeSystem            = 4
+	LogTypeError             = 5
+	LogTypeRefund            = 6
+	LogTypeLogin             = 7
+	LogTypeBillingCorrection = 8
 )
 
 func ensureLogRequestId(log *Log) {
@@ -155,7 +156,7 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("")
 	}
-	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
+	err = LOG_DB.Model(&Log{}).Where("token_id = ? AND type <> ?", tokenId, LogTypeBillingCorrection).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
 }
@@ -599,6 +600,9 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	} else {
 		tx = LOG_DB.Where("logs.user_id = ? and logs.type = ?", userId, logType)
 	}
+	// Enforce admin-only correction visibility in the query, including counts
+	// and explicit type/request-id filters. Hiding a badge in the UI is insufficient.
+	tx = tx.Where("logs.type <> ?", LogTypeBillingCorrection)
 
 	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
 		return nil, 0, err
@@ -660,6 +664,9 @@ type LogStatistics struct {
 }
 
 func applyLogStatisticsFilter(tx *gorm.DB, filter CostAccountingFilter) (*gorm.DB, error) {
+	if !filter.IncludeBillingCorrections {
+		tx = tx.Where("type <> ?", LogTypeBillingCorrection)
+	}
 	if filter.StartTimestamp != 0 {
 		tx = tx.Where("created_at >= ?", filter.StartTimestamp)
 	}
@@ -707,11 +714,11 @@ func sumLogFinancialStatistics(filter CostAccountingFilter) (LogStatistics, erro
 		return statistics, err
 	}
 	if err := totalsQuery.Select(`
-		COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS quota,
-		COALESCE(SUM(CASE WHEN type = ? THEN quota ELSE 0 END), 0) AS refund_quota,
-		COALESCE(SUM(CASE WHEN type IN (?, ?) THEN 1 ELSE 0 END), 0) AS records,
+		COALESCE(SUM(CASE WHEN type = ? OR (type = ? AND quota > 0) THEN quota ELSE 0 END), 0) AS quota,
+		COALESCE(SUM(CASE WHEN type = ? THEN quota WHEN type = ? AND quota < 0 THEN -quota ELSE 0 END), 0) AS refund_quota,
+		COALESCE(SUM(CASE WHEN type IN (?, ?, ?) THEN 1 ELSE 0 END), 0) AS records,
 		COALESCE(SUM(CASE WHEN type = ? THEN 1 ELSE 0 END), 0) AS requests`,
-		LogTypeConsume, LogTypeRefund, LogTypeConsume, LogTypeRefund, LogTypeConsume,
+		LogTypeConsume, LogTypeBillingCorrection, LogTypeRefund, LogTypeBillingCorrection, LogTypeConsume, LogTypeRefund, LogTypeBillingCorrection, LogTypeConsume,
 	).Scan(&statistics).Error; err != nil {
 		common.SysError("failed to query log stat: " + err.Error())
 		return statistics, errors.New("查询统计数据失败")
@@ -761,8 +768,8 @@ func sumLogAccountingBuckets(filter CostAccountingFilter, bucketSeconds, offsetS
 	}
 	buckets := make([]CostAccountingBucket, 0)
 	err = query.Select(bucketExpr+` AS bucket,
-			COALESCE(SUM(CASE WHEN type = ? THEN quota WHEN type = ? THEN -quota ELSE 0 END), 0) AS revenue_quota,
-			COUNT(*) AS records`, offsetSeconds, bucketSeconds, bucketSeconds, offsetSeconds, LogTypeConsume, LogTypeRefund).
+			COALESCE(SUM(CASE WHEN type IN (?, ?) THEN quota WHEN type = ? THEN -quota ELSE 0 END), 0) AS revenue_quota,
+			COUNT(*) AS records`, offsetSeconds, bucketSeconds, bucketSeconds, offsetSeconds, LogTypeConsume, LogTypeBillingCorrection, LogTypeRefund).
 		Group("bucket").Order("bucket asc").Scan(&buckets).Error
 	return buckets, err
 }

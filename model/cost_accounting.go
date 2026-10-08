@@ -82,18 +82,19 @@ type CostAccountingInput struct {
 }
 
 type CostAccountingFilter struct {
-	StartTimestamp    int64
-	EndTimestamp      int64
-	UserID            int
-	Username          string
-	TokenName         string
-	ModelName         string
-	ChannelID         int
-	channelIDs        []int
-	Group             string
-	LogType           int
-	RequestID         string
-	UpstreamRequestID string
+	IncludeBillingCorrections bool // Set only by administrative callers, never bound from a request.
+	StartTimestamp            int64
+	EndTimestamp              int64
+	UserID                    int
+	Username                  string
+	TokenName                 string
+	ModelName                 string
+	ChannelID                 int
+	channelIDs                []int
+	Group                     string
+	LogType                   int
+	RequestID                 string
+	UpstreamRequestID         string
 }
 
 type CostAccountingTotals struct {
@@ -374,6 +375,9 @@ func applyCostAccountingTextFilter(tx *gorm.DB, column, value string) (*gorm.DB,
 }
 
 func applyCostAccountingFilter(tx *gorm.DB, filter CostAccountingFilter) (*gorm.DB, error) {
+	if !filter.IncludeBillingCorrections {
+		tx = tx.Where("snapshots.log_type <> ?", LogTypeBillingCorrection)
+	}
 	if filter.StartTimestamp != 0 {
 		tx = tx.Where("snapshots.occurred_at >= ?", filter.StartTimestamp)
 	}
@@ -438,12 +442,12 @@ func sumCostAccountingSnapshots(filter CostAccountingFilter) (CostAccountingTota
 		return totals, err
 	}
 	err = query.Select(`
-		COALESCE(SUM(CASE WHEN snapshots.log_type = 2 THEN snapshots.revenue_quota ELSE 0 END), 0) AS consumption_quota,
-		COALESCE(SUM(CASE WHEN snapshots.log_type = 6 THEN -snapshots.revenue_quota ELSE 0 END), 0) AS refund_quota,
+		COALESCE(SUM(CASE WHEN snapshots.log_type = 2 OR (snapshots.log_type = 8 AND snapshots.revenue_quota > 0) THEN snapshots.revenue_quota ELSE 0 END), 0) AS consumption_quota,
+		COALESCE(SUM(CASE WHEN snapshots.log_type = 6 OR (snapshots.log_type = 8 AND snapshots.revenue_quota < 0) THEN -snapshots.revenue_quota ELSE 0 END), 0) AS refund_quota,
 		COALESCE(SUM(snapshots.revenue_quota), 0) AS revenue_quota,
 		COALESCE(SUM(snapshots.cost_quota + COALESCE(adjustments.adjustment_quota, 0)), 0) AS cost_quota,
 		COUNT(*) AS records,
-		COUNT(DISTINCT CASE WHEN snapshots.source_log_id > 0 THEN snapshots.source_log_id END) AS linked_records`).Scan(&totals).Error
+		COUNT(DISTINCT CASE WHEN snapshots.source_log_id > 0 THEN snapshots.source_log_id END) + COUNT(CASE WHEN snapshots.source = 'correction' THEN 1 END) AS linked_records`).Scan(&totals).Error
 	totals.ProfitQuota = totals.RevenueQuota - totals.CostQuota
 	return totals, err
 }
@@ -617,7 +621,7 @@ func AttachLogAccounting(logs []*Log) error {
 	logIDs := make([]int64, 0, len(logs))
 	requestIDs := make([]string, 0, len(logs))
 	for _, log := range logs {
-		if log.Type != LogTypeConsume && log.Type != LogTypeRefund {
+		if log.Type != LogTypeConsume && log.Type != LogTypeRefund && log.Type != LogTypeBillingCorrection {
 			continue
 		}
 		revenue := int64(log.Quota)
@@ -636,7 +640,7 @@ func AttachLogAccounting(logs []*Log) error {
 		return nil
 	}
 
-	query, err := costAccountingQuery(CostAccountingFilter{})
+	query, err := costAccountingQuery(CostAccountingFilter{IncludeBillingCorrections: true})
 	if err != nil {
 		return err
 	}

@@ -34,6 +34,7 @@ export interface BillingRow {
   count: number
 }
 export interface BillingModelRow {
+  current_rates?: { group: string; ratio: string }[]
   model_name: string
   charge: string
   refund: string
@@ -55,6 +56,7 @@ export interface BillingCurrency {
   quota_per_unit: string
 }
 export interface BillingSnapshot {
+  accounting_basis?: string
   user_id?: number
   username?: string
   display_name?: string
@@ -141,6 +143,9 @@ export interface BillingStatement {
   snapshot: string
   manifest_sha256: string
   pdf_sha256: string
+  excel_sha256?: string
+  source_statement_id?: string
+  superseded_by?: string
   issued_at: number
   due_at: number
   confirmed_at: number
@@ -149,7 +154,7 @@ export interface BillingStatement {
 }
 export interface StatementDetail {
   customer?: { id: number; username: string; display_name: string }
-  source_warning?: 'historical_data_unreconciled' | ''
+  source_warning?: 'historical_data_unreconciled' | 'corrections_pending' | ''
   detail_count?: number
   statement: BillingStatement
   accounting_snapshot?: BillingSnapshot

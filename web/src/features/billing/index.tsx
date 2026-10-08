@@ -40,6 +40,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { billingToday } from './api'
 import { BillingProfileCard } from './components/billing-profile-card'
 import { ConsumptionPanel } from './components/consumption-panel'
+import { CorrectionPanel } from './components/correction-panel'
 import { StatementsPanel } from './components/statements-panel'
 
 export function Billing() {
@@ -139,6 +140,11 @@ export function Billing() {
               <TabsTrigger value='identity'>
                 {t('Billing identity')}
               </TabsTrigger>
+              {user?.role === ROLE.SUPER_ADMIN && (
+                <TabsTrigger value='corrections'>
+                  {t('Billing adjustments')}
+                </TabsTrigger>
+              )}
             </TabsList>
             <TabsContent value='daily'>
               <ConsumptionPanel
@@ -164,6 +170,15 @@ export function Billing() {
             <TabsContent value='identity'>
               <BillingProfileCard userId={userId} admin={admin} />
             </TabsContent>
+            {user?.role === ROLE.SUPER_ADMIN && (
+              <TabsContent value='corrections'>
+                <CorrectionPanel
+                  key={userId}
+                  userId={userId}
+                  actorId={user.id}
+                />
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       </SectionPageLayout.Content>

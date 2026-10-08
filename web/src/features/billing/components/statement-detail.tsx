@@ -41,7 +41,11 @@ import {
   getStatement,
   statementAction,
 } from '../api'
-import { statementStatusKeys, statementActionKeys } from '../constants'
+import {
+  statementStatusKeys,
+  statementActionKeys,
+  statementDownloadKeys,
+} from '../constants'
 import type { BillingSnapshot, StatementDetail as Detail } from '../types'
 import { BillingRows } from './billing-rows'
 
@@ -52,10 +56,16 @@ export function StatementDetail(props: {
   currentUserId: number
 }) {
   const { t } = useTranslation()
+  const [replacement, setReplacement] = useState<{
+    sourceId: string
+    id: string
+  } | null>(null)
+  const selectedId =
+    replacement?.sourceId === props.id ? replacement.id : props.id
   const query = useQuery({
-    queryKey: ['billing', 'statement', props.id],
-    queryFn: () => getStatement(props.id ?? ''),
-    enabled: Boolean(props.id),
+    queryKey: ['billing', 'statement', selectedId],
+    queryFn: () => getStatement(selectedId ?? ''),
+    enabled: Boolean(selectedId),
     refetchInterval: (state) =>
       state.state.data?.statement.status === 'preparing' ? 3000 : false,
   })
@@ -79,6 +89,9 @@ export function StatementDetail(props: {
           <StatementContent
             key={`${query.data.statement.id}:${query.data.statement.status}`}
             detail={query.data}
+            onViewStatement={(id) => {
+              if (props.id) setReplacement({ sourceId: props.id, id })
+            }}
             admin={props.admin}
             currentUserId={props.currentUserId}
           />
@@ -89,6 +102,7 @@ export function StatementDetail(props: {
 }
 function StatementContent(props: {
   detail: Detail
+  onViewStatement: (id: string) => void
   admin: boolean
   currentUserId: number
 }) {
@@ -105,7 +119,10 @@ function StatementContent(props: {
   const customerName =
     snapshot.username || props.detail.customer?.username || t('Unknown')
   const customerLabel = `${customerName} (#${statement.user_id})`
+  const successorId = statement.superseded_by
   const sourceBlocked = Boolean(props.detail.source_warning)
+  const canOperate = props.admin && !statement.superseded_by
+  const hasExcel = props.detail.artifacts.some((item) => item.kind === 'xlsx')
   const mutate = useMutation({
     mutationFn: (action: string) =>
       statementAction(statement.id, action, statement.manifest_sha256, note),
@@ -121,8 +138,17 @@ function StatementContent(props: {
     onError: handleServerError,
   })
   const canConfirm =
+    !statement.superseded_by &&
     statement.user_id === props.currentUserId &&
     (statement.status === 'issued' || statement.status === 'disputed')
+  const confirmationDescription =
+    intent === 'void'
+      ? t(
+          'Void this statement before creating a new version from the latest accounting data. Previous files and customer confirmations remain available. This action does not change wallet balances or historical import evidence.'
+        )
+      : t(
+          'This action will be recorded in the statement history. Confirmed statements cannot be overwritten.'
+        )
   return (
     <div className='flex flex-col gap-5'>
       <div className='grid gap-2 rounded-lg border p-4 text-sm sm:grid-cols-2'>
@@ -133,7 +159,12 @@ function StatementContent(props: {
           {t('Month')}: {statement.month} / {t('Version')} {statement.revision}
         </p>
         <p>
-          {t('Status')}: {t(statementStatusKeys[statement.status])}
+          {t('Status')}:{' '}
+          {t(
+            statement.superseded_by
+              ? 'Superseded'
+              : statementStatusKeys[statement.status]
+          )}
         </p>
         <p>
           {t('Company title')}: {snapshot.company_title}
@@ -152,14 +183,40 @@ function StatementContent(props: {
         </p>
         <p>{snapshot.currency.code} / Asia/Shanghai</p>
       </div>
+      {successorId && (
+        <p role='status' className='text-muted-foreground text-sm'>
+          {t(
+            'A newer document version exists. Previous files remain available; confirmation applies to the new version.'
+          )}
+          {props.admin && (
+            <Button
+              variant='link'
+              onClick={() => props.onViewStatement(successorId)}
+            >
+              {t('View latest version')}
+            </Button>
+          )}
+        </p>
+      )}
+      {hasExcel && (
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Confirmation covers both PDF and Excel bound by the manifest. Verify the Excel fingerprint printed in the PDF.'
+          )}
+        </p>
+      )}
       {sourceBlocked && (
         <p
           role='alert'
           className='border-destructive text-destructive rounded-lg border p-4 text-sm'
         >
-          {t(
-            'Historical usage exists but this statement has no formal entries. Issuing and confirmation are blocked. An administrator must void the draft and reconcile historical data before creating a new version.'
-          )}
+          {props.detail.source_warning === 'corrections_pending'
+            ? t(
+                'Corrections belong to the original consumption or refund month. Void the current statement, then create a new draft from the latest accounting data.'
+              )
+            : t(
+                'Historical usage exists but this statement has no formal entries. Issuing and confirmation are blocked. An administrator must void the draft and reconcile historical data before creating a new version.'
+              )}
         </p>
       )}
       {statement.last_error && (
@@ -180,7 +237,12 @@ function StatementContent(props: {
       </p>
       <div className='flex flex-wrap gap-2'>
         {props.detail.artifacts
-          .filter((item) => item.kind === 'pdf' || item.kind === 'manifest')
+          .filter((item) => ['pdf', 'manifest', 'xlsx'].includes(item.kind))
+          .sort(
+            (a, b) =>
+              ['manifest', 'pdf', 'xlsx'].indexOf(a.kind) -
+              ['manifest', 'pdf', 'xlsx'].indexOf(b.kind)
+          )
           .map((item) => (
             <Button
               key={item.id}
@@ -188,10 +250,10 @@ function StatementContent(props: {
               disabled={download.isPending}
               onClick={() => download.mutate({ kind: item.kind })}
             >
-              {item.kind === 'pdf' ? t('Download PDF') : t('Download manifest')}
+              {t(statementDownloadKeys[item.kind] ?? 'Download')}
             </Button>
           ))}
-        {statement.status === 'confirmed' && (
+        {statement.confirmed_at > 0 && (
           <Button
             variant='outline'
             disabled={download.isPending}
@@ -276,21 +338,17 @@ function StatementContent(props: {
           </FieldLabel>
         </Field>
       )}
-      {(canConfirm || props.admin) &&
-        statement.status !== 'confirmed' &&
-        statement.status !== 'void' && (
-          <Field>
-            <FieldLabel htmlFor={`${id}-note`}>
-              {t('Reason / reply')}
-            </FieldLabel>
-            <Textarea
-              id={`${id}-note`}
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              maxLength={2000}
-            />
-          </Field>
-        )}
+      {(canConfirm || canOperate) && statement.status !== 'void' && (
+        <Field>
+          <FieldLabel htmlFor={`${id}-note`}>{t('Reason / reply')}</FieldLabel>
+          <Textarea
+            id={`${id}-note`}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={2000}
+          />
+        </Field>
+      )}
       <div className='flex flex-wrap gap-2'>
         {canConfirm && (
           <Button
@@ -309,7 +367,7 @@ function StatementContent(props: {
             {t('Raise a dispute')}
           </Button>
         )}
-        {props.admin && statement.status === 'draft' && (
+        {canOperate && statement.status === 'draft' && (
           <Button
             disabled={sourceBlocked || mutate.isPending}
             onClick={() => setIntent('issue')}
@@ -317,7 +375,7 @@ function StatementContent(props: {
             {t('Issue to customer')}
           </Button>
         )}
-        {props.admin && statement.status === 'disputed' && (
+        {canOperate && statement.status === 'disputed' && (
           <Button
             variant='outline'
             disabled={!note.trim() || mutate.isPending}
@@ -326,22 +384,20 @@ function StatementContent(props: {
             {t('Reply')}
           </Button>
         )}
-        {props.admin && statement.status === 'failed' && (
+        {canOperate && statement.status === 'failed' && (
           <Button variant='outline' onClick={() => mutate.mutate('retry')}>
             {t('Retry')}
           </Button>
         )}
-        {props.admin &&
-          statement.status !== 'confirmed' &&
-          statement.status !== 'void' && (
-            <Button
-              variant='destructive'
-              disabled={!note.trim()}
-              onClick={() => setIntent('void')}
-            >
-              {t('Void statement')}
-            </Button>
-          )}
+        {canOperate && statement.status !== 'void' && (
+          <Button
+            variant='destructive'
+            disabled={!note.trim() || mutate.isPending}
+            onClick={() => setIntent('void')}
+          >
+            {t('Void statement')}
+          </Button>
+        )}
       </div>
       <div className='flex flex-col gap-2'>
         <h3 className='font-medium'>{t('Statement history')}</h3>
@@ -357,7 +413,7 @@ function StatementContent(props: {
         open={Boolean(intent)}
         onOpenChange={(open) => !open && setIntent('')}
         title={t('Confirm action')}
-        desc={`${t('Statement customer')}: ${customerLabel}. ${t('This action will be recorded in the statement history. Confirmed statements cannot be overwritten.')}`}
+        desc={`${t('Statement customer')}: ${customerLabel}. ${confirmationDescription}`}
         confirmText={t('Confirm')}
         isLoading={mutate.isPending}
         destructive={intent === 'void'}

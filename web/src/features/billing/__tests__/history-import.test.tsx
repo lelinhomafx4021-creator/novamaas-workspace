@@ -138,6 +138,31 @@ describe('Historical import consent', () => {
     )
   })
 
+  test('a partial-month review shows the accounting cutoff and excludes earlier consumption from import', async () => {
+    const cutoff = 1787911200
+    vi.mocked(reviewBillingHistory).mockResolvedValue({
+      ...review,
+      old_start_at: cutoff,
+      new_start_at: cutoff,
+      checks: [{ code: 'history_start_safe', passed: true }],
+    })
+    renderHistory()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review historical import' })
+    )
+    expect(await screen.findByText(/Accounting start:/)).toHaveTextContent(
+      '2026-08-28 18:00:00 (Asia/Shanghai)'
+    )
+    expect(
+      screen.getByText(
+        'Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.'
+      )
+    ).toBeVisible()
+    expect(
+      screen.queryByText(/Import will update the accounting start/)
+    ).not.toBeInTheDocument()
+  })
+
   test('an active draft blocks importing even after acknowledging the records', async () => {
     vi.mocked(reviewBillingHistory).mockResolvedValue({
       ...review,

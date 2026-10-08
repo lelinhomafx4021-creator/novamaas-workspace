@@ -146,14 +146,14 @@ export function phoneErrorMessage(error: unknown, t: TFunction): string {
   return t('Phone verification failed. Check the code or request a new one.')
 }
 
-export async function sendUserMutationSMS(
-  input: { phone: string; user_id?: number; username: string },
-  proof: string
-): Promise<SmsChallenge> {
+export async function sendUserMutationSMS(input: {
+  phone: string
+  user_id?: number
+  username: string
+}): Promise<SmsChallenge> {
   const response = await api.post<Response<SmsChallenge>>(
     '/api/user/phone/code',
-    input,
-    { headers: { 'X-Security-Proof': proof } }
+    input
   )
   return response.data.data
 }

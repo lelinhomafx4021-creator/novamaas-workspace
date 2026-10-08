@@ -4030,6 +4030,7 @@
     "Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.": "送った max_tokens と入力した温度 / top_p だけを確認します。ベンダー 4xx はスキップです。",
     "Only configured combinations are overridden. All other calls keep the billing group base ratio.": "設定された組み合わせだけが上書きされます。それ以外の呼び出しは課金グループの基本倍率のままです。",
     "Only configured combinations are overridden. All other calls keep the token group base ratio.": "設定済みの組み合わせだけが上書きされます。他の呼び出しはトークングループの基本倍率を維持します。",
+    "Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.": "記帳開始日時以降の利用と返金のみを取り込みます。記帳開始日時とウォレット残高は変更されません。",
     "Only enabled parameters are sent with the request.": "有効なパラメータだけがリクエストに送信されます。",
     "Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.": "サイトのオリジンのみを入力してください。例: https://api.example.com。/api/user/epay/notify などのパスは含めないでください。空欄の場合はサーバーアドレスを使用します。",
     "Only Mine": "自分のみ",

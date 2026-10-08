@@ -174,7 +174,7 @@ function HistoryReviewContent(props: {
     ),
     operations_settled: t('All reservations settled'),
     no_active_statement: t('No active statement for this month'),
-    history_start_safe: t('Accounting coverage can be preserved safely'),
+    history_start_safe: t('Month overlaps the accounting period'),
   }
   const apply = useMutation({
     mutationFn: () =>
@@ -207,6 +207,15 @@ function HistoryReviewContent(props: {
       <p className='text-sm break-words'>
         {t('Statement customer')}: {customerLabel} · {t('Month')}:{' '}
         {review.month}
+      </p>
+      <p className='text-sm'>
+        {t('Accounting start')}: {billingTimestamp(review.old_start_at)}{' '}
+        (Asia/Shanghai)
+      </p>
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.'
+        )}
       </p>
       <p className='text-sm'>
         {t('Records')}:{' '}
@@ -247,13 +256,6 @@ function HistoryReviewContent(props: {
       {!props.profileId && (
         <p role='alert' className='text-sm'>
           {t('Select archive storage on the monthly preview before importing.')}
-        </p>
-      )}
-      {review.new_start_at !== review.old_start_at && (
-        <p role='alert' className='text-sm'>
-          {t('Import will update the accounting start after confirmation')}:{' '}
-          {billingTimestamp(review.old_start_at)} →{' '}
-          {billingTimestamp(review.new_start_at)}
         </p>
       )}
       {review.snapshot && (

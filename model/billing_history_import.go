@@ -60,7 +60,7 @@ type BillingHistoryState struct {
 	Hours           int64
 	Pending         int64
 	ActiveStatement string
-	CanExtendStart  bool
+	PeriodCovered   bool
 }
 
 func GetBillingHistoryState(ctx context.Context, userID int, month string) (*BillingHistoryState, error) {
@@ -84,13 +84,17 @@ func GetBillingHistoryState(ctx context.Context, userID int, month string) (*Bil
 // settlement or new draft cannot race an otherwise valid preview.
 func readBillingHistoryState(tx *gorm.DB, state *BillingHistoryState, start, end int64, month string) error {
 	userID := state.Account.UserID
+	state.PeriodCovered = state.Account.AccountingStartAt > 0 && state.Account.AccountingStartAt < end
+	if state.Account.AccountingStartAt > start {
+		start = state.Account.AccountingStartAt
+	}
 	var entry BillingEntry
-	result := tx.Select("id").Where("user_id = ? AND posted_at >= ? AND posted_at < ? AND kind <> ?", userID, start, end, "funding").Limit(1).Find(&entry)
+	result := tx.Select("id").Where("user_id = ? AND posted_at >= ? AND posted_at < ? AND sequence >= ? AND kind <> ?", userID, start, end, state.Account.StartSequence, "funding").Limit(1).Find(&entry)
 	if result.Error != nil {
 		return result.Error
 	}
 	state.Entries = result.RowsAffected
-	if err := tx.Model(&BillingHour{}).Where("user_id = ? AND hour >= ? AND hour < ?", userID, start, end).Count(&state.Hours).Error; err != nil {
+	if err := tx.Model(&BillingHour{}).Where("user_id = ? AND hour >= ? AND hour < ?", userID, start/3600*3600, end).Count(&state.Hours).Error; err != nil {
 		return err
 	}
 	if err := tx.Model(&BillingOperation{}).Where("user_id = ? AND state = ? AND created_at < ?", userID, "reserved", end).Count(&state.Pending).Error; err != nil {
@@ -101,29 +105,26 @@ func readBillingHistoryState(tx *gorm.DB, state *BillingHistoryState, start, end
 		return err
 	}
 	state.ActiveStatement = statement.ID
-	state.CanExtendStart = true
-	if state.Account.AccountingStartAt == 0 || state.Account.AccountingStartAt > start {
-		var statements int64
-		if err := tx.Model(&BillingStatement{}).Where("user_id = ? AND status <> ?", userID, StatementVoid).Count(&statements).Error; err != nil {
-			return err
-		}
-		// Do not silently change coverage of existing ledger entries or files.
-		state.CanExtendStart = statements == 0 && state.Account.Sequence == 0
-	}
 	return nil
 }
 
-func GetBillingHistoryRecords(ctx context.Context, userID int, month string) ([]BillingHistoryRecord, error) {
+func GetBillingHistoryRecords(ctx context.Context, userID int, month string, accountingStartAt int64) ([]BillingHistoryRecord, error) {
 	start, end, err := BillingMonthBounds(month)
-	if err != nil || userID <= 0 || start < 0 {
+	if err != nil || userID <= 0 || start < 0 || accountingStartAt < 0 {
 		return nil, errors.New("invalid historical billing period")
+	}
+	records := make([]BillingHistoryRecord, 0)
+	if accountingStartAt == 0 || accountingStartAt >= end {
+		return records, nil
+	}
+	if accountingStartAt > start {
+		start = accountingStartAt
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return nil, errors.New("online historical import requires a relational log database with stable IDs")
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	records := make([]BillingHistoryRecord, 0)
 	err = LOG_DB.WithContext(queryCtx).Model(&Log{}).
 		Select("id", "user_id", "created_at", "type", "quota", "request_id", "model_name", "token_id").
 		Where("user_id = ? AND created_at >= ? AND created_at < ? AND type IN ?", userID, start, end, []int{LogTypeConsume, LogTypeRefund}).
@@ -180,12 +181,12 @@ func ApplyBillingHistoryImport(ctx context.Context, batch *BillingHistoryImport,
 		if err := readBillingHistoryState(tx, &state, start, end, batch.Month); err != nil {
 			return err
 		}
-		if state.Entries != 0 || state.Hours != 0 || state.Pending != 0 || state.ActiveStatement != "" || !state.CanExtendStart || account.CompanyTitle == "" || account.TaxID == "" {
+		if state.Entries != 0 || state.Hours != 0 || state.Pending != 0 || state.ActiveStatement != "" || !state.PeriodCovered || account.CompanyTitle == "" || account.TaxID == "" {
 			return ErrBillingHistoryBlocked
 		}
 		batch.OldStartAt = account.AccountingStartAt
-		if account.AccountingStartAt == 0 || account.AccountingStartAt > start {
-			account.AccountingStartAt, account.StartSequence = start, account.Sequence+1
+		if account.AccountingStartAt > start {
+			start = account.AccountingStartAt
 		}
 		batch.NewStartAt, batch.FromSequence = account.AccountingStartAt, account.Sequence+1
 		entries := make([]BillingEntry, 0, len(records))

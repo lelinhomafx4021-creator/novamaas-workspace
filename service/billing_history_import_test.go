@@ -155,3 +155,157 @@ func TestBillingDraftRejectsLegacyHistoryButAllowsAnActuallyEmptyMonth(t *testin
 	assert.Equal(t, model.StatementPreparing, statement.Status)
 	assert.NoError(t, ValidateBillingStatementSource(context.Background(), statement))
 }
+
+func TestBillingHistoryImportPreservesMidMonthCutoffWithExistingAccountHistory(t *testing.T) {
+	truncate(t)
+	seedUser(t, 96, 8765432)
+	start, end, err := model.BillingMonthBounds("2020-04")
+	require.NoError(t, err)
+	cutoff := start + 27*86400 + 18*3600 + 1800
+	account := model.BillingAccount{UserID: 96, AccountingStartAt: cutoff, StartSequence: 3, Sequence: 2, CompanyTitle: "History Customer", TaxID: "HISTORY", ProfileVersion: 1}
+	require.NoError(t, model.DB.Create(&account).Error)
+	// Earlier wallet history and another month's statement do not require a
+	// coverage change when importing only the configured accounting period.
+	require.NoError(t, model.DB.Create(&[]model.BillingEntry{
+		{UserID: 96, Sequence: 1, PostedAt: cutoff - 2, EventKey: "prior-funding", Kind: "funding"},
+		{UserID: 96, Sequence: 2, PostedAt: cutoff - 1, EventKey: "prior-usage", Kind: "usage", Quota: 999999},
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.BillingStatement{ID: "other-month", UserID: 96, Month: "2020-05", Status: model.StatementDraft}).Error)
+	require.NoError(t, model.LOG_DB.Create(&[]model.Log{
+		{Id: 961, UserId: 96, CreatedAt: cutoff - 1, Type: model.LogTypeConsume, Quota: 999999, RequestId: "before-cutoff"},
+		{Id: 962, UserId: 96, CreatedAt: cutoff, Type: model.LogTypeConsume, Quota: 500000, RequestId: "at-cutoff"},
+		{Id: 963, UserId: 96, CreatedAt: cutoff + 1, Type: model.LogTypeRefund, Quota: 125000, RequestId: "after-cutoff"},
+		{Id: 964, UserId: 96, CreatedAt: end, Type: model.LogTypeConsume, Quota: 999999, RequestId: "next-month"},
+	}).Error)
+
+	ctx := context.Background()
+	review, err := ReviewBillingHistory(ctx, 96, "2020-04")
+	require.NoError(t, err)
+	require.True(t, review.Ready)
+	assert.Equal(t, cutoff, review.OldStartAt)
+	assert.Equal(t, cutoff, review.NewStartAt)
+	require.Len(t, review.Records, 2)
+	assert.Equal(t, int64(500000), review.Snapshot.ChargeQuota)
+	assert.Equal(t, int64(125000), review.Snapshot.RefundQuota)
+	assert.Equal(t, "outside_period", review.Snapshot.Days[26].State)
+	assert.NotContains(t, string(review.Source), "before-cutoff")
+	assert.NotContains(t, string(review.Source), "next-month")
+
+	store := &historyImportArchive{}
+	batch, err := ConfirmBillingHistoryImport(ctx, 96, 1, 1, "2020-04", "00000000000000000000000000000096", review.SourceSHA256, "Verified records from the configured cutoff", "session", store)
+	require.NoError(t, err)
+	assert.Equal(t, cutoff, batch.OldStartAt)
+	assert.Equal(t, cutoff, batch.NewStartAt)
+	assert.Equal(t, int64(2), batch.Records)
+	updated, err := model.GetBillingAccount(96)
+	require.NoError(t, err)
+	assert.Equal(t, cutoff, updated.AccountingStartAt)
+	assert.Equal(t, account.StartSequence, updated.StartSequence)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 96).Error)
+	assert.Equal(t, 8765432, user.Quota)
+	statement, err := PrepareBillingStatement(96, 1, 1, "2020-04")
+	require.NoError(t, err)
+	assert.Equal(t, cutoff, statement.StartAt)
+	archive := &memoryBillingArchive{files: map[string][]byte{}}
+	require.NoError(t, BuildBillingArchive(ctx, statement, archive))
+}
+
+func TestBillingHistoryImportRejectsRecordsBeforeCutoffAtCommit(t *testing.T) {
+	start := seedBillingHistory(t)
+	cutoff := start + 1800
+	require.NoError(t, model.DB.Model(&model.BillingAccount{}).Where("user_id = ?", 96).Update("accounting_start_at", cutoff).Error)
+	review, err := ReviewBillingHistory(context.Background(), 96, "2020-04")
+	require.NoError(t, err)
+	records := append(review.Records, model.BillingHistoryRecord{ID: 999, UserID: 96, CreatedAt: cutoff - 1, Type: model.LogTypeConsume, Quota: 1})
+	batch := &model.BillingHistoryImport{ID: "invalid-cutoff", UserID: 96, Month: "2020-04", SourceSHA256: review.SourceSHA256, ArtifactID: 1, SessionID: "session", Note: "checked"}
+	err = model.ApplyBillingHistoryImport(context.Background(), batch, review.Account, records)
+	assert.ErrorIs(t, err, model.ErrBillingEvidenceIntegrity)
+	var entries int64
+	require.NoError(t, model.DB.Model(&model.BillingEntry{}).Count(&entries).Error)
+	assert.Zero(t, entries)
+	account, err := model.GetBillingAccount(96)
+	require.NoError(t, err)
+	assert.Equal(t, cutoff, account.AccountingStartAt)
+}
+
+func TestBillingHistoryReviewRejectsUnconfiguredOrUncoveredPeriods(t *testing.T) {
+	for _, scenario := range []string{"unconfigured", "before-start"} {
+		t.Run(scenario, func(t *testing.T) {
+			seedBillingHistory(t)
+			_, end, err := model.BillingMonthBounds("2020-04")
+			require.NoError(t, err)
+			cutoff := int64(0)
+			if scenario == "before-start" {
+				cutoff = end
+			}
+			require.NoError(t, model.DB.Model(&model.BillingAccount{}).Where("user_id = ?", 96).Update("accounting_start_at", cutoff).Error)
+			review, err := ReviewBillingHistory(context.Background(), 96, "2020-04")
+			require.NoError(t, err)
+			assert.False(t, review.Ready)
+			assert.Empty(t, review.Records)
+			assert.Equal(t, cutoff, review.NewStartAt)
+			store := &historyImportArchive{}
+			_, err = ConfirmBillingHistoryImport(context.Background(), 96, 1, 1, "2020-04", "00000000000000000000000000000096", review.SourceSHA256, "checked", "session", store)
+			assert.ErrorIs(t, err, model.ErrBillingHistoryBlocked)
+			assert.Empty(t, store.body)
+		})
+	}
+}
+
+func TestBillingPreCutoffHistoryAllowsEmptyFormalStatement(t *testing.T) {
+	start := seedBillingHistory(t)
+	cutoff := start + 27*86400 + 18*3600
+	require.NoError(t, model.DB.Model(&model.BillingAccount{}).Where("user_id = ?", 96).Update("accounting_start_at", cutoff).Error)
+	ctx := context.Background()
+	preview, err := GetBillingMonthPreview(ctx, 96, "2020-04", 0)
+	require.NoError(t, err)
+	assert.Equal(t, "no_consumption", preview.Readiness.Status)
+	require.NotNil(t, preview.Formal)
+	assert.Zero(t, preview.Formal.Total.Count)
+	assert.Equal(t, int64(3), preview.Reference.Total.Count)
+	review, err := ReviewBillingHistory(ctx, 96, "2020-04")
+	require.NoError(t, err)
+	assert.Empty(t, review.Records)
+	assert.False(t, review.Ready, "there are no in-period records to import")
+	statement, err := PrepareBillingStatement(96, 1, 1, "2020-04")
+	require.NoError(t, err)
+	assert.Equal(t, cutoff, statement.StartAt)
+	require.NoError(t, ValidateBillingStatementSource(ctx, statement))
+	archive := &memoryBillingArchive{files: map[string][]byte{}}
+	require.NoError(t, BuildBillingArchive(ctx, statement, archive))
+}
+
+func TestBillingHistoryImportRejectsChangedCutoffAfterReview(t *testing.T) {
+	start := seedBillingHistory(t)
+	ctx := context.Background()
+	review, err := ReviewBillingHistory(ctx, 96, "2020-04")
+	require.NoError(t, err)
+	cutoff := start + 1800
+	require.NoError(t, model.DB.Model(&model.BillingAccount{}).Where("user_id = ?", 96).Update("accounting_start_at", cutoff).Error)
+	store := &historyImportArchive{}
+	_, err = ConfirmBillingHistoryImport(ctx, 96, 1, 1, "2020-04", "00000000000000000000000000000096", review.SourceSHA256, "checked", "session", store)
+	assert.ErrorIs(t, err, model.ErrBillingConflict)
+	assert.Empty(t, store.body)
+	batch := &model.BillingHistoryImport{ID: "stale-cutoff", UserID: 96, Month: "2020-04", SourceSHA256: review.SourceSHA256, ArtifactID: 1, SessionID: "session", Note: "checked"}
+	assert.ErrorIs(t, model.ApplyBillingHistoryImport(ctx, batch, review.Account, review.Records), model.ErrBillingConflict)
+	var entries int64
+	require.NoError(t, model.DB.Model(&model.BillingEntry{}).Count(&entries).Error)
+	assert.Zero(t, entries)
+}
+
+func TestBillingHistoryImportRejectsExistingSummaryInPartialStartingHour(t *testing.T) {
+	start := seedBillingHistory(t)
+	cutoff := start + 1800
+	require.NoError(t, model.DB.Model(&model.BillingAccount{}).Where("user_id = ?", 96).Update("accounting_start_at", cutoff).Error)
+	require.NoError(t, model.DB.Create(&model.BillingHour{UserID: 96, Hour: start, Charge: 1, Count: 1, FirstSequence: 1, LastSequence: 1}).Error)
+	review, err := ReviewBillingHistory(context.Background(), 96, "2020-04")
+	require.NoError(t, err)
+	assert.False(t, review.Ready)
+	assert.Contains(t, review.Checks, BillingCheck{Code: "history_empty_ledger", Passed: false})
+	batch := &model.BillingHistoryImport{ID: "mixed-partial-hour", UserID: 96, Month: "2020-04", SourceSHA256: review.SourceSHA256, ArtifactID: 1, SessionID: "session", Note: "checked"}
+	assert.ErrorIs(t, model.ApplyBillingHistoryImport(context.Background(), batch, review.Account, review.Records), model.ErrBillingHistoryBlocked)
+	var entries int64
+	require.NoError(t, model.DB.Model(&model.BillingEntry{}).Count(&entries).Error)
+	assert.Zero(t, entries)
+}

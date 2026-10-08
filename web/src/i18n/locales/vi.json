@@ -4030,6 +4030,7 @@
     "Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.": "Chỉ kiểm tra max_tokens đã gửi và temperature / top_p bạn điền. 4xx từ nhà cung cấp thì bỏ qua.",
     "Only configured combinations are overridden. All other calls keep the billing group base ratio.": "Chỉ các tổ hợp đã cấu hình mới bị ghi đè. Các cuộc gọi khác vẫn dùng hệ số cơ bản của nhóm tính phí.",
     "Only configured combinations are overridden. All other calls keep the token group base ratio.": "Chỉ các tổ hợp đã cấu hình mới bị ghi đè. Các lệnh gọi khác giữ tỷ lệ cơ bản của nhóm token.",
+    "Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.": "Chỉ nhập các khoản tiêu dùng và hoàn tiền từ thời điểm bắt đầu ghi sổ. Thời điểm ghi sổ và số dư ví không thay đổi.",
     "Only enabled parameters are sent with the request.": "Chỉ các tham số đã bật mới được gửi trong yêu cầu.",
     "Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.": "Chỉ nhập origin của trang, ví dụ https://api.example.com. Không nhập đường dẫn như /api/user/epay/notify. Để trống để dùng địa chỉ máy chủ.",
     "Only Mine": "Chỉ của tôi",

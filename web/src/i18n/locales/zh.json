@@ -4030,6 +4030,7 @@
     "Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.": "只检查已发送的 max_tokens 和你填了的温度 / top_p。厂商 4xx 则跳过。",
     "Only configured combinations are overridden. All other calls keep the billing group base ratio.": "只有配置过的组合才会被覆盖，其余调用仍使用计费分组的基础倍率。",
     "Only configured combinations are overridden. All other calls keep the token group base ratio.": "只有已配置的组合会被覆盖，其他调用仍使用令牌分组的基础倍率。",
+    "Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.": "仅导入正式记账起点及之后的消费和退款，记账起点与钱包余额保持不变。",
     "Only enabled parameters are sent with the request.": "只有启用的参数会随请求发送。",
     "Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.": "只填写站点根域名，例如 https://api.example.com。不要填写 /api/user/epay/notify 这类路径。留空则使用服务器地址。",
     "Only Mine": "仅自己",

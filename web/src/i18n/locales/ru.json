@@ -4030,6 +4030,7 @@
     "Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.": "Проверяет только отправленные max_tokens и заполненные temperature / top_p. 4xx поставщика — пропуск.",
     "Only configured combinations are overridden. All other calls keep the billing group base ratio.": "Переопределяются только настроенные комбинации. Остальные вызовы используют базовый коэффициент тарифной группы.",
     "Only configured combinations are overridden. All other calls keep the token group base ratio.": "Переопределяются только настроенные комбинации. Остальные вызовы используют базовый коэффициент группы токена.",
+    "Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.": "Импортируются только расходы и возвраты с момента начала учёта. Дата начала учёта и баланс кошелька не меняются.",
     "Only enabled parameters are sent with the request.": "С запросом отправляются только включенные параметры.",
     "Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.": "Введите только origin сайта, например https://api.example.com. Не добавляйте пути, например /api/user/epay/notify. Оставьте пустым, чтобы использовать адрес сервера.",
     "Only Mine": "Только мои",

@@ -4030,6 +4030,7 @@
     "Only checks max_tokens and the temperature / top_p you filled. Vendor 4xx is skipped.": "Vérifie seulement max_tokens et la température / top_p saisis. Un 4xx fournisseur est ignoré.",
     "Only configured combinations are overridden. All other calls keep the billing group base ratio.": "Seules les combinaisons configurées sont remplacées. Tous les autres appels gardent le taux de base du groupe de facturation.",
     "Only configured combinations are overridden. All other calls keep the token group base ratio.": "Seules les combinaisons configurées sont remplacées. Les autres appels conservent le ratio de base du groupe du jeton.",
+    "Only consumption and refunds on or after the accounting start are imported. The accounting start and wallet balance remain unchanged.": "Seules les consommations et les remboursements à partir du début comptable sont importés. Cette date et le solde du portefeuille restent inchangés.",
     "Only enabled parameters are sent with the request.": "Seuls les paramètres activés sont envoyés avec la requête.",
     "Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.": "Saisissez uniquement l’origine du site, par exemple https://api.example.com. N’ajoutez aucun chemin comme /api/user/epay/notify. Laissez vide pour utiliser l’adresse du serveur.",
     "Only Mine": "Uniquement les miens",

@@ -186,6 +186,19 @@ func TestBillingPDFV8PaginatesLargeModelSummary(t *testing.T) {
 	if output := os.Getenv("BILLING_PDF_V8_PAGINATION_TEST_OUTPUT"); output != "" {
 		require.NoError(t, os.WriteFile(output, pdf, 0600))
 	}
+	snapshot.PDFTemplateVersion = 9
+	statement.ExcelSHA256 = strings.Repeat("2", 64)
+	snapshot.RateReferenceAt = statement.CreatedAt
+	for i := range snapshot.Models {
+		snapshot.Models[i].ModelName = fmt.Sprintf("企业超长上下文分析模型专业版本-model-%02d", i)
+		snapshot.Models[i].CurrentRates = []BillingGroupRate{{Group: "vip", Ratio: "0.65"}}
+	}
+	expanded, err := RenderBillingStatementPDF(statement, snapshot, false)
+	require.NoError(t, err, "the expanded rate/price table must paginate without clipping rows or notes")
+	assert.Greater(t, strings.Count(string(expanded), "\n  /Type /Page\n"), strings.Count(string(pdf), "\n  /Type /Page\n"))
+	if output := os.Getenv("BILLING_PDF_V9_PAGINATION_TEST_OUTPUT"); output != "" {
+		require.NoError(t, os.WriteFile(output, expanded, 0600))
+	}
 }
 
 func TestBillingPDFV2SupportsTheAcceptedCorporateIdentityLength(t *testing.T) {

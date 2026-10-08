@@ -33,4 +33,11 @@ export const statementActionKeys: Record<string, string> = {
   reply: 'Reply',
   void: 'Void statement',
   retry: 'Retry',
+  regenerate: 'Regenerate',
+}
+
+export const statementDownloadKeys: Record<string, string> = {
+  pdf: 'Download PDF',
+  manifest: 'Download manifest',
+  xlsx: 'Download Excel',
 }

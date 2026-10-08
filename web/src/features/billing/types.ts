@@ -34,6 +34,7 @@ export interface BillingRow {
   count: number
 }
 export interface BillingModelRow {
+  current_rates?: { group: string; ratio: string }[]
   model_name: string
   charge: string
   refund: string
@@ -141,6 +142,9 @@ export interface BillingStatement {
   snapshot: string
   manifest_sha256: string
   pdf_sha256: string
+  excel_sha256?: string
+  source_statement_id?: string
+  superseded_by?: string
   issued_at: number
   due_at: number
   confirmed_at: number

@@ -20,31 +20,34 @@ const (
 )
 
 type BillingStatement struct {
-	ID               string  `json:"id" gorm:"primaryKey;type:varchar(64)"`
-	UserID           int     `json:"user_id" gorm:"uniqueIndex:idx_billing_statement_revision,priority:1;index:idx_billing_statement_list,priority:1"`
-	Month            string  `json:"month" gorm:"type:varchar(7);uniqueIndex:idx_billing_statement_revision,priority:2"`
-	Revision         int     `json:"revision" gorm:"uniqueIndex:idx_billing_statement_revision,priority:3"`
-	ActiveKey        *string `json:"-" gorm:"type:varchar(64);uniqueIndex"`
-	Status           string  `json:"status" gorm:"type:varchar(16);index:idx_billing_statement_jobs,priority:1"`
-	StartAt          int64   `json:"start_at" gorm:"bigint"`
-	EndAt            int64   `json:"end_at" gorm:"bigint"`
-	FromSequence     int64   `json:"-" gorm:"bigint"`
-	ToSequence       int64   `json:"-" gorm:"bigint"`
-	ProfileVersion   int64   `json:"profile_version" gorm:"bigint"`
-	Snapshot         string  `json:"snapshot" gorm:"type:text"`
-	SnapshotSHA256   string  `json:"snapshot_sha256" gorm:"type:char(64)"`
-	ManifestSHA256   string  `json:"manifest_sha256" gorm:"type:char(64)"`
-	PDFSHA256        string  `json:"pdf_sha256" gorm:"type:char(64)"`
-	StorageProfileID int     `json:"storage_profile_id"`
-	CreatedBy        int     `json:"created_by"`
-	CreatedAt        int64   `json:"created_at" gorm:"bigint;index:idx_billing_statement_list,priority:2"`
-	IssuedBy         int     `json:"issued_by"`
-	IssuedAt         int64   `json:"issued_at" gorm:"bigint"`
-	DueAt            int64   `json:"due_at" gorm:"bigint"`
-	ConfirmedAt      int64   `json:"confirmed_at" gorm:"bigint"`
-	LeaseOwner       string  `json:"-" gorm:"type:varchar(64)"`
-	LeaseUntil       int64   `json:"-" gorm:"bigint;index:idx_billing_statement_jobs,priority:2"`
-	LastError        string  `json:"last_error,omitempty" gorm:"type:text"`
+	ID                string  `json:"id" gorm:"primaryKey;type:varchar(64)"`
+	UserID            int     `json:"user_id" gorm:"uniqueIndex:idx_billing_statement_revision,priority:1;index:idx_billing_statement_list,priority:1"`
+	Month             string  `json:"month" gorm:"type:varchar(7);uniqueIndex:idx_billing_statement_revision,priority:2"`
+	Revision          int     `json:"revision" gorm:"uniqueIndex:idx_billing_statement_revision,priority:3"`
+	ActiveKey         *string `json:"-" gorm:"type:varchar(64);uniqueIndex"`
+	Status            string  `json:"status" gorm:"type:varchar(16);index:idx_billing_statement_jobs,priority:1"`
+	StartAt           int64   `json:"start_at" gorm:"bigint"`
+	EndAt             int64   `json:"end_at" gorm:"bigint"`
+	FromSequence      int64   `json:"-" gorm:"bigint"`
+	ToSequence        int64   `json:"-" gorm:"bigint"`
+	ProfileVersion    int64   `json:"profile_version" gorm:"bigint"`
+	Snapshot          string  `json:"snapshot" gorm:"type:text"`
+	SnapshotSHA256    string  `json:"snapshot_sha256" gorm:"type:char(64)"`
+	ManifestSHA256    string  `json:"manifest_sha256" gorm:"type:char(64)"`
+	PDFSHA256         string  `json:"pdf_sha256" gorm:"type:char(64)"`
+	ExcelSHA256       string  `json:"excel_sha256" gorm:"type:char(64)"`
+	SourceStatementID string  `json:"source_statement_id,omitempty" gorm:"type:varchar(64)"`
+	SupersededBy      string  `json:"superseded_by,omitempty" gorm:"type:varchar(64)"`
+	StorageProfileID  int     `json:"storage_profile_id"`
+	CreatedBy         int     `json:"created_by"`
+	CreatedAt         int64   `json:"created_at" gorm:"bigint;index:idx_billing_statement_list,priority:2"`
+	IssuedBy          int     `json:"issued_by"`
+	IssuedAt          int64   `json:"issued_at" gorm:"bigint"`
+	DueAt             int64   `json:"due_at" gorm:"bigint"`
+	ConfirmedAt       int64   `json:"confirmed_at" gorm:"bigint"`
+	LeaseOwner        string  `json:"-" gorm:"type:varchar(64)"`
+	LeaseUntil        int64   `json:"-" gorm:"bigint;index:idx_billing_statement_jobs,priority:2"`
+	LastError         string  `json:"last_error,omitempty" gorm:"type:text"`
 }
 
 type BillingStatementEvent struct {
@@ -55,6 +58,7 @@ type BillingStatementEvent struct {
 	Note           string `json:"note" gorm:"type:text"`
 	ManifestSHA256 string `json:"manifest_sha256" gorm:"type:char(64)"`
 	PDFSHA256      string `json:"pdf_sha256" gorm:"type:char(64)"`
+	ExcelSHA256    string `json:"excel_sha256" gorm:"type:char(64)"`
 	SessionID      string `json:"-" gorm:"type:varchar(128)"`
 	CreatedAt      int64  `json:"created_at" gorm:"bigint;index:idx_billing_statement_events,priority:2"`
 }
@@ -159,10 +163,20 @@ func CompleteBillingStatementArchive(statement *BillingStatement, owner string, 
 		if statement.ManifestSHA256 == "" || statement.PDFSHA256 == "" {
 			return ErrBillingEvidenceIntegrity
 		}
+		var snapshot struct {
+			PDFTemplateVersion int `json:"pdf_template_version"`
+		}
+		if err := common.UnmarshalJsonStr(statement.Snapshot, &snapshot); err != nil {
+			return err
+		}
+		if snapshot.PDFTemplateVersion >= 9 && statement.ExcelSHA256 == "" {
+			return ErrBillingEvidenceIntegrity
+		}
 		updates["status"], updates["last_error"] = StatementDraft, ""
 		// Use Go field names so GORM resolves acronym-heavy fields against the
 		// same schema used by AutoMigrate, without renaming existing columns.
 		updates["ManifestSHA256"], updates["PDFSHA256"] = statement.ManifestSHA256, statement.PDFSHA256
+		updates["ExcelSHA256"] = statement.ExcelSHA256
 	} else {
 		updates["status"], updates["last_error"] = StatementFailed, "Archive preparation failed. Check server logs and retry."
 	}
@@ -293,9 +307,21 @@ func ChangeBillingStatement(id, action, digest, note, sessionID string, actorID 
 		if !admin && statement.UserID != actorID {
 			return gorm.ErrRecordNotFound
 		}
+		if statement.SupersededBy != "" {
+			return ErrBillingConflict
+		}
 		if action == "issue" || action == "confirm" {
 			if err := statement.VerifySnapshot(); err != nil {
 				return err
+			}
+			var snapshot struct {
+				PDFTemplateVersion int `json:"pdf_template_version"`
+			}
+			if err := common.UnmarshalJsonStr(statement.Snapshot, &snapshot); err != nil {
+				return err
+			}
+			if snapshot.PDFTemplateVersion >= 9 && statement.ExcelSHA256 == "" {
+				return ErrBillingEvidenceIntegrity
 			}
 		}
 		now := common.GetTimestamp()
@@ -346,13 +372,75 @@ func ChangeBillingStatement(id, action, digest, note, sessionID string, actorID 
 		if err := tx.Model(&statement).Updates(updates).Error; err != nil {
 			return err
 		}
-		event := BillingStatementEvent{StatementID: id, ActorID: actorID, Action: action, Note: note, SessionID: sessionID, CreatedAt: now, ManifestSHA256: statement.ManifestSHA256, PDFSHA256: statement.PDFSHA256}
+		event := BillingStatementEvent{StatementID: id, ActorID: actorID, Action: action, Note: note, SessionID: sessionID, CreatedAt: now, ManifestSHA256: statement.ManifestSHA256, PDFSHA256: statement.PDFSHA256, ExcelSHA256: statement.ExcelSHA256}
 		return tx.Create(&event).Error
 	})
 	if err != nil {
 		return nil, err
 	}
 	return GetBillingStatement(id)
+}
+
+// Regeneration creates a new presentation revision over the same immutable
+// ledger range. It never edits an archived artifact or an earlier acknowledgement.
+func RegenerateBillingStatement(source *BillingStatement, actorID int, buildSnapshot func(*BillingStatement, []BillingModelTotal) (string, string, error)) (*BillingStatement, error) {
+	var next BillingStatement
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := lockBillingAccount(tx, source.UserID); err != nil {
+			return err
+		}
+		var original BillingStatement
+		if err := lockForUpdate(tx).First(&original, "id = ? AND user_id = ?", source.ID, source.UserID).Error; err != nil {
+			return err
+		}
+		if err := original.VerifySnapshot(); err != nil {
+			return err
+		}
+		if original.SnapshotSHA256 != source.SnapshotSHA256 || original.SupersededBy != "" || original.ActiveKey == nil {
+			return ErrBillingConflict
+		}
+		switch original.Status {
+		case StatementDraft, StatementIssued, StatementDisputed, StatementConfirmed:
+		default:
+			return ErrBillingConflict
+		}
+		var latest BillingStatement
+		if err := tx.Where("user_id = ? AND month = ?", original.UserID, original.Month).Order("revision desc").First(&latest).Error; err != nil {
+			return err
+		}
+		if latest.ID != original.ID {
+			return ErrBillingConflict
+		}
+		totals, err := summarizeBillingModels(tx.Model(&BillingEntry{}), original.UserID, original.FromSequence, original.ToSequence, original.StartAt, original.EndAt)
+		if err != nil {
+			return err
+		}
+		body, digest, err := buildSnapshot(&original, totals)
+		if err != nil {
+			return err
+		}
+		now := common.GetTimestamp()
+		next = BillingStatement{ID: common.GetUUID(), UserID: original.UserID, Month: original.Month, Revision: original.Revision + 1,
+			ActiveKey: original.ActiveKey, Status: StatementPreparing, StartAt: original.StartAt, EndAt: original.EndAt,
+			FromSequence: original.FromSequence, ToSequence: original.ToSequence, ProfileVersion: original.ProfileVersion,
+			Snapshot: body, SnapshotSHA256: digest, StorageProfileID: original.StorageProfileID,
+			SourceStatementID: original.ID, CreatedBy: actorID, CreatedAt: now}
+		if err := next.VerifySnapshot(); err != nil {
+			return err
+		}
+		if err := tx.Model(&original).Updates(map[string]interface{}{"active_key": nil, "superseded_by": next.ID}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&next).Error; err != nil {
+			return err
+		}
+		events := []BillingStatementEvent{
+			{StatementID: original.ID, ActorID: actorID, Action: "regenerate", Note: next.ID, CreatedAt: now, ManifestSHA256: original.ManifestSHA256, PDFSHA256: original.PDFSHA256, ExcelSHA256: original.ExcelSHA256},
+			{StatementID: next.ID, ActorID: actorID, Action: "prepare", Note: "Regenerated from " + original.ID, CreatedAt: now},
+		}
+		return tx.Create(&events).Error
+	})
+	return &next, err
 }
 
 func GetBillingStatementEntries(statement *BillingStatement, after int64, limit int) ([]BillingEntry, error) {

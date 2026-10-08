@@ -314,9 +314,12 @@ func billingFooterText(footer string) (string, error) {
 
 // Customer download names are presentation only. Internal UUIDs, object keys
 // and evidence digests remain unchanged; downloading again keeps the same name.
-// Use the username frozen in the statement snapshot so later account renames do
-// not change the name of already archived evidence.
-func BillingArtifactFilename(statement *model.BillingStatement, username, kind string, ordinal int) string {
+// Prefer the company title frozen in the snapshot, falling back to its username.
+// Later profile changes must not rename already archived evidence.
+func BillingArtifactFilename(statement *model.BillingStatement, username, kind string, ordinal int, companyTitle ...string) string {
+	if len(companyTitle) > 0 && strings.TrimSpace(companyTitle[0]) != "" {
+		username = companyTitle[0]
+	}
 	username = strings.TrimSpace(username)
 	username = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || strings.ContainsRune(`/\:*?"<>|`, r) {
@@ -331,8 +334,8 @@ func BillingArtifactFilename(statement *model.BillingStatement, username, kind s
 	if runes := []rune(username); len(runes) > 64 {
 		username = string(runes[:64])
 	}
-	if kind == "pdf" {
-		return fmt.Sprintf("%s_%s_月度对账单_V%02d.pdf", username, statement.Month, statement.Revision)
+	if kind == "pdf" || kind == "xlsx" {
+		return fmt.Sprintf("%s_%s_月度对账单_V%02d.%s", username, statement.Month, statement.Revision, kind)
 	}
 	if kind == "receipt" {
 		return fmt.Sprintf("%s_%s_对账确认回执_V%02d.pdf", username, statement.Month, statement.Revision)

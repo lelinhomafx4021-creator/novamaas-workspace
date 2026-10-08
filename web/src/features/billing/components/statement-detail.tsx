@@ -41,7 +41,11 @@ import {
   getStatement,
   statementAction,
 } from '../api'
-import { statementStatusKeys, statementActionKeys } from '../constants'
+import {
+  statementStatusKeys,
+  statementActionKeys,
+  statementDownloadKeys,
+} from '../constants'
 import type { BillingSnapshot, StatementDetail as Detail } from '../types'
 import { BillingRows } from './billing-rows'
 
@@ -52,10 +56,16 @@ export function StatementDetail(props: {
   currentUserId: number
 }) {
   const { t } = useTranslation()
+  const [replacement, setReplacement] = useState<{
+    sourceId: string
+    id: string
+  } | null>(null)
+  const selectedId =
+    replacement?.sourceId === props.id ? replacement.id : props.id
   const query = useQuery({
-    queryKey: ['billing', 'statement', props.id],
-    queryFn: () => getStatement(props.id ?? ''),
-    enabled: Boolean(props.id),
+    queryKey: ['billing', 'statement', selectedId],
+    queryFn: () => getStatement(selectedId ?? ''),
+    enabled: Boolean(selectedId),
     refetchInterval: (state) =>
       state.state.data?.statement.status === 'preparing' ? 3000 : false,
   })
@@ -79,6 +89,9 @@ export function StatementDetail(props: {
           <StatementContent
             key={`${query.data.statement.id}:${query.data.statement.status}`}
             detail={query.data}
+            onRegenerated={(id) => {
+              if (props.id) setReplacement({ sourceId: props.id, id })
+            }}
             admin={props.admin}
             currentUserId={props.currentUserId}
           />
@@ -89,6 +102,7 @@ export function StatementDetail(props: {
 }
 function StatementContent(props: {
   detail: Detail
+  onRegenerated: (id: string) => void
   admin: boolean
   currentUserId: number
 }) {
@@ -105,11 +119,15 @@ function StatementContent(props: {
   const customerName =
     snapshot.username || props.detail.customer?.username || t('Unknown')
   const customerLabel = `${customerName} (#${statement.user_id})`
+  const successorId = statement.superseded_by
   const sourceBlocked = Boolean(props.detail.source_warning)
+  const canOperate = props.admin && !statement.superseded_by
+  const hasExcel = props.detail.artifacts.some((item) => item.kind === 'xlsx')
   const mutate = useMutation({
     mutationFn: (action: string) =>
       statementAction(statement.id, action, statement.manifest_sha256, note),
-    onSuccess: () => {
+    onSuccess: (data, action) => {
+      if (action === 'regenerate') props.onRegenerated(data.id)
       setIntent('')
       void client.invalidateQueries({ queryKey: ['billing'] })
     },
@@ -121,6 +139,7 @@ function StatementContent(props: {
     onError: handleServerError,
   })
   const canConfirm =
+    !statement.superseded_by &&
     statement.user_id === props.currentUserId &&
     (statement.status === 'issued' || statement.status === 'disputed')
   return (
@@ -152,6 +171,28 @@ function StatementContent(props: {
         </p>
         <p>{snapshot.currency.code} / Asia/Shanghai</p>
       </div>
+      {successorId && (
+        <p role='status' className='text-muted-foreground text-sm'>
+          {t(
+            'A newer document version exists. Previous files remain available; confirmation applies to the new version.'
+          )}
+          {props.admin && (
+            <Button
+              variant='link'
+              onClick={() => props.onRegenerated(successorId)}
+            >
+              {t('View latest version')}
+            </Button>
+          )}
+        </p>
+      )}
+      {hasExcel && (
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Confirmation covers both PDF and Excel bound by the manifest. Verify the Excel fingerprint printed in the PDF.'
+          )}
+        </p>
+      )}
       {sourceBlocked && (
         <p
           role='alert'
@@ -180,7 +221,12 @@ function StatementContent(props: {
       </p>
       <div className='flex flex-wrap gap-2'>
         {props.detail.artifacts
-          .filter((item) => item.kind === 'pdf' || item.kind === 'manifest')
+          .filter((item) => ['pdf', 'manifest', 'xlsx'].includes(item.kind))
+          .sort(
+            (a, b) =>
+              ['manifest', 'pdf', 'xlsx'].indexOf(a.kind) -
+              ['manifest', 'pdf', 'xlsx'].indexOf(b.kind)
+          )
           .map((item) => (
             <Button
               key={item.id}
@@ -188,9 +234,21 @@ function StatementContent(props: {
               disabled={download.isPending}
               onClick={() => download.mutate({ kind: item.kind })}
             >
-              {item.kind === 'pdf' ? t('Download PDF') : t('Download manifest')}
+              {t(statementDownloadKeys[item.kind] ?? 'Download')}
             </Button>
           ))}
+        {canOperate &&
+          ['draft', 'issued', 'disputed', 'confirmed'].includes(
+            statement.status
+          ) && (
+            <Button
+              variant='outline'
+              disabled={mutate.isPending}
+              onClick={() => setIntent('regenerate')}
+            >
+              {t('Regenerate')}
+            </Button>
+          )}
         {statement.status === 'confirmed' && (
           <Button
             variant='outline'
@@ -276,7 +334,7 @@ function StatementContent(props: {
           </FieldLabel>
         </Field>
       )}
-      {(canConfirm || props.admin) &&
+      {(canConfirm || canOperate) &&
         statement.status !== 'confirmed' &&
         statement.status !== 'void' && (
           <Field>
@@ -309,7 +367,7 @@ function StatementContent(props: {
             {t('Raise a dispute')}
           </Button>
         )}
-        {props.admin && statement.status === 'draft' && (
+        {canOperate && statement.status === 'draft' && (
           <Button
             disabled={sourceBlocked || mutate.isPending}
             onClick={() => setIntent('issue')}
@@ -317,7 +375,7 @@ function StatementContent(props: {
             {t('Issue to customer')}
           </Button>
         )}
-        {props.admin && statement.status === 'disputed' && (
+        {canOperate && statement.status === 'disputed' && (
           <Button
             variant='outline'
             disabled={!note.trim() || mutate.isPending}
@@ -326,12 +384,12 @@ function StatementContent(props: {
             {t('Reply')}
           </Button>
         )}
-        {props.admin && statement.status === 'failed' && (
+        {canOperate && statement.status === 'failed' && (
           <Button variant='outline' onClick={() => mutate.mutate('retry')}>
             {t('Retry')}
           </Button>
         )}
-        {props.admin &&
+        {canOperate &&
           statement.status !== 'confirmed' &&
           statement.status !== 'void' && (
             <Button
@@ -357,7 +415,7 @@ function StatementContent(props: {
         open={Boolean(intent)}
         onOpenChange={(open) => !open && setIntent('')}
         title={t('Confirm action')}
-        desc={`${t('Statement customer')}: ${customerLabel}. ${t('This action will be recorded in the statement history. Confirmed statements cannot be overwritten.')}`}
+        desc={`${t('Statement customer')}: ${customerLabel}. ${intent === 'regenerate' ? t('Regenerate PDF and Excel from the same frozen ledger. Previous files and confirmations are retained. The new version must be issued and confirmed again.') : t('This action will be recorded in the statement history. Confirmed statements cannot be overwritten.')}`}
         confirmText={t('Confirm')}
         isLoading={mutate.isPending}
         destructive={intent === 'void'}

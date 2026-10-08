@@ -85,6 +85,7 @@ func TestBillingControllerOwnershipAndSessionBoundary(t *testing.T) {
 		{"cross-account usage details", "GET", "/usage-details?user_id=2&date=2020-02-03&hour=9", "", "", 3, common.RoleCommonUser, 403},
 		{"cross-account document", "GET", "/statements/private", "", "", 3, common.RoleCommonUser, 404},
 		{"admin on behalf", "POST", "/statements/private/actions", `{"action":"confirm","manifest_sha256":"frozen"}`, "admin", 1, common.RoleAdminUser, 403},
+		{"customer regeneration forbidden", "POST", "/statements/private/actions", `{"action":"regenerate"}`, "owner", 2, common.RoleCommonUser, 403},
 		{"personal access token", "POST", "/statements/private/actions", `{"action":"confirm","manifest_sha256":"frozen"}`, "", 2, common.RoleCommonUser, 403},
 		{"owner live session", "POST", "/statements/private/actions", `{"action":"confirm","manifest_sha256":"frozen"}`, "owner", 2, common.RoleCommonUser, 200},
 	} {

@@ -126,6 +126,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | [docs/ASSET_LIBRARY_API.zh_CN.md](docs/ASSET_LIBRARY_API.zh_CN.md) | 素材库、下游 AK/SK、火山 Action API 兼容与大列表性能边界 |
 | [媒体任务与素材审核 Webhook](docs/MEDIA_TASK_WEBHOOKS.zh_CN.md) | 个人与系统通知、实时测试、品牌化 PDF 手册、异步投递 |
 | [对账单一期实施说明](docs/design/BILLING_STATEMENTS_IMPLEMENTATION.zh_CN.md) | 实际交付范围、记账/归档机制、迁移和部署边界 |
+| [对账单 PDF/Excel 导出说明](docs/design/BILLING_STATEMENT_EXPORTS.zh_CN.md) | 附件字段支持情况、当前参考费率、双文件指纹与重新生成规则 |
 | [对账单验收指南](docs/design/BILLING_STATEMENTS_ACCEPTANCE.zh_CN.md) | 历史查询、正式记账、创建草稿、下发与客户确认操作 |
 | [历史核验与统计说明](docs/design/BILLING_HISTORY_REVIEW.zh_CN.md) | 历史导入确认边界、空单防护、MySQL 聚合与 PDF 固化 |
 | [对账产品方案](docs/design/BILLING_STATEMENTS_PRD.zh_CN.md) / [技术方案](docs/design/BILLING_STATEMENTS_TECH.zh_CN.md) / [数据专项方案](docs/design/BILLING_STATEMENTS_DATA_PIPELINE.zh_CN.md) | 设计基线与后续演进建议；不代表全部能力已实现 |

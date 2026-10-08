@@ -324,7 +324,13 @@ func ActOnBillingStatement(c *gin.Context) {
 			return
 		}
 	}
-	data, err := model.ChangeBillingStatement(statement.ID, input.Action, input.ManifestSHA256, strings.TrimSpace(input.Note), identity.SessionID, c.GetInt("id"), admin)
+	var data *model.BillingStatement
+	var err error
+	if input.Action == "regenerate" {
+		data, err = service.RegenerateBillingStatementContext(c.Request.Context(), statement, c.GetInt("id"))
+	} else {
+		data, err = model.ChangeBillingStatement(statement.ID, input.Action, input.ManifestSHA256, strings.TrimSpace(input.Note), identity.SessionID, c.GetInt("id"), admin)
+	}
 	if err != nil {
 		billingError(c, err)
 		return
@@ -364,7 +370,7 @@ func DownloadBillingArtifact(c *gin.Context) {
 		return
 	}
 	kind := c.Param("kind")
-	if kind != "pdf" && kind != "details" && kind != "manifest" && kind != "receipt" && kind != "snapshot" {
+	if kind != "pdf" && kind != "xlsx" && kind != "details" && kind != "manifest" && kind != "receipt" && kind != "snapshot" {
 		billingError(c, gorm.ErrRecordNotFound)
 		return
 	}
@@ -412,7 +418,10 @@ func DownloadBillingArtifact(c *gin.Context) {
 	if kind == "manifest" || kind == "snapshot" {
 		contentType = "application/json"
 	}
-	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": service.BillingArtifactFilename(statement, snapshot.Username, kind, ordinal)}))
+	if kind == "xlsx" {
+		contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	}
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": service.BillingArtifactFilename(statement, snapshot.Username, kind, ordinal, snapshot.CompanyTitle)}))
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("X-Content-SHA256", artifact.SHA256)

@@ -320,7 +320,7 @@ func TestBillingStatementExportsOnlyFrozenMonthlySequenceRange(t *testing.T) {
 
 func TestBillingArchiveCompletionPersistsDigestsAndRequiresCurrentLease(t *testing.T) {
 	id := seedBillingCustomer(t)
-	statement := &BillingStatement{ID: "archive-completion", UserID: id, Month: "2020-02", Status: StatementPreparing, LeaseOwner: "current-worker", LeaseUntil: 100}
+	statement := &BillingStatement{ID: "archive-completion", Snapshot: "{}", UserID: id, Month: "2020-02", Status: StatementPreparing, LeaseOwner: "current-worker", LeaseUntil: 100}
 	require.NoError(t, DB.Create(statement).Error)
 	statement.ManifestSHA256, statement.PDFSHA256 = "manifest-digest", "pdf-digest"
 	require.NoError(t, CompleteBillingStatementArchive(statement, "current-worker", true))

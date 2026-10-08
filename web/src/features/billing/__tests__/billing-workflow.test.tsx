@@ -22,6 +22,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import {
+  downloadStatement,
   getBillingAccount,
   getStatement,
   saveBillingAccount,
@@ -33,6 +34,7 @@ import type { BillingSnapshot, StatementDetail as Detail } from '../types'
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
+  downloadStatement: vi.fn(),
   getBillingAccount: vi.fn(),
   getStatement: vi.fn(),
   saveBillingAccount: vi.fn(),
@@ -252,4 +254,142 @@ describe('Billing customer workflow', () => {
     )
     expect(statementAction).not.toHaveBeenCalled()
   })
+})
+
+describe('Billing document regeneration', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  test('administrator can download Excel and regenerate a confirmed statement into a new unissued version', async () => {
+    const confirmed: Detail = {
+      ...detail,
+      statement: {
+        ...detail.statement,
+        status: 'confirmed',
+        confirmed_at: 400,
+      },
+      artifacts: [
+        { id: 1, kind: 'xlsx', ordinal: 0, rows: 0, sha256: 'excel' },
+      ],
+    }
+    const replacement = {
+      ...detail.statement,
+      id: 'replacement',
+      revision: 2,
+      status: 'preparing' as const,
+    }
+    vi.mocked(getStatement).mockImplementation(async (id) =>
+      id === 'replacement' ? { ...detail, statement: replacement } : confirmed
+    )
+    vi.mocked(statementAction).mockResolvedValue(replacement)
+    renderBilling(
+      <StatementDetail
+        id='statement'
+        onClose={() => {}}
+        admin
+        currentUserId={1}
+      />
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Download Excel' })
+    )
+    await waitFor(() =>
+      expect(downloadStatement).toHaveBeenCalledWith(
+        'statement',
+        'xlsx',
+        undefined
+      )
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'Regenerate PDF and Excel from the same frozen ledger. Previous files and confirmations are retained. The new version must be issued and confirmed again.'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() =>
+      expect(statementAction).toHaveBeenCalledWith(
+        'statement',
+        'regenerate',
+        'frozen-manifest',
+        ''
+      )
+    )
+    await waitFor(() =>
+      expect(getStatement).toHaveBeenCalledWith('replacement')
+    )
+    expect(await screen.findByText('Status: Preparing')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Regenerate' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('customer can download Excel but cannot regenerate documents', async () => {
+    vi.mocked(getStatement).mockResolvedValue({
+      ...detail,
+      artifacts: [
+        { id: 1, kind: 'xlsx', ordinal: 0, rows: 0, sha256: 'excel' },
+      ],
+    })
+    renderBilling(
+      <StatementDetail
+        id='statement'
+        onClose={() => {}}
+        admin={false}
+        currentUserId={2}
+      />
+    )
+    expect(
+      await screen.findByRole('button', { name: 'Download Excel' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Regenerate' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('superseded statement cannot be confirmed or regenerated again', async () => {
+    vi.mocked(getStatement).mockResolvedValue({
+      ...detail,
+      statement: { ...detail.statement, superseded_by: 'replacement' },
+    })
+    renderBilling(
+      <StatementDetail
+        id='statement'
+        onClose={() => {}}
+        admin
+        currentUserId={2}
+      />
+    )
+    expect(
+      await screen.findByText(
+        'A newer document version exists. Previous files remain available; confirmation applies to the new version.'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Confirm statement' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Regenerate' })
+    ).not.toBeInTheDocument()
+  })
+})
+
+test('failed regeneration keeps the original statement available for retry', async () => {
+  vi.mocked(getStatement).mockResolvedValue(detail)
+  vi.mocked(statementAction).mockRejectedValueOnce(
+    new Error('Regeneration failed')
+  )
+  renderBilling(
+    <StatementDetail
+      id='statement'
+      onClose={() => {}}
+      admin
+      currentUserId={1}
+    />
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Regenerate' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+  )
+  expect(screen.getByText('Status: Awaiting confirmation')).toBeInTheDocument()
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+  expect(getStatement).not.toHaveBeenCalledWith('replacement')
 })

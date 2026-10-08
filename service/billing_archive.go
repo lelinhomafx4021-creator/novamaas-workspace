@@ -21,23 +21,25 @@ type BillingArchiveWriter interface {
 	Put(context.Context, string, string, int, int, string, []byte, int64) (*model.BillingArtifact, error)
 }
 type BillingManifest struct {
-	Currency       BillingCurrency         `json:"currency"`
-	SchemaVersion  int                     `json:"schema_version"`
-	StatementID    string                  `json:"statement_id"`
-	UserID         int                     `json:"user_id"`
-	Month          string                  `json:"month"`
-	Revision       int                     `json:"revision"`
-	Timezone       string                  `json:"timezone"`
-	StartAt        int64                   `json:"start_at"`
-	EndAt          int64                   `json:"end_at"`
-	FromSequence   int64                   `json:"from_sequence"`
-	ToSequence     int64                   `json:"to_sequence"`
-	SnapshotSHA256 string                  `json:"snapshot_sha256"`
-	PDFSHA256      string                  `json:"pdf_sha256"`
-	Rows           int64                   `json:"rows"`
-	ChargeQuota    int64                   `json:"charge_quota"`
-	RefundQuota    int64                   `json:"refund_quota"`
-	Chunks         []model.BillingArtifact `json:"chunks"`
+	ExcelSHA256       string                  `json:"excel_sha256,omitempty"`
+	SourceStatementID string                  `json:"source_statement_id,omitempty"`
+	Currency          BillingCurrency         `json:"currency"`
+	SchemaVersion     int                     `json:"schema_version"`
+	StatementID       string                  `json:"statement_id"`
+	UserID            int                     `json:"user_id"`
+	Month             string                  `json:"month"`
+	Revision          int                     `json:"revision"`
+	Timezone          string                  `json:"timezone"`
+	StartAt           int64                   `json:"start_at"`
+	EndAt             int64                   `json:"end_at"`
+	FromSequence      int64                   `json:"from_sequence"`
+	ToSequence        int64                   `json:"to_sequence"`
+	SnapshotSHA256    string                  `json:"snapshot_sha256"`
+	PDFSHA256         string                  `json:"pdf_sha256"`
+	Rows              int64                   `json:"rows"`
+	ChargeQuota       int64                   `json:"charge_quota"`
+	RefundQuota       int64                   `json:"refund_quota"`
+	Chunks            []model.BillingArtifact `json:"chunks"`
 }
 
 var billingWorkerOnce sync.Once
@@ -257,6 +259,19 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 	}
 	if _, err := store.Put(ctx, statement.ID, "snapshot", 0, statement.UserID, "application/json", []byte(statement.Snapshot), 0); err != nil {
 		return err
+	}
+	if snapshot.PDFTemplateVersion >= 9 {
+		workbook, err := RenderBillingStatementExcel(statement, &snapshot)
+		if err != nil {
+			return err
+		}
+		artifact, err := store.Put(ctx, statement.ID, "xlsx", 0, statement.UserID, billingExcelContentType, workbook, 0)
+		if err != nil {
+			return err
+		}
+		manifest.SchemaVersion = 2
+		manifest.SourceStatementID = statement.SourceStatementID
+		manifest.ExcelSHA256, statement.ExcelSHA256 = artifact.SHA256, artifact.SHA256
 	}
 	pdf, err := RenderBillingStatementPDF(statement, &snapshot, false)
 	if err != nil {

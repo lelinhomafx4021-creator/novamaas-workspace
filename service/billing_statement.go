@@ -37,19 +37,24 @@ type BillingRow struct {
 	State       string `json:"state,omitempty"`
 }
 type BillingModelRow struct {
-	ModelName   string `json:"model_name"`
-	Charge      string `json:"charge"`
-	Refund      string `json:"refund"`
-	Amount      string `json:"amount"`
-	ChargeShare string `json:"charge_share,omitempty"`
-	Count       int64  `json:"count"`
-	ChargeCount int64  `json:"charge_count,omitempty"`
-	RefundCount int64  `json:"refund_count,omitempty"`
-	ActiveDays  int64  `json:"active_days,omitempty"`
-	FirstPosted int64  `json:"first_posted_at,omitempty"`
-	LastPosted  int64  `json:"last_posted_at,omitempty"`
-	ChargeQuota int64  `json:"charge_quota"`
-	RefundQuota int64  `json:"refund_quota"`
+	ModelName    string             `json:"model_name"`
+	Charge       string             `json:"charge"`
+	Refund       string             `json:"refund"`
+	Amount       string             `json:"amount"`
+	ChargeShare  string             `json:"charge_share,omitempty"`
+	Count        int64              `json:"count"`
+	ChargeCount  int64              `json:"charge_count,omitempty"`
+	RefundCount  int64              `json:"refund_count,omitempty"`
+	ActiveDays   int64              `json:"active_days,omitempty"`
+	FirstPosted  int64              `json:"first_posted_at,omitempty"`
+	LastPosted   int64              `json:"last_posted_at,omitempty"`
+	ChargeQuota  int64              `json:"charge_quota"`
+	RefundQuota  int64              `json:"refund_quota"`
+	CurrentRates []BillingGroupRate `json:"current_rates,omitempty"`
+}
+type BillingGroupRate struct {
+	Group string `json:"group"`
+	Ratio string `json:"ratio"`
 }
 type BillingSnapshot struct {
 	SchemaVersion       int               `json:"schema_version"`
@@ -76,6 +81,7 @@ type BillingSnapshot struct {
 	ChargeQuota         int64             `json:"charge_quota"`
 	RefundQuota         int64             `json:"refund_quota"`
 	RoundingDifference  string            `json:"rounding_difference"`
+	RateReferenceAt     int64             `json:"rate_reference_at,omitempty"`
 }
 
 func attachBillingModelRows(snapshot *BillingSnapshot, totals []model.BillingModelTotal) error {
@@ -431,6 +437,11 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrBillingDocumentBranding, err)
 	}
+	rateReferences, err := captureBillingRateReferences(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	rateReferenceAt := common.GetTimestamp()
 	statement := &model.BillingStatement{ID: common.GetUUID(), UserID: userID, CreatedBy: actorID, StorageProfileID: storageProfileID, Month: month}
 	err = model.CreateBillingStatement(statement, func(locked *model.BillingAccount, hours []model.BillingHour, modelTotals []model.BillingModelTotal) (string, string, error) {
 		if locked.AccountingStartAt != account.AccountingStartAt || locked.ProfileVersion != account.ProfileVersion {
@@ -446,7 +457,11 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		if snapshot.Total.Count == 0 && hasHistory {
 			return "", "", ErrBillingHistoricalDataUnreconciled
 		}
-		snapshot.PDFTemplateVersion = 8
+		snapshot.PDFTemplateVersion = 9
+		snapshot.RateReferenceAt = rateReferenceAt
+		for i := range snapshot.Models {
+			snapshot.Models[i].CurrentRates = rateReferences[snapshot.Models[i].ModelName]
+		}
 		snapshot.Issuer, snapshot.PDFLogoPNG, snapshot.PDFFooter = branding.Issuer, branding.LogoPNG, branding.Footer
 		snapshot.OperatingName, snapshot.PDFOperatingLogoPNG = branding.OperatingName, branding.OperatingLogoPNG
 		snapshot.Username, snapshot.DisplayName = customer.Username, customer.DisplayName

@@ -97,7 +97,7 @@ func TestBillingHistoryImportRequiresReviewedEvidenceAndNeverChargesWallet(t *te
 	assert.Equal(t, batch.ID, snapshot.HistoryImportID)
 	assert.Equal(t, batch.SourceSHA256, snapshot.HistorySourceSHA256)
 	assert.Equal(t, "test_user", snapshot.Username)
-	assert.Equal(t, 8, snapshot.PDFTemplateVersion)
+	assert.Equal(t, 9, snapshot.PDFTemplateVersion)
 	assert.NotEmpty(t, snapshot.PDFLogoPNG, "the archive freezes the platform image rather than a mutable URL")
 	archive := &memoryBillingArchive{files: map[string][]byte{}}
 	require.NoError(t, BuildBillingArchive(ctx, statement, archive), "imported rows must reconcile with the independent hourly summary")

@@ -36,7 +36,7 @@ func (doc *billingPDFDocument) headerV3(snapshot *BillingSnapshot, page, pages i
 	scale := math.Min(38/float64(config.Width), 38/float64(config.Height))
 	width, height := float64(config.Width)*scale, float64(config.Height)*scale
 	platformTop, titleTop := 33.0, 34.0
-	if snapshot.PDFTemplateVersion == 6 {
+	if snapshot.PDFTemplateVersion == 6 || snapshot.PDFTemplateVersion >= 9 {
 		platformTop, titleTop = 42, 43
 	}
 	if doc.err = doc.pdf.ImageByHolder(mark, 40+(38-width)/2, platformTop+(38-height)/2, &gopdf.Rect{W: width, H: height}); doc.err != nil {
@@ -53,7 +53,7 @@ func (doc *billingPDFDocument) headerV3(snapshot *BillingSnapshot, page, pages i
 		return
 	}
 	doc.pdf.SetTextColor(90, 106, 129)
-	if snapshot.PDFTemplateVersion == 6 && platformWidth < 465 {
+	if (snapshot.PDFTemplateVersion == 6 || snapshot.PDFTemplateVersion >= 9) && platformWidth < 465 {
 		doc.text(90, end+1, platformWidth, 7.5, "CUSTOMER RECONCILIATION  /  客户服务消费对账")
 		if len(snapshot.PDFOperatingLogoPNG) > 0 {
 			config, _, err := image.DecodeConfig(bytes.NewReader(snapshot.PDFOperatingLogoPNG))
@@ -185,7 +185,7 @@ func renderBillingStatementPDFV8(statement *model.BillingStatement, snapshot *Bi
 	return renderBillingStatementPDFV3(statement, snapshot, receipt)
 }
 
-func billingModelSummaryPages(pdf *gopdf.GoPdf, rows []BillingModelRow, nameWidth float64, includeUsageDates bool) ([][]BillingModelRow, error) {
+func billingModelSummaryPages(pdf *gopdf.GoPdf, rows []BillingModelRow, nameWidth float64, templateVersion int) ([][]BillingModelRow, error) {
 	if len(rows) == 0 {
 		return [][]BillingModelRow{{}}, nil
 	}
@@ -196,11 +196,14 @@ func billingModelSummaryPages(pdf *gopdf.GoPdf, rows []BillingModelRow, nameWidt
 	page := make([]BillingModelRow, 0, 24)
 	height := 0.0
 	pageHeight := 475.0
-	if includeUsageDates {
+	if templateVersion >= 8 {
 		// V8 reserves a compact executive summary above the table and a
 		// reconciliation note below it. Keep pagination deterministic so the
 		// final row, totals and notes never compete for the footer area.
 		pageHeight = 365
+	}
+	if templateVersion >= 9 {
+		pageHeight = 315
 	}
 	for _, row := range rows {
 		name := row.ModelName
@@ -212,10 +215,10 @@ func billingModelSummaryPages(pdf *gopdf.GoPdf, rows []BillingModelRow, nameWidt
 			return nil, err
 		}
 		rowHeight := math.Max(20, float64(len(lines))*8.2*1.45+8)
-		if includeUsageDates && row.ActiveDays > 0 {
+		if templateVersion >= 8 && row.ActiveDays > 0 {
 			rowHeight += 13
 		}
-		if includeUsageDates {
+		if templateVersion >= 8 {
 			rowHeight = math.Max(32, rowHeight)
 		}
 		if rowHeight > pageHeight {
@@ -249,8 +252,11 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		if snapshot.PDFTemplateVersion >= 8 {
 			nameWidth = 147
 		}
+		if snapshot.PDFTemplateVersion >= 9 {
+			nameWidth = 113
+		}
 		var pageErr error
-		modelPages, pageErr = billingModelSummaryPages(pdf, snapshot.Models, nameWidth, snapshot.PDFTemplateVersion >= 8)
+		modelPages, pageErr = billingModelSummaryPages(pdf, snapshot.Models, nameWidth, snapshot.PDFTemplateVersion)
 		if pageErr != nil {
 			return nil, pageErr
 		}
@@ -337,6 +343,14 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	}
 	doc.text(40, y, 515, 8, digestLabel)
 	y = doc.text(40, y+17, 515, 8, statement.SnapshotSHA256)
+	if snapshot.PDFTemplateVersion >= 9 {
+		if statement.ExcelSHA256 == "" {
+			return nil, errors.New("billing Excel fingerprint is required")
+		}
+		y = doc.text(40, y+9, 515, 8, "配套 Excel / SHA-256")
+		y = doc.text(40, y+6, 515, 8, statement.ExcelSHA256)
+		y = doc.text(40, y+6, 515, 7.5, "请核对配套 Excel 指纹；客户确认的校验清单同时绑定 PDF、Excel 和账单数据。")
+	}
 	if y > 767 {
 		return nil, errors.New("billing cover identity exceeds available page space")
 	}
@@ -483,6 +497,11 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 			widths = []float64{147, 54, 69, 62, 71, 67}
 			titles = []string{"模型 / 涉及账单日", "", "消费金额", "退款金额", "本期净额", "消费金额占比"}
 		}
+		if snapshot.PDFTemplateVersion >= 9 {
+			columns = []float64{46, 164, 210, 274, 338, 402, 457, 502}
+			widths = []float64{113, 40, 59, 59, 59, 50, 40, 47}
+			titles = []string{"模型 / 账单日", "", "消费金额", "退款金额", "本期净额", "计费费率", "原价", "金额占比"}
+		}
 		for i, title := range titles {
 			if i == 0 {
 				doc.text(columns[i], headerY+8, widths[i], 8.4, title)
@@ -536,6 +555,9 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 				if first != last {
 					usage += " 至 " + last
 				}
+				if snapshot.PDFTemplateVersion >= 9 {
+					usage = fmt.Sprintf("%d 天 · %s–%s", row.ActiveDays, first, last)
+				}
 				pdf.SetTextColor(89, 105, 127)
 				doc.text(columns[0], nameEnd+1, widths[0], 6.8, usage)
 				pdf.SetTextColor(35, 49, 69)
@@ -548,11 +570,19 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 				values = []string{row.Charge, row.Refund, row.Amount, row.ChargeShare}
 				columnOffset = 2
 			}
+			if snapshot.PDFTemplateVersion >= 9 {
+				values = []string{row.Charge, row.Refund, row.Amount, billingRateLabel(row), "未记录", row.ChargeShare}
+			}
 			for col, value := range values {
-				doc.right(columns[col+columnOffset], y+5, widths[col+columnOffset], 8.2, value)
+				size := 8.2
+				if snapshot.PDFTemplateVersion >= 9 {
+					size = 7
+				}
+				doc.right(columns[col+columnOffset], y+5, widths[col+columnOffset], size, value)
 			}
 			if isV8 {
-				barX, barY, barWidth := columns[5]+18, y+21, widths[5]-18
+				shareColumn := len(columns) - 1
+				barX, barY, barWidth := columns[shareColumn]+18, y+21, widths[shareColumn]-18
 				pdf.SetFillColor(221, 228, 237)
 				pdf.RectFromUpperLeftWithStyle(barX, barY, barWidth, 2.5, "F")
 				share := 0.0
@@ -579,11 +609,18 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 				doc.right(columns[1], y+3, widths[1], 7.3, fmt.Sprintf("消费 %d", modelChargeRecords))
 				doc.right(columns[1], y+14, widths[1], 7.3, fmt.Sprintf("退款 %d", modelRefundRecords))
 			}
+			if snapshot.PDFTemplateVersion >= 9 {
+				totalValues = append(totalValues[:5], "—", "未记录", totalValues[5])
+			}
 			for col, value := range totalValues {
 				if col == 0 {
 					doc.text(columns[col], y+7, widths[col], 8.8, value)
 				} else {
-					doc.right(columns[col], y+7, widths[col], 8.8, value)
+					size := 8.8
+					if snapshot.PDFTemplateVersion >= 9 {
+						size = 7
+					}
+					doc.right(columns[col], y+7, widths[col], size, value)
 				}
 			}
 			pdf.SetTextColor(89, 105, 127)
@@ -591,7 +628,13 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 			if isV8 {
 				note = "本期净额 = 消费金额 - 退款金额；消费金额占比 = 单模型消费金额 ÷ 本期消费总额。"
 			}
+			if snapshot.PDFTemplateVersion >= 9 {
+				note += " 计费费率为生成时当前可用分组参考，范围表示多组费率，详见 Excel。"
+			}
 			y = doc.text(40, y+37, 515, 8, note)
+			if snapshot.PDFTemplateVersion >= 9 {
+				y = doc.text(40, y+4, 515, 8, "费率参考时间："+time.Unix(snapshot.RateReferenceAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")+"；正式账本未记录历史原价，不按当前费率倒推。")
+			}
 			if isV8 {
 				if highestChargeQuota > 0 {
 					pdf.SetTextColor(47, 103, 177)
@@ -632,6 +675,9 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		digests := []struct{ label, digest string }{{"原始 PDF / SHA-256", statement.PDFSHA256}, {"明细归档清单 / SHA-256", statement.ManifestSHA256}, {"冻结数据快照 / SHA-256", statement.SnapshotSHA256}}
 		if snapshot.PDFTemplateVersion >= 8 {
 			digests = []struct{ label, digest string }{{"原始对账单校验码 / SHA-256", statement.PDFSHA256}, {"消费明细校验码 / SHA-256", statement.ManifestSHA256}, {"账单数据校验码 / SHA-256", statement.SnapshotSHA256}}
+		}
+		if snapshot.PDFTemplateVersion >= 9 {
+			digests = append(digests, struct{ label, digest string }{"配套 Excel / SHA-256", statement.ExcelSHA256})
 		}
 		for _, item := range digests {
 			y = doc.text(40, y, 515, 8.5, item.label)

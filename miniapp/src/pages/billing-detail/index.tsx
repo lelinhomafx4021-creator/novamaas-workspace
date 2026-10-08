@@ -38,7 +38,7 @@ export default function BillingDetailPage() {
     try {
       const options = await getBillingArtifactDownloadOptions(statementId, kind, ordinal)
       const result = await Taro.downloadFile(options)
-      await Taro.openDocument({ filePath: result.tempFilePath, showMenu: true })
+      await Taro.openDocument({ filePath: result.tempFilePath, showMenu: true, ...(kind === 'xlsx' || kind === 'pdf' ? { fileType: kind } : {}) })
     } catch {
       setError(true)
     }

@@ -69,7 +69,7 @@ func TestBillingStatementKeepsCaseDistinctModelsUnderMySQLCICollation(t *testing
 	require.NoError(t, db.Table(tableName).Distinct("model_name").Count(&distinct).Error)
 	require.Equal(t, int64(1), distinct, "the fixture must exercise a case-insensitive database collation")
 
-	models, err := summarizeBillingModels(db.Table(tableName), 1, 1, 2, 0, 100)
+	models, err := summarizeBillingModels(db.Table(tableName), 1, 1, 2, 0, 100, false)
 	require.NoError(t, err)
 	require.Len(t, models, 2)
 	assert.Equal(t, BillingModelTotal{ModelName: "Foo", Charge: 20, Count: 1, ChargeCount: 1, ActiveDays: 1, FirstPosted: 10, LastPosted: 10}, models[0])

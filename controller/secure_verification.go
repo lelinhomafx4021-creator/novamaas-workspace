@@ -80,7 +80,7 @@ func UniversalVerify(c *gin.Context) {
 
 func isAllowedSecurityProofScope(scope string) bool {
 	switch scope {
-	case securityProofScopeChannelKeyRead, securityProofScopePasskeyRegister, securityProofScopePasskeyDelete, "phone.manage", "wechat.manage":
+	case securityProofScopeChannelKeyRead, securityProofScopePasskeyRegister, securityProofScopePasskeyDelete, "phone.manage", "wechat.manage", "billing.correct":
 		return true
 	default:
 		return false

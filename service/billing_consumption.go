@@ -177,6 +177,13 @@ func ValidateBillingStatementSource(ctx context.Context, statement *model.Billin
 	if err := common.UnmarshalJsonStr(statement.Snapshot, &snapshot); err != nil {
 		return err
 	}
+	pending, err := model.BillingStatementCorrectionsPending(ctx, statement)
+	if err != nil {
+		return err
+	}
+	if pending {
+		return model.ErrBillingStatementCorrectionsPending
+	}
 	if snapshot.Total.Count > 0 {
 		return nil
 	}

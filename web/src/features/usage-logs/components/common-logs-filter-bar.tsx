@@ -251,11 +251,13 @@ export function CommonLogsFilterBar<TData>(
     : '[-webkit-text-security:disc]'
   const logTypeItems = useMemo(
     () =>
-      LOG_TYPE_FILTERS.map((type) => ({
-        value: type.value,
-        label: t(type.label),
-      })),
-    [t]
+      LOG_TYPE_FILTERS.filter((type) => isAdmin || type.value !== '8').map(
+        (type) => ({
+          value: type.value,
+          label: t(type.label),
+        })
+      ),
+    [t, isAdmin]
   )
   const logTypeLabel =
     logTypeItems.find((type) => type.value === logType)?.label ?? t('All Types')
@@ -345,9 +347,9 @@ export function CommonLogsFilterBar<TData>(
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false}>
           <SelectGroup>
-            {LOG_TYPE_FILTERS.map((type) => (
+            {logTypeItems.map((type) => (
               <SelectItem key={type.value} value={type.value}>
-                {t(type.label)}
+                {type.label}
               </SelectItem>
             ))}
           </SelectGroup>

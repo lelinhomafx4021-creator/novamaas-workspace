@@ -35,7 +35,8 @@ func TestMain(m *testing.M) {
 	sqlDB.SetMaxOpenConns(1)
 
 	if err := db.AutoMigrate(
-		&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{},
+		&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{},
+		&BillingCorrection{}, &BillingCorrectionRow{}, &BillingCorrectionClaim{},
 		&CostAccountingSnapshot{}, &CostAccountingAdjustment{},
 		&Task{}, &AssetWebhookEndpoint{}, &AssetWebhookDelivery{},
 		&TaskRequestBody{},
@@ -72,7 +73,7 @@ func TestMain(m *testing.M) {
 func truncateTables(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
-		for _, table := range []string{"billing_accounts", "billing_account_events", "billing_operations", "billing_entries", "billing_hours", "billing_statements", "billing_statement_events", "billing_artifacts", "cost_accounting_adjustments", "cost_accounting_snapshots"} {
+		for _, table := range []string{"billing_accounts", "billing_account_events", "billing_operations", "billing_entries", "billing_hours", "billing_statements", "billing_statement_events", "billing_artifacts", "billing_history_imports", "cost_accounting_adjustments", "cost_accounting_snapshots", "billing_corrections", "billing_correction_rows", "billing_correction_claims"} {
 			DB.Exec("DELETE FROM " + table)
 		}
 		DB.Exec("DELETE FROM tasks")

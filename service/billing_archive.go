@@ -21,6 +21,7 @@ type BillingArchiveWriter interface {
 	Put(context.Context, string, string, int, int, string, []byte, int64) (*model.BillingArtifact, error)
 }
 type BillingManifest struct {
+	AccountingBasis   string                  `json:"accounting_basis,omitempty"`
 	ExcelSHA256       string                  `json:"excel_sha256,omitempty"`
 	SourceStatementID string                  `json:"source_statement_id,omitempty"`
 	Currency          BillingCurrency         `json:"currency"`
@@ -50,6 +51,9 @@ func StartBillingStatementWorker() {
 			ticker := time.NewTicker(5 * time.Second)
 			defer ticker.Stop()
 			for {
+				if err := model.FlushBillingCorrectionAudits(); err != nil {
+					common.SysError("billing correction audit outbox: " + err.Error())
+				}
 				if err := runBillingArchivePass(); err != nil {
 					common.SysError("billing archive worker: " + err.Error())
 				}
@@ -119,6 +123,7 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 	}
 	manifest := BillingManifest{SchemaVersion: 1, StatementID: statement.ID, UserID: statement.UserID, Month: statement.Month, Revision: statement.Revision, SnapshotSHA256: statement.SnapshotSHA256, Chunks: make([]model.BillingArtifact, 0)}
 	manifest.Currency = snapshot.Currency
+	manifest.AccountingBasis = snapshot.AccountingBasis
 	manifest.Timezone, manifest.StartAt, manifest.EndAt = snapshot.Timezone, statement.StartAt, statement.EndAt
 	manifest.FromSequence, manifest.ToSequence = statement.FromSequence, statement.ToSequence
 	dayTotals := make(map[string]BillingRow, len(snapshot.Days))
@@ -147,26 +152,27 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 		var chunk bytes.Buffer
 		compressed := gzip.NewWriter(&chunk)
 		for _, entry := range entries {
-			if entry.Quota > int64(common.MaxWalletQuota) || entry.Quota < -int64(common.MaxWalletQuota) {
+			quota := entry.StatementAmountQuota()
+			if quota > int64(common.MaxWalletQuota) || quota < -int64(common.MaxWalletQuota) {
 				return errors.New("invalid archived quota")
 			}
 			if entry.Quota >= 0 {
-				if entry.Quota > int64(common.MaxWalletQuota)-manifest.ChargeQuota {
+				if quota > int64(common.MaxWalletQuota)-manifest.ChargeQuota {
 					return errors.New("archive total overflow")
 				}
-				manifest.ChargeQuota += entry.Quota
+				manifest.ChargeQuota += quota
 			} else {
-				if -entry.Quota > int64(common.MaxWalletQuota)-manifest.RefundQuota {
+				if -quota > int64(common.MaxWalletQuota)-manifest.RefundQuota {
 					return errors.New("archive refund overflow")
 				}
-				manifest.RefundQuota -= entry.Quota
+				manifest.RefundQuota -= quota
 			}
 			day := time.Unix(entry.PostedAt, 0).In(billingLocation).Format("2006-01-02")
 			total := dayTotals[day]
 			if entry.Quota >= 0 {
-				total.ChargeQuota += entry.Quota
+				total.ChargeQuota += quota
 			} else {
-				total.RefundQuota -= entry.Quota
+				total.RefundQuota -= quota
 			}
 			total.Count++
 			dayTotals[day] = total
@@ -186,10 +192,10 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 			days[day] = struct{}{}
 			modelTotal.ActiveDays = int64(len(days))
 			if entry.Quota >= 0 {
-				modelTotal.Charge += entry.Quota
+				modelTotal.Charge += quota
 				modelTotal.ChargeCount++
 			} else {
-				modelTotal.Refund -= entry.Quota
+				modelTotal.Refund -= quota
 				modelTotal.RefundCount++
 			}
 			modelTotal.Count++
@@ -197,17 +203,23 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 			// Customer-visible immutable details intentionally exclude balances,
 			// operator IDs, request bodies, and internal funding event keys.
 			record := struct {
-				Sequence     int64  `json:"sequence"`
-				PostedAt     int64  `json:"posted_at"`
-				Kind         string `json:"kind"`
-				Quota        int64  `json:"quota"`
-				Amount       string `json:"amount"`
-				RequestID    string `json:"request_id"`
-				ModelName    string `json:"model_name"`
-				ImportID     string `json:"import_id,omitempty"`
-				SourceLogID  int    `json:"source_log_id,omitempty"`
-				SourceSHA256 string `json:"source_sha256,omitempty"`
-			}{entry.Sequence, entry.PostedAt, entry.Kind, entry.Quota, decimal.NewFromInt(entry.Quota).Mul(rate).Div(unit).StringFixed(6), entry.RequestID, entry.ModelName, entry.ImportID, entry.SourceLogID, entry.SourceSHA256}
+				Sequence      int64                              `json:"sequence"`
+				PostedAt      int64                              `json:"posted_at"`
+				Kind          string                             `json:"kind"`
+				Quota         int64                              `json:"quota"`
+				Amount        string                             `json:"amount"`
+				RequestID     string                             `json:"request_id"`
+				ModelName     string                             `json:"model_name"`
+				ImportID      string                             `json:"import_id,omitempty"`
+				SourceLogID   int                                `json:"source_log_id,omitempty"`
+				SourceSHA256  string                             `json:"source_sha256,omitempty"`
+				OriginalQuota *int64                             `json:"original_quota,omitempty"`
+				Corrections   []model.BillingStatementCorrection `json:"corrections,omitempty"`
+			}{entry.Sequence, entry.PostedAt, entry.Kind, quota, decimal.NewFromInt(quota).Mul(rate).Div(unit).StringFixed(6), entry.RequestID, entry.ModelName, entry.ImportID, entry.SourceLogID, entry.SourceSHA256, nil, entry.StatementCorrections}
+			if entry.StatementQuota != nil {
+				originalQuota := entry.Quota
+				record.OriginalQuota = &originalQuota
+			}
 			body, err := common.Marshal(record)
 			if err != nil {
 				_ = compressed.Close()
@@ -243,8 +255,42 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 	if len(dayTotals) > 0 {
 		return errors.New("statement contains details outside the frozen calendar")
 	}
-	if snapshot.PDFTemplateVersion >= 7 {
+	rowsToVerify := snapshot.Models
+	if snapshot.PDFTemplateVersion >= 10 {
+		// Split rates are frozen in the snapshot; reconcile their combined model
+		// amounts against the ledger without consulting mutable logs on retries.
+		byModel := make(map[string]BillingModelRow)
 		for _, row := range snapshot.Models {
+			total, ok := modelTotals[row.ModelName]
+			if !ok || row.ActiveDays <= 0 || row.ActiveDays > total.ActiveDays || row.FirstPosted < total.FirstPosted || row.LastPosted > total.LastPosted || row.LastPosted < row.FirstPosted || row.ChargeQuota < 0 || row.RefundQuota < 0 || row.Count < 0 || row.ChargeCount < 0 || row.RefundCount < 0 || row.ChargeCount > row.Count || row.RefundCount != row.Count-row.ChargeCount {
+				return errors.New("statement model rate details do not reconcile with snapshot")
+			}
+			sum := byModel[row.ModelName]
+			sum.ModelName = row.ModelName
+			if row.ChargeQuota > total.Charge-sum.ChargeQuota || row.RefundQuota > total.Refund-sum.RefundQuota || row.Count > total.Count-sum.Count {
+				return errors.New("statement model rate totals exceed ledger amounts")
+			}
+			sum.ChargeQuota += row.ChargeQuota
+			sum.RefundQuota += row.RefundQuota
+			sum.Count += row.Count
+			sum.ChargeCount += row.ChargeCount
+			sum.RefundCount += row.RefundCount
+			if sum.FirstPosted == 0 || row.FirstPosted < sum.FirstPosted {
+				sum.FirstPosted = row.FirstPosted
+			}
+			if row.LastPosted > sum.LastPosted {
+				sum.LastPosted = row.LastPosted
+			}
+			sum.ActiveDays = total.ActiveDays
+			byModel[row.ModelName] = sum
+		}
+		rowsToVerify = make([]BillingModelRow, 0, len(byModel))
+		for _, row := range byModel {
+			rowsToVerify = append(rowsToVerify, row)
+		}
+	}
+	if snapshot.PDFTemplateVersion >= 7 {
+		for _, row := range rowsToVerify {
 			total, ok := modelTotals[row.ModelName]
 			if !ok || total.Charge != row.ChargeQuota || total.Refund != row.RefundQuota || total.Count != row.Count ||
 				(snapshot.PDFTemplateVersion >= 8 && (total.ChargeCount != row.ChargeCount || total.RefundCount != row.RefundCount ||
@@ -270,6 +316,9 @@ func BuildBillingArchive(ctx context.Context, statement *model.BillingStatement,
 			return err
 		}
 		manifest.SchemaVersion = 2
+		if snapshot.AccountingBasis != "" {
+			manifest.SchemaVersion = 3
+		}
 		manifest.SourceStatementID = statement.SourceStatementID
 		manifest.ExcelSHA256, statement.ExcelSHA256 = artifact.SHA256, artifact.SHA256
 	}

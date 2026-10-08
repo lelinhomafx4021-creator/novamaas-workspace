@@ -115,6 +115,25 @@ export function HistoryImportDialog(props: {
           {Boolean(imports.data?.length) && (
             <section className='flex flex-col gap-3 border-t pt-4'>
               <h3 className='font-medium'>{t('Historical import records')}</h3>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Historical import evidence is retained permanently. After a correction, void the current statement and create a new draft. Re-importing is unnecessary.'
+                )}
+              </p>
+              {review.data?.existing_statement && (
+                <Button
+                  variant='outline'
+                  className='self-start'
+                  onClick={() => {
+                    if (review.data?.existing_statement) {
+                      props.onViewStatement(review.data.existing_statement)
+                    }
+                    setOpen(false)
+                  }}
+                >
+                  {t('View latest version')}
+                </Button>
+              )}
               {imports.data?.map((batch) => (
                 <div key={batch.id} className='flex flex-col gap-2 text-sm'>
                   <p>

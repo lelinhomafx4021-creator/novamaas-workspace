@@ -24,17 +24,18 @@ func costAccountingFilterFromQuery(c *gin.Context) model.CostAccountingFilter {
 	channelID, _ := strconv.Atoi(c.Query("channel"))
 	logType, _ := strconv.Atoi(c.Query("type"))
 	return model.CostAccountingFilter{
-		StartTimestamp:    startTimestamp,
-		EndTimestamp:      endTimestamp,
-		UserID:            userID,
-		Username:          c.Query("username"),
-		TokenName:         c.Query("token_name"),
-		ModelName:         c.Query("model_name"),
-		ChannelID:         channelID,
-		Group:             c.Query("group"),
-		LogType:           logType,
-		RequestID:         c.Query("request_id"),
-		UpstreamRequestID: c.Query("upstream_request_id"),
+		IncludeBillingCorrections: c.GetInt("role") >= common.RoleAdminUser,
+		StartTimestamp:            startTimestamp,
+		EndTimestamp:              endTimestamp,
+		UserID:                    userID,
+		Username:                  c.Query("username"),
+		TokenName:                 c.Query("token_name"),
+		ModelName:                 c.Query("model_name"),
+		ChannelID:                 channelID,
+		Group:                     c.Query("group"),
+		LogType:                   logType,
+		RequestID:                 c.Query("request_id"),
+		UpstreamRequestID:         c.Query("upstream_request_id"),
 	}
 }
 

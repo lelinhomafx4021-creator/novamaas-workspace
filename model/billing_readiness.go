@@ -44,11 +44,24 @@ func GetBillingPreparationState(ctx context.Context, userID int, start, end int6
 			}
 			state.MissingHours = entry.ID != 0
 		}
+		// Preview follows the same source-period attribution as new statements;
+		// posting-hour summaries remain untouched for wallet audit purposes.
+		var correction BillingEntry
+		if err := tx.Select("id").Where("user_id = ? AND kind = ? AND sequence <= ?", userID, "rate_correction", state.Account.Sequence).Limit(1).Find(&correction).Error; err != nil {
+			return err
+		}
+		if correction.ID != 0 {
+			correctedHours, _, err := billingCorrectedPeriodTotals(tx, userID, state.Account.StartSequence, state.Account.Sequence, start, end)
+			if err != nil {
+				return err
+			}
+			state.Hours = correctedHours
+		}
 		if err := tx.Model(&BillingOperation{}).Where("user_id = ? AND state = ? AND created_at < ?", userID, "reserved", end).Count(&state.Pending).Error; err != nil {
 			return err
 		}
 		var existing BillingStatement
-		if err := tx.Select("id").Where("user_id = ? AND month = ? AND status <> ?", userID, time.Unix(end-1, 0).In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01"), StatementVoid).Order("revision desc").Limit(1).Find(&existing).Error; err != nil {
+		if err := effectiveBillingStatements(tx).Select("id").Where("user_id = ? AND month = ?", userID, time.Unix(end-1, 0).In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01")).Order("revision desc").Limit(1).Find(&existing).Error; err != nil {
 			return err
 		}
 		state.ExistingStatement = existing.ID

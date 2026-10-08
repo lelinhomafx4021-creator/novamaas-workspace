@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,16 +28,6 @@ type Ability struct {
 type AbilityWithChannel struct {
 	Ability
 	ChannelType int `json:"channel_type"`
-}
-
-// Select only public model/group references; do not expose channel identities.
-func GetBillingRateAbilities(ctx context.Context, groups []string) ([]Ability, error) {
-	abilities := make([]Ability, 0)
-	if len(groups) == 0 {
-		return abilities, nil
-	}
-	err := DB.WithContext(ctx).Model(&Ability{}).Select([]string{"group", "model"}).Where(map[string]interface{}{"group": groups, "enabled": true}).Find(&abilities).Error
-	return abilities, err
 }
 
 func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {

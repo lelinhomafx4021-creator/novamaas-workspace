@@ -44,10 +44,16 @@ func billingError(c *gin.Context, err error) {
 		status, code = http.StatusNotFound, "BILLING_NOT_FOUND"
 	case errors.Is(err, model.ErrBillingConflict):
 		status, code = http.StatusConflict, "BILLING_CONFLICT"
+	case errors.Is(err, model.ErrBillingCorrectionBlocked):
+		status, code = http.StatusConflict, "BILLING_CORRECTION_BLOCKED"
+	case errors.Is(err, model.ErrBillingInsufficientQuota):
+		status, code = http.StatusConflict, "BILLING_INSUFFICIENT_QUOTA"
 	case errors.Is(err, model.ErrBillingNotConfigured):
 		code = "BILLING_NOT_CONFIGURED"
 	case errors.Is(err, service.ErrBillingHistoricalDataUnreconciled):
 		status, code = http.StatusConflict, "BILLING_HISTORY_UNRECONCILED"
+	case errors.Is(err, model.ErrBillingStatementCorrectionsPending):
+		status, code = http.StatusConflict, "BILLING_CORRECTIONS_PENDING"
 	case errors.Is(err, model.ErrBillingHistoryBlocked):
 		status, code = http.StatusConflict, "BILLING_HISTORY_BLOCKED"
 	case errors.Is(err, model.ErrBillingStartInvalid):
@@ -267,11 +273,14 @@ func GetBillingStatement(c *gin.Context) {
 	warning := ""
 	if statement.Status != model.StatementConfirmed && statement.Status != model.StatementVoid {
 		if err := service.ValidateBillingStatementSource(c.Request.Context(), statement); err != nil {
-			if !errors.Is(err, service.ErrBillingHistoricalDataUnreconciled) {
+			if errors.Is(err, model.ErrBillingStatementCorrectionsPending) {
+				warning = "corrections_pending"
+			} else if errors.Is(err, service.ErrBillingHistoricalDataUnreconciled) {
+				warning = "historical_data_unreconciled"
+			} else {
 				billingError(c, err)
 				return
 			}
-			warning = "historical_data_unreconciled"
 		}
 	}
 	customer := identities[statement.UserID]
@@ -324,13 +333,7 @@ func ActOnBillingStatement(c *gin.Context) {
 			return
 		}
 	}
-	var data *model.BillingStatement
-	var err error
-	if input.Action == "regenerate" {
-		data, err = service.RegenerateBillingStatementContext(c.Request.Context(), statement, c.GetInt("id"))
-	} else {
-		data, err = model.ChangeBillingStatement(statement.ID, input.Action, input.ManifestSHA256, strings.TrimSpace(input.Note), identity.SessionID, c.GetInt("id"), admin)
-	}
+	data, err := model.ChangeBillingStatement(statement.ID, input.Action, input.ManifestSHA256, strings.TrimSpace(input.Note), identity.SessionID, c.GetInt("id"), admin)
 	if err != nil {
 		billingError(c, err)
 		return
@@ -388,7 +391,7 @@ func DownloadBillingArtifact(c *gin.Context) {
 	}
 	var artifact model.BillingArtifact
 	err = model.DB.Where("statement_id = ? AND kind = ? AND ordinal = ?", statement.ID, kind, ordinal).First(&artifact).Error
-	if kind == "receipt" && ordinal == 0 && statement.Status == model.StatementConfirmed && errors.Is(err, gorm.ErrRecordNotFound) {
+	if kind == "receipt" && ordinal == 0 && statement.ConfirmedAt > 0 && errors.Is(err, gorm.ErrRecordNotFound) {
 		pdf, renderErr := service.RenderBillingStatementPDF(statement, &snapshot, true)
 		if renderErr != nil {
 			billingError(c, renderErr)

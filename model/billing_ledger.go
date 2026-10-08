@@ -46,23 +46,31 @@ type BillingOperation struct {
 // Entries are append-only: positive quota is consumption, negative is refund.
 // Administrative funding has Kind=funding and Quota=0.
 type BillingEntry struct {
-	ID           int64  `json:"id" gorm:"primaryKey"`
-	EventKey     string `json:"event_key" gorm:"type:varchar(128);uniqueIndex"`
-	UserID       int    `json:"user_id" gorm:"uniqueIndex:idx_billing_entry_sequence,priority:1;index:idx_billing_entry_time,priority:1"`
-	Sequence     int64  `json:"sequence" gorm:"bigint;uniqueIndex:idx_billing_entry_sequence,priority:2"`
-	PostedAt     int64  `json:"posted_at" gorm:"bigint;index:idx_billing_entry_time,priority:2"`
-	Kind         string `json:"kind" gorm:"type:varchar(32)"`
-	Quota        int64  `json:"quota" gorm:"bigint"`
-	WalletDelta  int64  `json:"wallet_delta" gorm:"bigint"`
-	BalanceAfter int64  `json:"balance_after" gorm:"bigint"`
-	RequestID    string `json:"request_id" gorm:"type:varchar(128)"`
-	ModelName    string `json:"model_name" gorm:"type:varchar(255)"`
-	TokenID      int    `json:"token_id"`
-	ActorID      int    `json:"actor_id"`
-	ImportID     string `json:"import_id,omitempty" gorm:"type:varchar(64)"`
-	SourceLogID  int    `json:"source_log_id,omitempty"`
-	SourceSHA256 string `json:"source_sha256,omitempty" gorm:"type:char(64)"`
-	BalanceBasis string `json:"balance_basis,omitempty" gorm:"type:varchar(32)"`
+	ID            int64  `json:"id" gorm:"primaryKey"`
+	EventKey      string `json:"event_key" gorm:"type:varchar(128);uniqueIndex"`
+	UserID        int    `json:"user_id" gorm:"uniqueIndex:idx_billing_entry_sequence,priority:1;index:idx_billing_entry_time,priority:1"`
+	Sequence      int64  `json:"sequence" gorm:"bigint;uniqueIndex:idx_billing_entry_sequence,priority:2"`
+	PostedAt      int64  `json:"posted_at" gorm:"bigint;index:idx_billing_entry_time,priority:2"`
+	Kind          string `json:"kind" gorm:"type:varchar(32)"`
+	Quota         int64  `json:"quota" gorm:"bigint"`
+	WalletDelta   int64  `json:"wallet_delta" gorm:"bigint"`
+	BalanceAfter  int64  `json:"balance_after" gorm:"bigint"`
+	RequestID     string `json:"request_id" gorm:"type:varchar(128)"`
+	ModelName     string `json:"model_name" gorm:"type:varchar(255)"`
+	TokenID       int    `json:"token_id"`
+	ActorID       int    `json:"actor_id"`
+	ImportID      string `json:"import_id,omitempty" gorm:"type:varchar(64)"`
+	SourceLogID   int    `json:"source_log_id,omitempty"`
+	SourceSHA256  string `json:"source_sha256,omitempty" gorm:"type:char(64)"`
+	BalanceBasis  string `json:"balance_basis,omitempty" gorm:"type:varchar(32)"`
+	CorrectionID  string `json:"correction_id,omitempty" gorm:"type:varchar(64)"`
+	SourceEntryID int64  `json:"source_entry_id,omitempty" gorm:"bigint;index"`
+	BillingGroup  string `json:"billing_group,omitempty" gorm:"type:varchar(50)"`
+	BillingRate   string `json:"billing_rate,omitempty" gorm:"type:varchar(64)"`
+	// Statement projections leave the immutable wallet entry untouched. The
+	// derived amount and its correction evidence are never persisted here.
+	StatementQuota       *int64                       `json:"-" gorm:"-"`
+	StatementCorrections []BillingStatementCorrection `json:"-" gorm:"-"`
 }
 type BillingHour struct {
 	ID            int64 `json:"-" gorm:"primaryKey"`

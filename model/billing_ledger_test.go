@@ -146,7 +146,11 @@ func TestBillingConfirmationRequiresOwnerSessionAndFrozenDigest(t *testing.T) {
 	var count int64
 	require.NoError(t, DB.Model(&BillingStatementEvent{}).Where("action = ?", "confirm").Count(&count).Error)
 	assert.Equal(t, int64(1), count)
-	_, err = ChangeBillingStatement(statement.ID, "void", "", "replacement needed", "", 1, true)
+	voided, err := ChangeBillingStatement(statement.ID, "void", "", "replacement needed", "", 1, true)
+	require.NoError(t, err)
+	assert.Equal(t, StatementVoid, voided.Status)
+	assert.Equal(t, confirmed.ConfirmedAt, voided.ConfirmedAt)
+	_, err = ChangeBillingStatement(statement.ID, "confirm", digest, "", "owner-session", id, false)
 	assert.ErrorIs(t, err, ErrBillingConflict)
 }
 

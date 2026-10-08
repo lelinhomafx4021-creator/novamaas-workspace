@@ -123,6 +123,10 @@ function buildTypeDetailSegments(
     return text ? [{ text }] : []
   }
 
+  if (log.type === 8) {
+    return log.content ? [{ text: log.content }] : []
+  }
+
   if (log.type === 6) {
     return [{ text: t('Async task refund') }]
   }

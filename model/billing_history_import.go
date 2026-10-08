@@ -101,7 +101,7 @@ func readBillingHistoryState(tx *gorm.DB, state *BillingHistoryState, start, end
 		return err
 	}
 	var statement BillingStatement
-	if err := tx.Select("id").Where("user_id = ? AND month = ? AND status <> ?", userID, month, StatementVoid).Limit(1).Find(&statement).Error; err != nil {
+	if err := effectiveBillingStatements(tx).Select("id").Where("user_id = ? AND month = ?", userID, month).Limit(1).Find(&statement).Error; err != nil {
 		return err
 	}
 	state.ActiveStatement = statement.ID

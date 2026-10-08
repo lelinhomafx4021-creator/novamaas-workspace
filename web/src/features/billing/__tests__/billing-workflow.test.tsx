@@ -256,10 +256,10 @@ describe('Billing customer workflow', () => {
   })
 })
 
-describe('Billing document regeneration', () => {
+describe('Billing statement void and replacement workflow', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  test('administrator can download Excel and regenerate a confirmed statement into a new unissued version', async () => {
+  test('administrator can void a confirmed statement with a reason and retain its receipt', async () => {
     const confirmed: Detail = {
       ...detail,
       statement: {
@@ -271,20 +271,15 @@ describe('Billing document regeneration', () => {
         { id: 1, kind: 'xlsx', ordinal: 0, rows: 0, sha256: 'excel' },
       ],
     }
-    const replacement = {
-      ...detail.statement,
-      id: 'replacement',
-      revision: 2,
-      status: 'preparing' as const,
-    }
-    vi.mocked(getStatement).mockImplementation(async (id) =>
-      id === 'replacement' ? { ...detail, statement: replacement } : confirmed
-    )
-    vi.mocked(statementAction).mockResolvedValue(replacement)
+    const voided = { ...confirmed.statement, status: 'void' as const }
+    vi.mocked(getStatement)
+      .mockResolvedValueOnce(confirmed)
+      .mockResolvedValue({ ...confirmed, statement: voided })
+    vi.mocked(statementAction).mockResolvedValue(voided)
     renderBilling(
       <StatementDetail
         id='statement'
-        onClose={() => {}}
+        onClose={vi.fn()}
         admin
         currentUserId={1}
       />
@@ -299,29 +294,75 @@ describe('Billing document regeneration', () => {
         undefined
       )
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
-    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
-      'Regenerate PDF and Excel from the same frozen ledger. Previous files and confirmations are retained. The new version must be issued and confirmed again.'
+    expect(
+      screen.queryByRole('button', { name: 'Regenerate' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: 'Update statement with corrections',
+      })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Void statement' })
+    ).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Reason / reply'), {
+      target: { value: 'Correct billing rate' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Void statement' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      'Previous files and customer confirmations remain available.'
     )
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() =>
       expect(statementAction).toHaveBeenCalledWith(
         'statement',
-        'regenerate',
+        'void',
         'frozen-manifest',
-        ''
+        'Correct billing rate'
       )
     )
-    await waitFor(() =>
-      expect(getStatement).toHaveBeenCalledWith('replacement')
-    )
-    expect(await screen.findByText('Status: Preparing')).toBeInTheDocument()
+    expect(await screen.findByText('Status: Voided')).toBeVisible()
     expect(
-      screen.queryByRole('button', { name: 'Regenerate' })
+      screen.getByRole('button', { name: 'Download confirmation receipt' })
+    ).toBeEnabled()
+    expect(
+      screen.queryByRole('button', { name: 'Void statement' })
     ).not.toBeInTheDocument()
   })
 
-  test('customer can download Excel but cannot regenerate documents', async () => {
+  test('pending corrections block issuing and explain void then create', async () => {
+    vi.mocked(getStatement).mockResolvedValue({
+      ...detail,
+      statement: { ...detail.statement, status: 'draft' },
+      source_warning: 'corrections_pending',
+    })
+    renderBilling(
+      <StatementDetail
+        id='statement'
+        onClose={vi.fn()}
+        admin
+        currentUserId={1}
+      />
+    )
+    expect(
+      await screen.findByRole('button', { name: 'Issue to customer' })
+    ).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Void the current statement, then create a new draft from the latest accounting data.'
+    )
+    expect(
+      screen.queryByRole('button', {
+        name: 'Update statement with corrections',
+      })
+    ).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Reason / reply'), {
+      target: { value: 'Include correction' },
+    })
+    expect(screen.getByRole('button', { name: 'Void statement' })).toBeEnabled()
+    expect(statementAction).not.toHaveBeenCalled()
+  })
+
+  test('customer can download Excel but cannot void or replace statements', async () => {
     vi.mocked(getStatement).mockResolvedValue({
       ...detail,
       artifacts: [
@@ -331,7 +372,7 @@ describe('Billing document regeneration', () => {
     renderBilling(
       <StatementDetail
         id='statement'
-        onClose={() => {}}
+        onClose={vi.fn()}
         admin={false}
         currentUserId={2}
       />
@@ -339,57 +380,68 @@ describe('Billing document regeneration', () => {
     expect(
       await screen.findByRole('button', { name: 'Download Excel' })
     ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Regenerate' })
-    ).not.toBeInTheDocument()
+    for (const name of [
+      'Void statement',
+      'Regenerate',
+      'Update statement with corrections',
+    ]) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
   })
 
-  test('superseded statement cannot be confirmed or regenerated again', async () => {
+  test('legacy superseded draft displays an inactive status and cannot be operated on', async () => {
     vi.mocked(getStatement).mockResolvedValue({
       ...detail,
-      statement: { ...detail.statement, superseded_by: 'replacement' },
+      statement: {
+        ...detail.statement,
+        status: 'draft',
+        superseded_by: 'replacement',
+      },
     })
     renderBilling(
       <StatementDetail
         id='statement'
-        onClose={() => {}}
+        onClose={vi.fn()}
         admin
         currentUserId={2}
       />
     )
-    expect(
-      await screen.findByText(
-        'A newer document version exists. Previous files remain available; confirmation applies to the new version.'
-      )
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Confirm statement' })
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Regenerate' })
-    ).not.toBeInTheDocument()
+    expect(await screen.findByText('Status: Superseded')).toBeVisible()
+    for (const name of [
+      'Confirm statement',
+      'Issue to customer',
+      'Void statement',
+      'Regenerate',
+      'Update statement with corrections',
+    ]) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
   })
-})
 
-test('failed regeneration keeps the original statement available for retry', async () => {
-  vi.mocked(getStatement).mockResolvedValue(detail)
-  vi.mocked(statementAction).mockRejectedValueOnce(
-    new Error('Regeneration failed')
-  )
-  renderBilling(
-    <StatementDetail
-      id='statement'
-      onClose={() => {}}
-      admin
-      currentUserId={1}
-    />
-  )
-  fireEvent.click(await screen.findByRole('button', { name: 'Regenerate' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
-  )
-  expect(screen.getByText('Status: Awaiting confirmation')).toBeInTheDocument()
-  expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-  expect(getStatement).not.toHaveBeenCalledWith('replacement')
+  test('failed void retains the current statement and allows retry', async () => {
+    vi.mocked(getStatement).mockResolvedValue(detail)
+    vi.mocked(statementAction).mockRejectedValueOnce(new Error('Void failed'))
+    renderBilling(
+      <StatementDetail
+        id='statement'
+        onClose={vi.fn()}
+        admin
+        currentUserId={1}
+      />
+    )
+    await screen.findByRole('button', { name: 'Void statement' })
+    fireEvent.change(screen.getByLabelText('Reason / reply'), {
+      target: { value: 'Correct rate' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Void statement' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(statementAction).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+    )
+    expect(
+      screen.getByText('Status: Awaiting confirmation')
+    ).toBeInTheDocument()
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+  })
 })

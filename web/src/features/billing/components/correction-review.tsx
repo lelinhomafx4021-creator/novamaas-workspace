@@ -1,0 +1,209 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { formatQuotaWithCurrency } from '@/lib/currency'
+
+import { billingTimestamp } from '../api'
+import type { CorrectionBatch } from '../correction-api'
+
+export function CorrectionReview(props: { batch: CorrectionBatch }) {
+  const { t } = useTranslation()
+  const [page, setPage] = useState(0)
+  const batch = props.batch
+  const rows = batch.rows.slice(page * 50, (page + 1) * 50)
+  function blocked(reason: string) {
+    switch (reason) {
+      case 'already_corrected':
+        return t('Already adjusted')
+      case 'missing_task_evidence':
+        return t('Historical task evidence is missing')
+      case 'unsupported_or_unfinished_task':
+        return t('Unsupported or unfinished task')
+      case 'original_price_mismatch':
+        return t('Original price could not be verified')
+      case 'incomplete_task_range':
+        return t('Include the full consumption and refund lifecycle')
+      default:
+        return t('Ready')
+    }
+  }
+  function download() {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(batch, null, 2)], { type: 'application/json' })
+    )
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `billing-correction-${batch.id}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  return (
+    <section className='flex flex-col gap-3 rounded-lg border p-4'>
+      <p>
+        {t('Account')} #{batch.user_id} · {batch.target_group} /{' '}
+        {(Number(batch.target_rate) * 100).toFixed(2)}% · {t('Records')}:{' '}
+        {batch.rows.length}
+      </p>
+      <dl className='grid gap-3 sm:grid-cols-3'>
+        <div>
+          <dt>{t('Consumption adjustment')}</dt>
+          <dd>
+            {formatQuotaWithCurrency(batch.charge_delta, {
+              digitsLarge: 6,
+              digitsSmall: 6,
+              abbreviate: false,
+            })}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('Refund adjustment')}</dt>
+          <dd>
+            {formatQuotaWithCurrency(batch.refund_delta, {
+              digitsLarge: 6,
+              digitsSmall: 6,
+              abbreviate: false,
+            })}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('Net debit (negative means credit)')}</dt>
+          <dd className='font-semibold'>
+            {formatQuotaWithCurrency(batch.net_delta, {
+              digitsLarge: 6,
+              digitsSmall: 6,
+              abbreviate: false,
+            })}
+          </dd>
+        </div>
+      </dl>
+      <p className='text-sm'>
+        {billingTimestamp(batch.start_at)} — {billingTimestamp(batch.end_at)}{' '}
+        (Asia/Shanghai)
+      </p>
+      <p className='text-sm break-words'>{batch.reason}</p>
+      <p className='font-mono text-xs break-all'>{batch.sha256}</p>
+      {batch.status === 'preview' && (
+        <p>{t('Preview expires in 15 minutes and does not move money.')}</p>
+      )}
+      {batch.status !== 'preview' && (
+        <p>
+          {batch.status === 'applied'
+            ? t('Adjustment applied')
+            : t('Adjustment reversed')}
+        </p>
+      )}
+      {!batch.can_apply && (
+        <p role='alert'>
+          {t('Blocked records or a zero net difference prevent execution.')}
+        </p>
+      )}
+      <div className='max-h-96 overflow-auto'>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('Model')}</TableHead>
+              <TableHead>{t('Date')}</TableHead>
+              <TableHead>{t('Original billing group')}</TableHead>
+              <TableHead>{t('Original amount')}</TableHead>
+              <TableHead>{t('Corrected amount')}</TableHead>
+              <TableHead>{t('Difference')}</TableHead>
+              <TableHead>{t('Status')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.source_entry_id}>
+                <TableCell className='max-w-64 break-all whitespace-normal'>
+                  {row.model_name}
+                  <span className='text-muted-foreground block text-xs'>
+                    #{row.source_entry_id}
+                  </span>
+                </TableCell>
+                <TableCell>{billingTimestamp(row.posted_at)}</TableCell>
+                <TableCell>
+                  {row.original_group} /{' '}
+                  {(Number(row.original_rate) * 100).toFixed(2)}%
+                </TableCell>
+                <TableCell>
+                  {formatQuotaWithCurrency(row.original_quota, {
+                    digitsLarge: 6,
+                    digitsSmall: 6,
+                    abbreviate: false,
+                  })}
+                </TableCell>
+                <TableCell>
+                  {formatQuotaWithCurrency(row.corrected_quota, {
+                    digitsLarge: 6,
+                    digitsSmall: 6,
+                    abbreviate: false,
+                  })}
+                </TableCell>
+                <TableCell>
+                  {formatQuotaWithCurrency(row.delta, {
+                    digitsLarge: 6,
+                    digitsSmall: 6,
+                    abbreviate: false,
+                  })}
+                </TableCell>
+                <TableCell className='whitespace-normal'>
+                  {blocked(row.blocked)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <div className='flex flex-wrap items-center gap-2'>
+        <Button
+          type='button'
+          variant='outline'
+          disabled={page === 0}
+          onClick={() => setPage(page - 1)}
+        >
+          {t('Previous')}
+        </Button>
+        <span>
+          {page + 1} / {Math.max(1, Math.ceil(batch.rows.length / 50))}
+        </span>
+        <Button
+          type='button'
+          variant='outline'
+          disabled={(page + 1) * 50 >= batch.rows.length}
+          onClick={() => setPage(page + 1)}
+        >
+          {t('Next')}
+        </Button>
+        <Button type='button' variant='outline' onClick={download}>
+          {t('Download adjustment evidence')}
+        </Button>
+      </div>
+    </section>
+  )
+}

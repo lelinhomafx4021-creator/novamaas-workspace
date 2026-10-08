@@ -56,6 +56,7 @@ export interface BillingCurrency {
   quota_per_unit: string
 }
 export interface BillingSnapshot {
+  accounting_basis?: string
   user_id?: number
   username?: string
   display_name?: string
@@ -153,7 +154,7 @@ export interface BillingStatement {
 }
 export interface StatementDetail {
   customer?: { id: number; username: string; display_name: string }
-  source_warning?: 'historical_data_unreconciled' | ''
+  source_warning?: 'historical_data_unreconciled' | 'corrections_pending' | ''
   detail_count?: number
   statement: BillingStatement
   accounting_snapshot?: BillingSnapshot

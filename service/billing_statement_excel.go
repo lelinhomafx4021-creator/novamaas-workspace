@@ -41,7 +41,18 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 		return nil, err
 	}
 	moneyFormat := "#,##0.000000;[Red](#,##0.000000);0.000000"
-	money, err := book.NewStyle(&excelize.Style{CustomNumFmt: &moneyFormat})
+	if snapshot.PDFTemplateVersion >= 13 {
+		symbol := "\"" + strings.ReplaceAll(snapshot.Currency.Symbol, "\"", "\\\"") + "\""
+		moneyFormat = `_(` + symbol + `* #,##0.000000_);_(` + symbol + `* (#,##0.000000);_(` + symbol + `* "-"??????_);_(@_)`
+	}
+	if snapshot.PDFTemplateVersion >= 14 {
+		moneyFormat = `_(* #,##0.000000_);_(* (#,##0.000000);_(* "-"??????_);_(@_)`
+	}
+	moneyStyle := &excelize.Style{CustomNumFmt: &moneyFormat}
+	if snapshot.PDFTemplateVersion >= 13 {
+		moneyStyle.Alignment = &excelize.Alignment{Horizontal: "right"}
+	}
+	money, err := book.NewStyle(moneyStyle)
 	if err != nil {
 		return nil, err
 	}
@@ -62,9 +73,9 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 		{"正式记账起点", time.Unix(snapshot.AccountingStartAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")},
 		{"本期起点", time.Unix(statement.StartAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")},
 		{"本期终点（不含）", time.Unix(statement.EndAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")},
-		{"消费金额", billingExcelAmount(snapshot.Total.Charge)}, {"退款金额", billingExcelAmount(snapshot.Total.Refund)},
-		{"本期净额", billingExcelAmount(snapshot.Total.Amount)}, {"正式账本记录数", snapshot.Total.Count},
-		{"模型数量", len(snapshot.Models)}, {"舍入差额", billingExcelAmount(snapshot.RoundingDifference)},
+		{"消费金额", billingStatementExcelAmount(snapshot.Total.Charge, snapshot)}, {"退款金额", billingStatementExcelAmount(snapshot.Total.Refund, snapshot)},
+		{"本期净额", billingStatementExcelAmount(snapshot.Total.Amount, snapshot)}, {"正式账本记录数", snapshot.Total.Count},
+		{"模型数量", billingModelCount(snapshot.Models)}, {"舍入差额", billingStatementExcelAmount(snapshot.RoundingDifference, snapshot)},
 		{"计费费率参考时间", time.Unix(snapshot.RateReferenceAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")},
 		{"计费费率说明", "生成时用户可用的模型计费组倍率，包含用户专属倍率；多组逐一列示。不是历史实际折扣，不用于倒推原价。"},
 		{"原价与令牌说明", "正式账本未保存完整的历史原价、优惠、输入/输出/缓存令牌或成功请求数；未记录不代表零。"},
@@ -73,6 +84,14 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 		{"账单数据 SHA-256", statement.SnapshotSHA256},
 		{"文件绑定校验", "PDF 列示本 Excel 的 SHA-256；校验清单同时绑定 PDF、Excel 与账单数据。客户确认该清单对应的两个文件。"},
 		{"金额精度", "金额保留六位小数；超过 Excel 15 位有效数字的金额以文本保存，避免精度丢失。"},
+	}
+	if snapshot.PDFTemplateVersion >= 10 {
+		rows[19] = []any{"计费口径", "消费发生时的实际计费组与费率"}
+		rows[20] = []any{"计费费率说明", "根据历史消费日志或任务提交时的计费快照列示；同一模型按实际计费组与费率拆分。未记录表示缺少可核验历史证据，不使用当前配置替代。"}
+		rows[21] = []any{"令牌说明", "正式账本未完整冻结输入、输出及缓存令牌或成功请求数；本表仅列示正式入账明细汇总。"}
+	}
+	if snapshot.PDFTemplateVersion >= 12 {
+		rows = append(rows, []any{"折扣金额说明", billingDiscountAmountNote})
 	}
 	for i, row := range rows {
 		if err := book.SetSheetRow("总览", fmt.Sprintf("A%d", i+1), &row); err != nil {
@@ -85,11 +104,16 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 	if err := book.SetCellStyle("总览", "B14", "B16", money); err != nil {
 		return nil, err
 	}
+	if snapshot.PDFTemplateVersion >= 13 {
+		if err := book.SetCellStyle("总览", "B19", "B19", money); err != nil {
+			return nil, err
+		}
+	}
 	wrap, err := book.NewStyle(&excelize.Style{Alignment: &excelize.Alignment{WrapText: true, Vertical: "center"}})
 	if err != nil {
 		return nil, err
 	}
-	if err := book.SetCellStyle("总览", "B20", "B29", wrap); err != nil {
+	if err := book.SetCellStyle("总览", "B20", fmt.Sprintf("B%d", len(rows)), wrap); err != nil {
 		return nil, err
 	}
 	if err := book.SetColWidth("总览", "A", "A", 27); err != nil {
@@ -104,42 +128,69 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 		}
 	}
 
+	if snapshot.PDFTemplateVersion >= 12 {
+		if err := book.SetRowHeight("总览", len(rows), 44); err != nil {
+			return nil, err
+		}
+	}
+
 	daily := [][]any{{"日期", "消费金额", "退款金额", "本期净额", "正式账本记录数", "记账范围"}}
 	for _, row := range snapshot.Days {
 		scope := "正式记账范围"
 		if row.State == "outside_period" {
 			scope = "正式记账起点之前"
 		}
-		daily = append(daily, []any{row.Label, billingExcelAmount(row.Charge), billingExcelAmount(row.Refund), billingExcelAmount(row.Amount), row.Count, scope})
+		daily = append(daily, []any{row.Label, billingStatementExcelAmount(row.Charge, snapshot), billingStatementExcelAmount(row.Refund, snapshot), billingStatementExcelAmount(row.Amount, snapshot), row.Count, scope})
 	}
-	daily = append(daily, []any{"合计", billingExcelAmount(snapshot.Total.Charge), billingExcelAmount(snapshot.Total.Refund), billingExcelAmount(snapshot.Total.Amount), snapshot.Total.Count, ""})
+	daily = append(daily, []any{"合计", billingStatementExcelAmount(snapshot.Total.Charge, snapshot), billingStatementExcelAmount(snapshot.Total.Refund, snapshot), billingStatementExcelAmount(snapshot.Total.Amount, snapshot), snapshot.Total.Count, ""})
 	models := [][]any{{"模型名称", "使用账单天数", "消费笔数", "退款笔数", "正式账本记录数", "消费金额", "退款金额", "本期净额", "计费费率（当前参考）", "标准原价", "消费金额占比", "计费组费率（当前参考）", "首笔入账时间", "末笔入账时间"}}
+	if snapshot.PDFTemplateVersion >= 10 {
+		models[0] = []any{"模型名称", "使用账单天数", "消费笔数", "退款笔数", "正式账本记录数", "消费金额", "退款金额", "本期净额", "计费费率", "消费金额占比", "实际计费组", "首笔入账时间", "末笔入账时间"}
+	}
 	for _, row := range snapshot.Models {
-		var groups []string
-		for _, rate := range row.CurrentRates {
-			value, err := decimal.NewFromString(rate.Ratio)
-			if err != nil {
-				return nil, err
+		var rate any
+		groupLabel := row.BillingGroup
+		if snapshot.PDFTemplateVersion >= 10 {
+			rate = billingHistoricalRateLabel(row)
+			if value, err := decimal.NewFromString(row.BillingRate); err == nil && !value.IsNegative() {
+				rate = value.InexactFloat64()
 			}
-			groups = append(groups, rate.Group+": "+value.Mul(decimal.NewFromInt(100)).StringFixed(2)+"%")
+			if groupLabel == "" {
+				groupLabel = "未记录"
+			}
+		} else {
+			var groups []string
+			for _, reference := range row.CurrentRates {
+				value, err := decimal.NewFromString(reference.Ratio)
+				if err != nil {
+					return nil, err
+				}
+				groups = append(groups, reference.Group+": "+value.Mul(decimal.NewFromInt(100)).StringFixed(2)+"%")
+			}
+			groupLabel = strings.Join(groups, "; ")
+			rate = billingRateLabel(row)
+			if len(row.CurrentRates) == 1 {
+				value, err := decimal.NewFromString(row.CurrentRates[0].Ratio)
+				if err != nil {
+					return nil, err
+				}
+				rate = value.InexactFloat64()
+			}
 		}
 		share, err := decimal.NewFromString(strings.TrimSuffix(row.ChargeShare, "%"))
 		if err != nil {
 			return nil, err
 		}
-		var rate any = billingRateLabel(row)
-		if len(row.CurrentRates) == 1 {
-			value, err := decimal.NewFromString(row.CurrentRates[0].Ratio)
-			if err != nil {
-				return nil, err
-			}
-			rate = value.InexactFloat64()
-		}
 		name := row.ModelName
 		if name == "" {
 			name = "未标注模型"
 		}
-		models = append(models, []any{name, row.ActiveDays, row.ChargeCount, row.RefundCount, row.Count, billingExcelAmount(row.Charge), billingExcelAmount(row.Refund), billingExcelAmount(row.Amount), rate, "未记录", share.Div(decimal.NewFromInt(100)).InexactFloat64(), strings.Join(groups, "; "), time.Unix(row.FirstPosted, 0).In(billingLocation).Format("2006-01-02 15:04:05"), time.Unix(row.LastPosted, 0).In(billingLocation).Format("2006-01-02 15:04:05")})
+		values := []any{name, row.ActiveDays, row.ChargeCount, row.RefundCount, row.Count, billingStatementExcelAmount(row.Charge, snapshot), billingStatementExcelAmount(row.Refund, snapshot), billingStatementExcelAmount(row.Amount, snapshot), rate}
+		if snapshot.PDFTemplateVersion < 10 {
+			values = append(values, "未记录")
+		}
+		values = append(values, share.Div(decimal.NewFromInt(100)).InexactFloat64(), groupLabel, time.Unix(row.FirstPosted, 0).In(billingLocation).Format("2006-01-02 15:04:05"), time.Unix(row.LastPosted, 0).In(billingLocation).Format("2006-01-02 15:04:05"))
+		models = append(models, values)
 	}
 	var chargeCount, refundCount int64
 	for _, row := range snapshot.Models {
@@ -150,13 +201,18 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 	if snapshot.ChargeQuota > 0 {
 		shareTotal = 1
 	}
-	models = append(models, []any{"合计", "—", chargeCount, refundCount, snapshot.Total.Count, billingExcelAmount(snapshot.Total.Charge), billingExcelAmount(snapshot.Total.Refund), billingExcelAmount(snapshot.Total.Amount), "—", "未记录", shareTotal})
+	models = append(models, []any{"合计", "—", chargeCount, refundCount, snapshot.Total.Count, billingStatementExcelAmount(snapshot.Total.Charge, snapshot), billingStatementExcelAmount(snapshot.Total.Refund, snapshot), billingStatementExcelAmount(snapshot.Total.Amount, snapshot), "—", "未记录", shareTotal})
+	modelEnd, groupColumn, shareColumn := "N", "L", "K"
+	if snapshot.PDFTemplateVersion >= 10 {
+		models[len(models)-1] = []any{"合计", "—", chargeCount, refundCount, snapshot.Total.Count, billingStatementExcelAmount(snapshot.Total.Charge, snapshot), billingStatementExcelAmount(snapshot.Total.Refund, snapshot), billingStatementExcelAmount(snapshot.Total.Amount, snapshot), "—", shareTotal}
+		modelEnd, groupColumn, shareColumn = "M", "K", "J"
+	}
 	for _, table := range []struct {
 		name                      string
 		rows                      [][]any
 		end, moneyStart, moneyEnd string
 	}{
-		{"每日汇总", daily, "F", "B", "D"}, {"模型汇总", models, "N", "F", "H"},
+		{"每日汇总", daily, "F", "B", "D"}, {"模型汇总", models, modelEnd, "F", "H"},
 	} {
 		for i, row := range table.rows {
 			if err := book.SetSheetRow(table.name, fmt.Sprintf("A%d", i+1), &row); err != nil {
@@ -175,6 +231,11 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 		if err := book.SetColWidth(table.name, "A", "A", 42); err != nil {
 			return nil, err
 		}
+		if snapshot.PDFTemplateVersion >= 13 {
+			if err := book.SetColWidth(table.name, table.moneyStart, table.moneyEnd, 30); err != nil {
+				return nil, err
+			}
+		}
 		if err := book.SetRowHeight(table.name, 1, 32); err != nil {
 			return nil, err
 		}
@@ -182,19 +243,22 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 			return nil, err
 		}
 	}
-	for _, col := range []string{"I", "K"} {
+	for _, col := range []string{"I", shareColumn} {
 		if err := book.SetCellStyle("模型汇总", col+"2", fmt.Sprintf("%s%d", col, len(models)), percent); err != nil {
 			return nil, err
 		}
 	}
-	if err := book.SetColWidth("模型汇总", "L", "L", 60); err != nil {
+	if err := book.SetColWidth("模型汇总", groupColumn, groupColumn, 60); err != nil {
 		return nil, err
 	}
-	if err := book.SetCellStyle("模型汇总", "L2", fmt.Sprintf("L%d", len(models)), wrap); err != nil {
+	if err := book.SetCellStyle("模型汇总", groupColumn+"2", fmt.Sprintf("%s%d", groupColumn, len(models)), wrap); err != nil {
 		return nil, err
 	}
 	for i := 2; i <= len(models); i++ {
 		height := 30.0
+		if snapshot.PDFTemplateVersion >= 10 {
+			height = 45
+		}
 		if i-2 < len(snapshot.Models) {
 			height = max(height, float64(len(snapshot.Models[i-2].CurrentRates))*30)
 		}

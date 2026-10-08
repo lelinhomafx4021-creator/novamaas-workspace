@@ -142,7 +142,13 @@ export function StatementsPanel(props: {
                 <TableRow key={item.id}>
                   <TableCell>{item.month}</TableCell>
                   <TableCell>{item.revision}</TableCell>
-                  <TableCell>{t(statementStatusKeys[item.status])}</TableCell>
+                  <TableCell>
+                    {t(
+                      item.superseded_by
+                        ? 'Superseded'
+                        : statementStatusKeys[item.status]
+                    )}
+                  </TableCell>
                   <TableCell>{billingTimestamp(item.confirmed_at)}</TableCell>
                   <TableCell>
                     <Button

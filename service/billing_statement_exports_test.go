@@ -12,8 +12,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
@@ -134,80 +132,4 @@ func TestBillingFilenamePrefersFrozenCompanyAndSanitizesBothFormats(t *testing.T
 		assert.Equal(t, "示例_企业_2026-09_月度对账单_V02."+kind, BillingArtifactFilename(statement, "username", kind, 0, "示例/企业\r\n"))
 		assert.Equal(t, "username_2026-09_月度对账单_V02."+kind, BillingArtifactFilename(statement, "username", kind, 0, "  "))
 	}
-}
-
-func TestBillingRatesUsePermittedModelGroupsAndUserOverride(t *testing.T) {
-	truncate(t)
-	seedUser(t, 42, 10000)
-	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 42).Update("group", "vip").Error)
-	savedGroups := setting.UserUsableGroups2JSONString()
-	savedRatios := ratio_setting.GroupRatio2JSONString()
-	savedOverrides := ratio_setting.GroupGroupRatio2JSONString()
-	t.Cleanup(func() {
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(savedGroups))
-		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(savedRatios))
-		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(savedOverrides))
-		require.NoError(t, model.DB.Where("channel_id IN ?", []int{8001, 8002, 8003, 8004}).Delete(&model.Ability{}).Error)
-	})
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
-	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":0.8,"vip":0,"private":0.2}`))
-	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"vip":{"default":0.65}}`))
-	abilities := []model.Ability{
-		{Group: "default", Model: "Foo", ChannelId: 8001, Enabled: true},
-		{Group: "vip", Model: "Foo", ChannelId: 8002, Enabled: true},
-		{Group: "private", Model: "Foo", ChannelId: 8003, Enabled: true},
-		{Group: "default", Model: "disabled", ChannelId: 8004, Enabled: false},
-	}
-	require.NoError(t, model.DB.Create(&abilities).Error)
-	rates, err := captureBillingRateReferences(context.Background(), 42)
-	require.NoError(t, err)
-	assert.Equal(t, []BillingGroupRate{{Group: "default", Ratio: "0.65"}, {Group: "vip", Ratio: "0"}}, rates["Foo"])
-	assert.NotContains(t, rates, "disabled")
-	assert.Equal(t, "0.00–65.00%", billingRateLabel(BillingModelRow{CurrentRates: rates["Foo"]}))
-	assert.Equal(t, "0.00%", billingRateLabel(BillingModelRow{CurrentRates: []BillingGroupRate{{Group: "vip", Ratio: "0"}}}))
-}
-
-func TestBillingRegenerationKeepsFinancialIdentityAndRefreshesPresentationOnly(t *testing.T) {
-	truncate(t)
-	seedUser(t, 42, 10000)
-	statement, snapshot := frozenBillingExportFixture(t)
-	key := "42:2026-09"
-	statement.ActiveKey = &key
-	statement.Status = model.StatementConfirmed
-	statement.ConfirmedAt = statement.CreatedAt + 100
-	statement.PDFSHA256, statement.ManifestSHA256 = "archived-pdf", "archived-manifest"
-	require.NoError(t, model.DB.Create(statement).Error)
-	require.NoError(t, model.DB.Create(&model.BillingAccount{UserID: 42, CompanyTitle: "Changed company", TaxID: "CHANGED", AccountingStartAt: statement.StartAt + 1, Sequence: 3}).Error)
-	posted := snapshot.Models[0].FirstPosted
-	entries := []model.BillingEntry{
-		{EventKey: "regenerate-charge", UserID: 42, Sequence: 1, PostedAt: posted, Kind: "usage", Quota: 500000, ModelName: snapshot.Models[0].ModelName},
-		{EventKey: "regenerate-refund", UserID: 42, Sequence: 2, PostedAt: posted + 1, Kind: "refund", Quota: -125000, ModelName: snapshot.Models[0].ModelName},
-		{EventKey: "regenerate-late", UserID: 42, Sequence: 3, PostedAt: posted + 2, Kind: "usage", Quota: 900000, ModelName: "later"},
-	}
-	require.NoError(t, model.DB.Create(&entries).Error)
-	configureBillingBranding(t)
-	common.SystemName, common.OperatingEntityName = "new-api Updated Brand", "Updated Operator"
-	next, err := RegenerateBillingStatementContext(context.Background(), statement, 1)
-	require.NoError(t, err)
-	var renewed BillingSnapshot
-	require.NoError(t, common.UnmarshalJsonStr(next.Snapshot, &renewed))
-	assert.Equal(t, snapshot.Currency, renewed.Currency)
-	assert.Equal(t, snapshot.CompanyTitle, renewed.CompanyTitle)
-	assert.Equal(t, snapshot.TaxID, renewed.TaxID)
-	assert.Equal(t, snapshot.AccountingStartAt, renewed.AccountingStartAt)
-	assert.Equal(t, snapshot.Days, renewed.Days)
-	assert.Equal(t, snapshot.Total, renewed.Total)
-	require.Len(t, renewed.Models, 1)
-	assert.Equal(t, snapshot.Models[0].ModelName, renewed.Models[0].ModelName)
-	assert.Equal(t, snapshot.Models[0].ChargeQuota, renewed.Models[0].ChargeQuota)
-	assert.Equal(t, "new-api Updated Brand", renewed.Issuer)
-	assert.Equal(t, "Updated Operator", renewed.OperatingName)
-	assert.Equal(t, 9, renewed.PDFTemplateVersion)
-	archive := &memoryBillingArchive{files: map[string][]byte{}}
-	require.NoError(t, BuildBillingArchive(context.Background(), next, archive))
-	assert.NotEmpty(t, archive.files["xlsx"])
-	var manifest BillingManifest
-	require.NoError(t, common.Unmarshal(archive.files["manifest"], &manifest))
-	assert.Equal(t, statement.ID, manifest.SourceStatementID)
-	assert.Equal(t, int64(2), manifest.Rows)
 }

@@ -89,7 +89,7 @@ export function StatementDetail(props: {
           <StatementContent
             key={`${query.data.statement.id}:${query.data.statement.status}`}
             detail={query.data}
-            onRegenerated={(id) => {
+            onViewStatement={(id) => {
               if (props.id) setReplacement({ sourceId: props.id, id })
             }}
             admin={props.admin}
@@ -102,7 +102,7 @@ export function StatementDetail(props: {
 }
 function StatementContent(props: {
   detail: Detail
-  onRegenerated: (id: string) => void
+  onViewStatement: (id: string) => void
   admin: boolean
   currentUserId: number
 }) {
@@ -126,8 +126,7 @@ function StatementContent(props: {
   const mutate = useMutation({
     mutationFn: (action: string) =>
       statementAction(statement.id, action, statement.manifest_sha256, note),
-    onSuccess: (data, action) => {
-      if (action === 'regenerate') props.onRegenerated(data.id)
+    onSuccess: () => {
       setIntent('')
       void client.invalidateQueries({ queryKey: ['billing'] })
     },
@@ -142,6 +141,14 @@ function StatementContent(props: {
     !statement.superseded_by &&
     statement.user_id === props.currentUserId &&
     (statement.status === 'issued' || statement.status === 'disputed')
+  const confirmationDescription =
+    intent === 'void'
+      ? t(
+          'Void this statement before creating a new version from the latest accounting data. Previous files and customer confirmations remain available. This action does not change wallet balances or historical import evidence.'
+        )
+      : t(
+          'This action will be recorded in the statement history. Confirmed statements cannot be overwritten.'
+        )
   return (
     <div className='flex flex-col gap-5'>
       <div className='grid gap-2 rounded-lg border p-4 text-sm sm:grid-cols-2'>
@@ -152,7 +159,12 @@ function StatementContent(props: {
           {t('Month')}: {statement.month} / {t('Version')} {statement.revision}
         </p>
         <p>
-          {t('Status')}: {t(statementStatusKeys[statement.status])}
+          {t('Status')}:{' '}
+          {t(
+            statement.superseded_by
+              ? 'Superseded'
+              : statementStatusKeys[statement.status]
+          )}
         </p>
         <p>
           {t('Company title')}: {snapshot.company_title}
@@ -179,7 +191,7 @@ function StatementContent(props: {
           {props.admin && (
             <Button
               variant='link'
-              onClick={() => props.onRegenerated(successorId)}
+              onClick={() => props.onViewStatement(successorId)}
             >
               {t('View latest version')}
             </Button>
@@ -198,9 +210,13 @@ function StatementContent(props: {
           role='alert'
           className='border-destructive text-destructive rounded-lg border p-4 text-sm'
         >
-          {t(
-            'Historical usage exists but this statement has no formal entries. Issuing and confirmation are blocked. An administrator must void the draft and reconcile historical data before creating a new version.'
-          )}
+          {props.detail.source_warning === 'corrections_pending'
+            ? t(
+                'Corrections belong to the original consumption or refund month. Void the current statement, then create a new draft from the latest accounting data.'
+              )
+            : t(
+                'Historical usage exists but this statement has no formal entries. Issuing and confirmation are blocked. An administrator must void the draft and reconcile historical data before creating a new version.'
+              )}
         </p>
       )}
       {statement.last_error && (
@@ -237,19 +253,7 @@ function StatementContent(props: {
               {t(statementDownloadKeys[item.kind] ?? 'Download')}
             </Button>
           ))}
-        {canOperate &&
-          ['draft', 'issued', 'disputed', 'confirmed'].includes(
-            statement.status
-          ) && (
-            <Button
-              variant='outline'
-              disabled={mutate.isPending}
-              onClick={() => setIntent('regenerate')}
-            >
-              {t('Regenerate')}
-            </Button>
-          )}
-        {statement.status === 'confirmed' && (
+        {statement.confirmed_at > 0 && (
           <Button
             variant='outline'
             disabled={download.isPending}
@@ -334,21 +338,17 @@ function StatementContent(props: {
           </FieldLabel>
         </Field>
       )}
-      {(canConfirm || canOperate) &&
-        statement.status !== 'confirmed' &&
-        statement.status !== 'void' && (
-          <Field>
-            <FieldLabel htmlFor={`${id}-note`}>
-              {t('Reason / reply')}
-            </FieldLabel>
-            <Textarea
-              id={`${id}-note`}
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              maxLength={2000}
-            />
-          </Field>
-        )}
+      {(canConfirm || canOperate) && statement.status !== 'void' && (
+        <Field>
+          <FieldLabel htmlFor={`${id}-note`}>{t('Reason / reply')}</FieldLabel>
+          <Textarea
+            id={`${id}-note`}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={2000}
+          />
+        </Field>
+      )}
       <div className='flex flex-wrap gap-2'>
         {canConfirm && (
           <Button
@@ -389,17 +389,15 @@ function StatementContent(props: {
             {t('Retry')}
           </Button>
         )}
-        {canOperate &&
-          statement.status !== 'confirmed' &&
-          statement.status !== 'void' && (
-            <Button
-              variant='destructive'
-              disabled={!note.trim()}
-              onClick={() => setIntent('void')}
-            >
-              {t('Void statement')}
-            </Button>
-          )}
+        {canOperate && statement.status !== 'void' && (
+          <Button
+            variant='destructive'
+            disabled={!note.trim() || mutate.isPending}
+            onClick={() => setIntent('void')}
+          >
+            {t('Void statement')}
+          </Button>
+        )}
       </div>
       <div className='flex flex-col gap-2'>
         <h3 className='font-medium'>{t('Statement history')}</h3>
@@ -415,7 +413,7 @@ function StatementContent(props: {
         open={Boolean(intent)}
         onOpenChange={(open) => !open && setIntent('')}
         title={t('Confirm action')}
-        desc={`${t('Statement customer')}: ${customerLabel}. ${intent === 'regenerate' ? t('Regenerate PDF and Excel from the same frozen ledger. Previous files and confirmations are retained. The new version must be issued and confirmed again.') : t('This action will be recorded in the statement history. Confirmed statements cannot be overwritten.')}`}
+        desc={`${t('Statement customer')}: ${customerLabel}. ${confirmationDescription}`}
         confirmText={t('Confirm')}
         isLoading={mutate.isPending}
         destructive={intent === 'void'}

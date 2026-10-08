@@ -16,6 +16,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const billingDiscountAmountNote = "本对账单中消费金额、退款金额、净消费金额已包含计费折扣，各项金额为折扣后的费用"
+
 type BillingCurrency struct {
 	Code         string `json:"code"`
 	Symbol       string `json:"symbol"`
@@ -38,6 +40,8 @@ type BillingRow struct {
 }
 type BillingModelRow struct {
 	ModelName    string             `json:"model_name"`
+	BillingGroup string             `json:"billing_group,omitempty"`
+	BillingRate  string             `json:"billing_rate,omitempty"`
 	Charge       string             `json:"charge"`
 	Refund       string             `json:"refund"`
 	Amount       string             `json:"amount"`
@@ -57,6 +61,7 @@ type BillingGroupRate struct {
 	Ratio string `json:"ratio"`
 }
 type BillingSnapshot struct {
+	AccountingBasis     string            `json:"accounting_basis,omitempty"`
 	SchemaVersion       int               `json:"schema_version"`
 	PDFTemplateVersion  int               `json:"pdf_template_version,omitempty"`
 	PDFLogoPNG          []byte            `json:"pdf_logo_png,omitempty"`
@@ -109,7 +114,7 @@ func attachBillingModelRows(snapshot *BillingSnapshot, totals []model.BillingMod
 			chargeShare = decimal.NewFromInt(total.Charge).Mul(decimal.NewFromInt(100)).Div(decimal.NewFromInt(snapshot.ChargeQuota)).StringFixed(2) + "%"
 		}
 		rows = append(rows, BillingModelRow{
-			ModelName: total.ModelName, Charge: amounts.Charge, Refund: amounts.Refund,
+			ModelName: total.ModelName, BillingGroup: total.BillingGroup, BillingRate: total.BillingRate, Charge: amounts.Charge, Refund: amounts.Refund,
 			Amount: amounts.Amount, ChargeShare: chargeShare, Count: amounts.Count,
 			ChargeCount: total.ChargeCount, RefundCount: total.RefundCount,
 			ActiveDays: total.ActiveDays, FirstPosted: total.FirstPosted, LastPosted: total.LastPosted,
@@ -128,7 +133,13 @@ func attachBillingModelRows(snapshot *BillingSnapshot, totals []model.BillingMod
 		if left != right {
 			return left > right
 		}
-		return rows[i].ModelName < rows[j].ModelName
+		if rows[i].ModelName != rows[j].ModelName {
+			return rows[i].ModelName < rows[j].ModelName
+		}
+		if rows[i].BillingGroup != rows[j].BillingGroup {
+			return rows[i].BillingGroup < rows[j].BillingGroup
+		}
+		return rows[i].BillingRate < rows[j].BillingRate
 	})
 	snapshot.Models = rows
 	return nil
@@ -437,11 +448,6 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrBillingDocumentBranding, err)
 	}
-	rateReferences, err := captureBillingRateReferences(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	rateReferenceAt := common.GetTimestamp()
 	statement := &model.BillingStatement{ID: common.GetUUID(), UserID: userID, CreatedBy: actorID, StorageProfileID: storageProfileID, Month: month}
 	err = model.CreateBillingStatement(statement, func(locked *model.BillingAccount, hours []model.BillingHour, modelTotals []model.BillingModelTotal) (string, string, error) {
 		if locked.AccountingStartAt != account.AccountingStartAt || locked.ProfileVersion != account.ProfileVersion {
@@ -457,11 +463,8 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		if snapshot.Total.Count == 0 && hasHistory {
 			return "", "", ErrBillingHistoricalDataUnreconciled
 		}
-		snapshot.PDFTemplateVersion = 9
-		snapshot.RateReferenceAt = rateReferenceAt
-		for i := range snapshot.Models {
-			snapshot.Models[i].CurrentRates = rateReferences[snapshot.Models[i].ModelName]
-		}
+		snapshot.PDFTemplateVersion = 14
+		snapshot.AccountingBasis = model.BillingSourcePeriodCorrections
 		snapshot.Issuer, snapshot.PDFLogoPNG, snapshot.PDFFooter = branding.Issuer, branding.LogoPNG, branding.Footer
 		snapshot.OperatingName, snapshot.PDFOperatingLogoPNG = branding.OperatingName, branding.OperatingLogoPNG
 		snapshot.Username, snapshot.DisplayName = customer.Username, customer.DisplayName
@@ -478,6 +481,6 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		}
 		hash := sha256.Sum256(body)
 		return string(body), hex.EncodeToString(hash[:]), nil
-	})
+	}, true)
 	return statement, err
 }

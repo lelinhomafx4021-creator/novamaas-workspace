@@ -316,6 +316,7 @@ func migrateDB() error {
 	}
 	err := DB.AutoMigrate(
 		&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{},
+		&BillingCorrection{}, &BillingCorrectionRow{}, &BillingCorrectionClaim{},
 		&CostAccountingSnapshot{}, &CostAccountingAdjustment{},
 		&BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{},
 		&Channel{},
@@ -400,7 +401,7 @@ func migrateDBFast() error {
 	if err := ensureStorageObjectUploadMetadataColumns(DB); err != nil {
 		return err
 	}
-	if err := DB.AutoMigrate(&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{}, &CostAccountingSnapshot{}, &CostAccountingAdjustment{}); err != nil {
+	if err := DB.AutoMigrate(&BillingAccount{}, &BillingAccountEvent{}, &BillingOperation{}, &BillingEntry{}, &BillingHour{}, &BillingStatement{}, &BillingStatementEvent{}, &BillingArtifact{}, &BillingHistoryImport{}, &CostAccountingSnapshot{}, &CostAccountingAdjustment{}, &BillingCorrection{}, &BillingCorrectionRow{}, &BillingCorrectionClaim{}); err != nil {
 		return err
 	}
 	if err := ensureChannelCostDiscountColumn(DB); err != nil {

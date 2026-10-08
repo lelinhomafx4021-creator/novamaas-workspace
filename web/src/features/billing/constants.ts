@@ -33,7 +33,8 @@ export const statementActionKeys: Record<string, string> = {
   reply: 'Reply',
   void: 'Void statement',
   retry: 'Retry',
-  regenerate: 'Regenerate',
+  regenerate: 'Regenerate', // Retained for historical audit events.
+  reconcile: 'Update statement with corrections', // Historical audit only.
 }
 
 export const statementDownloadKeys: Record<string, string> = {

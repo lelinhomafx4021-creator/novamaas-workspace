@@ -130,6 +130,7 @@ func GetLogsStat(c *gin.Context) {
 
 func GetLogsSelfStat(c *gin.Context) {
 	filter := costAccountingFilterFromQuery(c)
+	filter.IncludeBillingCorrections = false
 	filter.UserID = c.GetInt("id")
 	filter.Username = ""
 	statistics, err := model.SumLogStatistics(filter)

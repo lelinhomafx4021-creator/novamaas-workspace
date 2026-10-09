@@ -380,9 +380,18 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	pdf.SetFillColor(25, 51, 94)
 	pdf.RectFromUpperLeftWithStyle(40, 179, 515, 26, "F")
 	pdf.SetTextColor(255, 255, 255)
+	isPostpaid := snapshot.PDFTemplateVersion >= 15
+	amountFirstCol, amountLastCol := 1, 3
 	columns := []float64{50, 147, 257, 367, 477}
 	widths := []float64{85, 98, 98, 98, 68}
-	for i, title := range []string{"日期", "消费金额", "退款金额", "净消费金额", "记录数"} {
+	titles := []string{"日期", "消费金额", "退款金额", "净消费金额", "记录数"}
+	if isPostpaid {
+		amountFirstCol, amountLastCol = 2, 4
+		columns = []float64{50, 125, 185, 274, 372, 460}
+		widths = []float64{68, 53, 82, 91, 81, 85}
+		titles = []string{"日期", "充值金额", "预扣金额", "实际消费金额", "退款金额", "账户余额"}
+	}
+	for i, title := range titles {
 		if i == 0 {
 			doc.text(columns[i], 186, widths[i], 9, title)
 		} else {
@@ -393,6 +402,20 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	if len(snapshot.Days) > 31 {
 		return nil, errors.New("billing month exceeds 31 rows")
 	}
+	var dailyBalances []string
+	closingBalance := "0.000000"
+	if isPostpaid {
+		var err error
+		dailyBalances, err = billingPostpaidDailyBalances(snapshot.Days)
+		if err != nil {
+			return nil, err
+		}
+		pdf.SetTextColor(35, 49, 69)
+		doc.text(columns[0], y+3.5, widths[0], 8.2, "上期余额")
+		doc.right(columns[1], y+3.5, widths[1], 8.2, "0")
+		doc.right(columns[5], y+3.5, widths[5], 8.2, "0")
+		y += 15
+	}
 	for i, row := range snapshot.Days {
 		if i%2 == 0 {
 			pdf.SetFillColor(245, 247, 251)
@@ -400,14 +423,20 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		}
 		pdf.SetTextColor(35, 49, 69)
 		values := []string{row.Label, row.Charge, row.Refund, row.Amount, fmt.Sprint(row.Count)}
-		if row.State == "outside_period" {
+		if isPostpaid {
+			values = []string{row.Label, "0", "-", "未纳入", "-", "-"}
+			if row.State != "outside_period" {
+				closingBalance = dailyBalances[i]
+				values = []string{row.Label, "0", row.Charge, row.Amount, row.Refund, dailyBalances[i]}
+			}
+		} else if row.State == "outside_period" {
 			values = []string{row.Label, "-", "-", "未纳入", "-"}
 		}
 		for col, value := range values {
 			if col == 0 {
 				doc.text(columns[col], y+3.5, widths[col], 8.2, value)
 			} else {
-				if snapshot.PDFTemplateVersion >= 13 && col >= 1 && col <= 3 && row.State != "outside_period" {
+				if snapshot.PDFTemplateVersion >= 13 && col >= amountFirstCol && col <= amountLastCol && row.State != "outside_period" {
 					doc.accounting(columns[col], y+3.5, widths[col], 8.2, value, accountingSymbol)
 				} else {
 					doc.right(columns[col], y+3.5, widths[col], 8.2, value)
@@ -419,11 +448,15 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	pdf.SetFillColor(227, 234, 245)
 	pdf.RectFromUpperLeftWithStyle(40, y, 515, 25, "F")
 	pdf.SetTextColor(25, 51, 94)
-	for col, value := range []string{"合计", snapshot.Total.Charge, snapshot.Total.Refund, snapshot.Total.Amount, fmt.Sprint(snapshot.Total.Count)} {
+	totalValues := []string{"合计", snapshot.Total.Charge, snapshot.Total.Refund, snapshot.Total.Amount, fmt.Sprint(snapshot.Total.Count)}
+	if isPostpaid {
+		totalValues = []string{"合计", "0", snapshot.Total.Charge, snapshot.Total.Amount, snapshot.Total.Refund, closingBalance}
+	}
+	for col, value := range totalValues {
 		if col == 0 {
 			doc.text(columns[col], y+7, widths[col], 8.8, value)
 		} else {
-			if snapshot.PDFTemplateVersion >= 13 && col >= 1 && col <= 3 {
+			if snapshot.PDFTemplateVersion >= 13 && col >= amountFirstCol && col <= amountLastCol {
 				doc.accounting(columns[col], y+7, widths[col], 8.8, value, accountingSymbol)
 			} else {
 				doc.right(columns[col], y+7, widths[col], 8.8, value)
@@ -434,6 +467,9 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	dailyNote := "未纳入：正式记账起点之前。明细记录数包含消费及退款；完整逐笔明细可从平台下载经校验的归档文件。"
 	if snapshot.PDFTemplateVersion >= 8 {
 		dailyNote = "“未纳入”表示该日期不在本账单服务周期内；记录数包含消费和退款。详细记录可在平台下载。"
+	}
+	if isPostpaid {
+		dailyNote = "实际消费金额 = 预扣金额 - 退款金额；当日账户余额 = 前日账户余额 - 当日实际消费金额。先用后结，上期余额和充值金额均为 0。“未纳入”表示不在本账单服务周期内。"
 	}
 	y = doc.text(40, y+37, 515, 8, dailyNote)
 	y = doc.text(40, y+5, 515, 8, "下发、异议及确认状态以平台记录为准。原始文件不随状态改变；确认后另附回执。")

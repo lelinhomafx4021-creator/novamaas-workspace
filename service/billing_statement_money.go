@@ -36,6 +36,37 @@ func billingAccountingNumber(value string) (string, error) {
 	return result, nil
 }
 
+// Postpaid daily balances carry forward net consumption from a zero opening
+// balance. A net refund reduces the amount owed; inactive days carry it forward.
+func billingPostpaidDailyBalances(days []BillingRow) ([]string, error) {
+	balances := make([]string, len(days))
+	consumption := decimal.Zero
+	for i, day := range days {
+		if day.State == "outside_period" {
+			balances[i] = "-"
+			continue
+		}
+		amount, err := decimal.NewFromString(day.Amount)
+		if err != nil {
+			return nil, err
+		}
+		consumption = consumption.Add(amount)
+		number, err := billingAccountingNumber(consumption.StringFixed(6))
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case number == "-":
+			balances[i] = "0.000000"
+		case strings.HasPrefix(number, "("):
+			balances[i] = strings.TrimSuffix(strings.TrimPrefix(number, "("), ")")
+		default:
+			balances[i] = "-" + number
+		}
+	}
+	return balances, nil
+}
+
 // Decimal places align at the right edge, including negative amounts and
 // accounting zero dashes. Legacy templates may also include a currency symbol.
 func (doc *billingPDFDocument) accounting(x, y, width, size float64, value, symbol string) {

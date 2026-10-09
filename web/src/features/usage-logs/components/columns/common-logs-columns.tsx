@@ -49,6 +49,7 @@ import {
   parseLogOther,
   isViolationFeeLog,
   renderAuditContent,
+  getVideoPricingMultiplier,
 } from '../../lib/format'
 import {
   isDisplayableLogType,
@@ -220,12 +221,13 @@ function buildTypeDetailSegments(
   } else {
     const modelPrice = other.model_price
     const isPerCall = isPerCallBilling(modelPrice)
+    const videoPricingMultiplier = getVideoPricingMultiplier(other)
     if (isPerCall && modelPrice != null) {
       segments.push({
-        text: `${t('Per-call')} · ${formatBillingCurrencyFromUSD(modelPrice, priceOpts)}`,
+        text: `${t('Per-call')} · ${formatBillingCurrencyFromUSD(modelPrice * videoPricingMultiplier, priceOpts)}`,
       })
     } else if (other.model_ratio != null) {
-      const inputPriceUSD = other.model_ratio * 2.0
+      const inputPriceUSD = other.model_ratio * 2.0 * videoPricingMultiplier
       const baseEntries = [formatPriceCompact(inputPriceUSD)]
       if (other.completion_ratio != null) {
         baseEntries.push(

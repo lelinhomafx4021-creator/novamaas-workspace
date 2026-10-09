@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/seedancepricing"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -128,7 +129,33 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
 	// Accept only POST /v1/video/generations as "generate" action.
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if taskErr := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); taskErr != nil {
+		return taskErr
+	}
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return &taskdto.TaskError{Error: err, Code: "invalid_request", Message: err.Error(), StatusCode: http.StatusBadRequest, LocalError: true}
+	}
+	if !seedancepricing.IsSeedance25(req.Model) {
+		return nil
+	}
+	resolution := "720p"
+	if value, exists := req.Metadata["resolution"]; exists {
+		var ok bool
+		resolution, ok = value.(string)
+		if !ok {
+			err := fmt.Errorf("Seedance 2.5 resolution must be 480p, 720p or 1080p")
+			return &taskdto.TaskError{Error: err, Code: "invalid_request", Message: err.Error(), StatusCode: http.StatusBadRequest, LocalError: true}
+		}
+		if strings.TrimSpace(resolution) == "" {
+			resolution = "720p"
+		}
+	}
+	if _, ok := seedancepricing.Lookup(req.Model, resolution, false); !ok {
+		err := fmt.Errorf("Seedance 2.5 resolution must be 480p, 720p or 1080p")
+		return &taskdto.TaskError{Error: err, Code: "invalid_request", Message: err.Error(), StatusCode: http.StatusBadRequest, LocalError: true}
+	}
+	return nil
 }
 
 // BuildRequestURL constructs the upstream URL.

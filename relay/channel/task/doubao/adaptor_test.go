@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,6 +16,57 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSeedance25TaskValidationAndBilling(t *testing.T) {
+	tests := []struct {
+		name       string
+		resolution interface{}
+		hasVideo   bool
+		wantRatio  float64
+		invalid    bool
+	}{
+		{name: "default", wantRatio: 1},
+		{name: "480p", resolution: "480p", wantRatio: 1},
+		{name: "720p video input", resolution: "720p", hasVideo: true, wantRatio: 42.0 / 70},
+		{name: "1080p", resolution: "1080p", wantRatio: 77.0 / 70},
+		{name: "1080p video input", resolution: "1080p", hasVideo: true, wantRatio: 46.0 / 70},
+		{name: "unsupported 4k", resolution: "4k", invalid: true},
+		{name: "unknown resolution", resolution: "1440p", invalid: true},
+		{name: "wrong resolution type", resolution: 1080, invalid: true},
+	}
+	for _, model := range []string{"doubao-seedance-2-5", "doubao-seedance-2-5-260628"} {
+		for _, tt := range tests {
+			t.Run(model+"/"+tt.name, func(t *testing.T) {
+				metadata := map[string]interface{}{}
+				if tt.resolution != nil {
+					metadata["resolution"] = tt.resolution
+				}
+				if tt.hasVideo {
+					metadata["content"] = []interface{}{map[string]interface{}{"type": "video_url", "video_url": map[string]interface{}{"url": "https://example.com/input.mp4"}}}
+				}
+				body, err := common.Marshal(relaycommon.TaskSubmitReq{Model: model, Prompt: "animate", Metadata: metadata})
+				require.NoError(t, err)
+				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+				ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(string(body)))
+				ctx.Request.Header.Set("Content-Type", "application/json")
+				info := &relaycommon.RelayInfo{OriginModelName: model, TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
+				adaptor := &TaskAdaptor{}
+				taskErr := adaptor.ValidateRequestAndSetAction(ctx, info)
+				if tt.invalid {
+					require.NotNil(t, taskErr)
+					assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+					return
+				}
+				require.Nil(t, taskErr)
+				ratio := adaptor.EstimateBilling(ctx, info)["video_input"]
+				if ratio == 0 {
+					ratio = 1
+				}
+				assert.InDelta(t, tt.wantRatio, ratio, 1e-12)
+			})
+		}
+	}
+}
 
 func TestDoubaoVideoBuildRequestBodyUsesCachedBase64Staging(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

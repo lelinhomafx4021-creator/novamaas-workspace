@@ -375,3 +375,121 @@ test('pending adjustment history shows loading until an empty response arrives',
   expect(await screen.findByText('No data')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled()
 })
+
+test('model pricing adjustment previews current pricing without changing the billing group', async () => {
+  mountPanel()
+  fireEvent.change(screen.getByLabelText('Adjustment type'), {
+    target: { value: 'model_pricing' },
+  })
+  expect(
+    screen.queryByLabelText('Target billing group')
+  ).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Models to correct'), {
+    target: { value: 'doubao-seedance-2-5' },
+  })
+  fireEvent.change(screen.getByLabelText('Adjustment reason'), {
+    target: { value: 'Recalculate resolution pricing' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Preview adjustment' }))
+  await screen.findByText('frozen-digest')
+  expect(previewCorrection).toHaveBeenCalledWith(
+    expect.objectContaining({
+      mode: 'model_pricing',
+      target_group: '',
+      models: ['doubao-seedance-2-5'],
+    })
+  )
+})
+
+test('switching adjustment type invalidates a previous billing group preview', async () => {
+  mountPanel()
+  await fillPreview()
+  fireEvent.change(screen.getByLabelText('Type the account ID to confirm'), {
+    target: { value: '4' },
+  })
+  fireEvent.change(screen.getByLabelText('Adjustment type'), {
+    target: { value: 'model_pricing' },
+  })
+  expect(
+    screen.getByRole('button', { name: 'Apply adjustment' })
+  ).toBeDisabled()
+  expect(screen.getByText('Selection changed. Preview again.')).toBeVisible()
+})
+
+test('saved model pricing preview restores its mode and shows the existing billing group', async () => {
+  const saved = {
+    ...batch,
+    mode: 'model_pricing' as const,
+    target_group: '',
+    target_rate: '',
+    start_at: 1788192000,
+    end_at: 1790784000,
+  }
+  vi.mocked(listCorrections).mockResolvedValue([saved])
+  vi.mocked(getCorrection).mockResolvedValue(saved)
+  mountPanel()
+  fireEvent.click(await screen.findByRole('button', { name: 'View' }))
+  await screen.findByText('frozen-digest')
+  expect(screen.getByLabelText('Adjustment type')).toHaveValue('model_pricing')
+  expect(
+    screen.queryByLabelText('Target billing group')
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByText('Selection changed. Preview again.')
+  ).not.toBeInTheDocument()
+})
+
+test('fully refunded adjustments with a zero net debit can be confirmed', async () => {
+  vi.mocked(previewCorrection).mockResolvedValue({
+    ...batch,
+    mode: 'group_rate',
+    net_delta: 0,
+    charge_delta: 20,
+    refund_delta: 20,
+    can_apply: true,
+  })
+  mountPanel()
+  await fillPreview()
+  fireEvent.change(screen.getByLabelText('Type the account ID to confirm'), {
+    target: { value: '4' },
+  })
+  expect(screen.getByRole('button', { name: 'Apply adjustment' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Apply adjustment' }))
+  await waitFor(() =>
+    expect(actOnCorrection).toHaveBeenCalledWith(
+      'preview-batch',
+      expect.objectContaining({ confirm_net_delta: 0 }),
+      'verified-proof'
+    )
+  )
+})
+
+test('an effective zero amount is displayed as zero while original evidence remains visible', async () => {
+  const historical = {
+    source_entry_id: 10,
+    model_name: 'previously-free',
+    posted_at: 100,
+    original_group: 'old',
+    original_rate: '1',
+    original_quota: 500000,
+    corrected_quota: 0,
+    delta: 0,
+    blocked: '',
+  }
+  vi.mocked(listCorrections).mockResolvedValue([
+    { ...batch, mode: 'model_pricing' },
+  ])
+  vi.mocked(getCorrection).mockResolvedValue({
+    ...batch,
+    mode: 'model_pricing',
+    rows: [historical],
+  })
+  mountPanel()
+  fireEvent.click(await screen.findByRole('button', { name: 'View' }))
+  await screen.findByText('frozen-digest')
+  const row = screen.getByText('previously-free').closest('tr')
+  if (!row) throw new Error('Expected the historical evidence table row')
+  const cells = within(row).getAllByRole('cell')
+  expect(cells[3]).toHaveTextContent('$1')
+  expect(cells[4]).toHaveTextContent('$0')
+})

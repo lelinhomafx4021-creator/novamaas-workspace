@@ -77,6 +77,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 <!-- novamaas-pr-ledger:start -->
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
+| [#57](https://github.com/yeruyi1024/novamaas-workspace/pull/57) | 2026-10-09 | `feat` | 有效消费账目 / 模型计费调账 / Seedance 2.5 | 保留原消费、退款及成本凭证，以修正分录投影用户日志、统计和原月份账目；新增按当前模型价格与历史分辨率、视频输入、用量重算，按净差额原子扣退余额并支持幂等确认及逆序撤销；历史对账单作废后重建，独立审计防重复汇总；两种 Seedance 2.5 模型名接入分辨率和视频输入分档。 | #55、#56 账务与财务权限能力的 NovaMaaS 下游扩展；上游无等价实现，同步时须保留不可变原证据、有效金额读模型、钱包差额事务及分档计费边界。 |
 | [#56](https://github.com/yeruyi1024/novamaas-workspace/pull/56) | 2026-10-09 | `feat` | 月度对账 / 永久凭证存储 / 财务权限 | 新账单证据按 `billing/user-{用户HMAC标识}/{记账月份}/{账单UUID}/…` 归档，与 assets 复用同一用户标识，保留不可覆盖上传及历史对象读取；跨账户对账须同时具备管理员角色与财务核算权限，财务人员可查看调账记录，调账写操作仍限超级管理员。 | #55 永久账单归档与调账能力的 NovaMaaS 下游扩展；上游无等价实现，同步时须保留按客户与账期归档、历史对象读取及财务权限边界。 |
 | [#55](https://github.com/yeruyi1024/novamaas-workspace/pull/55) | 2026-10-08 | `feat` | 月度对账 / 永久凭证 | PDF 与 Excel 共用冻结正式账本并永久归档，PDF 和清单绑定 Excel 指纹；模型明细按实际消费组和历史费率拆行并冻结，PDF 与 Excel 移除原价列；超级管理员可预览、幂等执行及撤销固定单价钱包任务的费率纠错，保留原证据并仅在管理员日志显示；新账单将差额归入原消费/退款账期，防止操作月份重复计入；同一客户同月最多一份有效账单，管理员先作废原版再按最新账务创建草稿，保留历史导入凭证、旧文件与确认，新版重新下发确认。 | #22、#43 正式对账与品牌能力的 NovaMaaS 下游扩展；上游无等价双文件联合确认、账单作废后重建与历史费率差额纠错，同步时须保留不可变证据及原范围边界。 |
 | [#54](https://github.com/yeruyi1024/novamaas-workspace/pull/54) | 2026-10-08 | `fix` | 用户短信核验 / 正式对账 | 已登录管理员直接发送目标手机号验证码，保存时原子核验；历史补录仅覆盖正式起点及之后的消费/退款，保持起点、起始序号和钱包余额不变，起点前消费不阻止零消费正式单。 | #50 短信认证与既有正式对账能力的 NovaMaaS 下游调整；上游没有等价的管理员短信保存核验和正式账本补录链，同步时需保留时间边界及防重复补录校验。 |
@@ -129,6 +130,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | [媒体任务与素材审核 Webhook](docs/MEDIA_TASK_WEBHOOKS.zh_CN.md) | 个人与系统通知、实时测试、品牌化 PDF 手册、异步投递 |
 | [对账单一期实施说明](docs/design/BILLING_STATEMENTS_IMPLEMENTATION.zh_CN.md) | 实际交付范围、记账/归档机制、迁移和部署边界 |
 | [对账单 PDF/Excel 导出说明](docs/design/BILLING_STATEMENT_EXPORTS.zh_CN.md) | 附件字段支持情况、历史实际费率拆分、双文件指纹与作废后创建版本规则 |
+| [历史消费与调账实施记录](docs/design/BILLING_CORRECTIONS.zh_CN.md) | 有效金额展示、渠道/模型计费调账、钱包差额、历史账单作废重建与 Seedance 2.5 分档 |
 | [对账单验收指南](docs/design/BILLING_STATEMENTS_ACCEPTANCE.zh_CN.md) | 历史查询、正式记账、创建草稿、下发与客户确认操作 |
 | [历史核验与统计说明](docs/design/BILLING_HISTORY_REVIEW.zh_CN.md) | 历史导入确认边界、空单防护、MySQL 聚合与 PDF 固化 |
 | [对账产品方案](docs/design/BILLING_STATEMENTS_PRD.zh_CN.md) / [技术方案](docs/design/BILLING_STATEMENTS_TECH.zh_CN.md) / [数据专项方案](docs/design/BILLING_STATEMENTS_DATA_PIPELINE.zh_CN.md) | 设计基线与后续演进建议；不代表全部能力已实现 |

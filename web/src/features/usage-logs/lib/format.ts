@@ -29,6 +29,20 @@ import type { LogOtherData } from '../types'
 
 export { normalizeTierLabel }
 
+export function getVideoPricingMultiplier(other: LogOtherData): number {
+  const multiplier = other.other_ratios?.video_input
+  if (
+    !other.is_task ||
+    !other.resolution ||
+    multiplier == null ||
+    !Number.isFinite(multiplier) ||
+    multiplier <= 0
+  ) {
+    return 1
+  }
+  return multiplier
+}
+
 const MAX_LOG_OTHER_CACHE_CHARS = 4 * 1024 * 1024
 const parsedLogOtherCache = new Map<
   string,

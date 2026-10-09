@@ -86,6 +86,7 @@ type CostAccountingFilter struct {
 	StartTimestamp            int64
 	EndTimestamp              int64
 	UserID                    int
+	userIDs                   []int // Internal page scope; never accepted from a request.
 	Username                  string
 	TokenName                 string
 	ModelName                 string
@@ -465,13 +466,19 @@ func unconfiguredCostChannelIDs(filter CostAccountingFilter) ([]int, error) {
 }
 
 func SumCostAccounting(filter CostAccountingFilter) (CostAccountingTotals, error) {
+	if filter.LogType != LogTypeBillingCorrection {
+		filter.IncludeBillingCorrections = false
+	}
 	totals, err := sumCostAccountingSnapshots(filter)
 	if err != nil {
 		return totals, err
 	}
 	channelIDs, err := unconfiguredCostChannelIDs(filter)
-	if err != nil || len(channelIDs) == 0 {
+	if err != nil {
 		return totals, err
+	}
+	if len(channelIDs) == 0 {
+		return projectBillingCostTotals(filter, totals)
 	}
 	fallbackFilter := filter
 	fallbackFilter.ChannelID = 0
@@ -485,7 +492,7 @@ func SumCostAccounting(filter CostAccountingFilter) (CostAccountingTotals, error
 		return totals, err
 	}
 	if statistics.Records <= snapshots.LinkedRecords {
-		return totals, nil
+		return projectBillingCostTotals(filter, totals)
 	}
 	totals.DefaultedRecords = statistics.Records - snapshots.LinkedRecords
 	totals.DefaultedCostQuota = statistics.RevenueQuota - snapshots.RevenueQuota
@@ -494,7 +501,7 @@ func SumCostAccounting(filter CostAccountingFilter) (CostAccountingTotals, error
 	totals.RevenueQuota += statistics.RevenueQuota - snapshots.RevenueQuota
 	totals.CostQuota += totals.DefaultedCostQuota
 	totals.ProfitQuota = totals.RevenueQuota - totals.CostQuota
-	return totals, nil
+	return projectBillingCostTotals(filter, totals)
 }
 
 func ReconcileCostAccountingTotals(statistics LogStatistics, totals CostAccountingTotals) CostAccountingTotals {
@@ -538,13 +545,19 @@ func sumCostAccountingSnapshotBuckets(filter CostAccountingFilter, bucketSeconds
 }
 
 func SumCostAccountingBuckets(filter CostAccountingFilter, bucketSeconds, offsetSeconds int64) ([]CostAccountingBucket, error) {
+	if filter.LogType != LogTypeBillingCorrection {
+		filter.IncludeBillingCorrections = false
+	}
 	buckets, err := sumCostAccountingSnapshotBuckets(filter, bucketSeconds, offsetSeconds)
 	if err != nil {
 		return nil, err
 	}
 	channelIDs, err := unconfiguredCostChannelIDs(filter)
-	if err != nil || len(channelIDs) == 0 {
-		return buckets, err
+	if err != nil {
+		return nil, err
+	}
+	if len(channelIDs) == 0 {
+		return projectBillingCostBuckets(filter, buckets, bucketSeconds, offsetSeconds)
 	}
 	fallbackFilter := filter
 	fallbackFilter.ChannelID = 0
@@ -583,7 +596,7 @@ func SumCostAccountingBuckets(filter CostAccountingFilter, bucketSeconds, offset
 		buckets[index].ProfitQuota = buckets[index].RevenueQuota - buckets[index].CostQuota
 	}
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Bucket < buckets[j].Bucket })
-	return buckets, nil
+	return projectBillingCostBuckets(filter, buckets, bucketSeconds, offsetSeconds)
 }
 
 func ListCostAccountingSnapshots(filter CostAccountingFilter, offset, limit int) ([]CostAccountingSnapshotView, int64, error) {

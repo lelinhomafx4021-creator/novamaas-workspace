@@ -68,6 +68,7 @@ export function CorrectionHistory(props: {
           <TableHeader>
             <TableRow>
               <TableHead>{t('Batch ID')}</TableHead>
+              <TableHead>{t('Adjustment type')}</TableHead>
               <TableHead>{t('Created At')}</TableHead>
               <TableHead>{t('Target billing group')}</TableHead>
               <TableHead className='text-right'>
@@ -81,7 +82,7 @@ export function CorrectionHistory(props: {
             {props.loading && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className='text-muted-foreground py-6 text-center'
                 >
                   {t('Loading...')}
@@ -91,7 +92,7 @@ export function CorrectionHistory(props: {
             {!props.loading && !props.failed && props.items.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className='text-muted-foreground py-6 text-center'
                 >
                   {t('No data')}
@@ -103,12 +104,23 @@ export function CorrectionHistory(props: {
                 <TableCell className='max-w-64 min-w-40 font-mono text-xs break-all whitespace-normal'>
                   {item.id}
                 </TableCell>
+                <TableCell>
+                  <Badge variant='outline'>
+                    {item.mode === 'model_pricing'
+                      ? t('Model pricing adjustment')
+                      : t('Billing group adjustment')}
+                  </Badge>
+                </TableCell>
                 <TableCell>{billingTimestamp(item.created_at)}</TableCell>
                 <TableCell className='max-w-48 break-all whitespace-normal'>
-                  {item.target_group}
-                  <span className='text-muted-foreground block text-xs'>
-                    {(Number(item.target_rate) * 100).toFixed(2)}%
-                  </span>
+                  {item.mode === 'model_pricing'
+                    ? t('Existing billing groups')
+                    : item.target_group}
+                  {item.mode !== 'model_pricing' && (
+                    <span className='text-muted-foreground block text-xs'>
+                      {(Number(item.target_rate) * 100).toFixed(2)}%
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className='text-right'>
                   {formatQuotaWithCurrency(item.net_delta, {

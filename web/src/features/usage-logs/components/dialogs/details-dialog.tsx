@@ -75,6 +75,7 @@ import {
   getFirstResponseTimeColor,
   getResponseTimeColor,
   getReasoningEffortVariant,
+  getVideoPricingMultiplier,
   renderAuditContent,
 } from '../../lib/format'
 import {
@@ -233,6 +234,7 @@ function BillingBreakdown(props: {
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
   const fmtPrice = (usd: number) => formatBillingCurrencyFromUSD(usd, priceOpts)
   const baseInputUSD = other.model_ratio != null ? other.model_ratio * 2.0 : 0
+  const videoPricingMultiplier = getVideoPricingMultiplier(other)
 
   if (isTieredExpr) {
     rows.push({
@@ -263,21 +265,42 @@ function BillingBreakdown(props: {
     if (other.model_price != null) {
       rows.push({
         label: t('Model Price'),
-        value: fmtPrice(other.model_price),
+        value: fmtPrice(other.model_price * videoPricingMultiplier),
       })
     }
   } else {
     rows.push({ label: t('Billing Mode'), value: t('Per-token') })
     if (other.model_ratio != null) {
       rows.push({
-        label: t('Input'),
-        value: `${fmtPrice(baseInputUSD)}/M`,
+        label:
+          other.is_task && other.resolution ? t('Model Price') : t('Input'),
+        value: `${fmtPrice(baseInputUSD * videoPricingMultiplier)}/M`,
       })
     }
     if (other.completion_ratio != null && other.model_ratio != null) {
       rows.push({
         label: t('Output'),
         value: `${fmtPrice(baseInputUSD * other.completion_ratio)}/M`,
+      })
+    }
+  }
+
+  if (other.billing_correction_applied && other.resolution) {
+    rows.push({ label: t('Resolution'), value: other.resolution })
+    if (other.has_video != null) {
+      rows.push({
+        label: t('Video input'),
+        value: other.has_video ? t('Yes') : t('No'),
+      })
+    }
+    rows.push({
+      label: t('Video pricing multiplier'),
+      value: `${formatRatio(videoPricingMultiplier)}x`,
+    })
+    if (other.total_tokens != null && other.total_tokens > 0) {
+      rows.push({
+        label: t('Total Tokens'),
+        value: other.total_tokens.toLocaleString(),
       })
     }
   }

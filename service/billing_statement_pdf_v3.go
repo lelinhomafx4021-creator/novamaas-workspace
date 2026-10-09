@@ -12,6 +12,47 @@ import (
 	"github.com/signintech/gopdf"
 )
 
+// The frozen creation time and document number help readers locate a statement.
+// Verification still uses the complete, unmodified archive fingerprints.
+func (doc *billingPDFDocument) verificationInfo(y float64, statement *model.BillingStatement, fingerprints []struct{ label, digest string }) float64 {
+	if doc.err != nil {
+		return y
+	}
+	height := 76 + float64(len(fingerprints))*30
+	fingerprintTop, fingerprintGap, labelWidth := 58.0, 30.0, 491.0
+	compact := y+height > 767
+	if compact {
+		// The document number is already shown above. Omit its duplicate when
+		// long corporate identities need the original page space.
+		height = 56 + float64(len(fingerprints))*14
+		fingerprintTop, fingerprintGap, labelWidth = 38, 14, 123
+	}
+	doc.pdf.SetFillColor(245, 247, 251)
+	doc.pdf.RectFromUpperLeftWithStyle(40, y, 515, height, "F")
+	doc.pdf.SetTextColor(25, 51, 94)
+	doc.text(52, y+7, 491, 9, "文件核验信息")
+	doc.pdf.SetTextColor(89, 105, 127)
+	created := time.Unix(statement.CreatedAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")
+	doc.text(52, y+22, 491, 8, fmt.Sprintf("生成时间  %s（北京时间）  /  账期 %s  /  版本 %02d", created, statement.Month, statement.Revision))
+	if !compact {
+		doc.text(52, y+40, 491, 8, "文件编号  "+statement.ID)
+	}
+	for i, item := range fingerprints {
+		top := y + fingerprintTop + float64(i)*fingerprintGap
+		doc.pdf.SetTextColor(89, 105, 127)
+		doc.text(52, top, labelWidth, 8, item.label)
+		doc.pdf.SetTextColor(35, 49, 69)
+		if compact {
+			doc.text(181, top, 362, 8, item.digest)
+		} else {
+			doc.text(52, top+13, 491, 8, item.digest)
+		}
+	}
+	doc.pdf.SetTextColor(89, 105, 127)
+	doc.text(52, y+height-16, 491, 7.2, "核验时请与平台归档的完整指纹比对；时间和编号用于定位账单。")
+	return y + height
+}
+
 // Keep v1/v2 renderers intact: a retry or receipt for an existing document
 // must reproduce its frozen template, even after a branding setting changes.
 func (doc *billingPDFDocument) headerV3(snapshot *BillingSnapshot, page, pages int) {
@@ -355,19 +396,29 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		y = doc.text(40, y+6, 515, 8.5, historyNote)
 	}
 	y += 18
-	digestLabel := "冻结数据快照 / SHA-256"
-	if snapshot.PDFTemplateVersion >= 8 {
-		digestLabel = "账单数据校验码 / SHA-256"
-	}
-	doc.text(40, y, 515, 8, digestLabel)
-	y = doc.text(40, y+17, 515, 8, statement.SnapshotSHA256)
-	if snapshot.PDFTemplateVersion >= 9 {
+	if snapshot.PDFTemplateVersion >= 16 {
 		if statement.ExcelSHA256 == "" {
 			return nil, errors.New("billing Excel fingerprint is required")
 		}
-		y = doc.text(40, y+9, 515, 8, "配套 Excel / SHA-256")
-		y = doc.text(40, y+6, 515, 8, statement.ExcelSHA256)
-		y = doc.text(40, y+6, 515, 7.5, "请核对配套 Excel 指纹；客户确认的校验清单同时绑定 PDF、Excel 和账单数据。")
+		y = doc.verificationInfo(y, statement, []struct{ label, digest string }{
+			{"账单数据指纹 / SHA-256", statement.SnapshotSHA256},
+			{"配套 Excel 指纹 / SHA-256", statement.ExcelSHA256},
+		})
+	} else {
+		digestLabel := "冻结数据快照 / SHA-256"
+		if snapshot.PDFTemplateVersion >= 8 {
+			digestLabel = "账单数据校验码 / SHA-256"
+		}
+		doc.text(40, y, 515, 8, digestLabel)
+		y = doc.text(40, y+17, 515, 8, statement.SnapshotSHA256)
+		if snapshot.PDFTemplateVersion >= 9 {
+			if statement.ExcelSHA256 == "" {
+				return nil, errors.New("billing Excel fingerprint is required")
+			}
+			y = doc.text(40, y+9, 515, 8, "配套 Excel / SHA-256")
+			y = doc.text(40, y+6, 515, 8, statement.ExcelSHA256)
+			y = doc.text(40, y+6, 515, 7.5, "请核对配套 Excel 指纹；客户确认的校验清单同时绑定 PDF、Excel 和账单数据。")
+		}
 	}
 	if y > 767 {
 		return nil, errors.New("billing cover identity exceeds available page space")
@@ -775,15 +826,29 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		y += 28
 		pdf.SetTextColor(89, 105, 127)
 		digests := []struct{ label, digest string }{{"原始 PDF / SHA-256", statement.PDFSHA256}, {"明细归档清单 / SHA-256", statement.ManifestSHA256}, {"冻结数据快照 / SHA-256", statement.SnapshotSHA256}}
-		if snapshot.PDFTemplateVersion >= 8 {
+		if snapshot.PDFTemplateVersion >= 16 {
+			digests = []struct{ label, digest string }{
+				{"原始对账单指纹 / SHA-256", statement.PDFSHA256},
+				{"关联文件清单指纹 / SHA-256", statement.ManifestSHA256},
+				{"账单数据指纹 / SHA-256", statement.SnapshotSHA256},
+			}
+		} else if snapshot.PDFTemplateVersion >= 8 {
 			digests = []struct{ label, digest string }{{"原始对账单校验码 / SHA-256", statement.PDFSHA256}, {"消费明细校验码 / SHA-256", statement.ManifestSHA256}, {"账单数据校验码 / SHA-256", statement.SnapshotSHA256}}
 		}
 		if snapshot.PDFTemplateVersion >= 9 {
-			digests = append(digests, struct{ label, digest string }{"配套 Excel / SHA-256", statement.ExcelSHA256})
+			label := "配套 Excel / SHA-256"
+			if snapshot.PDFTemplateVersion >= 16 {
+				label = "配套 Excel 指纹 / SHA-256"
+			}
+			digests = append(digests, struct{ label, digest string }{label, statement.ExcelSHA256})
 		}
-		for _, item := range digests {
-			y = doc.text(40, y, 515, 8.5, item.label)
-			y = doc.text(40, y+6, 515, 8, item.digest) + 16
+		if snapshot.PDFTemplateVersion >= 16 {
+			y = doc.verificationInfo(y, statement, digests)
+		} else {
+			for _, item := range digests {
+				y = doc.text(40, y, 515, 8.5, item.label)
+				y = doc.text(40, y+6, 515, 8, item.digest) + 16
+			}
 		}
 		receiptNote := "本回执记录客户通过平台真实登录会话执行的确认操作。它不替代电子签章或法定数字签名；原始 PDF 与明细归档保持不变，可通过以上指纹核验关联文件。"
 		if snapshot.PDFTemplateVersion >= 8 {

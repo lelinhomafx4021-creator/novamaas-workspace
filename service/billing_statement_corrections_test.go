@@ -73,7 +73,7 @@ func TestBillingCorrectedMonthArchivesNewAmountsRatesAndEvidenceWithoutAnotherWa
 	require.NoError(t, err)
 	var corrected BillingSnapshot
 	require.NoError(t, common.UnmarshalJsonStr(next.Snapshot, &corrected))
-	assert.Equal(t, 15, corrected.PDFTemplateVersion)
+	assert.Equal(t, 16, corrected.PDFTemplateVersion)
 	assert.Equal(t, snapshot.CompanyTitle, corrected.CompanyTitle)
 	assert.Equal(t, snapshot.TaxID, corrected.TaxID)
 	assert.Equal(t, snapshot.Currency, corrected.Currency)

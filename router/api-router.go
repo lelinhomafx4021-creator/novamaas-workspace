@@ -107,6 +107,7 @@ func SetApiRouter(router *gin.Engine) {
 			billingRoute.POST("/statements/:statement_id/actions", middleware.CriticalRateLimit(), controller.ActOnBillingStatement)
 			billingRoute.GET("/statements/:statement_id/files/:kind/:ordinal", controller.DownloadBillingArtifact)
 			billingAdmin := billingRoute.Group("/admin", middleware.AdminAuth())
+			billingAdmin.GET("/accounts", controller.SearchBillingAccounts)
 			billingAdmin.GET("/preview", controller.BillingMonthPreview)
 			billingAdmin.GET("/storage-profiles", controller.BillingStorageProfiles)
 			billingAdmin.GET("/history-review", controller.ReviewBillingHistory)

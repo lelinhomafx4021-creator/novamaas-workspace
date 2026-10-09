@@ -21,25 +21,160 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { searchUsers } from '@/features/users/api'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { getBillingAccount, getBillingDay } from '../api'
+import {
+  getBillingAccount,
+  getBillingDay,
+  searchBillingAccounts,
+  saveBillingAccount,
+} from '../api'
 import { Billing } from '../index'
 
-vi.mock('@/features/users/api', async (original) => ({
-  ...(await original<typeof import('@/features/users/api')>()),
-  searchUsers: vi.fn(),
-}))
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
   getBillingAccount: vi.fn(),
   getBillingDay: vi.fn(),
+  searchBillingAccounts: vi.fn(),
+  saveBillingAccount: vi.fn(),
 }))
 
 afterEach(() => {
   useAuthStore.getState().auth.reset()
   vi.clearAllMocks()
+})
+
+test('formal accounting accounts display their company title in the account selector', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
+  const customer = {
+    id: 4,
+    username: 'formal_customer',
+    display_name: 'Customer',
+    quota: 0,
+    used_quota: 0,
+    request_count: 0,
+    group: 'default',
+    status: 1,
+    role: 1,
+    accounting_start_at: 100,
+    company_title: 'Customer Ltd',
+  }
+  vi.mocked(searchBillingAccounts).mockResolvedValue({
+    items: [customer],
+  })
+  vi.mocked(getBillingDay).mockRejectedValue(new Error('No usage fixture'))
+  vi.mocked(getBillingAccount).mockImplementation(async (id) => ({
+    user_id: id,
+    accounting_start_at: id === 4 ? 100 : 0,
+    company_title: id === 4 ? 'Customer Ltd' : '',
+    tax_id: '',
+    profile_version: 1,
+  }))
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <Billing />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('combobox', { name: 'Account' }))
+  const option = await screen.findByRole('option', {
+    name: 'formal_customer (#4) (Formal accounting - Customer Ltd)',
+  })
+  await user.click(option)
+  expect(screen.getByRole('combobox', { name: 'Account' })).toHaveTextContent(
+    'formal_customer (#4) (Formal accounting - Customer Ltd)'
+  )
+})
+
+test('the current administrator shows its formal accounting title even outside search results', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
+  vi.mocked(searchBillingAccounts).mockResolvedValue({ items: [] })
+  vi.mocked(getBillingDay).mockRejectedValue(new Error('No usage fixture'))
+  vi.mocked(getBillingAccount).mockResolvedValue({
+    user_id: 1,
+    accounting_start_at: 100,
+    company_title: 'Admin Company',
+    tax_id: 'TAX',
+    profile_version: 1,
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <Billing />
+    </QueryClientProvider>
+  )
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: 'Account' })).toHaveTextContent(
+      'admin (#1) (Formal accounting - Admin Company)'
+    )
+  )
+})
+
+test('saving a selected account title refreshes its formal label after search results exclude it', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
+  let title = 'Original Company'
+  const customer = {
+    id: 4,
+    username: 'customer',
+    accounting_start_at: 100,
+    company_title: title,
+  }
+  vi.mocked(searchBillingAccounts).mockResolvedValue({ items: [customer] })
+  vi.mocked(getBillingDay).mockRejectedValue(new Error('No usage fixture'))
+  vi.mocked(getBillingAccount).mockImplementation(async (id) => ({
+    user_id: id,
+    accounting_start_at: id === 4 ? 100 : 0,
+    company_title: id === 4 ? title : '',
+    tax_id: 'TAX',
+    profile_version: 1,
+  }))
+  vi.mocked(saveBillingAccount).mockImplementation(async (id, input) => {
+    title = input.company_title ?? title
+    return {
+      user_id: id,
+      accounting_start_at: 100,
+      company_title: title,
+      tax_id: 'TAX',
+      profile_version: 2,
+    }
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <Billing />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('combobox', { name: 'Account' }))
+  await user.click(
+    await screen.findByRole('option', {
+      name: 'customer (#4) (Formal accounting - Original Company)',
+    })
+  )
+  vi.mocked(searchBillingAccounts).mockResolvedValue({ items: [] })
+  fireEvent.change(screen.getByLabelText('Search accounts'), {
+    target: { value: 'absent' },
+  })
+  await waitFor(() =>
+    expect(searchBillingAccounts).toHaveBeenCalledWith('absent')
+  )
+  await user.click(screen.getByRole('tab', { name: 'Billing identity' }))
+  const field = await screen.findByLabelText('Company title')
+  await user.clear(field)
+  await user.type(field, 'Updated Company')
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: 'Account' })).toHaveTextContent(
+      'customer (#4) (Formal accounting - Updated Company)'
+    )
+  )
 })
 
 test('a selected customer keeps its username and ownership after account search results change', async () => {
@@ -54,10 +189,11 @@ test('a selected customer keeps its username and ownership after account search 
     group: 'default',
     status: 1,
     role: 1,
+    accounting_start_at: 0,
+    company_title: 'Customer',
   }
-  vi.mocked(searchUsers).mockResolvedValue({
-    success: true,
-    data: { items: [customer], page: 1, page_size: 30, total: 1 },
+  vi.mocked(searchBillingAccounts).mockResolvedValue({
+    items: [customer],
   })
   vi.mocked(getBillingDay).mockRejectedValue(new Error('No usage fixture'))
   vi.mocked(getBillingAccount).mockResolvedValue({
@@ -83,23 +219,14 @@ test('a selected customer keeps its username and ownership after account search 
   expect(
     screen.getByText('Selected billing customer: example_customer (#4)')
   ).toBeVisible()
-  vi.mocked(searchUsers).mockResolvedValue({
-    success: true,
-    data: {
-      items: [{ ...customer, id: 5, username: 'another_customer' }],
-      page: 1,
-      page_size: 30,
-      total: 1,
-    },
+  vi.mocked(searchBillingAccounts).mockResolvedValue({
+    items: [{ ...customer, id: 5, username: 'another_customer' }],
   })
   fireEvent.change(screen.getByLabelText('Search accounts'), {
     target: { value: 'another' },
   })
   await waitFor(() =>
-    expect(searchUsers).toHaveBeenCalledWith({
-      keyword: 'another',
-      page_size: 30,
-    })
+    expect(searchBillingAccounts).toHaveBeenCalledWith('another')
   )
   await user.click(screen.getByRole('combobox', { name: 'Account' }))
   expect(

@@ -16,6 +16,7 @@
     "({{total}} total, {{omit}} omitted)": "({{total}} au total, {{omit}} omis)",
     "(billed as vip itself, so base ratio of vip)": "(facturé comme vip lui-même, donc taux de base de vip)",
     "(falls back to billing as vip, so base ratio of vip)": "(retombe sur la facturation vip, donc taux de base de vip)",
+    "(Formal accounting - {{title}})": "(Comptabilité officielle - {{title}})",
     "(hits the override rule above)": "(correspond à la règle de remplacement ci-dessus)",
     "(instead of {{ratio}})": "(au lieu de {{ratio}})",
     "(Leave empty to dissolve tag)": "(Laisser vide pour dissoudre le tag)",

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
@@ -75,7 +76,6 @@ func (store *BillingArchiveStore) Put(ctx context.Context, statementID, kind str
 	}
 	hash := sha256.Sum256(body)
 	digest := hex.EncodeToString(hash[:])
-	key := fmt.Sprintf("billing/statements/%s/%s/%06d-%s", statementID, kind, ordinal, digest)
 	var artifact model.BillingArtifact
 	err := model.DB.Where("statement_id = ? AND kind = ? AND ordinal = ?", statementID, kind, ordinal).First(&artifact).Error
 	if err == nil {
@@ -88,6 +88,17 @@ func (store *BillingArchiveStore) Put(ctx context.Context, statementID, kind str
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
+	statement, err := model.GetBillingStatement(statementID)
+	if err != nil {
+		return nil, err
+	}
+	if userID <= 0 || statement.UserID != userID {
+		return nil, errors.New("invalid billing archive owner")
+	}
+	if _, err := time.Parse("2006-01", statement.Month); err != nil {
+		return nil, errors.New("invalid billing archive month")
+	}
+	key := fmt.Sprintf("billing/user-%d/%s/%s/%s/%06d-%s", userID, statement.Month, statementID, kind, ordinal, digest)
 	objectHash := sha256.Sum256([]byte(fmt.Sprintf("%d:%s", store.profileID, key)))
 	object := model.StorageObject{ObjectID: hex.EncodeToString(objectHash[:]), OwnerUserID: userID, StorageProfileID: store.profileID, Purpose: model.StorageObjectPurposeBillingArchive, ObjectKey: key, ContentType: contentType, Size: int64(len(body)), SHA256: digest, Status: model.StorageObjectStatusUploading}
 	// Register the object before I/O to freeze the profile's bucket/endpoint.

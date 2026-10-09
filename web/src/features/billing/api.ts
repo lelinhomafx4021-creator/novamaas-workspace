@@ -22,6 +22,7 @@ import { api } from '@/lib/api'
 
 import type {
   BillingAccount,
+  BillingAccountOption,
   BillingDay,
   BillingMonthPreview,
   BillingUsageDetails,
@@ -57,6 +58,16 @@ export async function getBillingAccount(userId: number) {
       await api.get<Response<BillingAccount>>('/api/billing/account', {
         params: { user_id: userId },
       })
+    ).data
+  )
+}
+export async function searchBillingAccounts(keyword: string) {
+  return unwrap(
+    (
+      await api.get<Response<{ items: BillingAccountOption[] }>>(
+        '/api/billing/admin/accounts',
+        { params: { keyword, page_size: 30 } }
+      )
     ).data
   )
 }

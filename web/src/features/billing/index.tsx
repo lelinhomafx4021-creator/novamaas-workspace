@@ -32,52 +32,65 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { searchUsers } from '@/features/users/api'
 import { useDebounce } from '@/hooks/use-debounce'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { billingToday } from './api'
+import { billingToday, getBillingAccount, searchBillingAccounts } from './api'
 import { BillingProfileCard } from './components/billing-profile-card'
 import { ConsumptionPanel } from './components/consumption-panel'
 import { CorrectionPanel } from './components/correction-panel'
 import { StatementsPanel } from './components/statements-panel'
+import type { BillingAccountOption } from './types'
 
 export function Billing() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const admin = (user?.role ?? 0) >= ROLE.ADMIN
-  const [selectedAccount, setSelectedAccount] = useState<{
-    value: number
-    label: string
-  } | null>(null)
+  const [selectedAccount, setSelectedAccount] =
+    useState<BillingAccountOption | null>(null)
   const [search, setSearch] = useState('')
   const keyword = useDebounce(search, 300)
   const [date, setDate] = useState(billingToday)
   const [tab, setTab] = useState('daily')
-  const userId = (admin ? selectedAccount?.value : null) ?? user?.id ?? 0
+  const userId = (admin ? selectedAccount?.id : null) ?? user?.id ?? 0
   const accounts = useQuery({
     queryKey: ['billing', 'users', keyword],
-    queryFn: () => searchUsers({ keyword, page_size: 30 }),
+    queryFn: () => searchBillingAccounts(keyword),
     enabled: admin,
   })
-  const userOptions = [
+  const ownAccount = useQuery({
+    queryKey: ['billing', 'account', user?.id ?? 0],
+    queryFn: () => getBillingAccount(user?.id ?? 0),
+    enabled: admin && Boolean(user?.id),
+  })
+  const activeAccount = useQuery({
+    queryKey: ['billing', 'account', userId],
+    queryFn: () => getBillingAccount(userId),
+    enabled: admin && userId > 0,
+  })
+  const candidates: BillingAccountOption[] = [
     {
-      value: user?.id ?? 0,
-      label: `${user?.username ?? t('My account')} (#${user?.id ?? 0})`,
+      id: user?.id ?? 0,
+      username: user?.username ?? t('My account'),
+      company_title: ownAccount.data?.company_title ?? '',
+      accounting_start_at: ownAccount.data?.accounting_start_at ?? 0,
     },
-    ...(accounts.data?.data?.items || [])
-      .filter((item) => item.id !== user?.id)
-      .map((item) => ({
-        value: item.id,
-        label: `${item.username} (#${item.id})`,
-      })),
+    ...(accounts.data?.items || []).filter((item) => item.id !== user?.id),
   ]
-  if (userId > 0 && !userOptions.some((item) => item.value === userId)) {
-    userOptions.push(
-      selectedAccount ?? { value: userId, label: `${t('Account')} #${userId}` }
-    )
+  if (selectedAccount && !candidates.some((item) => item.id === userId)) {
+    candidates.push(selectedAccount)
   }
+  const userOptions = candidates.map((item) => {
+    const profile = item.id === userId ? activeAccount.data : undefined
+    const start = profile?.accounting_start_at ?? item.accounting_start_at
+    const title = profile?.company_title ?? item.company_title
+    let label = `${item.username} (#${item.id})`
+    if (start > 0) {
+      label += ` ${t('(Formal accounting - {{title}})', { title })}`
+    }
+    return { value: item.id, label }
+  })
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>
@@ -107,7 +120,7 @@ export function Billing() {
                   onValueChange={(value) =>
                     value !== null &&
                     setSelectedAccount(
-                      userOptions.find((item) => item.value === value) ?? null
+                      candidates.find((item) => item.id === value) ?? null
                     )
                   }
                 >

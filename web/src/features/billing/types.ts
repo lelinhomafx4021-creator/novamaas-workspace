@@ -23,6 +23,12 @@ export interface BillingAccount {
   tax_id: string
   profile_version: number
 }
+export interface BillingAccountOption {
+  id: number
+  username: string
+  accounting_start_at: number
+  company_title: string
+}
 export interface BillingRow {
   label: string
   state?: 'future' | 'in_progress' | 'outside_period'

@@ -104,6 +104,25 @@ func BillingAccount(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
+func SearchBillingAccounts(c *gin.Context) {
+	if c.GetInt("role") < common.RoleAdminUser {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	page := common.GetPageQuery(c)
+	if page.GetPageSize() <= 0 || page.GetStartIdx() < 0 {
+		billingError(c, errors.New("invalid billing account page"))
+		return
+	}
+	items, total, err := model.SearchBillingAccounts(c.Request.Context(), c.Query("keyword"), page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		billingError(c, err)
+		return
+	}
+	page.SetItems(items)
+	page.SetTotal(int(total))
+	common.ApiSuccess(c, page)
+}
 func UpdateBillingAccount(c *gin.Context) {
 	id, ok := billingUserID(c)
 	if !ok {

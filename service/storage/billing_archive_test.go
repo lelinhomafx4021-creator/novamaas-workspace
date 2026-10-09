@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -17,10 +18,62 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type billingArchiveTransport struct{ data []byte }
+type billingArchiveTransport struct {
+	data    []byte
+	putKeys *[]string
+}
 
 func (transport billingArchiveTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if transport.putKeys != nil && request.Method == http.MethodPut {
+		*transport.putKeys = append(*transport.putKeys, request.URL.Path)
+	}
 	return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/octet-stream"}}, Body: io.NopCloser(bytes.NewReader(transport.data)), ContentLength: int64(len(transport.data)), Request: request}, nil
+}
+
+func TestBillingArchiveUploadsUnderAccountMonthAndStatement(t *testing.T) {
+	savedDB, savedSecret := model.DB, common.CryptoSecret
+	common.CryptoSecret = "permanent-storage-test-key"
+	t.Cleanup(func() { model.DB, common.CryptoSecret = savedDB, savedSecret })
+	setupStorageDatabase(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.BillingStatement{}, &model.BillingArtifact{}))
+	profile := &model.StorageProfile{Name: "billing", ProviderType: model.StorageProviderAliyunOSS, Status: model.StorageProfileStatusEnabled, Bucket: "test-bucket"}
+	require.NoError(t, model.DB.Create(profile).Error)
+	statement := &model.BillingStatement{ID: "statement-uuid", UserID: 42, Month: "2026-09", Revision: 1}
+	require.NoError(t, model.DB.Create(statement).Error)
+	payload := []byte("immutable billing artifact")
+	var keys []string
+	config := oss.LoadDefaultConfig().WithRegion("cn-hangzhou").WithEndpoint("https://oss-cn-hangzhou.aliyuncs.com").WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test-id", "test-secret")).WithHttpClient(&http.Client{Transport: billingArchiveTransport{data: payload, putKeys: &keys}})
+	store := &BillingArchiveStore{driver: &aliyunOSSDriver{client: oss.NewClient(config), bucket: profile.Bucket}, profileID: profile.ID, profile: profile}
+	for _, kind := range []string{"details", "snapshot", "pdf", "xlsx", "manifest", "receipt"} {
+		t.Run(kind, func(t *testing.T) {
+			artifact, err := store.Put(context.Background(), statement.ID, kind, 0, 42, "application/octet-stream", payload, 0)
+			require.NoError(t, err)
+			expected := fmt.Sprintf("billing/user-65dad71240db84f1791cc8ba/2026-09/statement-uuid/%s/000000-%s", kind, artifact.SHA256)
+			assert.Equal(t, expected, artifact.ObjectKey)
+			assert.Equal(t, "/"+expected, keys[len(keys)-1])
+			var object model.StorageObject
+			require.NoError(t, model.DB.Where("object_id = ?", artifact.ObjectID).First(&object).Error)
+			assert.Equal(t, expected, object.ObjectKey)
+			assert.Equal(t, 42, object.OwnerUserID)
+			uploads := len(keys)
+			retry, err := store.Put(context.Background(), statement.ID, kind, 0, 42, "application/octet-stream", payload, 0)
+			require.NoError(t, err)
+			assert.Equal(t, artifact.ObjectKey, retry.ObjectKey)
+			assert.Len(t, keys, uploads, "immutable retries reuse the archived artifact")
+		})
+	}
+	common.CryptoSecret = "rotated-permanent-storage-test-key"
+	uploads := len(keys)
+	receipt, err := store.Put(context.Background(), statement.ID, "receipt", 0, 42, "application/octet-stream", payload, 0)
+	require.NoError(t, err)
+	assert.Contains(t, receipt.ObjectKey, "billing/user-65dad71240db84f1791cc8ba/2026-09/")
+	assert.Len(t, keys, uploads, "saved object paths survive signing key rotation")
+	_, err = store.Put(context.Background(), statement.ID, "pdf", 1, 7, "application/pdf", payload, 0)
+	require.ErrorContains(t, err, "owner")
+	invalid := &model.BillingStatement{ID: "invalid-month", UserID: 42, Month: "../../elsewhere", Revision: 1}
+	require.NoError(t, model.DB.Create(invalid).Error)
+	_, err = store.Put(context.Background(), invalid.ID, "pdf", 1, 42, "application/pdf", payload, 0)
+	require.ErrorContains(t, err, "month")
 }
 
 func TestBillingArchiveReadRejectsCorruptionAndTruncation(t *testing.T) {

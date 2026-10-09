@@ -20,7 +20,8 @@ func billingCorrectionRoot(c *gin.Context) bool {
 }
 
 func BillingCorrectionGroups(c *gin.Context) {
-	if !billingCorrectionRoot(c) {
+	if !canViewFinancialAccounting(c) {
+		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 	id, ok := billingUserID(c)
@@ -57,7 +58,8 @@ func PreviewBillingCorrection(c *gin.Context) {
 }
 
 func ListBillingCorrections(c *gin.Context) {
-	if !billingCorrectionRoot(c) {
+	if !canViewFinancialAccounting(c) {
+		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 	id, ok := billingUserID(c)
@@ -73,7 +75,8 @@ func ListBillingCorrections(c *gin.Context) {
 }
 
 func GetBillingCorrection(c *gin.Context) {
-	if !billingCorrectionRoot(c) {
+	if !canViewFinancialAccounting(c) {
+		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 	batch, err := model.GetBillingCorrection(c.Param("correction_id"))

@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -71,6 +72,7 @@ func TestBillingControllerOwnershipAndSessionBoundary(t *testing.T) {
 	saved := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = saved })
+	setupBillingPermissions(t, db)
 	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}))
 	statement := &model.BillingStatement{ID: "private", UserID: 2, Month: "2026-02", Revision: 1, Status: model.StatementIssued, IssuedAt: 100, ManifestSHA256: "frozen", PDFSHA256: "pdf"}
 	statement.Snapshot = `{"total":{"count":1}}`
@@ -138,6 +140,8 @@ func TestBillingMonthPreviewDistinguishesUnconfiguredFromZeroConsumption(t *test
 	savedDB, savedLogDB := model.DB, model.LOG_DB
 	model.DB, model.LOG_DB = db, db
 	t.Cleanup(func() { model.DB, model.LOG_DB = savedDB, savedLogDB })
+	setupBillingPermissions(t, db)
+	require.NoError(t, authz.SetUserPermissions(4, authz.PermissionsMap{authz.ResourceFinancialAccounting: {authz.ActionFinancialView: false}}))
 	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.BillingAccount{}, &model.BillingHour{}, &model.BillingOperation{}, &model.BillingStatement{}, &model.Log{}))
 	start := time.Date(2020, 2, 3, 12, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*3600)).Unix()
 	require.NoError(t, db.Create(&model.Log{UserId: 4, Type: model.LogTypeConsume, Quota: 500000, CreatedAt: start}).Error)
@@ -208,6 +212,7 @@ func TestBillingLegacyEmptyDraftCannotBeIssuedWithHistoricalConsumption(t *testi
 	savedDB, savedLogs := model.DB, model.LOG_DB
 	model.DB, model.LOG_DB = db, db
 	t.Cleanup(func() { model.DB, model.LOG_DB = savedDB, savedLogs })
+	setupBillingPermissions(t, db)
 	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.Log{}))
 	start, end, err := model.BillingMonthBounds("2020-05")
 	require.NoError(t, err)

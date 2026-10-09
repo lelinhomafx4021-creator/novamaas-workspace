@@ -16,6 +16,7 @@
     "({{total}} total, {{omit}} omitted)": "（合計 {{total}} 件、{{omit}} 件を省略）",
     "(billed as vip itself, so base ratio of vip)": "（vip 自体として課金されるため、vip の基本倍率）",
     "(falls back to billing as vip, so base ratio of vip)": "（vip としての課金にフォールバックし、vip の基本倍率を使用）",
+    "(Formal accounting - {{title}})": "（正式記帳-{{title}}）",
     "(hits the override rule above)": "（上の上書きルールに一致）",
     "(instead of {{ratio}})": "（本来は {{ratio}}）",
     "(Leave empty to dissolve tag)": "(タグを解除するには空欄のままにしてください)",

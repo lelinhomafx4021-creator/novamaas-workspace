@@ -32,6 +32,11 @@ import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { billingTimestamp } from '../api'
 import type { CorrectionBatch } from '../correction-api'
+import {
+  formatCorrectionAmount,
+  getCorrectionCostDelta,
+} from '../lib/correction-amount'
+import { CorrectionCostSummary } from './correction-cost-summary'
 import { CorrectionPricingEvidence } from './correction-pricing-evidence'
 import { CorrectionWalletChange } from './correction-wallet-change'
 
@@ -57,6 +62,20 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
         return t('Include the full consumption and refund lifecycle')
       default:
         return reason ? t('Cannot safely recalculate this record') : t('Ready')
+    }
+  }
+  function costBlocked(reason: string) {
+    switch (reason) {
+      case 'missing_cost_evidence':
+        return t('Cost evidence is missing')
+      case 'cost_direction_changed':
+        return t(
+          'Adjustment is blocked. Resolve all preview checks and preview again.'
+        )
+      case 'invalid_cost_discount':
+        return t('Channel cost discount is invalid')
+      default:
+        return t('Cost cannot be safely recalculated')
     }
   }
   function download() {
@@ -127,6 +146,7 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
         </div>
       </dl>
       <CorrectionWalletChange batch={batch} />
+      <CorrectionCostSummary batch={batch} />
       <p className='text-sm'>
         {billingTimestamp(batch.start_at)} — {billingTimestamp(batch.end_at)}{' '}
         (Asia/Shanghai)
@@ -166,7 +186,9 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
       )}
       {!batch.can_apply && (
         <p role='alert'>
-          {t('Blocked records or no amount differences prevent execution.')}
+          {t(
+            'Blocked records or no sales or cost differences prevent execution.'
+          )}
         </p>
       )}
       <div className='max-h-96 overflow-auto'>
@@ -182,6 +204,9 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
               <TableHead>{t('Difference')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
               <TableHead>{t('Pricing evidence')}</TableHead>
+              <TableHead>{t('Current platform cost')}</TableHead>
+              <TableHead>{t('Recalculated platform cost')}</TableHead>
+              <TableHead>{t('Platform cost change')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -238,10 +263,47 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
                   })}
                 </TableCell>
                 <TableCell className='whitespace-normal'>
-                  {blocked(row.blocked)}
+                  {row.cost_blocked ? (
+                    <>
+                      {row.blocked && row.blocked !== row.cost_blocked && (
+                        <span>{blocked(row.blocked)}</span>
+                      )}
+                      <span className='text-destructive block text-xs'>
+                        {costBlocked(row.cost_blocked)}
+                      </span>
+                    </>
+                  ) : (
+                    blocked(row.blocked)
+                  )}
                 </TableCell>
                 <TableCell className='max-w-80 min-w-64 whitespace-normal'>
                   <CorrectionPricingEvidence value={row.target_pricing} />
+                </TableCell>
+                <TableCell>
+                  {formatCorrectionAmount(
+                    batch.status === 'reversed'
+                      ? row.corrected_cost_quota
+                      : row.current_cost_quota
+                  )}
+                </TableCell>
+                <TableCell>
+                  {formatCorrectionAmount(
+                    batch.status === 'reversed'
+                      ? row.current_cost_quota
+                      : row.corrected_cost_quota
+                  )}
+                  {row.cost_discount != null && row.cost_discount !== '' && (
+                    <span className='text-muted-foreground block text-xs'>
+                      {t('Batch cost discount')}:{' '}
+                      <span>{row.cost_discount}x</span>
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {formatCorrectionAmount(
+                    getCorrectionCostDelta(row),
+                    batch.status === 'reversed' ? -1 : 1
+                  )}
                 </TableCell>
               </TableRow>
             ))}

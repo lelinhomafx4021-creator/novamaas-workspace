@@ -47,6 +47,11 @@ export interface CorrectionRow {
   target_group?: string
   target_rate?: string
   target_pricing?: string
+  current_cost_quota?: number
+  corrected_cost_quota?: number
+  cost_delta?: number
+  cost_discount?: string
+  cost_blocked?: string
   corrected_quota: number
   delta: number
   blocked: string
@@ -69,6 +74,9 @@ export interface CorrectionBatch {
   charge_delta: number
   refund_delta: number
   net_delta: number
+  current_cost_quota?: number
+  corrected_cost_quota?: number
+  cost_delta?: number
   sha256: string
   audit_logged_at: number
   reversal_audit_logged_at: number

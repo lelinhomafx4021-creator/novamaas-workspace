@@ -194,6 +194,11 @@ export interface LogOtherData {
   // billing_mode === 'tiered_expr'. expr_b64 is the base64-encoded billing
   // expression; the matched tier and request-rule traces come from the actual
   // settlement run.
+  billing_correction_applied?: boolean
+  other_ratios?: Record<string, number>
+  resolution?: string
+  has_video?: boolean
+  total_tokens?: number
   billing_mode?: string
   expr_b64?: string
   matched_tier?: string

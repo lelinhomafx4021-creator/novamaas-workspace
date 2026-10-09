@@ -21,6 +21,19 @@ import { describe, expect, test } from 'vitest'
 import { getServerErrorMessageKey } from './server-error-message'
 
 describe('server error message mapping', () => {
+  test('billing adjustment failures provide an actionable recovery step', () => {
+    expect(
+      getServerErrorMessageKey({ code: 'BILLING_CORRECTION_DEPENDENCY' })
+    ).toBe('Reverse later adjustments before reversing this batch.')
+    expect(
+      getServerErrorMessageKey({ code: 'BILLING_CORRECTION_BLOCKED' })
+    ).toBe(
+      'Adjustment is blocked. Resolve all preview checks and preview again.'
+    )
+    expect(
+      getServerErrorMessageKey({ code: 'BILLING_INSUFFICIENT_QUOTA' })
+    ).toBe('Insufficient wallet balance to apply this adjustment.')
+  })
   test('maps the active-session limit to recovery instructions', () => {
     const message = getServerErrorMessageKey({ code: 'AUTH_SESSION_LIMIT' })
 

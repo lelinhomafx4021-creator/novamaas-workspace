@@ -18,7 +18,7 @@ func billingCorrectionRequestID(eventKey string) string {
 }
 
 // ApplyBillingCorrection atomically moves money, appends accounting entries,
-// updates usage counters, and claims each source exactly once. A reverse action
+// updates usage counters, and serializes successive corrections per source. A reverse action
 // appends the opposite entries; it never edits the original financial evidence.
 func ApplyBillingCorrection(id, digest, rate, userGroup string, actorID int, reverse bool, reason string) (*BillingCorrection, error) {
 	batch, err := GetBillingCorrection(id)
@@ -118,25 +118,31 @@ func ApplyBillingCorrection(id, digest, rate, userGroup string, actorID int, rev
 			if err := lockForUpdate(tx).First(&claim, "source_entry_id = ?", row.SourceEntryID).Error; err != nil {
 				return err
 			}
-			if (!reverse && claim.BatchID != "") || (reverse && claim.BatchID != batch.ID) {
+			if reverse && claim.BatchID != batch.ID {
+				return ErrBillingCorrectionDependency
+			}
+			if !reverse && claim.BatchID != row.PreviousBatchID {
 				return ErrBillingConflict
 			}
 			active := batch.ID
 			if reverse {
-				active = ""
+				active = row.PreviousBatchID
 			}
 			if err := tx.Model(&claim).Update("batch_id", active).Error; err != nil {
 				return err
 			}
-			if row.Delta == 0 {
-				continue
-			}
 			delta := row.Delta
 			group, rowRate := batch.TargetGroup, batch.TargetRate
+			if row.TargetGroup != "" {
+				group, rowRate = row.TargetGroup, row.TargetRate
+			}
 			action := "apply"
 			if reverse {
 				delta = -delta
 				group, rowRate = row.OriginalGroup, row.OriginalRate
+				if row.EffectiveGroup != "" {
+					group, rowRate = row.EffectiveGroup, row.EffectiveRate
+				}
 				action = "reverse"
 			}
 			if err := changeBillingWallet(tx, &user, -delta); err != nil {
@@ -148,6 +154,11 @@ func ApplyBillingCorrection(id, digest, rate, userGroup string, actorID int, rev
 			entry.RequestID = billingCorrectionRequestID(entry.EventKey)
 			if err := appendBillingEntry(tx, &user, &entry); err != nil {
 				return err
+			}
+			// Zero-money events still freeze a changed billing group/rate in
+			// statement and user projections, without creating revenue or logs.
+			if delta == 0 {
+				continue
 			}
 			// A pricing correction changes customer revenue, with no new upstream
 			// request or cost. Keep the original cost snapshots untouched.

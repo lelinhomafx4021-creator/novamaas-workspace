@@ -14,27 +14,15 @@ import (
 var billingPDFFont []byte
 
 // All dates, amounts and identity data come from the frozen snapshot.
-// Confirmation appends a receipt; the original PDF is never re-rendered.
+// Confirmation produces a separate receipt artifact; the archived original is unchanged.
 func RenderBillingStatementPDF(statement *model.BillingStatement, snapshot *BillingSnapshot, receipt bool) ([]byte, error) {
 	switch snapshot.PDFTemplateVersion {
 	case 0, 1:
 		return renderBillingStatementPDFV1(statement, snapshot, receipt)
 	case 2:
 		return renderBillingStatementPDFV2(statement, snapshot, receipt)
-	case 3:
+	case 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17:
 		return renderBillingStatementPDFV3(statement, snapshot, receipt)
-	case 4:
-		return renderBillingStatementPDFV4(statement, snapshot, receipt)
-	case 5:
-		return renderBillingStatementPDFV5(statement, snapshot, receipt)
-	case 6:
-		return renderBillingStatementPDFV6(statement, snapshot, receipt)
-	case 7:
-		return renderBillingStatementPDFV7(statement, snapshot, receipt)
-	case 9, 10, 11, 12, 13, 14:
-		return renderBillingStatementPDFV3(statement, snapshot, receipt)
-	case 8:
-		return renderBillingStatementPDFV8(statement, snapshot, receipt)
 	default:
 		return nil, errors.New("unsupported billing PDF template version")
 	}

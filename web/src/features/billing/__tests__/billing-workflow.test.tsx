@@ -362,6 +362,37 @@ describe('Billing statement void and replacement workflow', () => {
     expect(statementAction).not.toHaveBeenCalled()
   })
 
+  test('a confirmed statement with later corrections can be voided while its receipt remains available', async () => {
+    vi.mocked(getStatement).mockResolvedValue({
+      ...detail,
+      statement: {
+        ...detail.statement,
+        status: 'confirmed',
+        confirmed_at: 100,
+      },
+      source_warning: 'corrections_pending',
+    })
+    renderBilling(
+      <StatementDetail
+        id='statement'
+        onClose={vi.fn()}
+        admin
+        currentUserId={1}
+      />
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Void the current statement, then create a new draft from the latest accounting data.'
+    )
+    expect(
+      screen.getByRole('button', { name: 'Download confirmation receipt' })
+    ).toBeEnabled()
+    fireEvent.change(screen.getByLabelText('Reason / reply'), {
+      target: { value: 'Include pricing adjustment' },
+    })
+    expect(screen.getByRole('button', { name: 'Void statement' })).toBeEnabled()
+    expect(statementAction).not.toHaveBeenCalled()
+  })
+
   test('customer can download Excel but cannot void or replace statements', async () => {
     vi.mocked(getStatement).mockResolvedValue({
       ...detail,

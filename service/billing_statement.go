@@ -463,7 +463,7 @@ func PrepareBillingStatementContext(ctx context.Context, userID, actorID, storag
 		if snapshot.Total.Count == 0 && hasHistory {
 			return "", "", ErrBillingHistoricalDataUnreconciled
 		}
-		snapshot.PDFTemplateVersion = 14
+		snapshot.PDFTemplateVersion = 17
 		snapshot.AccountingBasis = model.BillingSourcePeriodCorrections
 		snapshot.Issuer, snapshot.PDFLogoPNG, snapshot.PDFFooter = branding.Issuer, branding.LogoPNG, branding.Footer
 		snapshot.OperatingName, snapshot.PDFOperatingLogoPNG = branding.OperatingName, branding.OperatingLogoPNG

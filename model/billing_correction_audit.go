@@ -45,11 +45,17 @@ func PublishBillingCorrectionAudit(id string) error {
 				}
 				delta := row.Delta
 				group := batch.TargetGroup
+				if row.TargetGroup != "" {
+					group = row.TargetGroup
+				}
 				if action == "reverse" {
 					delta = -delta
 					group = row.OriginalGroup
+					if row.EffectiveGroup != "" {
+						group = row.EffectiveGroup
+					}
 				}
-				body, err := common.Marshal(map[string]any{"admin_info": map[string]any{"correction_id": batch.ID, "source_entry_id": row.SourceEntryID, "action": action, "actor_id": batch.CreatedBy, "quota_delta": delta, "sha256": batch.SHA256, "reason": reason}})
+				body, err := common.Marshal(map[string]any{"admin_info": map[string]any{"correction_id": batch.ID, "source_entry_id": row.SourceEntryID, "action": action, "mode": batch.Mode, "actor_id": batch.CreatedBy, "quota_delta": delta, "sha256": batch.SHA256, "reason": reason}})
 				if err != nil {
 					return err
 				}

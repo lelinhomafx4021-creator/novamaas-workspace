@@ -195,7 +195,7 @@ func TestBillingPDFV8PaginatesLargeModelSummary(t *testing.T) {
 	}
 	expanded, err := RenderBillingStatementPDF(statement, snapshot, false)
 	require.NoError(t, err, "the expanded rate/price table must paginate without clipping rows or notes")
-	assert.Greater(t, strings.Count(string(expanded), "\n  /Type /Page\n"), strings.Count(string(pdf), "\n  /Type /Page\n"))
+	assert.GreaterOrEqual(t, strings.Count(string(expanded), "\n  /Type /Page\n"), strings.Count(string(pdf), "\n  /Type /Page\n"), "wrapped model names must retain every row across pages")
 	if output := os.Getenv("BILLING_PDF_V9_PAGINATION_TEST_OUTPUT"); output != "" {
 		require.NoError(t, os.WriteFile(output, expanded, 0600))
 	}

@@ -54,6 +54,13 @@ func billingCorrectionTarget(userID int, group string) (string, string, error) {
 }
 
 func PreviewBillingCorrection(input model.BillingCorrectionInput, actorID int) (*model.BillingCorrection, error) {
+	if input.Mode == model.BillingCorrectionModelPricing {
+		user, err := model.GetUserById(input.UserID, false)
+		if err != nil {
+			return nil, err
+		}
+		return model.PreviewBillingCorrection(input, actorID, "", user.Group)
+	}
 	rate, group, err := billingCorrectionTarget(input.UserID, input.TargetGroup)
 	if err != nil {
 		return nil, err
@@ -67,11 +74,18 @@ func ApplyBillingCorrection(id, digest string, actorID int, reverse bool, reason
 		return nil, err
 	}
 	rate, group := "", ""
-	if !reverse {
+	if !reverse && batch.Mode != model.BillingCorrectionModelPricing {
 		rate, group, err = billingCorrectionTarget(batch.UserID, batch.TargetGroup)
 		if err != nil {
 			return nil, err
 		}
+	}
+	if !reverse && batch.Mode == model.BillingCorrectionModelPricing {
+		user, lookupErr := model.GetUserById(batch.UserID, false)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		group = user.Group
 	}
 	result, err := model.ApplyBillingCorrection(id, digest, rate, group, actorID, reverse, reason)
 	if err != nil {

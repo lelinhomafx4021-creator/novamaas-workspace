@@ -157,6 +157,13 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 		order = clickHouseLogOrder("")
 	}
 	err = LOG_DB.Model(&Log{}).Where("token_id = ? AND type <> ?", tokenId, LogTypeBillingCorrection).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
+	if err == nil {
+		var adjustments []billingEffectiveLog
+		adjustments, err = billingEffectiveLogsForPage(context.Background(), logs)
+		if err == nil {
+			err = projectBillingEffectiveLogs(logs, adjustments)
+		}
+	}
 	formatUserLogs(logs, 0)
 	return logs, err
 }
@@ -493,6 +500,13 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, includeAccounting bool) (logs []*Log, total int64, err error) {
+	var adjustments []billingEffectiveLog
+	if group != "" {
+		adjustments, err = billingEffectiveLogs(context.Background(), CostAccountingFilter{LogType: logType, StartTimestamp: startTimestamp, EndTimestamp: endTimestamp, ModelName: modelName, Username: username, TokenName: tokenName, ChannelID: channel, RequestID: requestId, UpstreamRequestID: upstreamRequestId})
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -524,9 +538,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if channel != 0 {
 		tx = tx.Where("logs.channel_id = ?", channel)
 	}
-	if group != "" {
-		tx = tx.Where("logs."+logGroupCol+" = ?", group)
-	}
+	tx = applyBillingEffectiveGroup(tx, group, adjustments)
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
 		return nil, 0, err
@@ -539,10 +551,19 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if err != nil {
 		return nil, 0, err
 	}
+	if group == "" {
+		adjustments, err = billingEffectiveLogsForPage(context.Background(), logs)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	if includeAccounting {
 		if err := AttachLogAccounting(logs); err != nil {
 			return nil, 0, err
 		}
+	}
+	if err := projectBillingEffectiveLogs(logs, adjustments); err != nil {
+		return nil, 0, err
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		assignDisplayLogIds(logs, startIdx)
@@ -594,6 +615,13 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 const logSearchCountLimit = 10000
 
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string, includeAccounting bool) (logs []*Log, total int64, err error) {
+	var adjustments []billingEffectiveLog
+	if group != "" {
+		adjustments, err = billingEffectiveLogs(context.Background(), CostAccountingFilter{UserID: userId, LogType: logType, StartTimestamp: startTimestamp, EndTimestamp: endTimestamp, ModelName: modelName, TokenName: tokenName, RequestID: requestId, UpstreamRequestID: upstreamRequestId})
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("logs.user_id = ?", userId)
@@ -622,9 +650,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if endTimestamp != 0 {
 		tx = tx.Where("logs.created_at <= ?", endTimestamp)
 	}
-	if group != "" {
-		tx = tx.Where("logs."+logGroupCol+" = ?", group)
-	}
+	tx = applyBillingEffectiveGroup(tx, group, adjustments)
 	limitedCountQuery := tx.Session(&gorm.Session{}).
 		Model(&Log{}).
 		Select("logs.id").
@@ -643,10 +669,19 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 		common.SysError("failed to search user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")
 	}
+	if group == "" {
+		adjustments, err = billingEffectiveLogsForPage(context.Background(), logs)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	if includeAccounting {
 		if err := AttachLogAccounting(logs); err != nil {
 			return nil, 0, err
 		}
+	}
+	if err := projectBillingEffectiveLogs(logs, adjustments); err != nil {
+		return nil, 0, err
 	}
 
 	formatUserLogs(logs, startIdx)
@@ -728,14 +763,24 @@ func sumLogFinancialStatistics(filter CostAccountingFilter) (LogStatistics, erro
 }
 
 func SumLogStatistics(filter CostAccountingFilter) (LogStatistics, error) {
-	statistics, err := sumLogFinancialStatistics(filter)
+	statistics, err := sumBillingEffectiveLogStatistics(filter)
 	if err != nil {
 		return statistics, err
 	}
 
-	rateQuery, err := applyLogStatisticsFilter(LOG_DB.Table("logs"), filter)
+	rateFilter := filter
+	rateFilter.Group = ""
+	rateQuery, err := applyLogStatisticsFilter(LOG_DB.Table("logs"), rateFilter)
 	if err != nil {
 		return statistics, err
+	}
+	if filter.Group != "" {
+		rateFilter.StartTimestamp = max(filter.StartTimestamp, time.Now().Add(-60*time.Second).Unix())
+		adjustments, err := billingEffectiveLogs(context.Background(), rateFilter)
+		if err != nil {
+			return statistics, err
+		}
+		rateQuery = applyBillingEffectiveGroup(rateQuery, filter.Group, adjustments)
 	}
 	rateQuery = rateQuery.
 		Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm").

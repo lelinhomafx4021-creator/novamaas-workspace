@@ -53,17 +53,29 @@ import {
 import { CorrectionHistory } from './correction-history'
 import { CorrectionReview } from './correction-review'
 
-const schema = z.object({
-  start: z.string().min(10),
-  end: z.string().min(10),
-  models: z.string().trim().min(1).max(5100),
-  group: z.string().min(1),
-  reason: z.string().trim().min(4).max(1000),
-})
+const schema = z
+  .object({
+    mode: z.enum(['group_rate', 'model_pricing']),
+    start: z.string().min(10),
+    end: z.string().min(10),
+    models: z.string().trim().min(1).max(5100),
+    group: z.string(),
+    reason: z.string().trim().min(4).max(1000),
+  })
+  .superRefine((value, context) => {
+    if (value.mode === 'group_rate' && !value.group) {
+      context.addIssue({
+        code: 'custom',
+        path: ['group'],
+        message: 'Select a billing group',
+      })
+    }
+  })
 type Values = z.infer<typeof schema>
 
 function correctionSelection(userId: number, value: Values): CorrectionInput {
   return {
+    mode: value.mode,
     user_id: userId,
     start_at: Date.parse(`${value.start}T00:00:00+08:00`) / 1000,
     end_at: Date.parse(`${value.end}T00:00:00+08:00`) / 1000 + 86400,
@@ -75,7 +87,7 @@ function correctionSelection(userId: number, value: Values): CorrectionInput {
           .filter(Boolean)
       ),
     ].sort(),
-    target_group: value.group,
+    target_group: value.mode === 'group_rate' ? value.group : '',
     reason: value.reason.trim(),
   }
 }
@@ -102,6 +114,7 @@ export function CorrectionPanel(props: {
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: {
+      mode: 'group_rate',
       start: `${billingPreviousMonth()}-01`,
       end,
       models: '',
@@ -119,7 +132,7 @@ export function CorrectionPanel(props: {
   const groups = useQuery({
     queryKey: ['billing', 'correction-groups', props.userId],
     queryFn: () => correctionGroups(props.userId),
-    enabled: props.canManage,
+    enabled: props.canManage && values.mode === 'group_rate',
   })
   const history = useQuery({
     queryKey: ['billing', 'corrections', props.userId],
@@ -143,6 +156,7 @@ export function CorrectionPanel(props: {
     mutationFn: getCorrection,
     onSuccess: (batch) => {
       const value: Values = {
+        mode: batch.mode ?? 'group_rate',
         start: new Date((batch.start_at + 8 * 3600) * 1000)
           .toISOString()
           .slice(0, 10),
@@ -191,7 +205,7 @@ export function CorrectionPanel(props: {
       setConfirm('')
       setReverseReason('')
       toast.success(t('Adjustment completed'))
-      void queryClient.invalidateQueries({ queryKey: ['billing'] })
+      void queryClient.invalidateQueries()
     },
     onError: handleServerError,
   })
@@ -253,7 +267,7 @@ export function CorrectionPanel(props: {
       <h2 className='font-semibold'>{t('Billing adjustments')}</h2>
       <p className='text-muted-foreground text-sm'>
         {t(
-          'Reprice completed wallet tasks using historical unit prices and the target group rate. Original consumption and refunds remain unchanged. Adjustment logs are visible to administrators only.'
+          'Adjust completed wallet tasks by billing group or current model pricing. Original evidence is preserved; users see effective amounts.'
         )}
       </p>
       <p className='text-sm'>
@@ -272,6 +286,33 @@ export function CorrectionPanel(props: {
           onSubmit={form.handleSubmit((value) => preview.mutate(value))}
         >
           <FieldGroup className='grid gap-4 sm:grid-cols-2'>
+            <Field className='sm:col-span-2'>
+              <FieldLabel htmlFor={`${id}-mode`}>
+                {t('Adjustment type')}
+              </FieldLabel>
+              <NativeSelect
+                id={`${id}-mode`}
+                className='w-full'
+                disabled={pending}
+                {...form.register('mode')}
+              >
+                <NativeSelectOption value='group_rate'>
+                  {t('Billing group adjustment')}
+                </NativeSelectOption>
+                <NativeSelectOption value='model_pricing'>
+                  {t('Model pricing adjustment')}
+                </NativeSelectOption>
+              </NativeSelect>
+              <p className='text-muted-foreground text-sm'>
+                {values.mode === 'model_pricing'
+                  ? t(
+                      'Recalculate selected models using current pricing and existing billing groups. Resolution and input-video conditions come from saved task evidence.'
+                    )
+                  : t(
+                      'Change the billing group discount while keeping the historical model pricing. The upstream channel is unchanged.'
+                    )}
+              </p>
+            </Field>
             <Field data-invalid={Boolean(form.formState.errors.start)}>
               <FieldLabel htmlFor={`${id}-start`}>{t('Start date')}</FieldLabel>
               <Input
@@ -292,27 +333,29 @@ export function CorrectionPanel(props: {
                 {...form.register('end')}
               />
             </Field>
-            <Field data-invalid={Boolean(form.formState.errors.group)}>
-              <FieldLabel htmlFor={`${id}-group`}>
-                {t('Target billing group')}
-              </FieldLabel>
-              <NativeSelect
-                id={`${id}-group`}
-                aria-invalid={Boolean(form.formState.errors.group)}
-                className='w-full'
-                disabled={pending || groups.isPending}
-                {...form.register('group')}
-              >
-                <NativeSelectOption value=''>
-                  {t('Select a billing group')}
-                </NativeSelectOption>
-                {groups.data?.map((item) => (
-                  <NativeSelectOption key={item.group} value={item.group}>
-                    {item.group} / {(Number(item.rate) * 100).toFixed(2)}%
+            {values.mode === 'group_rate' && (
+              <Field data-invalid={Boolean(form.formState.errors.group)}>
+                <FieldLabel htmlFor={`${id}-group`}>
+                  {t('Target billing group')}
+                </FieldLabel>
+                <NativeSelect
+                  id={`${id}-group`}
+                  aria-invalid={Boolean(form.formState.errors.group)}
+                  className='w-full'
+                  disabled={pending || groups.isPending}
+                  {...form.register('group')}
+                >
+                  <NativeSelectOption value=''>
+                    {t('Select a billing group')}
                   </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </Field>
+                  {groups.data?.map((item) => (
+                    <NativeSelectOption key={item.group} value={item.group}>
+                      {item.group} / {(Number(item.rate) * 100).toFixed(2)}%
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+            )}
             <Field data-invalid={Boolean(form.formState.errors.models)}>
               <FieldLabel htmlFor={`${id}-models`}>
                 {t('Models to correct')}

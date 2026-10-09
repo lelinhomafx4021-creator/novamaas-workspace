@@ -49,7 +49,11 @@ func GetBillingUsageHours(ctx context.Context, userID int, start, end int64) (Bi
 	if userID <= 0 || start < 0 || end <= start || end-start > 31*86400 {
 		return BillingUsageWindow{}, errors.New("invalid usage billing period")
 	}
-	key := fmt.Sprintf("%p:%d:%d:%d", LOG_DB, userID, start, end)
+	var correctionVersion int64
+	if err := DB.WithContext(ctx).Model(&BillingEntry{}).Where("user_id = ? AND kind = ?", userID, "rate_correction").Select("COALESCE(MAX(id), 0)").Scan(&correctionVersion).Error; err != nil {
+		return BillingUsageWindow{}, err
+	}
+	key := fmt.Sprintf("%p:%p:%d:%d:%d:%d", DB, LOG_DB, userID, start, end, correctionVersion)
 	if cached, found, _ := billingUsageCache.Get(key); found {
 		return cached, nil
 	}
@@ -74,6 +78,28 @@ func GetBillingUsageHours(ctx context.Context, userID int, start, end int64) (Bi
 			Group("hour_bucket").Order("hour_bucket asc").Limit(744).Scan(&window.Hours).Error
 		if err != nil {
 			return BillingUsageWindow{}, err
+		}
+		adjustments, err := billingEffectiveLogs(queryCtx, CostAccountingFilter{UserID: userID, StartTimestamp: start, EndTimestamp: end - 1})
+		if err != nil {
+			return BillingUsageWindow{}, err
+		}
+		byHour := make(map[int64]int, len(window.Hours))
+		for i := range window.Hours {
+			byHour[window.Hours[i].Hour] = i
+		}
+		for _, adjustment := range adjustments {
+			hour := adjustment.Original.CreatedAt / 3600 * 3600
+			index, found := byHour[hour]
+			if !found {
+				return BillingUsageWindow{}, ErrBillingEvidenceIntegrity
+			}
+			delta := adjustment.Quota
+			if adjustment.Original.Type == LogTypeRefund {
+				delta = -delta
+				window.Hours[index].Refund += delta - int64(adjustment.Original.Quota)
+			} else {
+				window.Hours[index].Charge += delta - int64(adjustment.Original.Quota)
+			}
 		}
 		for _, hour := range window.Hours {
 			if hour.Invalid != 0 || hour.Charge < 0 || hour.Refund < 0 || hour.Charge > int64(common.MaxWalletQuota) || hour.Refund > int64(common.MaxWalletQuota) {
@@ -109,7 +135,7 @@ func GetBillingUsageRecords(ctx context.Context, userID int, start, end int64, b
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	query := LOG_DB.WithContext(queryCtx).Model(&Log{}).
-		Select("id", "created_at", "type", "model_name", "quota", "request_id").
+		Select("id", "user_id", "created_at", "type", "model_name", "quota", "request_id", "token_id", "channel_id").
 		Where("user_id = ? AND created_at >= ? AND created_at < ? AND created_at <= ?", userID, start, end, common.GetTimestamp()).
 		Where("type IN ?", []int{LogTypeConsume, LogTypeRefund})
 	if before != nil {
@@ -117,5 +143,24 @@ func GetBillingUsageRecords(ctx context.Context, userID int, start, end int64, b
 	}
 	records := make([]Log, 0)
 	err := query.Order("created_at desc").Order("id desc").Order("request_id desc").Limit(101).Find(&records).Error
+	if err != nil {
+		return nil, err
+	}
+	adjustments, err := billingEffectiveLogs(queryCtx, CostAccountingFilter{UserID: userID, StartTimestamp: start, EndTimestamp: end - 1})
+	if err != nil {
+		return nil, err
+	}
+	pointers := make([]*Log, 0, len(records))
+	for i := range records {
+		pointers = append(pointers, &records[i])
+	}
+	err = projectBillingEffectiveLogs(pointers, adjustments)
+	// These records remain a safe subset even though metadata was needed
+	// internally to project the correction.
+	for i := range records {
+		records[i].Other = ""
+		records[i].UserId, records[i].TokenId, records[i].ChannelId = 0, 0, 0
+		records[i].Group = ""
+	}
 	return records, err
 }

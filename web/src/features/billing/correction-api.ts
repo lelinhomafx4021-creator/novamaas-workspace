@@ -18,6 +18,21 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+export type CorrectionMode = 'group_rate' | 'model_pricing'
+
+export interface CorrectionPricingEvidence {
+  pricing_mode?: 'tokens' | 'per_call'
+  per_call_billing?: boolean
+  model_price?: number
+  model_ratio?: number
+  other_ratios?: Record<string, number>
+  total_tokens?: number
+  resolution?: string
+  has_video?: boolean
+  requested_resolution?: string
+  resolution_source?: string
+}
+
 export interface CorrectionRow {
   source_entry_id: number
   model_name: string
@@ -25,11 +40,19 @@ export interface CorrectionRow {
   original_group: string
   original_rate: string
   original_quota: number
+  effective_quota?: number
+  effective_group?: string
+  effective_rate?: string
+  previous_batch_id?: string
+  target_group?: string
+  target_rate?: string
+  target_pricing?: string
   corrected_quota: number
   delta: number
   blocked: string
 }
 export interface CorrectionBatch {
+  mode?: CorrectionMode
   id: string
   user_id: number
   created_by: number
@@ -52,6 +75,7 @@ export interface CorrectionBatch {
   rows: CorrectionRow[]
 }
 export interface CorrectionInput {
+  mode: CorrectionMode
   user_id: number
   start_at: number
   end_at: number

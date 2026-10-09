@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/seedancepricing"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 )
@@ -24,6 +25,10 @@ const (
 // 1 === ￥0.014 / 1k tokens
 
 var defaultModelRatio = map[string]float64{
+	// Seedance 2.5 base tier: CNY 70 / 1M output tokens, without video input.
+	// The adapter applies the resolution/video-input multiplier to this ratio.
+	"doubao-seedance-2-5":        70.0 / 1000 * RMB,
+	"doubao-seedance-2-5-260628": 70.0 / 1000 * RMB,
 	//"midjourney":                50,
 	"gpt-4-gizmo-*":                             15,
 	"gpt-4o-gizmo-*":                            2.5,
@@ -387,6 +392,16 @@ func GetModelRatio(name string) (float64, bool, string) {
 
 	ratio, ok := modelRatioMap.Get(name)
 	if !ok {
+		// Saved pre-2.5 option maps replace all defaults. Keep the new models
+		// usable without overwriting an administrator's explicit custom price.
+		if seedancepricing.IsSeedance25(name) {
+			if name == "doubao-seedance-2-5-260628" {
+				if canonicalRatio, configured := modelRatioMap.Get("doubao-seedance-2-5"); configured {
+					return canonicalRatio, true, name
+				}
+			}
+			return defaultModelRatio[name], true, name
+		}
 		return 37.5, operation_setting.SelfUseModeEnabled, name
 	}
 	return ratio, true, name
@@ -675,7 +690,13 @@ func UpdateAudioCompletionRatioByJSONString(jsonStr string) error {
 }
 
 func GetModelRatioCopy() map[string]float64 {
-	return modelRatioMap.ReadAll()
+	ratios := modelRatioMap.ReadAll()
+	for _, name := range []string{"doubao-seedance-2-5", "doubao-seedance-2-5-260628"} {
+		if _, configured := ratios[name]; !configured {
+			ratios[name], _, _ = GetModelRatio(name)
+		}
+	}
+	return ratios
 }
 
 func GetModelPriceCopy() map[string]float64 {

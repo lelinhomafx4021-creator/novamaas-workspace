@@ -20,6 +20,19 @@ import { api } from '@/lib/api'
 
 export type CorrectionMode = 'group_rate' | 'model_pricing'
 
+export interface CorrectionPricingEvidence {
+  pricing_mode?: 'tokens' | 'per_call'
+  per_call_billing?: boolean
+  model_price?: number
+  model_ratio?: number
+  other_ratios?: Record<string, number>
+  total_tokens?: number
+  resolution?: string
+  has_video?: boolean
+  requested_resolution?: string
+  resolution_source?: string
+}
+
 export interface CorrectionRow {
   source_entry_id: number
   model_name: string

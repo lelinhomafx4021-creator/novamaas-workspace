@@ -32,6 +32,8 @@ import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { billingTimestamp } from '../api'
 import type { CorrectionBatch } from '../correction-api'
+import { CorrectionPricingEvidence } from './correction-pricing-evidence'
+import { CorrectionWalletChange } from './correction-wallet-change'
 
 export function CorrectionReview(props: { batch: CorrectionBatch }) {
   const { t } = useTranslation()
@@ -124,6 +126,7 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
           </dd>
         </div>
       </dl>
+      <CorrectionWalletChange batch={batch} />
       <p className='text-sm'>
         {billingTimestamp(batch.start_at)} — {billingTimestamp(batch.end_at)}{' '}
         (Asia/Shanghai)
@@ -167,7 +170,7 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
         </p>
       )}
       <div className='max-h-96 overflow-auto'>
-        <Table>
+        <Table aria-label={t('Adjustment records')} className='min-w-[72rem]'>
           <TableHeader>
             <TableRow>
               <TableHead>{t('Model')}</TableHead>
@@ -178,6 +181,7 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
               <TableHead>{t('Corrected amount')}</TableHead>
               <TableHead>{t('Difference')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
+              <TableHead>{t('Pricing evidence')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -235,6 +239,9 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
                 </TableCell>
                 <TableCell className='whitespace-normal'>
                   {blocked(row.blocked)}
+                </TableCell>
+                <TableCell className='max-w-80 min-w-64 whitespace-normal'>
+                  <CorrectionPricingEvidence value={row.target_pricing} />
                 </TableCell>
               </TableRow>
             ))}

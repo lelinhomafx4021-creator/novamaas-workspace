@@ -101,14 +101,16 @@ var ErrBillingCorrectionDependency = errors.New("reverse later corrections befor
 // These parameters are frozen with every preview row. A configuration change
 // during review changes the evidence digest and requires a new preview.
 type billingCorrectionPricing struct {
-	PricingMode    string             `json:"pricing_mode"`
-	ModelPrice     float64            `json:"model_price"`
-	ModelRatio     float64            `json:"model_ratio"`
-	OtherRatios    map[string]float64 `json:"other_ratios"`
-	PerCallBilling bool               `json:"per_call_billing"`
-	TotalTokens    int64              `json:"total_tokens,omitempty"`
-	Resolution     string             `json:"resolution,omitempty"`
-	HasVideo       *bool              `json:"has_video,omitempty"`
+	PricingMode         string             `json:"pricing_mode"`
+	ModelPrice          float64            `json:"model_price"`
+	ModelRatio          float64            `json:"model_ratio"`
+	OtherRatios         map[string]float64 `json:"other_ratios"`
+	PerCallBilling      bool               `json:"per_call_billing"`
+	TotalTokens         int64              `json:"total_tokens,omitempty"`
+	Resolution          string             `json:"resolution,omitempty"`
+	HasVideo            *bool              `json:"has_video,omitempty"`
+	RequestedResolution string             `json:"requested_resolution,omitempty"`
+	ResolutionSource    string             `json:"resolution_source,omitempty"`
 }
 
 func billingCorrectionPricingQuota(pricing billingCorrectionPricing, groupRatio float64, settled bool) (int64, error) {
@@ -164,8 +166,8 @@ func billingCorrectionVideoRequestEvidence(body []byte) billingCorrectionVideoRe
 		VideoURL json.RawMessage `json:"video_url"`
 	}
 	type videoRequest struct {
-		Resolution string         `json:"resolution"`
-		Content    *[]contentItem `json:"content"`
+		Resolution json.RawMessage `json:"resolution"`
+		Content    *[]contentItem  `json:"content"`
 	}
 	var request struct {
 		videoRequest
@@ -180,10 +182,19 @@ func billingCorrectionVideoRequestEvidence(body []byte) billingCorrectionVideoRe
 	if data.Content == nil && request.Metadata != nil {
 		data = *request.Metadata
 	}
-	if data.Content == nil || len(*data.Content) == 0 || strings.TrimSpace(data.Resolution) == "" {
+	if data.Content == nil || len(*data.Content) == 0 {
 		return billingCorrectionVideoRequest{}
 	}
-	evidence := billingCorrectionVideoRequest{Resolution: strings.ToLower(strings.TrimSpace(data.Resolution)), Valid: true}
+	evidence := billingCorrectionVideoRequest{Valid: true}
+	if len(data.Resolution) > 0 {
+		if common.GetJsonType(data.Resolution) != "string" || common.Unmarshal(data.Resolution, &evidence.Resolution) != nil {
+			return billingCorrectionVideoRequest{}
+		}
+		evidence.Resolution = strings.ToLower(strings.TrimSpace(evidence.Resolution))
+		if evidence.Resolution == "" {
+			return billingCorrectionVideoRequest{}
+		}
+	}
 	for _, item := range *data.Content {
 		if item.Type == "video_url" || len(item.VideoURL) > 0 {
 			evidence.HasVideo = true
@@ -266,7 +277,10 @@ func billingCorrectionTaskPricing(task *Task, current bool, request billingCorre
 		pricing.OtherRatios[key] = value
 	}
 	var result struct {
-		Usage struct {
+		// Only known Seedance repricing interprets this field. Other providers
+		// may return numeric/object resolution metadata unrelated to billing.
+		Resolution json.RawMessage `json:"resolution"`
+		Usage      struct {
 			TotalTokens int64 `json:"total_tokens"`
 		} `json:"usage"`
 	}
@@ -306,11 +320,28 @@ func billingCorrectionTaskPricing(task *Task, current bool, request billingCorre
 		if !request.Valid {
 			return pricing, ErrBillingCorrectionBlocked
 		}
-		quoted, ok := seedancepricing.Lookup(bc.OriginModelName, request.Resolution, request.HasVideo)
+		// Keep complete archived input evidence for video/no-video pricing.
+		// A returned resolution describes the generated output and can prove
+		// an omitted request option; it must never conceal an invalid request.
+		if request.Resolution != "" {
+			if _, ok := seedancepricing.Lookup(bc.OriginModelName, request.Resolution, request.HasVideo); !ok {
+				return pricing, ErrBillingCorrectionBlocked
+			}
+		}
+		resolution, source := request.Resolution, "archived_request"
+		if len(result.Resolution) > 0 {
+			if common.GetJsonType(result.Resolution) != "string" || common.Unmarshal(result.Resolution, &resolution) != nil {
+				return pricing, ErrBillingCorrectionBlocked
+			}
+			resolution = strings.ToLower(strings.TrimSpace(resolution))
+			source = "upstream_response"
+		}
+		quoted, ok := seedancepricing.Lookup(bc.OriginModelName, resolution, request.HasVideo)
 		if !ok {
 			return pricing, ErrBillingCorrectionBlocked
 		}
-		pricing.Resolution, pricing.HasVideo = request.Resolution, &request.HasVideo
+		pricing.Resolution, pricing.HasVideo = resolution, &request.HasVideo
+		pricing.RequestedResolution, pricing.ResolutionSource = request.Resolution, source
 		delete(pricing.OtherRatios, "video_input")
 		if quoted.Ratio != 1 {
 			pricing.OtherRatios["video_input"] = quoted.Ratio
@@ -455,6 +486,14 @@ func billingCorrectionEvidence(scope *gorm.DB, batch *BillingCorrection, startSe
 			oldFinal := oldSubmission
 			if oldPricing.ModelRatio > 0 && !oldPricing.PerCallBilling && oldPricing.TotalTokens > 0 {
 				oldFinal, oldErr = billingCorrectionPricingQuota(oldPricing, bc.GroupRatio, true)
+			}
+			// Polling publishes SUCCESS before it commits token settlement. A lone
+			// token submission does not prove settlement finished, even when the
+			// saved rate reproduces its precharge: live polling reads today's rate.
+			// Without another durable entry both paths could post the same delta.
+			if task.Status == TaskStatusSuccess && !oldPricing.PerCallBilling && oldPricing.PricingMode == "tokens" &&
+				len(taskEntries[task.TaskID]) == 1 && int64(task.Quota) == oldSubmission {
+				row.Blocked = "incomplete_task_range"
 			}
 			if (batch.Mode == BillingCorrectionModelPricing || previousPricing[entry.ID] != "") && task.Status == TaskStatusSuccess {
 				// Older completion code could read a configured token ratio without

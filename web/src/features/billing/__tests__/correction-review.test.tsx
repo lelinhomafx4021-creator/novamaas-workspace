@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import i18next, { createInstance } from 'i18next'
+import { I18nextProvider, initReactI18next, setI18n } from 'react-i18next'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
 import {
@@ -63,6 +65,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   useSystemConfigStore.getState().setConfig({ currency: originalCurrency })
+  setI18n(i18next)
 })
 
 test.each([
@@ -122,6 +125,73 @@ function pricedRow(
     }),
   }
 }
+
+test.each([
+  {
+    language: 'zhCN',
+    tokens: '12,345',
+    model: '5.5x',
+    video: '1.1x',
+    other: '1.25x',
+  },
+  {
+    language: 'zhTW',
+    tokens: '12,345',
+    model: '5.5x',
+    video: '1.1x',
+    other: '1.25x',
+  },
+  {
+    language: 'fr',
+    tokens: '12 345',
+    model: '5,5x',
+    video: '1,1x',
+    other: '1,25x',
+  },
+])(
+  '$language previews render token usage and all pricing multipliers without a locale error',
+  async (example) => {
+    const localized = createInstance()
+    await localized.use(initReactI18next).init({
+      lng: example.language,
+      fallbackLng: 'en',
+      resources: {
+        [example.language]: { translation: { Model: 'Model' } },
+        en: { translation: { Model: 'Model' } },
+      },
+    })
+    expect(localized.resolvedLanguage).toBe(example.language)
+    const row = pricedRow(10, '1080p', false, 1.1)
+    render(
+      <I18nextProvider i18n={localized}>
+        <CorrectionReview
+          batch={{
+            ...batch,
+            rows: [
+              {
+                ...row,
+                target_pricing: JSON.stringify({
+                  ...JSON.parse(row.target_pricing ?? '{}'),
+                  model_ratio: 5.5,
+                  other_ratios: { video_input: 1.1, seconds: 1.25 },
+                }),
+              },
+            ],
+          }}
+        />
+      </I18nextProvider>
+    )
+    const table = screen.getByRole('table', { name: 'Adjustment records' })
+    expect(within(table).getByText(example.tokens)).toBeVisible()
+    expect(within(table).getByText(example.model)).toBeVisible()
+    expect(within(table).getByText(example.video)).toBeVisible()
+    expect(within(table).getByText(example.other)).toBeVisible()
+    expect(within(table).getByText('1080p')).toBeVisible()
+    expect(
+      screen.getByRole('status', { name: 'Wallet balance change' })
+    ).toHaveTextContent('Additional wallet charge')
+  }
+)
 
 test('Seedance rows distinguish resolution and video input with their current unit prices', () => {
   render(

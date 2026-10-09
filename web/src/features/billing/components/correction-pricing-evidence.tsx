@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { toIntlLocale } from '@/i18n/languages'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 
 import type { CorrectionPricingEvidence as PricingEvidence } from '../correction-api'
@@ -105,6 +106,7 @@ function readPricingEvidence(value?: string): PricingEvidence | undefined {
 
 export function CorrectionPricingEvidence(props: { value?: string }) {
   const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const pricing = readPricingEvidence(props.value)
   if (!pricing) {
     return (
@@ -134,9 +136,7 @@ export function CorrectionPricingEvidence(props: { value?: string }) {
     { label: t('Video input'), value: videoInput },
     {
       label: t('Total Tokens'),
-      value:
-        pricing.total_tokens?.toLocaleString(i18n.resolvedLanguage) ??
-        t('Unknown'),
+      value: pricing.total_tokens?.toLocaleString(locale) ?? t('Unknown'),
     },
     {
       label: tokens ? t('Unit price per million tokens') : t('Model Price'),
@@ -151,7 +151,7 @@ export function CorrectionPricingEvidence(props: { value?: string }) {
     },
     {
       label: t('Video pricing multiplier'),
-      value: `${videoRatio.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 6 })}x`,
+      value: `${videoRatio.toLocaleString(locale, { maximumFractionDigits: 6 })}x`,
     },
   ]
   if (pricing.requested_resolution != null || pricing.resolution_source) {
@@ -173,7 +173,7 @@ export function CorrectionPricingEvidence(props: { value?: string }) {
   if (tokens && pricing.model_ratio != null) {
     rows.push({
       label: t('Model ratio'),
-      value: `${pricing.model_ratio.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 6 })}x`,
+      value: `${pricing.model_ratio.toLocaleString(locale, { maximumFractionDigits: 6 })}x`,
     })
   }
   for (const [name, ratio] of Object.entries(pricing.other_ratios ?? {}).sort(
@@ -185,7 +185,7 @@ export function CorrectionPricingEvidence(props: { value?: string }) {
         name === 'seconds'
           ? t('Duration multiplier')
           : t('Multiplier {{name}}', { name }),
-      value: `${ratio.toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 6 })}x`,
+      value: `${ratio.toLocaleString(locale, { maximumFractionDigits: 6 })}x`,
     })
   }
   return (

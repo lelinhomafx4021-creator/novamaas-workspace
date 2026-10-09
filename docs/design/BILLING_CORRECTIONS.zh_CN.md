@@ -120,7 +120,7 @@ doubao-seedance-2-5-260628
 | `go test ./model ./controller -count=1` | 两个完整包通过，包含历史账单作废、重建和冻结回归 |
 | `go test ./controller ./service ./service/storage ./pkg/seedancepricing ./relay/channel/task/doubao ./relay/channel/task/volcnative ./setting/ratio_setting -count=1` | 七个完整包通过，与上一行合计覆盖八个不同包 |
 | `GOWORK=off go test ./model ./controller ./service ./service/storage ./pkg/seedancepricing ./relay/channel/task/doubao ./relay/channel/task/volcnative ./setting/ratio_setting -count=1` | 追加输出取证与延期结算防重复扣退修复后，八个完整包通过 |
-| 相关前端 Vitest 集合 | 首轮 24 个文件、140 项测试通过；追加预览证据与钱包方向验证后，对账目录 9 个文件、68 项测试通过 |
+| 相关前端 Vitest 集合 | 首轮 24 个文件、140 项测试通过；追加预览证据与钱包方向验证后，增加中文语言标识回归后，对账目录 9 个文件、71 项测试通过 |
 | `bun run typecheck` | 通过 |
 | 变更 TS/TSX 文件 lint 与格式检查 | 首轮 13 个文件及追加的 5 个文件均通过 |
 | 变更文件的受保护版权头 | 已有文件与基线一致，新增文件保留项目版权；全项目版权检查另有 18 个未改动文件的既有告警 |
@@ -131,3 +131,5 @@ doubao-seedance-2-5-260628
 测试使用隔离 SQLite 主库与日志库；ClickHouse 身份分支通过模拟数据验证。代码使用 GORM 通用查询和共享行锁，未新增数据库专属迁移。本轮未完成真实 MySQL、PostgreSQL、ClickHouse 的全链路集成验收，也未使用真实客户执行扣款或退款；上线验收应以保存的预览 JSON、原消费行和重建账单逐项核对。
 
 追加核算验证使用只读取得的脱敏账务快照，在隔离 SQLite 中重放完整预览，与独立十进制复算逐任务一致。真实明细与金额保留于本地忽略目录；该检查不执行真实余额变动或修改原预览。
+
+调账预览的数字格式化统一复用 `toIntlLocale`，将界面语言 `zhCN`、`zhTW` 转换为 `zh-CN`、`zh-TW` 后传给浏览器，避免中文预览抛出 `RangeError`。回归先稳定复现简体、繁体中文错误，再验证 token 与全部计费倍率正常展示，并保留法语数字格式。此修复仅影响前端展示。

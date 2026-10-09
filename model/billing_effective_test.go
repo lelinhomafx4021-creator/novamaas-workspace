@@ -18,7 +18,7 @@ type billingEffectiveFixture struct {
 	Hour           int64
 }
 
-func seedBillingEffectiveViews(t *testing.T) billingEffectiveFixture {
+func seedBillingEffectiveViews(t *testing.T, firstSourceKind ...string) billingEffectiveFixture {
 	t.Helper()
 	oldDB, oldLogs := DB, LOG_DB
 	mainDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -55,6 +55,12 @@ func seedBillingEffectiveViews(t *testing.T) billingEffectiveFixture {
 	fixture.Sources = []BillingEntry{
 		{EventKey: "source-charge", UserID: 50, Sequence: 1, PostedAt: fixture.Charge.CreatedAt, Kind: "usage", Quota: 1000, ModelName: "video", TokenID: 4, RequestID: "same-request", SourceLogID: fixture.Charge.Id},
 		{EventKey: "source-refund", UserID: 50, Sequence: 2, PostedAt: fixture.Refund.CreatedAt, Kind: "refund", Quota: -400, ModelName: "video", TokenID: 4, RequestID: "same-request", SourceLogID: fixture.Refund.Id},
+	}
+	if len(firstSourceKind) > 0 {
+		fixture.Sources[0].Kind = firstSourceKind[0]
+		if firstSourceKind[0] == "task_adjustment" {
+			fixture.Sources[0].RequestID = "video-source"
+		}
 	}
 	require.NoError(t, DB.Create(&fixture.Sources).Error)
 	require.NoError(t, DB.Create(&Channel{Id: 3, Name: "upstream", CostDiscount: "0.9"}).Error)
@@ -408,6 +414,57 @@ func TestBillingEffectiveTokenSettlementUsesCurrentTokenPriceInVisibleFeeDetails
 	assert.Equal(t, "1080p", metadata["resolution"])
 	assert.Equal(t, float64(200), metadata["total_tokens"])
 	assert.Equal(t, 10, logs[0].PromptTokens, "changing the visible pricing basis does not rewrite factual token usage")
+}
+
+func TestBillingEffectiveTaskSettlementsExposeTaskIdentityAndAuthoritativePricing(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		resolution   string
+		sourceTaskID string
+		ratios       map[string]any
+	}{
+		{name: "1080p without video", resolution: "1080p", sourceTaskID: "video-source", ratios: map[string]any{"video_input": 1.1}},
+		{name: "720p without video clears legacy multiplier", resolution: "720p", ratios: map[string]any{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := seedBillingEffectiveViews(t, "task_adjustment")
+			fixture.Charge.Other = common.MapToJsonStr(map[string]any{
+				"task_id": test.sourceTaskID, "group_ratio": 1, "model_price": -1,
+				"model_ratio": 5, "video_input": 0.6,
+			})
+			require.NoError(t, LOG_DB.Model(&Log{}).Where("id = ?", fixture.Charge.Id).Update("other", fixture.Charge.Other).Error)
+			appendBillingEffectiveFixtureEvents(t, fixture, false)
+			pricing := common.MapToJsonStr(map[string]any{
+				"pricing_mode": "tokens", "model_price": -1, "model_ratio": 5,
+				"other_ratios": test.ratios, "resolution": test.resolution,
+				"has_video": false, "total_tokens": 10000,
+			})
+			require.NoError(t, DB.Model(&BillingCorrectionRow{}).Where("batch_id = ? AND source_entry_id = ?", "fixture", fixture.Sources[0].ID).Update("target_pricing", pricing).Error)
+
+			logs, total, err := GetUserLogs(50, LogTypeConsume, 0, 0, "", "", 0, 10, "", "", "", false)
+			require.NoError(t, err)
+			require.Len(t, logs, 1)
+			assert.EqualValues(t, 1, total)
+			metadata, err := common.StrToMap(logs[0].Other)
+			require.NoError(t, err)
+			assert.Equal(t, true, metadata["is_task"], "historical settlement logs must be recognizable as tasks after correction")
+			assert.Equal(t, "video-source", metadata["task_id"])
+			assert.Equal(t, float64(5), metadata["model_ratio"], "the base model ratio must not absorb the resolution multiplier")
+			assert.Equal(t, test.ratios, metadata["other_ratios"], "an explicit empty effective map overrides the legacy top-level multiplier")
+			assert.Equal(t, test.resolution, metadata["resolution"])
+			assert.Equal(t, false, metadata["has_video"])
+			assert.Equal(t, float64(10000), metadata["total_tokens"])
+			assert.Equal(t, 1200, logs[0].Quota)
+
+			var original Log
+			require.NoError(t, LOG_DB.First(&original, fixture.Charge.Id).Error)
+			assert.Equal(t, fixture.Charge.Other, original.Other, "projection must not rewrite the original log's evidence")
+			assert.Equal(t, 1000, original.Quota)
+			var source BillingEntry
+			require.NoError(t, DB.First(&source, fixture.Sources[0].ID).Error)
+			assert.Equal(t, int64(1000), source.Quota)
+		})
+	}
 }
 
 func TestBillingEffectiveStatisticsRejectAggregateOverflowInsteadOfWrappingCharges(t *testing.T) {

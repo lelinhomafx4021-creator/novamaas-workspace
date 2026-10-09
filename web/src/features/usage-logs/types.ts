@@ -196,6 +196,8 @@ export interface LogOtherData {
   // settlement run.
   billing_correction_applied?: boolean
   other_ratios?: Record<string, number>
+  // Historical task settlement logs stored the precise multiplier at the top level.
+  video_input?: number
   resolution?: string
   has_video?: boolean
   total_tokens?: number

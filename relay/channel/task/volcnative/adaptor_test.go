@@ -2,6 +2,7 @@ package volcnative
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,54 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestVolcNativeSeedance20RequestResolutionAndVideoBilling(t *testing.T) {
+	tiers := []struct {
+		resolution string
+		noVideo    float64
+		withVideo  float64
+	}{
+		{resolution: "480p", noVideo: 46, withVideo: 28},
+		{resolution: "720p", noVideo: 46, withVideo: 28},
+		{resolution: "1080p", noVideo: 51, withVideo: 31},
+		{resolution: "4k", noVideo: 26, withVideo: 16},
+	}
+	for _, modelName := range []string{"doubao-seedance-2-0", "doubao-seedance-2-0-260128"} {
+		for _, tier := range tiers {
+			for _, hasVideo := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/video=%t", modelName, tier.resolution, hasVideo), func(t *testing.T) {
+					content := []interface{}{map[string]interface{}{"type": "text", "text": "animate"}}
+					wantPrice := tier.noVideo
+					if hasVideo {
+						content = append(content, map[string]interface{}{"type": "video_url", "video_url": map[string]interface{}{"url": "https://example.com/input.mp4"}})
+						wantPrice = tier.withVideo
+					}
+					data, err := common.Marshal(map[string]interface{}{"model": modelName, "resolution": tier.resolution, "content": content})
+					require.NoError(t, err)
+					ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+					ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", bytes.NewReader(data))
+					info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}, TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
+					adaptor := &TaskAdaptor{}
+					require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+					assert.Equal(t, modelName, info.OriginModelName)
+					ratios := adaptor.EstimateBilling(ctx, info)
+					if wantPrice == 46 {
+						assert.Empty(t, ratios, "base-tier native requests must not add a second price multiplier")
+					} else {
+						require.Len(t, ratios, 1)
+						assert.InDelta(t, wantPrice/46, ratios["video_input"], 1e-12)
+					}
+
+					body, err := adaptor.BuildRequestBody(ctx, info)
+					require.NoError(t, err)
+					upstream, err := io.ReadAll(body)
+					require.NoError(t, err)
+					assert.Equal(t, data, upstream, "native resolution and media content must be forwarded without generic conversion")
+				})
+			}
+		}
+	}
+}
 
 func TestVolcNativeSeedance25RejectsUnsupportedPricingTiers(t *testing.T) {
 	tests := []struct {

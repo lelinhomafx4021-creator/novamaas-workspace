@@ -161,7 +161,10 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 		var adjustments []billingEffectiveLog
 		adjustments, err = billingEffectiveLogsForPage(context.Background(), logs)
 		if err == nil {
-			err = projectBillingEffectiveLogs(logs, adjustments)
+			err = attachHistoricalTaskLogPricing(logs)
+			if err == nil {
+				err = projectBillingEffectiveLogs(logs, adjustments)
+			}
 		}
 	}
 	formatUserLogs(logs, 0)
@@ -562,6 +565,9 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 			return nil, 0, err
 		}
 	}
+	if err := attachHistoricalTaskLogPricing(logs); err != nil {
+		return nil, 0, err
+	}
 	if err := projectBillingEffectiveLogs(logs, adjustments); err != nil {
 		return nil, 0, err
 	}
@@ -679,6 +685,9 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 		if err := AttachLogAccounting(logs); err != nil {
 			return nil, 0, err
 		}
+	}
+	if err := attachHistoricalTaskLogPricing(logs); err != nil {
+		return nil, 0, err
 	}
 	if err := projectBillingEffectiveLogs(logs, adjustments); err != nil {
 		return nil, 0, err

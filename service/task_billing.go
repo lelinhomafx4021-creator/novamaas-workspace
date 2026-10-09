@@ -38,6 +38,11 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	}
 	other := make(map[string]interface{})
 	other["is_task"] = true
+	otherRatios := info.PriceData.OtherRatios()
+	if otherRatios == nil {
+		otherRatios = make(map[string]float64)
+	}
+	other["other_ratios"] = otherRatios
 	if info.TaskRelayInfo != nil && info.PublicTaskID != "" {
 		other["task_id"] = info.PublicTaskID
 		if common.GetContextKeyBool(c, constant.ContextKeyVideoTaskRequestBodyStored) {
@@ -139,6 +144,7 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
+	otherRatios := make(map[string]float64)
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {
@@ -146,11 +152,14 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		}
 		other["group_ratio"] = bc.GroupRatio
 		if priceData := taskBillingContextPriceData(bc); priceData != nil {
-			for k, v := range priceData.OtherRatios() {
+			otherRatios = priceData.OtherRatios()
+			for k, v := range otherRatios {
 				other[k] = v
 			}
 		}
 	}
+	other["is_task"] = true
+	other["other_ratios"] = otherRatios
 	props := task.Properties
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
 		other["is_model_mapped"] = true

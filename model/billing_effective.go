@@ -261,6 +261,10 @@ func projectBillingEffectiveLogs(logs []*Log, adjustments []billingEffectiveLog)
 		if metadata == nil {
 			metadata = make(map[string]any)
 		}
+		if adjustment.TaskID != "" {
+			metadata["is_task"] = true
+			metadata["task_id"] = adjustment.TaskID
+		}
 		var rate float64
 		if common.UnmarshalJsonStr(adjustment.Rate, &rate) != nil || math.IsNaN(rate) || math.IsInf(rate, 0) || rate < 0 || rate > 10 {
 			return ErrBillingEvidenceIntegrity

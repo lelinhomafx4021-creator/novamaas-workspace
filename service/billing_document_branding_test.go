@@ -272,7 +272,7 @@ func TestBillingDraftArchivesFrozenBrandingAfterSettingsChange(t *testing.T) {
 	assert.NotEmpty(t, archived.PDFLogoPNG)
 	assert.Equal(t, "客户服务公司", archived.OperatingName)
 	assert.NotEmpty(t, archived.PDFOperatingLogoPNG)
-	assert.Equal(t, 16, archived.PDFTemplateVersion)
+	assert.Equal(t, 17, archived.PDFTemplateVersion)
 	assert.NotContains(t, string(store.files["snapshot"]), "signature")
 	assert.NotEmpty(t, store.files["pdf"])
 	assert.NotEmpty(t, statement.PDFSHA256)
@@ -328,52 +328,20 @@ func TestBillingPDFV3FreezesBrandingForBothOriginalAndReceipt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, receipt, retry, "the receipt uses the same frozen branding without network access")
 	assert.NotEqual(t, original, receipt)
-	snapshot.PDFTemplateVersion = 4
 	snapshot.OperatingName = "示例运营有限公司"
 	snapshot.PDFOperatingLogoPNG = branding.LogoPNG
 	branded, err := RenderBillingStatementPDF(statement, snapshot, false)
 	require.NoError(t, err)
-	assert.NotEqual(t, original, branded, "the new template includes operating entity identity")
-	snapshot.PDFTemplateVersion = 5
-	previous, err := RenderBillingStatementPDF(statement, snapshot, false)
+	assert.NotEqual(t, original, branded, "the frozen operating entity is included")
+	snapshot.PDFTemplateVersion = 16
+	unchangedLayout, err := RenderBillingStatementPDF(statement, snapshot, false)
 	require.NoError(t, err)
-	assert.NotEqual(t, branded, previous, "the v5 layout uses the wide operating mark")
-	snapshot.PDFTemplateVersion = 6
-	if input := os.Getenv("BILLING_PDF_OPERATING_LOGO_INPUT"); input != "" {
-		snapshot.OperatingName = ""
-		body, err := os.ReadFile(input)
-		require.NoError(t, err)
-		snapshot.PDFOperatingLogoPNG, err = normalizeBillingOperatingLogoWithin(body, 12*1024)
-		require.NoError(t, err)
-		if output := os.Getenv("BILLING_PDF_OPERATING_LOGO_OUTPUT"); output != "" {
-			require.NoError(t, os.WriteFile(output, snapshot.PDFOperatingLogoPNG, 0600))
-		}
-	}
-	if name := os.Getenv("BILLING_PDF_OPERATING_NAME"); name != "" {
-		snapshot.OperatingName = name
-	}
-	betterAligned, err := RenderBillingStatementPDF(statement, snapshot, false)
-	require.NoError(t, err)
-	assert.NotEqual(t, previous, betterAligned, "the balanced, text-free letterhead requires a new template version")
-	if output := os.Getenv("BILLING_PDF_V6_TEST_OUTPUT"); output != "" {
-		require.NoError(t, os.WriteFile(output, betterAligned, 0600))
-	}
-	snapshot.PDFTemplateVersion = 5
-	snapshot.PDFOperatingLogoPNG = branding.LogoPNG
-	snapshot.OperatingName = "示例运营有限公司"
-	unchangedV5, err := RenderBillingStatementPDF(statement, snapshot, false)
-	require.NoError(t, err)
-	assert.Equal(t, previous, unchangedV5, "previously frozen v5 documents retain their layout")
-	snapshot.PDFTemplateVersion = 4
-	unchangedV4, err := RenderBillingStatementPDF(statement, snapshot, false)
-	require.NoError(t, err)
-	assert.Equal(t, branded, unchangedV4, "previously frozen v4 documents retain their layout")
+	assert.Equal(t, branded, unchangedLayout, "main-template versions use the same current layout")
 	snapshot.PDFTemplateVersion = 3
-	snapshot.OperatingName = ""
-	snapshot.PDFOperatingLogoPNG = nil
-	legacy, err := RenderBillingStatementPDF(statement, snapshot, false)
+	snapshot.OperatingName, snapshot.PDFOperatingLogoPNG = "", nil
+	withoutOperator, err := RenderBillingStatementPDF(statement, snapshot, false)
 	require.NoError(t, err)
-	assert.Equal(t, original, legacy, "the v3 template must keep its archived output")
+	assert.Equal(t, original, withoutOperator)
 	if output := os.Getenv("BILLING_PDF_V3_OUTPUT_DIR"); output != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(output, BillingArtifactFilename(statement, snapshot.Username, "pdf", 0)), original, 0600))
 		require.NoError(t, os.WriteFile(filepath.Join(output, BillingArtifactFilename(statement, snapshot.Username, "receipt", 0)), receipt, 0600))

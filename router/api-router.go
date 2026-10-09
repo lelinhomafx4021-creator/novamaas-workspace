@@ -108,6 +108,7 @@ func SetApiRouter(router *gin.Engine) {
 			billingRoute.POST("/statements/:statement_id/actions", middleware.CriticalRateLimit(), controller.ActOnBillingStatement)
 			billingRoute.GET("/statements/:statement_id/files/:kind/:ordinal", controller.DownloadBillingArtifact)
 			billingAdmin := billingRoute.Group("/admin", middleware.AdminAuth())
+			billingAdmin.GET("/accounts", controller.SearchBillingAccounts)
 			billingAdmin.GET("/preview", controller.BillingMonthPreview)
 			billingAdmin.GET("/storage-profiles", controller.BillingStorageProfiles)
 			billingAdmin.GET("/history-review", controller.ReviewBillingHistory)
@@ -115,12 +116,12 @@ func SetApiRouter(router *gin.Engine) {
 			billingAdmin.POST("/history-imports", controller.ConfirmBillingHistoryImport)
 			billingAdmin.GET("/history-imports/:import_id/source", controller.DownloadBillingHistorySource)
 			billingAdmin.POST("/statements", middleware.CriticalRateLimit(), controller.CreateBillingStatement)
-			billingCorrection := billingAdmin.Group("/corrections", middleware.RootAuth())
+			billingCorrection := billingAdmin.Group("/corrections", middleware.RequirePermission(authz.FinancialAccountingView))
 			billingCorrection.GET("/groups", controller.BillingCorrectionGroups)
 			billingCorrection.GET("", controller.ListBillingCorrections)
 			billingCorrection.GET("/:correction_id", controller.GetBillingCorrection)
-			billingCorrection.POST("/preview", middleware.CriticalRateLimit(), controller.PreviewBillingCorrection)
-			billingCorrection.POST("/:correction_id/actions", middleware.CriticalRateLimit(), controller.ActOnBillingCorrection)
+			billingCorrection.POST("/preview", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.PreviewBillingCorrection)
+			billingCorrection.POST("/:correction_id/actions", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.ActOnBillingCorrection)
 		}
 		financialAccountingRoute := apiRouter.Group(
 			"/financial-accounting",

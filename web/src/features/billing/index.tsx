@@ -32,52 +32,79 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { searchUsers } from '@/features/users/api'
 import { useDebounce } from '@/hooks/use-debounce'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { billingToday } from './api'
+import { billingToday, getBillingAccount, searchBillingAccounts } from './api'
 import { BillingProfileCard } from './components/billing-profile-card'
 import { ConsumptionPanel } from './components/consumption-panel'
 import { CorrectionPanel } from './components/correction-panel'
 import { StatementsPanel } from './components/statements-panel'
+import type { BillingAccountOption } from './types'
 
 export function Billing() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const admin = (user?.role ?? 0) >= ROLE.ADMIN
-  const [selectedAccount, setSelectedAccount] = useState<{
-    value: number
-    label: string
-  } | null>(null)
+  const financialAccounting =
+    admin &&
+    hasPermission(
+      user,
+      ADMIN_PERMISSION_RESOURCES.FINANCIAL_ACCOUNTING,
+      ADMIN_PERMISSION_ACTIONS.VIEW
+    )
+  const canSwitchAccount = admin && financialAccounting
+  const [selectedAccount, setSelectedAccount] =
+    useState<BillingAccountOption | null>(null)
   const [search, setSearch] = useState('')
   const keyword = useDebounce(search, 300)
   const [date, setDate] = useState(billingToday)
   const [tab, setTab] = useState('daily')
-  const userId = (admin ? selectedAccount?.value : null) ?? user?.id ?? 0
+  const userId =
+    (canSwitchAccount ? selectedAccount?.id : null) ?? user?.id ?? 0
   const accounts = useQuery({
     queryKey: ['billing', 'users', keyword],
-    queryFn: () => searchUsers({ keyword, page_size: 30 }),
-    enabled: admin,
+    queryFn: () => searchBillingAccounts(keyword),
+    enabled: canSwitchAccount,
   })
-  const userOptions = [
+  const ownAccount = useQuery({
+    queryKey: ['billing', 'account', user?.id ?? 0],
+    queryFn: () => getBillingAccount(user?.id ?? 0),
+    enabled: canSwitchAccount && Boolean(user?.id),
+  })
+  const activeAccount = useQuery({
+    queryKey: ['billing', 'account', userId],
+    queryFn: () => getBillingAccount(userId),
+    enabled: canSwitchAccount && userId > 0,
+  })
+  const candidates: BillingAccountOption[] = [
     {
-      value: user?.id ?? 0,
-      label: `${user?.username ?? t('My account')} (#${user?.id ?? 0})`,
+      id: user?.id ?? 0,
+      username: user?.username ?? t('My account'),
+      company_title: ownAccount.data?.company_title ?? '',
+      accounting_start_at: ownAccount.data?.accounting_start_at ?? 0,
     },
-    ...(accounts.data?.data?.items || [])
-      .filter((item) => item.id !== user?.id)
-      .map((item) => ({
-        value: item.id,
-        label: `${item.username} (#${item.id})`,
-      })),
+    ...(accounts.data?.items || []).filter((item) => item.id !== user?.id),
   ]
-  if (userId > 0 && !userOptions.some((item) => item.value === userId)) {
-    userOptions.push(
-      selectedAccount ?? { value: userId, label: `${t('Account')} #${userId}` }
-    )
+  if (selectedAccount && !candidates.some((item) => item.id === userId)) {
+    candidates.push(selectedAccount)
   }
+  const userOptions = candidates.map((item) => {
+    const profile = item.id === userId ? activeAccount.data : undefined
+    const start = profile?.accounting_start_at ?? item.accounting_start_at
+    const title = profile?.company_title ?? item.company_title
+    let label = `${item.username} (#${item.id})`
+    if (start > 0) {
+      label += ` ${t('(Formal accounting - {{title}})', { title })}`
+    }
+    return { value: item.id, label }
+  })
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>
@@ -85,7 +112,7 @@ export function Billing() {
       </SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-5 overflow-auto p-1'>
-          {admin && (
+          {canSwitchAccount && (
             <FieldGroup className='grid gap-4 sm:grid-cols-2'>
               <Field>
                 <FieldLabel htmlFor='billing-search'>
@@ -107,7 +134,7 @@ export function Billing() {
                   onValueChange={(value) =>
                     value !== null &&
                     setSelectedAccount(
-                      userOptions.find((item) => item.value === value) ?? null
+                      candidates.find((item) => item.id === value) ?? null
                     )
                   }
                 >
@@ -140,7 +167,7 @@ export function Billing() {
               <TabsTrigger value='identity'>
                 {t('Billing identity')}
               </TabsTrigger>
-              {user?.role === ROLE.SUPER_ADMIN && (
+              {financialAccounting && (
                 <TabsTrigger value='corrections'>
                   {t('Billing adjustments')}
                 </TabsTrigger>
@@ -170,12 +197,13 @@ export function Billing() {
             <TabsContent value='identity'>
               <BillingProfileCard userId={userId} admin={admin} />
             </TabsContent>
-            {user?.role === ROLE.SUPER_ADMIN && (
+            {financialAccounting && (
               <TabsContent value='corrections'>
                 <CorrectionPanel
                   key={userId}
                   userId={userId}
-                  actorId={user.id}
+                  actorId={user?.id ?? 0}
+                  canManage={user?.role === ROLE.SUPER_ADMIN}
                 />
               </TabsContent>
             )}

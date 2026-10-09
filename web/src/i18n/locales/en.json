@@ -16,6 +16,7 @@
     "({{total}} total, {{omit}} omitted)": "({{total}} total, {{omit}} omitted)",
     "(billed as vip itself, so base ratio of vip)": "(billed as vip itself, so base ratio of vip)",
     "(falls back to billing as vip, so base ratio of vip)": "(falls back to billing as vip, so base ratio of vip)",
+    "(Formal accounting - {{title}})": "(Formal accounting - {{title}})",
     "(hits the override rule above)": "(hits the override rule above)",
     "(instead of {{ratio}})": "(instead of {{ratio}})",
     "(Leave empty to dissolve tag)": "(Leave empty to dissolve tag)",

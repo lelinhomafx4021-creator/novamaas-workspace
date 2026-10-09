@@ -16,6 +16,7 @@
     "({{total}} total, {{omit}} omitted)": "({{total}} tổng cộng, đã lược bỏ {{omit}})",
     "(billed as vip itself, so base ratio of vip)": "(tính phí theo chính vip, nên dùng hệ số cơ bản của vip)",
     "(falls back to billing as vip, so base ratio of vip)": "(quay về tính phí theo vip, nên dùng hệ số cơ bản của vip)",
+    "(Formal accounting - {{title}})": "(Ghi sổ chính thức - {{title}})",
     "(hits the override rule above)": "(khớp quy tắc ghi đè ở trên)",
     "(instead of {{ratio}})": "(thay vì {{ratio}})",
     "(Leave empty to dissolve tag)": "Để trống để xóa thẻ.",

@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import { CorrectionPanel } from '../components/correction-panel'
@@ -87,7 +94,7 @@ beforeEach(() => {
   vi.mocked(actOnCorrection).mockResolvedValue({ ...batch, status: 'applied' })
 })
 
-function mountPanel() {
+function mountPanel(canManage = true) {
   return render(
     <QueryClientProvider
       client={
@@ -99,7 +106,7 @@ function mountPanel() {
         })
       }
     >
-      <CorrectionPanel userId={4} actorId={1} />
+      <CorrectionPanel userId={4} actorId={1} canManage={canManage} />
     </QueryClientProvider>
   )
 }
@@ -244,7 +251,7 @@ test('loading a saved preview restores its selection without a false changed-sel
   vi.mocked(listCorrections).mockResolvedValue([saved])
   vi.mocked(getCorrection).mockResolvedValue(saved)
   mountPanel()
-  fireEvent.click(await screen.findByRole('button', { name: /saved-preview/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'View' }))
   await screen.findByText('frozen-digest')
   expect(screen.getByLabelText('Start date')).toHaveValue('2026-09-01')
   expect(screen.getByLabelText('End date')).toHaveValue('2026-09-30')
@@ -285,4 +292,86 @@ test('trimming model names and reasons does not invalidate the preview', async (
       reason: 'Wrong group configuration',
     })
   )
+})
+
+test('finance viewers can open adjustment details without controls that move money', async () => {
+  vi.mocked(listCorrections).mockResolvedValue([
+    { ...batch, status: 'applied' },
+  ])
+  vi.mocked(getCorrection).mockResolvedValue({ ...batch, status: 'applied' })
+  mountPanel(false)
+  fireEvent.click(await screen.findByRole('button', { name: 'View' }))
+  await screen.findByText('frozen-digest')
+  expect(
+    screen.queryByRole('button', { name: 'Preview adjustment' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByLabelText('Type the account ID to confirm')
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Reverse adjustment' })
+  ).not.toBeInTheDocument()
+  expect(correctionGroups).not.toHaveBeenCalled()
+  expect(actOnCorrection).not.toHaveBeenCalled()
+})
+
+test('adjustment history uses separate table columns for long IDs, status, amounts and actions', async () => {
+  const longId = `correction-${'a'.repeat(64)}`
+  vi.mocked(listCorrections).mockResolvedValue([
+    { ...batch, id: longId },
+    { ...batch, id: 'applied-batch', status: 'applied', net_delta: -70715 },
+  ])
+  mountPanel()
+  const table = await screen.findByRole('table', { name: 'Adjustment history' })
+  await within(table).findByText(longId)
+  expect(
+    within(table).getByRole('columnheader', { name: 'Batch ID' })
+  ).toBeVisible()
+  expect(
+    within(table).getByRole('columnheader', { name: 'Status' })
+  ).toBeVisible()
+  expect(
+    within(table).getByRole('columnheader', {
+      name: 'Net debit (negative means credit)',
+    })
+  ).toBeVisible()
+  expect(within(table).getAllByRole('button', { name: 'View' })).toHaveLength(2)
+  expect(within(table).getByText(longId)).toHaveClass(
+    'break-all',
+    'whitespace-normal'
+  )
+  expect(table.parentElement).toHaveClass('overflow-x-auto')
+})
+
+test('empty adjustment history displays an explicit empty state', async () => {
+  mountPanel(false)
+  expect(await screen.findByText('No data')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument()
+})
+
+test('failed adjustment history can be refreshed', async () => {
+  vi.mocked(listCorrections).mockRejectedValueOnce(new Error('Unavailable'))
+  mountPanel(false)
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Failed to load data'
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  expect(await screen.findByText('No data')).toBeVisible()
+})
+
+test('pending adjustment history shows loading until an empty response arrives', async () => {
+  let finish: ((items: CorrectionBatch[]) => void) | undefined
+  vi.mocked(listCorrections).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+  )
+  mountPanel(false)
+  expect(screen.getByText('Loading...')).toBeVisible()
+  expect(screen.queryByText('No data')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
+  await act(async () => finish?.([]))
+  expect(await screen.findByText('No data')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled()
 })

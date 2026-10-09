@@ -42,10 +42,7 @@ func UploadAssetObject(ctx context.Context, ownerUserID int, groupPublicID strin
 	if err != nil {
 		return nil, err
 	}
-	userHash := common.GenerateHMAC("asset-user:" + strconv.Itoa(ownerUserID))
-	if len(userHash) > 24 {
-		userHash = userHash[:24]
-	}
+	userHash := permanentStorageUserHash(ownerUserID)
 	objectKey := fmt.Sprintf("%s/user-%s/%s/%s-%s.%s",
 		strings.Trim(policy.ObjectPrefix, "/"), userHash, groupPublicID, assetPublicID, suffix, extension)
 	if len(objectKey) > 1024 {
@@ -185,4 +182,10 @@ func assetExtension(contentType string) string {
 	default:
 		return ""
 	}
+}
+
+// Permanent assets and billing evidence use the same opaque account directory.
+// Keep the asset-user namespace to preserve existing asset paths.
+func permanentStorageUserHash(userID int) string {
+	return common.GenerateHMAC("asset-user:" + strconv.Itoa(userID))[:24]
 }

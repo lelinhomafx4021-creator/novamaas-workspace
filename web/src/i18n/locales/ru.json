@@ -16,6 +16,7 @@
     "({{total}} total, {{omit}} omitted)": "({{total}} всего, {{omit}} скрыто)",
     "(billed as vip itself, so base ratio of vip)": "(тарифицируется как сама vip, поэтому базовый коэффициент vip)",
     "(falls back to billing as vip, so base ratio of vip)": "(возврат к тарификации по vip, поэтому базовый коэффициент vip)",
+    "(Formal accounting - {{title}})": "(Официальный учёт - {{title}})",
     "(hits the override rule above)": "(срабатывает правило переопределения выше)",
     "(instead of {{ratio}})": "(вместо {{ratio}})",
     "(Leave empty to dissolve tag)": "(Оставьте пустым, чтобы удалить тег)",

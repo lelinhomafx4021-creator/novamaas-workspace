@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -60,6 +61,42 @@ func TestBillingCorrectionRequiresRootSessionScopedProofAndExactConfirmation(t *
 			request.Header.Set("X-Security-Proof", test.proof)
 			router.ServeHTTP(recorder, request)
 			assert.Equal(t, test.status, recorder.Code, recorder.Body.String())
+		})
+	}
+}
+
+func TestBillingCorrectionReadRequiresFinancialCapabilityButWritesRemainRootOnly(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	saved := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = saved })
+	setupBillingPermissions(t, db)
+	require.NoError(t, authz.SetUserPermissions(2, authz.PermissionsMap{authz.ResourceFinancialAccounting: {authz.ActionFinancialView: false}}))
+	require.NoError(t, db.AutoMigrate(&model.BillingCorrection{}, &model.BillingCorrectionRow{}))
+	require.NoError(t, db.Create(&model.BillingCorrection{ID: "batch", UserID: 9, Status: "applied", NetDelta: 70715}).Error)
+	for _, scenario := range []struct {
+		name             string
+		id, role, status int
+	}{
+		{"finance admin", 1, common.RoleAdminUser, 200},
+		{"revoked admin", 2, common.RoleAdminUser, 403},
+		{"root", 3, common.RoleRootUser, 200},
+		{"customer", 4, common.RoleCommonUser, 403},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(func(c *gin.Context) { c.Set("id", scenario.id); c.Set("role", scenario.role) })
+			router.GET("/corrections", ListBillingCorrections)
+			router.GET("/corrections/:correction_id", GetBillingCorrection)
+			for _, path := range []string{"/corrections?user_id=9", "/corrections/batch"} {
+				recorder := httptest.NewRecorder()
+				router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, scenario.status, recorder.Code)
+				if scenario.status == 200 {
+					assert.Contains(t, recorder.Body.String(), "70715")
+				}
+			}
 		})
 	}
 }

@@ -16,6 +16,7 @@
     "({{total}} total, {{omit}} omitted)": "（共 {{total}} 個，省略 {{omit}} 個）",
     "(billed as vip itself, so base ratio of vip)": "（按 vip 自身收費，取 vip 的基礎倍率）",
     "(falls back to billing as vip, so base ratio of vip)": "（回退按 vip 收費，用 vip 的基礎倍率）",
+    "(Formal accounting - {{title}})": "（正式記帳-{{title}}）",
     "(hits the override rule above)": "（命中上面的覆蓋規則）",
     "(instead of {{ratio}})": "（原本是 {{ratio}}）",
     "(Leave empty to dissolve tag)": "（留空以刪除標籤）",

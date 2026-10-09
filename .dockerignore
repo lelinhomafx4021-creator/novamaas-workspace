@@ -11,3 +11,8 @@ docs
 /web/dist
 !THIRD-PARTY-LICENSES.md
 !UPSTREAM.md
+
+# Backend API documentation needs both Go sources and embedded Markdown.
+!docs/platform-api/
+!docs/platform-api/*.go
+!docs/platform-api/*.md

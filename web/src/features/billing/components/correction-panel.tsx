@@ -193,9 +193,10 @@ export function CorrectionPanel(props: {
           action: input.reverse ? 'reverse' : 'apply',
           sha256: input.batch.sha256,
           confirm_user_id: props.userId,
-          confirm_net_delta: input.reverse
-            ? -input.batch.net_delta
-            : input.batch.net_delta,
+          confirm_net_delta:
+            input.reverse && input.batch.net_delta !== 0
+              ? -input.batch.net_delta
+              : input.batch.net_delta,
           reason: input.reverse ? reverseReason : '',
         },
         input.proof
@@ -256,8 +257,9 @@ export function CorrectionPanel(props: {
         {
           scope: 'billing.correct',
           title: 'Confirm billing adjustment',
-          description:
-            'This action changes the customer balance and creates accounting entries.',
+          description: t(
+            'The wallet changes only by the net sales adjustment. Cost corrections do not add wallet charges.'
+          ),
         }
       )
       .catch(handleServerError)

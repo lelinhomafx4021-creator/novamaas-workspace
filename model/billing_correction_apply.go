@@ -97,6 +97,11 @@ func ApplyBillingCorrection(id, digest, rate, userGroup string, actorID int, rev
 		if int64(user.UsedQuota)+net < 0 || int64(user.UsedQuota)+net > int64(common.MaxWalletQuota) {
 			return ErrWalletQuotaLimitExceeded
 		}
+		// Supplier cost corrections share the wallet/ledger transaction, but
+		// change only the append-only cost evidence for the original usage.
+		if err := billingCorrectionApplyCosts(tx, batch, actorID, reverse, reason); err != nil {
+			return err
+		}
 		// Credits first prevent a temporarily negative wallet while applying a
 		// batch with both additional consumption and additional refunds.
 		rows := append([]BillingCorrectionRow(nil), batch.Rows...)
@@ -160,8 +165,8 @@ func ApplyBillingCorrection(id, digest, rate, userGroup string, actorID int, rev
 			if delta == 0 {
 				continue
 			}
-			// A pricing correction changes customer revenue, with no new upstream
-			// request or cost. Keep the original cost snapshots untouched.
+			// This execution-date audit snapshot records revenue only. Supplier
+			// cost corrections above belong to the original usage snapshots.
 			var sourceToken Token
 			if row.TokenID > 0 {
 				if err := tx.Select("id", "user_id", "name").First(&sourceToken, row.TokenID).Error; err != nil {

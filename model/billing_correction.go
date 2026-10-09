@@ -44,6 +44,9 @@ type BillingCorrection struct {
 	ChargeDelta           int64                  `json:"charge_delta" gorm:"bigint"`
 	RefundDelta           int64                  `json:"refund_delta" gorm:"bigint"`
 	NetDelta              int64                  `json:"net_delta" gorm:"bigint"`
+	CurrentCostQuota      *int64                 `json:"current_cost_quota,omitempty" gorm:"bigint"`
+	CorrectedCostQuota    *int64                 `json:"corrected_cost_quota,omitempty" gorm:"bigint"`
+	CostDelta             int64                  `json:"cost_delta,omitempty" gorm:"bigint"`
 	SHA256                string                 `json:"sha256" gorm:"type:char(64)"`
 	AppliedAt             int64                  `json:"applied_at" gorm:"bigint"`
 	ReversedAt            int64                  `json:"reversed_at" gorm:"bigint"`
@@ -54,28 +57,35 @@ type BillingCorrection struct {
 }
 
 type BillingCorrectionRow struct {
-	ID              int64  `json:"-" gorm:"primaryKey"`
-	BatchID         string `json:"batch_id" gorm:"type:varchar(64);index"`
-	SourceEntryID   int64  `json:"source_entry_id" gorm:"bigint;index"`
-	ModelName       string `json:"model_name" gorm:"type:varchar(255)"`
-	PostedAt        int64  `json:"posted_at" gorm:"bigint"`
-	TaskID          string `json:"task_id" gorm:"type:varchar(191)"`
-	TokenID         int    `json:"token_id"`
-	ChannelID       int    `json:"channel_id"`
-	OriginalGroup   string `json:"original_group" gorm:"type:varchar(50)"`
-	OriginalRate    string `json:"original_rate" gorm:"type:varchar(64)"`
-	OriginalQuota   int64  `json:"original_quota" gorm:"bigint"`
-	CorrectedQuota  int64  `json:"corrected_quota" gorm:"bigint"`
-	Delta           int64  `json:"delta" gorm:"bigint"`
-	SourceSHA256    string `json:"source_sha256" gorm:"type:char(64)"`
-	Blocked         string `json:"blocked" gorm:"type:varchar(64)"`
-	EffectiveQuota  int64  `json:"effective_quota,omitempty" gorm:"bigint"`
-	PreviousBatchID string `json:"previous_batch_id,omitempty" gorm:"type:varchar(64)"`
-	TargetGroup     string `json:"target_group,omitempty" gorm:"type:varchar(50)"`
-	TargetRate      string `json:"target_rate,omitempty" gorm:"type:varchar(64)"`
-	TargetPricing   string `json:"target_pricing,omitempty" gorm:"type:text"`
-	EffectiveGroup  string `json:"effective_group,omitempty" gorm:"type:varchar(50)"`
-	EffectiveRate   string `json:"effective_rate,omitempty" gorm:"type:varchar(64)"`
+	ID                 int64  `json:"-" gorm:"primaryKey"`
+	BatchID            string `json:"batch_id" gorm:"type:varchar(64);index"`
+	SourceEntryID      int64  `json:"source_entry_id" gorm:"bigint;index"`
+	ModelName          string `json:"model_name" gorm:"type:varchar(255)"`
+	PostedAt           int64  `json:"posted_at" gorm:"bigint"`
+	TaskID             string `json:"task_id" gorm:"type:varchar(191)"`
+	TokenID            int    `json:"token_id"`
+	ChannelID          int    `json:"channel_id"`
+	OriginalGroup      string `json:"original_group" gorm:"type:varchar(50)"`
+	OriginalRate       string `json:"original_rate" gorm:"type:varchar(64)"`
+	OriginalQuota      int64  `json:"original_quota" gorm:"bigint"`
+	CorrectedQuota     int64  `json:"corrected_quota" gorm:"bigint"`
+	Delta              int64  `json:"delta" gorm:"bigint"`
+	SourceSHA256       string `json:"source_sha256" gorm:"type:char(64)"`
+	Blocked            string `json:"blocked" gorm:"type:varchar(64)"`
+	EffectiveQuota     int64  `json:"effective_quota,omitempty" gorm:"bigint"`
+	PreviousBatchID    string `json:"previous_batch_id,omitempty" gorm:"type:varchar(64)"`
+	TargetGroup        string `json:"target_group,omitempty" gorm:"type:varchar(50)"`
+	TargetRate         string `json:"target_rate,omitempty" gorm:"type:varchar(64)"`
+	TargetPricing      string `json:"target_pricing,omitempty" gorm:"type:text"`
+	EffectiveGroup     string `json:"effective_group,omitempty" gorm:"type:varchar(50)"`
+	EffectiveRate      string `json:"effective_rate,omitempty" gorm:"type:varchar(64)"`
+	TargetCost         string `json:"target_cost,omitempty" gorm:"type:text"`
+	CurrentCostQuota   *int64 `json:"current_cost_quota,omitempty" gorm:"type:bigint"`
+	CorrectedCostQuota *int64 `json:"corrected_cost_quota,omitempty" gorm:"type:bigint"`
+	CostDelta          int64  `json:"cost_delta,omitempty" gorm:"type:bigint"`
+	CostDiscount       string `json:"cost_discount,omitempty" gorm:"type:varchar(16)"`
+	CostBlocked        string `json:"cost_blocked,omitempty" gorm:"type:varchar(64)"`
+	CostChanged        bool   `json:"cost_changed,omitempty"`
 }
 
 // This per-source claim serializes overlapping batches. Reversal restores the
@@ -465,6 +475,9 @@ func billingCorrectionEvidence(scope *gorm.DB, batch *BillingCorrection, startSe
 		oldPricing, oldErr := billingCorrectionTaskPricing(task, false, requests[task.TaskID])
 		newPricing, newErr := oldPricing, oldErr
 		if batch.Mode != BillingCorrectionModelPricing && previousPricing[entry.ID] != "" {
+			// Decode the effective price into its own multiplier map. Reusing
+			// the historical map would alter the original submission evidence.
+			newPricing.OtherRatios = nil
 			newErr = common.UnmarshalJsonStr(previousPricing[entry.ID], &newPricing)
 		}
 		if batch.Mode == BillingCorrectionModelPricing {
@@ -580,7 +593,7 @@ func billingCorrectionEvidence(scope *gorm.DB, batch *BillingCorrection, startSe
 	// Rows are persisted/read in source-ID order; the evidence digest must use
 	// the same order even if imported historical sequences differ from IDs.
 	sort.Slice(rows, func(i, j int) bool { return rows[i].SourceEntryID < rows[j].SourceEntryID })
-	return rows, nil
+	return billingCorrectionCostEvidence(scope, batch, rows)
 }
 
 func billingCorrectionDigest(batch *BillingCorrection, rows []BillingCorrectionRow) (string, error) {
@@ -593,6 +606,8 @@ func billingCorrectionDigest(batch *BillingCorrection, rows []BillingCorrectionR
 		Mode                                           string `json:",omitempty"`
 		CanApply                                       bool
 		ChargeDelta, RefundDelta, NetDelta             int64
+		CurrentCostQuota, CorrectedCostQuota           *int64 `json:",omitempty"`
+		CostDelta                                      int64  `json:",omitempty"`
 		Rows                                           []BillingCorrectionRow
 	}{
 		ID: batch.ID, UserID: batch.UserID, CreatedBy: batch.CreatedBy, UserGroup: batch.UserGroup,
@@ -600,6 +615,7 @@ func billingCorrectionDigest(batch *BillingCorrection, rows []BillingCorrectionR
 		Models: batch.Models, Group: batch.TargetGroup, Rate: batch.TargetRate, Reason: batch.Reason,
 		Mode:     batch.Mode,
 		CanApply: batch.CanApply, ChargeDelta: batch.ChargeDelta, RefundDelta: batch.RefundDelta, NetDelta: batch.NetDelta, Rows: rows,
+		CurrentCostQuota: batch.CurrentCostQuota, CorrectedCostQuota: batch.CorrectedCostQuota, CostDelta: batch.CostDelta,
 	})
 	if err != nil {
 		return "", err
@@ -657,8 +673,25 @@ func PreviewBillingCorrection(input BillingCorrectionInput, actorID int, rate st
 		}
 		changed := false
 		for _, row := range batch.Rows {
-			if row.Delta != 0 {
+			if row.Delta != 0 || row.CostChanged {
 				changed = true
+			}
+			if row.CurrentCostQuota != nil && row.CorrectedCostQuota != nil {
+				if batch.CurrentCostQuota == nil {
+					batch.CurrentCostQuota, batch.CorrectedCostQuota = new(int64), new(int64)
+				}
+				*batch.CurrentCostQuota, err = billingProjectionQuotaTotal(*batch.CurrentCostQuota, *row.CurrentCostQuota)
+				if err != nil {
+					return err
+				}
+				*batch.CorrectedCostQuota, err = billingProjectionQuotaTotal(*batch.CorrectedCostQuota, *row.CorrectedCostQuota)
+				if err != nil {
+					return err
+				}
+				batch.CostDelta, err = billingProjectionQuotaTotal(batch.CostDelta, row.CostDelta)
+				if err != nil {
+					return err
+				}
 			}
 			if row.Blocked != "" {
 				batch.CanApply = false
@@ -670,8 +703,8 @@ func PreviewBillingCorrection(input BillingCorrectionInput, actorID int, rate st
 			}
 		}
 		batch.NetDelta = batch.ChargeDelta - batch.RefundDelta
-		// Fully refunded tasks can need equal charge/refund corrections even
-		// though their wallet impact is zero. Only an unchanged batch is empty.
+		// Refund lifecycles and cost-only corrections can leave the wallet
+		// unchanged. Any changed sales or cost source makes the batch actionable.
 		if !changed {
 			batch.CanApply = false
 		}

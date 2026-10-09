@@ -20,38 +20,25 @@ import { getStatus } from '@/lib/api'
 
 export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
 
-export type HeaderNavModule = 'rankings' | 'pricing'
+export type HeaderNavModule = 'rankings' | 'pricing' | 'docs'
 
 export type HeaderNavModules = {
   home: boolean
   console: boolean
   pricing: ModuleAccess
   rankings: ModuleAccess
-  docs: boolean
+  docs: ModuleAccess
   about: boolean
   [key: string]: boolean | ModuleAccess
 }
 
-const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
+export const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
   home: true,
   console: true,
   pricing: { enabled: true, requireAuth: false },
   rankings: { enabled: true, requireAuth: false },
-  docs: true,
+  docs: { enabled: false, requireAuth: false },
   about: true,
-}
-
-const DEFAULTS: Record<HeaderNavModule, ModuleAccess> = {
-  pricing: DEFAULT_HEADER_NAV_MODULES.pricing,
-  rankings: DEFAULT_HEADER_NAV_MODULES.rankings,
-}
-
-function cloneHeaderNavDefaults(): HeaderNavModules {
-  return {
-    ...DEFAULT_HEADER_NAV_MODULES,
-    pricing: { ...DEFAULT_HEADER_NAV_MODULES.pricing },
-    rankings: { ...DEFAULT_HEADER_NAV_MODULES.rankings },
-  }
 }
 
 export function parseHeaderNavBoolean(
@@ -105,17 +92,18 @@ function parseHeaderNavRecord(raw: unknown): Record<string, unknown> | null {
 }
 
 export function parseHeaderNavModules(raw: unknown): HeaderNavModules {
-  const result = cloneHeaderNavDefaults()
+  const result: HeaderNavModules = {
+    ...DEFAULT_HEADER_NAV_MODULES,
+    pricing: { ...DEFAULT_HEADER_NAV_MODULES.pricing },
+    rankings: { ...DEFAULT_HEADER_NAV_MODULES.rankings },
+    docs: { ...DEFAULT_HEADER_NAV_MODULES.docs },
+  }
   const parsed = parseHeaderNavRecord(raw)
   if (!parsed) return result
 
   Object.entries(parsed).forEach(([key, value]) => {
-    if (key === 'pricing') {
-      result.pricing = parseAccess(value, result.pricing)
-      return
-    }
-    if (key === 'rankings') {
-      result.rankings = parseAccess(value, result.rankings)
+    if (key === 'pricing' || key === 'rankings' || key === 'docs') {
+      result[key] = parseAccess(value, result[key])
       return
     }
 
@@ -166,7 +154,7 @@ export function getModuleAccessFromStatus(
   status: Record<string, unknown> | null,
   module: HeaderNavModule
 ): ModuleAccess {
-  return parseHeaderNavModulesFromStatus(status)[module] ?? DEFAULTS[module]
+  return parseHeaderNavModulesFromStatus(status)[module]
 }
 
 export function getModuleAccess(module: HeaderNavModule): ModuleAccess {
@@ -208,4 +196,18 @@ export function isSidebarModuleEnabled(
   } catch {
     return true
   }
+}
+
+export function getDocumentationLink(
+  status: Record<string, unknown> | null
+): string {
+  const configured = status?.docs_link
+  if (
+    typeof configured === 'string' &&
+    configured &&
+    configured !== 'https://docs.newapi.pro'
+  ) {
+    return configured
+  }
+  return '/docs'
 }

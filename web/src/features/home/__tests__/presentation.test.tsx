@@ -69,7 +69,10 @@ async function renderHome(content: string) {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
-  client.setQueryData(['status'], { docs_link: 'https://docs.example.com' })
+  client.setQueryData(['status'], {
+    docs_link: 'https://docs.example.com',
+    HeaderNavModules: '{"docs":true}',
+  })
   client.setQueryData(['notice'], { success: true, data: '' })
   const root = createRootRoute({ component: Home })
   const router = createRouter({

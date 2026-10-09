@@ -232,3 +232,51 @@ func TestBillingLegacyEmptyDraftCannotBeIssuedWithHistoricalConsumption(t *testi
 	assert.Equal(t, model.StatementDraft, statement.Status)
 	assert.Equal(t, snapshot, statement.Snapshot)
 }
+
+func TestBillingConfirmedStatementReportsCorrectionsWithoutChangingFrozenEvidence(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	saved := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = saved })
+	require.NoError(t, db.AutoMigrate(&model.BillingAccount{}, &model.BillingEntry{}, &model.User{}, &model.BillingStatement{}, &model.BillingStatementEvent{}, &model.BillingArtifact{}))
+	start, end, err := model.BillingMonthBounds("2020-02")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.BillingAccount{UserID: 4, StartSequence: 1, Sequence: 1}).Error)
+	source := model.BillingEntry{EventKey: "original-source", UserID: 4, Sequence: 1, Kind: "consume", PostedAt: start + 3600, Quota: 100, ModelName: "corrected-model"}
+	require.NoError(t, db.Create(&source).Error)
+	snapshot := `{"accounting_basis":"source_period_corrections_v1","total":{"amount":"0.000200"}}`
+	hash := sha256.Sum256([]byte(snapshot))
+	statement := model.BillingStatement{ID: "confirmed-corrected", UserID: 4, Month: "2020-02", Status: model.StatementConfirmed, IssuedAt: 100, StartAt: start, EndAt: end, FromSequence: 1, ToSequence: 1, Snapshot: snapshot, SnapshotSHA256: hex.EncodeToString(hash[:]), ConfirmedAt: 100}
+	require.NoError(t, db.Create(&statement).Error)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("id", 4); c.Set("role", common.RoleCommonUser) })
+	router.GET("/statements/:statement_id", GetBillingStatement)
+	for _, pending := range []bool{false, true} {
+		if pending {
+			require.NoError(t, db.Create(&model.BillingEntry{EventKey: "correction-event", UserID: 4, Sequence: 2, Kind: "rate_correction", PostedAt: end + 3600, SourceEntryID: source.ID, CorrectionID: "adjustment", Quota: 20, ModelName: source.ModelName}).Error)
+			require.NoError(t, db.Model(&model.BillingAccount{}).Where("user_id = ?", 4).Update("sequence", 2).Error)
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/statements/confirmed-corrected", nil))
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		var body struct {
+			Data struct {
+				Statement model.BillingStatement `json:"statement"`
+				Warning   string                 `json:"source_warning"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
+		if pending {
+			assert.Equal(t, "corrections_pending", body.Data.Warning)
+		} else {
+			assert.Empty(t, body.Data.Warning)
+		}
+		assert.Equal(t, model.StatementConfirmed, body.Data.Statement.Status)
+		assert.Equal(t, statement.SnapshotSHA256, body.Data.Statement.SnapshotSHA256)
+		assert.Equal(t, int64(100), body.Data.Statement.ConfirmedAt)
+	}
+	var frozen model.BillingStatement
+	require.NoError(t, db.First(&frozen, "id = ?", statement.ID).Error)
+	assert.Equal(t, snapshot, frozen.Snapshot)
+}

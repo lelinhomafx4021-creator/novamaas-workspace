@@ -19,6 +19,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestVolcNativeSeedance25RejectsUnsupportedPricingTiers(t *testing.T) {
+	tests := []struct {
+		name       string
+		resolution interface{}
+		hasVideo   bool
+		wantRatio  float64
+		invalid    bool
+	}{
+		{name: "default", wantRatio: 1},
+		{name: "480p", resolution: "480p", wantRatio: 1},
+		{name: "720p video", resolution: "720p", hasVideo: true, wantRatio: 42.0 / 70},
+		{name: "1080p", resolution: "1080p", wantRatio: 77.0 / 70},
+		{name: "1080p video", resolution: "1080p", hasVideo: true, wantRatio: 46.0 / 70},
+		{name: "unsupported 4k", resolution: "4k", invalid: true},
+		{name: "unknown resolution", resolution: "1440p", invalid: true},
+		{name: "wrong resolution type", resolution: 1080, invalid: true},
+	}
+	for _, model := range []string{"doubao-seedance-2-5", "doubao-seedance-2-5-260628"} {
+		for _, tt := range tests {
+			t.Run(model+"/"+tt.name, func(t *testing.T) {
+				body := map[string]interface{}{"model": model, "content": []interface{}{map[string]interface{}{"type": "text", "text": "animate"}}}
+				if tt.resolution != nil {
+					body["resolution"] = tt.resolution
+				}
+				if tt.hasVideo {
+					body["content"] = []interface{}{map[string]interface{}{"type": "video_url", "video_url": map[string]interface{}{"url": "https://example.com/input.mp4"}}}
+				}
+				data, err := common.Marshal(body)
+				require.NoError(t, err)
+				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+				ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", bytes.NewReader(data))
+				info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}, TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
+				adaptor := &TaskAdaptor{}
+				taskErr := adaptor.ValidateRequestAndSetAction(ctx, info)
+				if tt.invalid {
+					require.NotNil(t, taskErr)
+					assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+					return
+				}
+				require.Nil(t, taskErr)
+				ratio := adaptor.EstimateBilling(ctx, info)["video_input"]
+				if ratio == 0 {
+					ratio = 1
+				}
+				assert.InDelta(t, tt.wantRatio, ratio, 1e-12)
+			})
+		}
+	}
+}
+
 func TestTaskAdaptorDoResponsePreservesNativeFieldsAndHidesUpstreamID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

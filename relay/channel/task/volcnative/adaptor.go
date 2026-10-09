@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/seedancepricing"
 	"github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -35,6 +36,8 @@ var ModelList = []string{
 	"doubao-seedance-1-5-pro-251215",
 	"doubao-seedance-2-0-260128",
 	"doubao-seedance-2-0-fast-260128",
+	"doubao-seedance-2-5",
+	"doubao-seedance-2-5-260628",
 }
 
 type TaskAdaptor struct {
@@ -68,6 +71,20 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		// -1 is the provider's adaptive-duration sentinel, not a billing multiplier.
 		if duration.Type != gjson.Number || math.Trunc(value) != value || value < -1 || value > relaycommon.MaxTaskDurationSeconds {
 			return taskError(fmt.Errorf("duration is outside the supported bounds"), "invalid_request", http.StatusBadRequest)
+		}
+	}
+	if seedancepricing.IsSeedance25(model.String()) {
+		resolution := "720p"
+		if value := gjson.GetBytes(body, "resolution"); value.Exists() {
+			if value.Type != gjson.String {
+				return taskError(fmt.Errorf("Seedance 2.5 resolution must be 480p, 720p or 1080p"), "invalid_request", http.StatusBadRequest)
+			}
+			if strings.TrimSpace(value.String()) != "" {
+				resolution = value.String()
+			}
+		}
+		if _, ok := seedancepricing.Lookup(model.String(), resolution, false); !ok {
+			return taskError(fmt.Errorf("Seedance 2.5 resolution must be 480p, 720p or 1080p"), "invalid_request", http.StatusBadRequest)
 		}
 	}
 	info.OriginModelName = model.String()

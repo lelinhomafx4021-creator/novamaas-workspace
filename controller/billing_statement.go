@@ -50,6 +50,8 @@ func billingError(c *gin.Context, err error) {
 		status, code = http.StatusConflict, "BILLING_CONFLICT"
 	case errors.Is(err, model.ErrBillingCorrectionBlocked):
 		status, code = http.StatusConflict, "BILLING_CORRECTION_BLOCKED"
+	case errors.Is(err, model.ErrBillingCorrectionDependency):
+		status, code = http.StatusConflict, "BILLING_CORRECTION_DEPENDENCY"
 	case errors.Is(err, model.ErrBillingInsufficientQuota):
 		status, code = http.StatusConflict, "BILLING_INSUFFICIENT_QUOTA"
 	case errors.Is(err, model.ErrBillingNotConfigured):
@@ -294,6 +296,16 @@ func GetBillingStatement(c *gin.Context) {
 		eventViews = append(eventViews, eventView{event, identities[event.ActorID].Username})
 	}
 	warning := ""
+	if statement.Status == model.StatementConfirmed {
+		pending, err := model.BillingStatementCorrectionsPending(c.Request.Context(), statement)
+		if err != nil {
+			billingError(c, err)
+			return
+		}
+		if pending {
+			warning = "corrections_pending"
+		}
+	}
 	if statement.Status != model.StatementConfirmed && statement.Status != model.StatementVoid {
 		if err := service.ValidateBillingStatementSource(c.Request.Context(), statement); err != nil {
 			if errors.Is(err, model.ErrBillingStatementCorrectionsPending) {

@@ -20,6 +20,14 @@ const serverErrorMessageKeys = {
   BILLING_OPERATION_FAILED: 'Something went wrong!',
   BILLING_NOT_FOUND: 'Content not found.',
   BILLING_CONFLICT: 'Billing data changed. Refresh and try again.',
+  BILLING_CORRECTION_DEPENDENCY:
+    'Reverse later adjustments before reversing this batch.',
+  BILLING_CORRECTION_BLOCKED:
+    'Adjustment is blocked. Resolve all preview checks and preview again.',
+  BILLING_INSUFFICIENT_QUOTA:
+    'Insufficient wallet balance to apply this adjustment.',
+  BILLING_CORRECTIONS_PENDING:
+    'Void the current statement, then create a new draft from the latest accounting data.',
   BILLING_HISTORY_UNRECONCILED:
     'Historical usage exists without formal entries. Review historical accounting before issuing a statement.',
   BILLING_HISTORY_BLOCKED:

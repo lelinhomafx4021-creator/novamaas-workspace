@@ -19,7 +19,7 @@ import (
 func TestAKSKAssetUploadAppearsInUserUsageLogs(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.BillingEntry{}))
 	previousDB, previousLogDB := model.DB, model.LOG_DB
 	previousMainDBType, previousLogDBType := common.MainDatabaseType(), common.LogDatabaseType()
 	previousRedisEnabled := common.RedisEnabled

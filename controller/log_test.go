@@ -15,7 +15,7 @@ import (
 
 func TestGetLogsSelfStatSeparatesRequestsFromBillingRecords(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.BillingEntry{}))
 	now := time.Now().Unix()
 	require.NoError(t, db.Create(&[]model.Log{
 		{UserId: 7, Type: model.LogTypeConsume, Quota: 500000, CreatedAt: now},
@@ -49,7 +49,7 @@ func TestGetLogsSelfStatSeparatesRequestsFromBillingRecords(t *testing.T) {
 
 func TestCommonLogRowsExposeAccountingOnlyToFinancialViewer(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.CostAccountingSnapshot{}, &model.CostAccountingAdjustment{}))
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.CostAccountingSnapshot{}, &model.CostAccountingAdjustment{}, &model.BillingEntry{}))
 	log := model.Log{
 		UserId: 7, Type: model.LogTypeConsume, Quota: 1000,
 		CreatedAt: time.Now().Unix(), RequestId: "financial-log", ModelName: "model-a",

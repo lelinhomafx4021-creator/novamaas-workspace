@@ -23,14 +23,41 @@ type FlowQuotaData struct {
 }
 
 func GetFlowQuotaData(startTime int64, endTime int64, username string, userID int, role int) ([]*FlowQuotaData, error) {
+	var rows []*FlowQuotaData
+	var err error
 	switch {
 	case role >= common.RoleRootUser:
-		return getRootFlowQuotaData(startTime, endTime, username)
+		rows, err = getRootFlowQuotaData(startTime, endTime, username)
 	case role >= common.RoleAdminUser:
-		return getAdminFlowQuotaData(startTime, endTime, username)
+		rows, err = getAdminFlowQuotaData(startTime, endTime, username)
 	default:
-		return getSelfFlowQuotaData(startTime, endTime, userID)
+		rows, err = getSelfFlowQuotaData(startTime, endTime, userID)
 	}
+	if err != nil {
+		return nil, err
+	}
+	if role >= common.RoleAdminUser {
+		userID = 0
+	}
+	corrections, err := billingDashboardCorrections(userID, username, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	rows, err = projectBillingFlowData(rows, corrections, role)
+	if err != nil {
+		return nil, err
+	}
+	if role < common.RoleAdminUser || role >= common.RoleRootUser {
+		if err := fillFlowTokenNames(rows); err != nil {
+			return nil, err
+		}
+	}
+	if role >= common.RoleAdminUser {
+		if err := fillFlowChannelNames(rows); err != nil {
+			return nil, err
+		}
+	}
+	return rows, nil
 }
 
 func flowQuotaBaseQuery(startTime int64, endTime int64) *gorm.DB {

@@ -232,3 +232,29 @@ describe('DetailsDialog request body', () => {
     expect(screen.getByText('Request failed')).toBeInTheDocument()
   })
 })
+
+test('customer billing details explain the effective Seedance resolution price', () => {
+  renderDialog(false, {
+    ...videoUsageLog,
+    model_name: 'doubao-seedance-2-5',
+    quota: 36300,
+    other: JSON.stringify({
+      is_task: true,
+      billing_correction_applied: true,
+      model_price: 0,
+      model_ratio: 5,
+      group_ratio: 0.66,
+      resolution: '1080p',
+      has_video: false,
+      total_tokens: 10000,
+      other_ratios: { video_input: 1.1 },
+    }),
+  })
+  expect(screen.getByText('1080p')).toBeVisible()
+  expect(screen.getByText('Video input')).toBeVisible()
+  expect(screen.getByText('No')).toBeVisible()
+  expect(screen.getByText('1.1000x')).toBeVisible()
+  expect(screen.getByText('$11/M')).toBeVisible()
+  expect(screen.getByText('10,000')).toBeVisible()
+  expect(getLogRequestSnapshots).not.toHaveBeenCalled()
+})

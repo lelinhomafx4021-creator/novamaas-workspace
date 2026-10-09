@@ -46,12 +46,15 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
         return t('Historical task evidence is missing')
       case 'unsupported_or_unfinished_task':
         return t('Unsupported or unfinished task')
+      case 'missing_pricing_evidence':
+      case 'missing_current_pricing_evidence':
+        return t('Saved resolution or billing usage is missing')
       case 'original_price_mismatch':
         return t('Original price could not be verified')
       case 'incomplete_task_range':
         return t('Include the full consumption and refund lifecycle')
       default:
-        return t('Ready')
+        return reason ? t('Cannot safely recalculate this record') : t('Ready')
     }
   }
   function download() {
@@ -67,9 +70,27 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
   return (
     <section className='flex flex-col gap-3 rounded-lg border p-4'>
       <p>
-        {t('Account')} #{batch.user_id} · {batch.target_group} /{' '}
-        {(Number(batch.target_rate) * 100).toFixed(2)}% · {t('Records')}:{' '}
-        {batch.rows.length}
+        {t('Account')} #{batch.user_id} ·{' '}
+        {batch.mode === 'model_pricing'
+          ? t('Model pricing adjustment')
+          : t('Billing group adjustment')}{' '}
+        · {t('Records')}: {batch.rows.length}
+      </p>
+      {batch.mode === 'model_pricing' ? (
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Recalculate selected models using current pricing and existing billing groups. Resolution and input-video conditions come from saved task evidence.'
+          )}
+        </p>
+      ) : (
+        <p className='text-sm'>
+          {batch.target_group} / {(Number(batch.target_rate) * 100).toFixed(2)}%
+        </p>
+      )}
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'Positive net differences deduct wallet balance; negative net differences refund wallet balance. Previewing does not move money.'
+        )}
       </p>
       <dl className='grid gap-3 sm:grid-cols-3'>
         <div>
@@ -108,6 +129,27 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
         (Asia/Shanghai)
       </p>
       <p className='text-sm break-words'>{batch.reason}</p>
+      {batch.rows.length > 0 && (
+        <p className='text-sm'>
+          {t('Affected billing months')}:{' '}
+          {[
+            ...new Set(
+              batch.rows.map((row) =>
+                new Date((row.posted_at + 8 * 3600) * 1000)
+                  .toISOString()
+                  .slice(0, 7)
+              )
+            ),
+          ]
+            .sort()
+            .join(', ')}
+        </p>
+      )}
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'Void an affected statement and create a new version to include this adjustment. Historical import evidence remains available.'
+        )}
+      </p>
       <p className='font-mono text-xs break-all'>{batch.sha256}</p>
       {batch.status === 'preview' && (
         <p>{t('Preview expires in 15 minutes and does not move money.')}</p>
@@ -121,7 +163,7 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
       )}
       {!batch.can_apply && (
         <p role='alert'>
-          {t('Blocked records or a zero net difference prevent execution.')}
+          {t('Blocked records or no amount differences prevent execution.')}
         </p>
       )}
       <div className='max-h-96 overflow-auto'>
@@ -132,6 +174,7 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
               <TableHead>{t('Date')}</TableHead>
               <TableHead>{t('Original billing group')}</TableHead>
               <TableHead>{t('Original amount')}</TableHead>
+              <TableHead>{t('Current effective amount')}</TableHead>
               <TableHead>{t('Corrected amount')}</TableHead>
               <TableHead>{t('Difference')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
@@ -150,6 +193,12 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
                 <TableCell>
                   {row.original_group} /{' '}
                   {(Number(row.original_rate) * 100).toFixed(2)}%
+                  {row.effective_group && (
+                    <span className='text-muted-foreground block text-xs'>
+                      {t('Current')}: {row.effective_group} /{' '}
+                      {(Number(row.effective_rate) * 100).toFixed(2)}%
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {formatQuotaWithCurrency(row.original_quota, {
@@ -157,6 +206,18 @@ export function CorrectionReview(props: { batch: CorrectionBatch }) {
                     digitsSmall: 6,
                     abbreviate: false,
                   })}
+                </TableCell>
+                <TableCell>
+                  {formatQuotaWithCurrency(
+                    batch.mode
+                      ? (row.effective_quota ?? 0)
+                      : row.original_quota,
+                    {
+                      digitsLarge: 6,
+                      digitsSmall: 6,
+                      abbreviate: false,
+                    }
+                  )}
                 </TableCell>
                 <TableCell>
                   {formatQuotaWithCurrency(row.corrected_quota, {

@@ -29,6 +29,7 @@ func SetWebRouter(router *gin.Engine, assets WebAssets) {
 	router.NoRoute(func(c *gin.Context) {
 		c.Set(middleware.RouteTagKey, "web")
 		if isBackendRoute(c.Request.URL.Path) {
+			c.Header("Cache-Control", "no-store")
 			controller.RelayNotFound(c)
 			return
 		}

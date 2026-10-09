@@ -88,6 +88,7 @@ beforeEach(() => {
       }
     }
     if (config.url === '/api/docs') {
+      expect(config.headers.get('Cache-Control')).toContain('no-cache')
       if (failDocs) {
         throw new AxiosError(
           'Request failed with status code 404',

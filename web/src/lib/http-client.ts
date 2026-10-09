@@ -45,7 +45,7 @@ export const api = axios.create({
   baseURL: '',
   withCredentials: true,
   headers: {
-    'Cache-Control': 'no-store',
+    'Cache-Control': 'no-cache, no-store',
   },
 })
 

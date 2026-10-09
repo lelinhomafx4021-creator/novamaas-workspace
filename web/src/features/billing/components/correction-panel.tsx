@@ -40,7 +40,7 @@ import {
 } from '@/features/auth/secure-verification'
 import { handleServerError } from '@/lib/handle-server-error'
 
-import { billingToday, billingPreviousMonth } from '../api'
+import { billingToday } from '../api'
 import {
   actOnCorrection,
   correctionGroups,
@@ -108,15 +108,12 @@ export function CorrectionPanel(props: {
   }, [])
   const queryClient = useQueryClient()
   const today = billingToday()
-  const end = new Date(Date.parse(`${today.slice(0, 7)}-01T00:00:00+08:00`) - 1)
-    .toISOString()
-    .slice(0, 10)
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: {
       mode: 'group_rate',
-      start: `${billingPreviousMonth()}-01`,
-      end,
+      start: `${today.slice(0, 7)}-01`,
+      end: today,
       models: '',
       group: '',
       reason: '',
@@ -170,11 +167,7 @@ export function CorrectionPanel(props: {
       form.reset(value)
       setResult({
         batch,
-        signature: JSON.stringify({
-          ...correctionSelection(props.userId, value),
-          start_at: batch.start_at,
-          end_at: batch.end_at,
-        }),
+        signature: JSON.stringify(correctionSelection(props.userId, value)),
       })
       setConfirm('')
       setReverseReason('')
@@ -321,6 +314,7 @@ export function CorrectionPanel(props: {
                 id={`${id}-start`}
                 aria-invalid={Boolean(form.formState.errors.start)}
                 type='date'
+                max={today}
                 disabled={pending}
                 {...form.register('start')}
               />
@@ -331,6 +325,7 @@ export function CorrectionPanel(props: {
                 id={`${id}-end`}
                 aria-invalid={Boolean(form.formState.errors.end)}
                 type='date'
+                max={today}
                 disabled={pending}
                 {...form.register('end')}
               />

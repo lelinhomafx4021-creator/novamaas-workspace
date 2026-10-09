@@ -25,7 +25,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { CorrectionPanel } from '../components/correction-panel'
 import {
@@ -94,6 +94,8 @@ beforeEach(() => {
   vi.mocked(actOnCorrection).mockResolvedValue({ ...batch, status: 'applied' })
 })
 
+afterEach(() => vi.useRealTimers())
+
 function mountPanel(canManage = true) {
   return render(
     <QueryClientProvider
@@ -125,6 +127,86 @@ async function fillPreview() {
   fireEvent.click(screen.getByRole('button', { name: 'Preview adjustment' }))
   await screen.findByText('frozen-digest')
 }
+
+test.each(['group_rate', 'model_pricing'] as const)(
+  '%s can preview the current month through today and apply its frozen cutoff',
+  async (mode) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-09T10:30:00+08:00'))
+    vi.mocked(previewCorrection).mockResolvedValue({
+      ...batch,
+      mode,
+      start_at: Date.parse('2026-10-01T00:00:00+08:00') / 1000,
+      end_at: Date.now() / 1000,
+    })
+    mountPanel()
+    expect(screen.getByLabelText('Start date')).toHaveValue('2026-10-01')
+    expect(screen.getByLabelText('End date')).toHaveValue('2026-10-09')
+    expect(screen.getByLabelText('Start date')).toHaveAttribute(
+      'max',
+      '2026-10-09'
+    )
+    expect(screen.getByLabelText('End date')).toHaveAttribute(
+      'max',
+      '2026-10-09'
+    )
+    if (mode === 'model_pricing') {
+      fireEvent.change(screen.getByLabelText('Adjustment type'), {
+        target: { value: mode },
+      })
+      fireEvent.change(screen.getByLabelText('Models to correct'), {
+        target: { value: 'wan-prime' },
+      })
+      fireEvent.change(screen.getByLabelText('Adjustment reason'), {
+        target: { value: 'Wrong model configuration' },
+      })
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Preview adjustment' })
+      )
+      await screen.findByText('frozen-digest')
+    } else {
+      await fillPreview()
+    }
+    expect(previewCorrection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode,
+        start_at: Date.parse('2026-10-01T00:00:00+08:00') / 1000,
+        end_at: Date.parse('2026-10-10T00:00:00+08:00') / 1000,
+      })
+    )
+    vi.setSystemTime(new Date('2026-10-09T10:35:00+08:00'))
+    fireEvent.change(screen.getByLabelText('Type the account ID to confirm'), {
+      target: { value: '4' },
+    })
+    expect(
+      screen.getByRole('button', { name: 'Apply adjustment' })
+    ).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply adjustment' }))
+    await waitFor(() => expect(actOnCorrection).toHaveBeenCalled())
+  }
+)
+
+test('loading an intraday preview preserves its selected end date and allows confirmation', async () => {
+  const saved = {
+    ...batch,
+    id: 'saved-intraday-preview',
+    start_at: Date.parse('2026-10-01T00:00:00+08:00') / 1000,
+    end_at: Date.parse('2026-10-09T10:30:00+08:00') / 1000,
+  }
+  vi.mocked(listCorrections).mockResolvedValue([saved])
+  vi.mocked(getCorrection).mockResolvedValue(saved)
+  mountPanel()
+  fireEvent.click(await screen.findByRole('button', { name: 'View' }))
+  await screen.findByText('frozen-digest')
+  expect(screen.getByLabelText('End date')).toHaveValue('2026-10-09')
+  expect(
+    screen.queryByText('Selection changed. Preview again.')
+  ).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Type the account ID to confirm'), {
+    target: { value: '4' },
+  })
+  expect(screen.getByRole('button', { name: 'Apply adjustment' })).toBeEnabled()
+})
 
 test('money moves only after reviewing a current preview and confirming the account', async () => {
   mountPanel()

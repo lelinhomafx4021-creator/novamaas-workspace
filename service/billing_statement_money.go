@@ -43,10 +43,9 @@ func billingDisplayAmount(value string, decimalPlaces int32, zeroDash bool) (str
 	return result, nil
 }
 
-// Postpaid daily balances carry forward net consumption from a zero opening
-// balance. A net refund reduces the amount owed; inactive days carry it forward.
-func billingPostpaidDailyBalances(days []BillingRow) ([]string, error) {
-	const decimalPlaces = 2
+// Postpaid balances retain exact decimals until the document formats them.
+// Consumption reduces the balance; a net refund increases it.
+func billingPostpaidDailyBalanceAmounts(days []BillingRow) ([]string, error) {
 	balances := make([]string, len(days))
 	consumption := decimal.Zero
 	for i, day := range days {
@@ -59,18 +58,29 @@ func billingPostpaidDailyBalances(days []BillingRow) ([]string, error) {
 			return nil, err
 		}
 		consumption = consumption.Add(amount)
-		number, err := billingDisplayAmount(consumption.String(), decimalPlaces, false)
+		balances[i] = consumption.Neg().String()
+	}
+	return balances, nil
+}
+
+// Preserve the signed display used by archived templates through version 17.
+func billingPostpaidDailyBalances(days []BillingRow) ([]string, error) {
+	balances, err := billingPostpaidDailyBalanceAmounts(days)
+	if err != nil {
+		return nil, err
+	}
+	for i, balance := range balances {
+		if balance == "-" {
+			continue
+		}
+		number, err := billingDisplayAmount(balance, 2, false)
 		if err != nil {
 			return nil, err
 		}
-		switch {
-		case consumption.Round(decimalPlaces).IsZero():
-			balances[i] = number
-		case strings.HasPrefix(number, "("):
-			balances[i] = strings.TrimSuffix(strings.TrimPrefix(number, "("), ")")
-		default:
-			balances[i] = "-" + number
+		if strings.HasPrefix(number, "(") {
+			number = "-" + strings.TrimSuffix(strings.TrimPrefix(number, "("), ")")
 		}
+		balances[i] = number
 	}
 	return balances, nil
 }

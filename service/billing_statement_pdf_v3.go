@@ -177,6 +177,10 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 
 	dailyIdentity := fmt.Sprintf("抬头 %s  ·  版本 %02d  ·  Asia/Shanghai", snapshot.CompanyTitle, statement.Revision)
 	modelIdentity := "抬头 " + snapshot.CompanyTitle + "  ·  逐项列示模型金额、涉及账单日和预扣金额占比"
+	if snapshot.PDFTemplateVersion >= 18 {
+		dailyIdentity = fmt.Sprintf("%s  ·  版本 %02d  ·  Asia/Shanghai", snapshot.CompanyTitle, statement.Revision)
+		modelIdentity = snapshot.CompanyTitle + "  ·  逐项列示模型金额、涉及账单日和预扣金额占比"
+	}
 	// Keep complete corporate titles above the tables, including long titles.
 	for ; identitySize >= 6; identitySize -= 0.2 {
 		if err := pdf.SetFont("billing", "", identitySize); err != nil {
@@ -233,6 +237,9 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	doc.text(40, 242, 232, 8.5, "服务平台 / SERVICE PROVIDER")
 	doc.text(308, 242, 247, 8.5, "对账客户 / BILL TO")
 	pdf.SetTextColor(28, 43, 64)
+	if snapshot.PDFTemplateVersion >= 18 {
+		pdf.SetTextColor(89, 105, 127)
+	}
 	left := doc.text(40, 264, 232, 12, snapshot.Issuer)
 	left = doc.text(40, left+14, 232, 9, "账期起点  "+time.Unix(statement.StartAt, 0).In(billingLocation).Format("2006-01-02 15:04:05"))
 	left = doc.text(40, left+5, 232, 9, "账期终点  "+time.Unix(statement.EndAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")+" (不含)")
@@ -300,6 +307,9 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	y += 96
 	y -= 4
 	pdf.SetTextColor(28, 43, 64)
+	if snapshot.PDFTemplateVersion >= 18 {
+		pdf.SetTextColor(89, 105, 127)
+	}
 
 	coverSummary := fmt.Sprintf("本期明细记录 %d 条  ·  金额统一保留两位小数。", snapshot.Total.Count)
 	y = doc.text(40, y, 515, 9, coverSummary)
@@ -332,12 +342,18 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	if identityHeight > 23 {
 		identityY = 150
 	}
+	if snapshot.PDFTemplateVersion >= 18 {
+		pdf.SetTextColor(89, 105, 127)
+	}
 	doc.text(40, identityY, 515, identitySize, dailyIdentity)
 	pdf.SetFillColor(25, 51, 94)
 	pdf.RectFromUpperLeftWithStyle(40, 179, 515, 26, "F")
 	pdf.SetTextColor(255, 255, 255)
 
 	amountFirstCol, amountLastCol := 2, 4
+	if snapshot.PDFTemplateVersion >= 18 {
+		amountLastCol = 5
+	}
 	columns := []float64{50, 125, 185, 274, 372, 460}
 	widths := []float64{68, 53, 82, 91, 81, 85}
 	titles := []string{"日期", "充值金额", "预扣金额", "实际消费金额", "退款金额", "账户余额"}
@@ -354,14 +370,23 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 		return nil, errors.New("billing month exceeds 31 rows")
 	}
 	zeroAmount, closingBalance := "0.00", "0.00"
-	dailyBalances, err := billingPostpaidDailyBalances(snapshot.Days)
+	var dailyBalances []string
+	if snapshot.PDFTemplateVersion >= 18 {
+		dailyBalances, err = billingPostpaidDailyBalanceAmounts(snapshot.Days)
+	} else {
+		dailyBalances, err = billingPostpaidDailyBalances(snapshot.Days)
+	}
 	if err != nil {
 		return nil, err
 	}
 	pdf.SetTextColor(35, 49, 69)
 	doc.text(columns[0], y+3.5, widths[0], 8.2, "上期余额")
 	doc.right(columns[1], y+3.5, widths[1], 8.2, zeroAmount)
-	doc.right(columns[5], y+3.5, widths[5], 8.2, zeroAmount)
+	if snapshot.PDFTemplateVersion >= 18 {
+		doc.accounting(columns[5], y+3.5, widths[5], 8.2, zeroAmount)
+	} else {
+		doc.right(columns[5], y+3.5, widths[5], 8.2, zeroAmount)
+	}
 	y += 15
 
 	for i, row := range snapshot.Days {

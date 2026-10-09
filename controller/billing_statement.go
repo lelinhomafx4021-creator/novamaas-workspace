@@ -18,6 +18,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func canManageBillingAccounts(c *gin.Context) bool {
+	return c.GetInt("role") >= common.RoleAdminUser && canViewFinancialAccounting(c)
+}
+
 // An omitted account always means the authenticated account. No client role
 // or ownership field is trusted.
 func billingUserID(c *gin.Context) (int, bool) {
@@ -31,7 +35,7 @@ func billingUserID(c *gin.Context) (int, bool) {
 		billingError(c, errors.New("invalid billing account"))
 		return 0, false
 	}
-	if target != id && c.GetInt("role") < common.RoleAdminUser {
+	if target != id && !canManageBillingAccounts(c) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return 0, false
 	}
@@ -105,7 +109,7 @@ func BillingAccount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
 func SearchBillingAccounts(c *gin.Context) {
-	if c.GetInt("role") < common.RoleAdminUser {
+	if !canManageBillingAccounts(c) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
@@ -235,7 +239,7 @@ func authorizedBillingStatement(c *gin.Context) (*model.BillingStatement, bool) 
 		billingError(c, err)
 		return nil, false
 	}
-	if c.GetInt("role") < common.RoleAdminUser && (statement.UserID != c.GetInt("id") || statement.IssuedAt == 0) {
+	if (statement.UserID != c.GetInt("id") && !canManageBillingAccounts(c)) || (c.GetInt("role") < common.RoleAdminUser && statement.IssuedAt == 0) {
 		billingError(c, gorm.ErrRecordNotFound)
 		return nil, false
 	}

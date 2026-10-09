@@ -115,12 +115,12 @@ func SetApiRouter(router *gin.Engine) {
 			billingAdmin.POST("/history-imports", controller.ConfirmBillingHistoryImport)
 			billingAdmin.GET("/history-imports/:import_id/source", controller.DownloadBillingHistorySource)
 			billingAdmin.POST("/statements", middleware.CriticalRateLimit(), controller.CreateBillingStatement)
-			billingCorrection := billingAdmin.Group("/corrections", middleware.RootAuth())
+			billingCorrection := billingAdmin.Group("/corrections", middleware.RequirePermission(authz.FinancialAccountingView))
 			billingCorrection.GET("/groups", controller.BillingCorrectionGroups)
 			billingCorrection.GET("", controller.ListBillingCorrections)
 			billingCorrection.GET("/:correction_id", controller.GetBillingCorrection)
-			billingCorrection.POST("/preview", middleware.CriticalRateLimit(), controller.PreviewBillingCorrection)
-			billingCorrection.POST("/:correction_id/actions", middleware.CriticalRateLimit(), controller.ActOnBillingCorrection)
+			billingCorrection.POST("/preview", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.PreviewBillingCorrection)
+			billingCorrection.POST("/:correction_id/actions", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.ActOnBillingCorrection)
 		}
 		financialAccountingRoute := apiRouter.Group(
 			"/financial-accounting",

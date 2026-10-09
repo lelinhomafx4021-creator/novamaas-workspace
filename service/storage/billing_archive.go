@@ -98,7 +98,7 @@ func (store *BillingArchiveStore) Put(ctx context.Context, statementID, kind str
 	if _, err := time.Parse("2006-01", statement.Month); err != nil {
 		return nil, errors.New("invalid billing archive month")
 	}
-	key := fmt.Sprintf("billing/user-%d/%s/%s/%s/%06d-%s", userID, statement.Month, statementID, kind, ordinal, digest)
+	key := fmt.Sprintf("billing/user-%s/%s/%s/%s/%06d-%s", permanentStorageUserHash(userID), statement.Month, statementID, kind, ordinal, digest)
 	objectHash := sha256.Sum256([]byte(fmt.Sprintf("%d:%s", store.profileID, key)))
 	object := model.StorageObject{ObjectID: hex.EncodeToString(objectHash[:]), OwnerUserID: userID, StorageProfileID: store.profileID, Purpose: model.StorageObjectPurposeBillingArchive, ObjectKey: key, ContentType: contentType, Size: int64(len(body)), SHA256: digest, Status: model.StorageObjectStatusUploading}
 	// Register the object before I/O to freeze the profile's bucket/endpoint.

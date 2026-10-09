@@ -31,8 +31,9 @@ func (transport billingArchiveTransport) RoundTrip(request *http.Request) (*http
 }
 
 func TestBillingArchiveUploadsUnderAccountMonthAndStatement(t *testing.T) {
-	savedDB := model.DB
-	t.Cleanup(func() { model.DB = savedDB })
+	savedDB, savedSecret := model.DB, common.CryptoSecret
+	common.CryptoSecret = "permanent-storage-test-key"
+	t.Cleanup(func() { model.DB, common.CryptoSecret = savedDB, savedSecret })
 	setupStorageDatabase(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.BillingStatement{}, &model.BillingArtifact{}))
 	profile := &model.StorageProfile{Name: "billing", ProviderType: model.StorageProviderAliyunOSS, Status: model.StorageProfileStatusEnabled, Bucket: "test-bucket"}
@@ -47,7 +48,7 @@ func TestBillingArchiveUploadsUnderAccountMonthAndStatement(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			artifact, err := store.Put(context.Background(), statement.ID, kind, 0, 42, "application/octet-stream", payload, 0)
 			require.NoError(t, err)
-			expected := fmt.Sprintf("billing/user-42/2026-09/statement-uuid/%s/000000-%s", kind, artifact.SHA256)
+			expected := fmt.Sprintf("billing/user-65dad71240db84f1791cc8ba/2026-09/statement-uuid/%s/000000-%s", kind, artifact.SHA256)
 			assert.Equal(t, expected, artifact.ObjectKey)
 			assert.Equal(t, "/"+expected, keys[len(keys)-1])
 			var object model.StorageObject
@@ -61,7 +62,13 @@ func TestBillingArchiveUploadsUnderAccountMonthAndStatement(t *testing.T) {
 			assert.Len(t, keys, uploads, "immutable retries reuse the archived artifact")
 		})
 	}
-	_, err := store.Put(context.Background(), statement.ID, "pdf", 1, 7, "application/pdf", payload, 0)
+	common.CryptoSecret = "rotated-permanent-storage-test-key"
+	uploads := len(keys)
+	receipt, err := store.Put(context.Background(), statement.ID, "receipt", 0, 42, "application/octet-stream", payload, 0)
+	require.NoError(t, err)
+	assert.Contains(t, receipt.ObjectKey, "billing/user-65dad71240db84f1791cc8ba/2026-09/")
+	assert.Len(t, keys, uploads, "saved object paths survive signing key rotation")
+	_, err = store.Put(context.Background(), statement.ID, "pdf", 1, 7, "application/pdf", payload, 0)
 	require.ErrorContains(t, err, "owner")
 	invalid := &model.BillingStatement{ID: "invalid-month", UserID: 42, Month: "../../elsewhere", Revision: 1}
 	require.NoError(t, model.DB.Create(invalid).Error)

@@ -38,7 +38,6 @@ import {
   SecureVerificationDialog,
   useSecureVerification,
 } from '@/features/auth/secure-verification'
-import { formatQuotaWithCurrency } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { billingToday, billingPreviousMonth } from '../api'
@@ -51,6 +50,7 @@ import {
   type CorrectionBatch,
   type CorrectionInput,
 } from '../correction-api'
+import { CorrectionHistory } from './correction-history'
 import { CorrectionReview } from './correction-review'
 
 const schema = z.object({
@@ -80,7 +80,11 @@ function correctionSelection(userId: number, value: Values): CorrectionInput {
   }
 }
 
-export function CorrectionPanel(props: { userId: number; actorId: number }) {
+export function CorrectionPanel(props: {
+  userId: number
+  actorId: number
+  canManage: boolean
+}) {
   const { t } = useTranslation()
   const id = useId()
   const active = useRef(true)
@@ -115,6 +119,7 @@ export function CorrectionPanel(props: { userId: number; actorId: number }) {
   const groups = useQuery({
     queryKey: ['billing', 'correction-groups', props.userId],
     queryFn: () => correctionGroups(props.userId),
+    enabled: props.canManage,
   })
   const history = useQuery({
     queryKey: ['billing', 'corrections', props.userId],
@@ -197,15 +202,11 @@ export function CorrectionPanel(props: { userId: number; actorId: number }) {
     verification.open ||
     load.isPending
   const batch = result?.batch
-  const statuses = {
-    preview: t('Preview'),
-    applied: t('Adjustment applied'),
-    reversed: t('Adjustment reversed'),
-  }
   const current =
     result?.signature ===
     JSON.stringify(correctionSelection(props.userId, values))
   const canAct = Boolean(
+    props.canManage &&
     batch &&
     batch.user_id === props.userId &&
     batch.created_by === props.actorId &&
@@ -265,99 +266,103 @@ export function CorrectionPanel(props: { userId: number; actorId: number }) {
           'Include the full consumption and refund lifecycle. Up to 20 models, 93 days and 1000 records per batch.'
         )}
       </p>
-      <form
-        className='flex flex-col gap-4'
-        onSubmit={form.handleSubmit((value) => preview.mutate(value))}
-      >
-        <FieldGroup className='grid gap-4 sm:grid-cols-2'>
-          <Field data-invalid={Boolean(form.formState.errors.start)}>
-            <FieldLabel htmlFor={`${id}-start`}>{t('Start date')}</FieldLabel>
-            <Input
-              id={`${id}-start`}
-              aria-invalid={Boolean(form.formState.errors.start)}
-              type='date'
-              disabled={pending}
-              {...form.register('start')}
-            />
-          </Field>
-          <Field data-invalid={Boolean(form.formState.errors.end)}>
-            <FieldLabel htmlFor={`${id}-end`}>{t('End date')}</FieldLabel>
-            <Input
-              id={`${id}-end`}
-              aria-invalid={Boolean(form.formState.errors.end)}
-              type='date'
-              disabled={pending}
-              {...form.register('end')}
-            />
-          </Field>
-          <Field data-invalid={Boolean(form.formState.errors.group)}>
-            <FieldLabel htmlFor={`${id}-group`}>
-              {t('Target billing group')}
-            </FieldLabel>
-            <NativeSelect
-              id={`${id}-group`}
-              aria-invalid={Boolean(form.formState.errors.group)}
-              className='w-full'
-              disabled={pending || groups.isPending}
-              {...form.register('group')}
-            >
-              <NativeSelectOption value=''>
-                {t('Select a billing group')}
-              </NativeSelectOption>
-              {groups.data?.map((item) => (
-                <NativeSelectOption key={item.group} value={item.group}>
-                  {item.group} / {(Number(item.rate) * 100).toFixed(2)}%
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
-          <Field data-invalid={Boolean(form.formState.errors.models)}>
-            <FieldLabel htmlFor={`${id}-models`}>
-              {t('Models to correct')}
-            </FieldLabel>
-            <Textarea
-              id={`${id}-models`}
-              aria-invalid={Boolean(form.formState.errors.models)}
-              disabled={pending}
-              placeholder={t('One model per line, or separated by commas')}
-              {...form.register('models')}
-            />
-          </Field>
-          <Field
-            className='sm:col-span-2'
-            data-invalid={Boolean(form.formState.errors.reason)}
-          >
-            <FieldLabel htmlFor={`${id}-reason`}>
-              {t('Adjustment reason')}
-            </FieldLabel>
-            <Textarea
-              id={`${id}-reason`}
-              aria-invalid={Boolean(form.formState.errors.reason)}
-              disabled={pending}
-              {...form.register('reason')}
-            />
-            <FieldError>
-              {form.formState.errors.reason &&
-                t('Provide an adjustment reason of at least four characters.')}
-            </FieldError>
-          </Field>
-        </FieldGroup>
-        {groups.isError && <p role='alert'>{t('Failed to load data')}</p>}
-        <Button
-          type='submit'
-          className='self-start'
-          disabled={pending || groups.isError}
+      {props.canManage && (
+        <form
+          className='flex flex-col gap-4'
+          onSubmit={form.handleSubmit((value) => preview.mutate(value))}
         >
-          {t('Preview adjustment')}
-        </Button>
-      </form>
+          <FieldGroup className='grid gap-4 sm:grid-cols-2'>
+            <Field data-invalid={Boolean(form.formState.errors.start)}>
+              <FieldLabel htmlFor={`${id}-start`}>{t('Start date')}</FieldLabel>
+              <Input
+                id={`${id}-start`}
+                aria-invalid={Boolean(form.formState.errors.start)}
+                type='date'
+                disabled={pending}
+                {...form.register('start')}
+              />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.end)}>
+              <FieldLabel htmlFor={`${id}-end`}>{t('End date')}</FieldLabel>
+              <Input
+                id={`${id}-end`}
+                aria-invalid={Boolean(form.formState.errors.end)}
+                type='date'
+                disabled={pending}
+                {...form.register('end')}
+              />
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.group)}>
+              <FieldLabel htmlFor={`${id}-group`}>
+                {t('Target billing group')}
+              </FieldLabel>
+              <NativeSelect
+                id={`${id}-group`}
+                aria-invalid={Boolean(form.formState.errors.group)}
+                className='w-full'
+                disabled={pending || groups.isPending}
+                {...form.register('group')}
+              >
+                <NativeSelectOption value=''>
+                  {t('Select a billing group')}
+                </NativeSelectOption>
+                {groups.data?.map((item) => (
+                  <NativeSelectOption key={item.group} value={item.group}>
+                    {item.group} / {(Number(item.rate) * 100).toFixed(2)}%
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field data-invalid={Boolean(form.formState.errors.models)}>
+              <FieldLabel htmlFor={`${id}-models`}>
+                {t('Models to correct')}
+              </FieldLabel>
+              <Textarea
+                id={`${id}-models`}
+                aria-invalid={Boolean(form.formState.errors.models)}
+                disabled={pending}
+                placeholder={t('One model per line, or separated by commas')}
+                {...form.register('models')}
+              />
+            </Field>
+            <Field
+              className='sm:col-span-2'
+              data-invalid={Boolean(form.formState.errors.reason)}
+            >
+              <FieldLabel htmlFor={`${id}-reason`}>
+                {t('Adjustment reason')}
+              </FieldLabel>
+              <Textarea
+                id={`${id}-reason`}
+                aria-invalid={Boolean(form.formState.errors.reason)}
+                disabled={pending}
+                {...form.register('reason')}
+              />
+              <FieldError>
+                {form.formState.errors.reason &&
+                  t(
+                    'Provide an adjustment reason of at least four characters.'
+                  )}
+              </FieldError>
+            </Field>
+          </FieldGroup>
+          {groups.isError && <p role='alert'>{t('Failed to load data')}</p>}
+          <Button
+            type='submit'
+            className='self-start'
+            disabled={pending || groups.isError}
+          >
+            {t('Preview adjustment')}
+          </Button>
+        </form>
+      )}
       {batch && (
         <>
           <CorrectionReview key={batch.id} batch={batch} />
-          {batch.status === 'preview' && !current && (
+          {props.canManage && batch.status === 'preview' && !current && (
             <p role='alert'>{t('Selection changed. Preview again.')}</p>
           )}
-          {batch.status !== 'reversed' && (
+          {props.canManage && batch.status !== 'reversed' && (
             <FieldGroup>
               {batch.status === 'applied' && (
                 <Field>
@@ -400,28 +405,15 @@ export function CorrectionPanel(props: { userId: number; actorId: number }) {
           )}
         </>
       )}
-      <section className='flex flex-col gap-2 border-t pt-4'>
-        <h3>{t('Adjustment history')}</h3>
-        {history.isError && <p role='alert'>{t('Failed to load data')}</p>}
-        {history.data?.map((item) => (
-          <Button
-            key={item.id}
-            type='button'
-            variant='outline'
-            className='h-auto justify-start break-all whitespace-normal'
-            disabled={pending}
-            onClick={() => load.mutate(item.id)}
-          >
-            {item.id} ·{' '}
-            {formatQuotaWithCurrency(item.net_delta, {
-              digitsLarge: 6,
-              digitsSmall: 6,
-              abbreviate: false,
-            })}{' '}
-            · {statuses[item.status]}
-          </Button>
-        ))}
-      </section>
+      <CorrectionHistory
+        items={history.data ?? []}
+        loading={history.isPending}
+        failed={history.isError}
+        refreshing={history.isFetching}
+        disabled={pending}
+        onRefresh={() => void history.refetch()}
+        onSelect={(id) => load.mutate(id)}
+      />
       <SecureVerificationDialog
         open={verification.open}
         onOpenChange={verification.setOpen}

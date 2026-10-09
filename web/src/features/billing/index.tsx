@@ -33,6 +33,11 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDebounce } from '@/hooks/use-debounce'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -47,27 +52,36 @@ export function Billing() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const admin = (user?.role ?? 0) >= ROLE.ADMIN
+  const financialAccounting =
+    admin &&
+    hasPermission(
+      user,
+      ADMIN_PERMISSION_RESOURCES.FINANCIAL_ACCOUNTING,
+      ADMIN_PERMISSION_ACTIONS.VIEW
+    )
+  const canSwitchAccount = admin && financialAccounting
   const [selectedAccount, setSelectedAccount] =
     useState<BillingAccountOption | null>(null)
   const [search, setSearch] = useState('')
   const keyword = useDebounce(search, 300)
   const [date, setDate] = useState(billingToday)
   const [tab, setTab] = useState('daily')
-  const userId = (admin ? selectedAccount?.id : null) ?? user?.id ?? 0
+  const userId =
+    (canSwitchAccount ? selectedAccount?.id : null) ?? user?.id ?? 0
   const accounts = useQuery({
     queryKey: ['billing', 'users', keyword],
     queryFn: () => searchBillingAccounts(keyword),
-    enabled: admin,
+    enabled: canSwitchAccount,
   })
   const ownAccount = useQuery({
     queryKey: ['billing', 'account', user?.id ?? 0],
     queryFn: () => getBillingAccount(user?.id ?? 0),
-    enabled: admin && Boolean(user?.id),
+    enabled: canSwitchAccount && Boolean(user?.id),
   })
   const activeAccount = useQuery({
     queryKey: ['billing', 'account', userId],
     queryFn: () => getBillingAccount(userId),
-    enabled: admin && userId > 0,
+    enabled: canSwitchAccount && userId > 0,
   })
   const candidates: BillingAccountOption[] = [
     {
@@ -98,7 +112,7 @@ export function Billing() {
       </SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-5 overflow-auto p-1'>
-          {admin && (
+          {canSwitchAccount && (
             <FieldGroup className='grid gap-4 sm:grid-cols-2'>
               <Field>
                 <FieldLabel htmlFor='billing-search'>
@@ -153,7 +167,7 @@ export function Billing() {
               <TabsTrigger value='identity'>
                 {t('Billing identity')}
               </TabsTrigger>
-              {user?.role === ROLE.SUPER_ADMIN && (
+              {financialAccounting && (
                 <TabsTrigger value='corrections'>
                   {t('Billing adjustments')}
                 </TabsTrigger>
@@ -183,12 +197,13 @@ export function Billing() {
             <TabsContent value='identity'>
               <BillingProfileCard userId={userId} admin={admin} />
             </TabsContent>
-            {user?.role === ROLE.SUPER_ADMIN && (
+            {financialAccounting && (
               <TabsContent value='corrections'>
                 <CorrectionPanel
                   key={userId}
                   userId={userId}
-                  actorId={user.id}
+                  actorId={user?.id ?? 0}
+                  canManage={user?.role === ROLE.SUPER_ADMIN}
                 />
               </TabsContent>
             )}

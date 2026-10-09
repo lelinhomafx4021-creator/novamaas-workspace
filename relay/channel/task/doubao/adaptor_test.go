@@ -1,6 +1,7 @@
 package doubao
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,68 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSeedance20GenericRequestResolutionAndVideoBilling(t *testing.T) {
+	tiers := []struct {
+		resolution string
+		noVideo    float64
+		withVideo  float64
+	}{
+		{resolution: "480p", noVideo: 46, withVideo: 28},
+		{resolution: "720p", noVideo: 46, withVideo: 28},
+		{resolution: "1080p", noVideo: 51, withVideo: 31},
+		{resolution: "4k", noVideo: 26, withVideo: 16},
+	}
+	for _, modelName := range []string{"doubao-seedance-2-0", "doubao-seedance-2-0-260128"} {
+		for _, tier := range tiers {
+			for _, hasVideo := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/video=%t", modelName, tier.resolution, hasVideo), func(t *testing.T) {
+					metadata := map[string]interface{}{"resolution": tier.resolution}
+					wantPrice := tier.noVideo
+					if hasVideo {
+						metadata["content"] = []interface{}{map[string]interface{}{"type": "video_url", "video_url": map[string]interface{}{"url": "https://example.com/input.mp4"}}}
+						wantPrice = tier.withVideo
+					}
+					data, err := common.Marshal(relaycommon.TaskSubmitReq{Model: modelName, Prompt: "animate", Metadata: metadata})
+					require.NoError(t, err)
+					ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+					ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(string(data)))
+					ctx.Request.Header.Set("Content-Type", "application/json")
+					info := &relaycommon.RelayInfo{OriginModelName: modelName, ChannelMeta: &relaycommon.ChannelMeta{}, TaskRelayInfo: &relaycommon.TaskRelayInfo{}}
+					adaptor := &TaskAdaptor{}
+					require.Nil(t, adaptor.ValidateRequestAndSetAction(ctx, info))
+					ratios := adaptor.EstimateBilling(ctx, info)
+					if wantPrice == 46 {
+						assert.Empty(t, ratios, "base-tier requests must not add a second price multiplier")
+					} else {
+						require.Len(t, ratios, 1)
+						assert.InDelta(t, wantPrice/46, ratios["video_input"], 1e-12)
+					}
+
+					body, err := adaptor.BuildRequestBody(ctx, info)
+					require.NoError(t, err)
+					upstream, err := io.ReadAll(body)
+					require.NoError(t, err)
+					var payload requestPayload
+					require.NoError(t, common.Unmarshal(upstream, &payload))
+					assert.Equal(t, modelName, payload.Model)
+					assert.Equal(t, tier.resolution, payload.Resolution, "generic metadata must reach the provider's top-level resolution")
+					videoCount := 0
+					for _, item := range payload.Content {
+						if item.Type == "video_url" {
+							videoCount++
+						}
+					}
+					if hasVideo {
+						assert.Equal(t, 1, videoCount)
+					} else {
+						assert.Zero(t, videoCount)
+					}
+				})
+			}
+		}
+	}
+}
 
 func TestSeedance25TaskValidationAndBilling(t *testing.T) {
 	tests := []struct {

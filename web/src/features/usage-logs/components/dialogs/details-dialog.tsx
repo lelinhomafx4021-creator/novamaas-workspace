@@ -229,6 +229,7 @@ function BillingBreakdown(props: {
   const isClaude = other.claude === true
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
+  const isTask = Boolean(other.is_task || other.task_id)
 
   const rows: Array<{ label: string; value: string }> = []
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
@@ -272,8 +273,7 @@ function BillingBreakdown(props: {
     rows.push({ label: t('Billing Mode'), value: t('Per-token') })
     if (other.model_ratio != null) {
       rows.push({
-        label:
-          other.is_task && other.resolution ? t('Model Price') : t('Input'),
+        label: isTask ? t('Model Price') : t('Input'),
         value: `${fmtPrice(baseInputUSD * videoPricingMultiplier)}/M`,
       })
     }
@@ -285,8 +285,15 @@ function BillingBreakdown(props: {
     }
   }
 
-  if (other.billing_correction_applied && other.resolution) {
-    rows.push({ label: t('Resolution'), value: other.resolution })
+  if (
+    isTask &&
+    (other.resolution ||
+      other.other_ratios?.video_input != null ||
+      other.video_input != null)
+  ) {
+    if (other.resolution) {
+      rows.push({ label: t('Resolution'), value: other.resolution })
+    }
     if (other.has_video != null) {
       rows.push({
         label: t('Video input'),

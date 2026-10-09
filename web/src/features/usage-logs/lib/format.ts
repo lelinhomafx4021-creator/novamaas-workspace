@@ -30,11 +30,14 @@ import type { LogOtherData } from '../types'
 export { normalizeTierLabel }
 
 export function getVideoPricingMultiplier(other: LogOtherData): number {
-  const multiplier = other.other_ratios?.video_input
+  if (!other.is_task && !other.task_id) return 1
+  // A structured snapshot is authoritative, including an empty base-tier map.
+  // Only older settlement logs without it use the flattened multiplier.
+  const multiplier = Object.hasOwn(other, 'other_ratios')
+    ? other.other_ratios?.video_input
+    : other.video_input
   if (
-    !other.is_task ||
-    !other.resolution ||
-    multiplier == null ||
+    typeof multiplier !== 'number' ||
     !Number.isFinite(multiplier) ||
     multiplier <= 0
   ) {

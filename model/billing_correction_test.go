@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -43,6 +44,66 @@ func seedBillingCorrection(t *testing.T, sourceTime ...int64) BillingCorrectionI
 	require.NoError(t, DB.Create(&Log{UserId: 901, Type: LogTypeRefund, CreatedAt: posted + 1, ModelName: "wan-prime", Quota: 424280, Group: "wan", TokenId: 903, ChannelId: 904, Other: string(metadata)}).Error)
 	require.NoError(t, DB.Create(&BillingEntry{EventKey: "refund", UserID: 901, Sequence: 3, PostedAt: posted + 1, Kind: "task_adjustment", ModelName: "wan-prime", Quota: -424280, TokenID: 903, RequestID: "failed-task"}).Error)
 	return BillingCorrectionInput{UserID: 901, StartAt: posted - 60, EndAt: posted + 59, Models: []string{"wan-prime"}, TargetGroup: "wan-prime", Reason: "Correct the wrong billing group"}
+}
+
+func TestBillingCorrectionCurrentDayFreezesRangeForBothPricingModes(t *testing.T) {
+	for _, tc := range []struct {
+		mode, rate string
+		delta      int64
+	}{
+		{BillingCorrectionGroupRate, "0.77", 70715},
+		{BillingCorrectionModelPricing, "", 70720},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			input := seedBillingCorrection(t)
+			input.Mode = tc.mode
+			if tc.mode == BillingCorrectionModelPricing {
+				price := .3
+				configureBillingCorrectionPricing(t, "wan-prime", &price, nil)
+				input.TargetGroup = ""
+			}
+			location := time.FixedZone("Asia/Shanghai", 8*3600)
+			today := time.Unix(common.GetTimestamp(), 0).In(location)
+			input.EndAt = time.Date(today.Year(), today.Month(), today.Day()+1, 0, 0, 0, 0, location).Unix()
+			batch, err := PreviewBillingCorrection(input, 1, tc.rate, "customer_group")
+			require.NoError(t, err)
+			require.True(t, batch.CanApply)
+			assert.Equal(t, batch.CreatedAt, batch.EndAt, "today ends at the server's frozen preview time")
+			assert.Equal(t, tc.delta, batch.NetDelta, "open-month adjustments use the existing calculation")
+			stored, err := GetBillingCorrection(batch.ID)
+			require.NoError(t, err)
+			assert.Equal(t, batch.EndAt, stored.EndAt)
+			applied, err := ApplyBillingCorrection(batch.ID, batch.SHA256, tc.rate, "customer_group", 1, false, "")
+			require.NoError(t, err)
+			assert.Equal(t, batch.EndAt, applied.EndAt)
+			quota, err := GetUserQuota(input.UserID, true)
+			require.NoError(t, err)
+			assert.Equal(t, int64(1000000)-tc.delta, int64(quota))
+		})
+	}
+}
+
+func TestBillingCorrectionCurrentDayPreservesRangeValidation(t *testing.T) {
+	for _, scenario := range []string{"future_timestamp", "future_date", "future_start", "over_93_days"} {
+		t.Run(scenario, func(t *testing.T) {
+			input := seedBillingCorrection(t)
+			location := time.FixedZone("Asia/Shanghai", 8*3600)
+			today := time.Unix(common.GetTimestamp(), 0).In(location)
+			input.EndAt = time.Date(today.Year(), today.Month(), today.Day()+1, 0, 0, 0, 0, location).Unix()
+			switch scenario {
+			case "future_timestamp":
+				input.EndAt++
+			case "future_date":
+				input.EndAt += 86400
+			case "future_start":
+				input.StartAt = input.EndAt - 1
+			case "over_93_days":
+				input.StartAt = input.EndAt - 93*86400 - 1
+			}
+			_, err := PreviewBillingCorrection(input, 1, "0.77", "customer_group")
+			assert.ErrorIs(t, err, ErrBillingCorrectionBlocked)
+		})
+	}
 }
 
 func TestBillingCorrectionReplaysDiscountRoundingAndPreservesRefunds(t *testing.T) {

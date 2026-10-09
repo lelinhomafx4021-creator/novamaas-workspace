@@ -70,6 +70,85 @@ func TestBillingExcelPreservesFrozenAmountsRatesAndNoFormulaInjection(t *testing
 	assert.Equal(t, 0.000001, billingExcelAmount("0.000001"))
 }
 
+func TestBillingExcelV18ShowsNetConsumptionBeforeRefunds(t *testing.T) {
+	statement, snapshot := frozenBillingExportFixture(t)
+	snapshot.PDFTemplateVersion = 18
+	snapshot.Models[0].BillingGroup, snapshot.Models[0].BillingRate = "standard", "0.8"
+	frozen, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	hash := sha256.Sum256(frozen)
+	statement.Snapshot, statement.SnapshotSHA256 = string(frozen), hex.EncodeToString(hash[:])
+	body, err := RenderBillingStatementExcel(statement, snapshot)
+	require.NoError(t, err)
+	retry, err := RenderBillingStatementExcel(statement, snapshot)
+	require.NoError(t, err)
+	assert.Equal(t, body, retry, "customer-facing layout changes must keep archive retries deterministic")
+	book, err := excelize.OpenReader(bytes.NewReader(body))
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, book.Close()) })
+
+	for _, table := range []struct {
+		sheet   string
+		headers []string
+	}{
+		{"每日汇总", []string{"日期", "预扣金额", "实际消费金额", "退款金额", "正式账本记录数", "记账范围"}},
+		{"模型汇总", []string{"模型名称", "使用账单天数", "消费笔数", "退款笔数", "正式账本记录数", "预扣金额", "实际消费金额", "退款金额", "计费费率", "消费金额占比", "实际计费组", "首笔入账时间", "末笔入账时间"}},
+	} {
+		rows, err := book.GetRows(table.sheet)
+		require.NoError(t, err)
+		require.NotEmpty(t, rows)
+		assert.Equal(t, table.headers, rows[0], table.sheet)
+	}
+	for _, cell := range []struct{ sheet, axis, value string }{
+		{"每日汇总", "B30", "7"}, {"每日汇总", "C30", "5.25"}, {"每日汇总", "D30", "1.75"},
+		{"每日汇总", "B32", "7"}, {"每日汇总", "C32", "5.25"}, {"每日汇总", "D32", "1.75"},
+		{"模型汇总", "F2", "7"}, {"模型汇总", "G2", "5.25"}, {"模型汇总", "H2", "1.75"},
+		{"模型汇总", "F3", "7"}, {"模型汇总", "G3", "5.25"}, {"模型汇总", "H3", "1.75"},
+	} {
+		value, err := book.GetCellValue(cell.sheet, cell.axis, excelize.Options{RawCellValue: true})
+		require.NoError(t, err)
+		assert.Equal(t, cell.value, value, cell.sheet+"!"+cell.axis)
+		styleID, err := book.GetCellStyle(cell.sheet, cell.axis)
+		require.NoError(t, err)
+		style, err := book.GetStyle(styleID)
+		require.NoError(t, err)
+		require.NotNil(t, style.CustomNumFmt)
+		assert.Equal(t, `_(* #,##0.000000_);_(* (#,##0.000000);_(* "-"??????_);_(@_)`, *style.CustomNumFmt, "all reordered amount cells retain accounting precision")
+	}
+	for _, cell := range []struct{ sheet, axis, value string }{
+		{"总览", "A14", "消费金额"}, {"总览", "A15", "退款金额"}, {"总览", "A16", "本期净额"},
+		{"总览", "A27", "文件绑定校验"}, {"总览", "A28", "金额精度"}, {"总览", "A29", "折扣金额说明"},
+		{"模型汇总", "I2", "80.00%"}, {"模型汇总", "J2", "100.00%"}, {"模型汇总", "K2", "standard"},
+	} {
+		value, err := book.GetCellValue(cell.sheet, cell.axis)
+		require.NoError(t, err)
+		assert.Equal(t, cell.value, value, cell.sheet+"!"+cell.axis)
+	}
+	overview, err := book.GetRows("总览")
+	require.NoError(t, err)
+	for _, row := range overview {
+		assert.NotContains(t, row, "账单数据 SHA-256")
+		assert.NotContains(t, row, statement.SnapshotSHA256)
+	}
+	for _, row := range []int{27, 28, 29} {
+		height, err := book.GetRowHeight("总览", row)
+		require.NoError(t, err)
+		assert.Equal(t, 44.0, height, "the notes must keep enough height after removing the fingerprint row")
+	}
+	after, err := common.Marshal(snapshot)
+	require.NoError(t, err)
+	assert.Equal(t, frozen, after, "presentation changes must preserve the frozen accounting source")
+	require.NoError(t, statement.VerifySnapshot())
+	statement.Snapshot += " "
+	corrupted, err := RenderBillingStatementExcel(statement, snapshot)
+	assert.ErrorIs(t, err, model.ErrBillingEvidenceIntegrity, "the hidden fingerprint must still protect exported data")
+	assert.Empty(t, corrupted)
+	if output := os.Getenv("BILLING_EXPORT_TEST_OUTPUT"); output != "" {
+		require.NoError(t, os.MkdirAll(output, 0700))
+		require.NoError(t, os.WriteFile(filepath.Join(output, "billing-v18.xlsx"), body, 0600))
+	}
+}
+
 func TestBillingArchiveV9BindsExcelAndPDFAndRetriesUnchanged(t *testing.T) {
 	truncate(t)
 	statement, snapshot := frozenBillingExportFixture(t)
@@ -138,7 +217,7 @@ func TestBillingConfirmationPreservesFrozenOriginalAndCorporateIdentity(t *testi
 		{"standard", "上海示例科技有限公司", "DEMO-TAX"},
 		{"maximum identity", strings.Repeat("企", 200), strings.Repeat("X", 64)},
 	} {
-		for _, version := range []int{16, 17} {
+		for _, version := range []int{16, 17, 18} {
 			t.Run(fmt.Sprintf("%s/v%d", test.name, version), func(t *testing.T) {
 				statement, snapshot := frozenBillingExportFixture(t)
 				snapshot.PDFTemplateVersion = version

@@ -8,6 +8,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -625,13 +626,27 @@ func billingCorrectionDigest(batch *BillingCorrection, rows []BillingCorrectionR
 }
 
 func PreviewBillingCorrection(input BillingCorrectionInput, actorID int, rate string, userGroup string) (*BillingCorrection, error) {
+	now := common.GetTimestamp()
 	input.Reason, input.TargetGroup = strings.TrimSpace(input.Reason), strings.TrimSpace(input.TargetGroup)
 	if input.Mode == "" {
 		input.Mode = BillingCorrectionGroupRate
 	}
-	if input.UserID <= 0 || actorID <= 0 || input.StartAt <= 0 || input.EndAt <= input.StartAt || input.EndAt > common.GetTimestamp() || input.EndAt-input.StartAt > 93*86400 ||
+	if input.UserID <= 0 || actorID <= 0 || input.StartAt <= 0 || input.EndAt <= input.StartAt || input.EndAt-input.StartAt > 93*86400 ||
 		len(input.Models) == 0 || len(input.Models) > 20 || len(input.Reason) < 4 || len([]rune(input.Reason)) > 1000 || len(input.TargetGroup) > 50 ||
 		(input.Mode != BillingCorrectionGroupRate && input.Mode != BillingCorrectionModelPricing) || (input.Mode == BillingCorrectionGroupRate && input.TargetGroup == "") {
+		return nil, ErrBillingCorrectionBlocked
+	}
+	if input.EndAt > now {
+		today := time.Unix(now, 0).In(time.FixedZone("Asia/Shanghai", 8*3600))
+		dayEnd := time.Date(today.Year(), today.Month(), today.Day()+1, 0, 0, 0, 0, today.Location()).Unix()
+		if input.EndAt != dayEnd {
+			return nil, ErrBillingCorrectionBlocked
+		}
+		// The inclusive date picker sends tomorrow's midnight for today.
+		// Freeze today's actual cutoff so later usage cannot join this preview.
+		input.EndAt = now
+	}
+	if input.EndAt <= input.StartAt {
 		return nil, ErrBillingCorrectionBlocked
 	}
 	if input.Mode == BillingCorrectionModelPricing {
@@ -648,7 +663,6 @@ func PreviewBillingCorrection(input BillingCorrectionInput, actorID int, rate st
 	if err != nil {
 		return nil, err
 	}
-	now := common.GetTimestamp()
 	batch := &BillingCorrection{ID: common.GetUUID(), UserID: input.UserID, UserGroup: userGroup, CreatedBy: actorID, CreatedAt: now, ExpiresAt: now + 900, StartAt: input.StartAt, EndAt: input.EndAt,
 		Models: string(models), Mode: input.Mode, TargetGroup: input.TargetGroup, TargetRate: rate, Reason: input.Reason, Status: "preview", CanApply: true}
 	err = DB.Transaction(func(tx *gorm.DB) error {

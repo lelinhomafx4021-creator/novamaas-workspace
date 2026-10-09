@@ -68,6 +68,26 @@ func TestBillingPostpaidBalancesRoundAfterAccumulatingOriginalAmounts(t *testing
 	assert.Equal(t, "0.004000", days[1].Amount, "rounding must not change the accounting source")
 }
 
+func TestBillingPostpaidBalanceAmountsPreserveSignsAndOriginalPrecision(t *testing.T) {
+	days := []BillingRow{
+		{State: "outside_period", Amount: "not part of the balance"},
+		{Amount: "0.004000"}, {Amount: "0.004000"}, {Amount: "0.000000"},
+		{Amount: "-0.008000"}, {Amount: "12345.678900"},
+		{Amount: "-12400.000000"}, {Amount: "0.000000"},
+	}
+	balances, err := billingPostpaidDailyBalanceAmounts(days)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"-", "-0.004", "-0.008", "-0.008", "0", "-12345.6789", "54.3211", "54.3211"}, balances)
+	var display []string
+	for _, balance := range balances[1:] {
+		number, err := billingDisplayAmount(balance, 2, false)
+		require.NoError(t, err)
+		display = append(display, number)
+	}
+	assert.Equal(t, []string{"0.00", "(0.01)", "(0.01)", "0.00", "(12,345.68)", "54.32", "54.32"}, display)
+	assert.Equal(t, "0.004000", days[1].Amount, "display formatting preserves source amounts")
+}
+
 func TestBillingModelDetailsAvoidPrematureContinuation(t *testing.T) {
 	for _, test := range []struct {
 		name       string

@@ -81,10 +81,14 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 		{"原价与令牌说明", "正式账本未保存完整的历史原价、优惠、输入/输出/缓存令牌或成功请求数；未记录不代表零。"},
 		{"记录数说明", "消费和退款均为正式入账笔数，不等同于成功请求数；资金充值和临时预扣不计入消费。"},
 		{"对账单编号", statement.ID}, {"版本", statement.Revision}, {"来源对账单", sourceID},
-		{"账单数据 SHA-256", statement.SnapshotSHA256},
-		{"文件绑定校验", "PDF 列示本 Excel 的 SHA-256；校验清单同时绑定 PDF、Excel 与账单数据。客户确认该清单对应的两个文件。"},
-		{"金额精度", "金额保留六位小数；超过 Excel 15 位有效数字的金额以文本保存，避免精度丢失。"},
 	}
+	if snapshot.PDFTemplateVersion < 18 {
+		rows = append(rows, []any{"账单数据 SHA-256", statement.SnapshotSHA256})
+	}
+	rows = append(rows,
+		[]any{"文件绑定校验", "PDF 列示本 Excel 的 SHA-256；校验清单同时绑定 PDF、Excel 与账单数据。客户确认该清单对应的两个文件。"},
+		[]any{"金额精度", "金额保留六位小数；超过 Excel 15 位有效数字的金额以文本保存，避免精度丢失。"},
+	)
 	if snapshot.PDFTemplateVersion >= 10 {
 		rows[19] = []any{"计费口径", "消费发生时的实际计费组与费率"}
 		rows[20] = []any{"计费费率说明", "根据历史消费日志或任务提交时的计费快照列示；同一模型按实际计费组与费率拆分。未记录表示缺少可核验历史证据，不使用当前配置替代。"}
@@ -122,7 +126,11 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 	if err := book.SetColWidth("总览", "B", "B", 95); err != nil {
 		return nil, err
 	}
-	for _, row := range []int{21, 22, 23, 28, 29} {
+	noteRows := []int{21, 22, 23, 28, 29}
+	if snapshot.PDFTemplateVersion >= 18 {
+		noteRows = []int{21, 22, 23, 27, 28}
+	}
+	for _, row := range noteRows {
 		if err := book.SetRowHeight("总览", row, 44); err != nil {
 			return nil, err
 		}
@@ -206,6 +214,16 @@ func RenderBillingStatementExcel(statement *model.BillingStatement, snapshot *Bi
 	if snapshot.PDFTemplateVersion >= 10 {
 		models[len(models)-1] = []any{"合计", "—", chargeCount, refundCount, snapshot.Total.Count, billingStatementExcelAmount(snapshot.Total.Charge, snapshot), billingStatementExcelAmount(snapshot.Total.Refund, snapshot), billingStatementExcelAmount(snapshot.Total.Amount, snapshot), "—", shareTotal}
 		modelEnd, groupColumn, shareColumn = "M", "K", "J"
+	}
+	if snapshot.PDFTemplateVersion >= 18 {
+		daily[0][1], daily[0][2], daily[0][3] = "预扣金额", "实际消费金额", "退款金额"
+		for i := 1; i < len(daily); i++ {
+			daily[i][2], daily[i][3] = daily[i][3], daily[i][2]
+		}
+		models[0][5], models[0][6], models[0][7] = "预扣金额", "实际消费金额", "退款金额"
+		for i := 1; i < len(models); i++ {
+			models[i][6], models[i][7] = models[i][7], models[i][6]
+		}
 	}
 	for _, table := range []struct {
 		name                      string

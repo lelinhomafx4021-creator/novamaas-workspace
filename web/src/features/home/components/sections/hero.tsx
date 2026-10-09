@@ -24,6 +24,10 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
+import {
+  getDocumentationLink,
+  parseHeaderNavModulesFromStatus,
+} from '@/lib/nav-modules'
 import { cn } from '@/lib/utils'
 
 interface HeroProps {
@@ -34,8 +38,10 @@ interface HeroProps {
 export function Hero(props: HeroProps) {
   const { t } = useTranslation()
   const { status } = useStatus()
-  const docsUrl =
-    (status?.docs_link as string | undefined) || 'https://docs.newapi.pro'
+  const docsUrl = getDocumentationLink(status as Record<string, unknown> | null)
+  const docsEnabled = parseHeaderNavModulesFromStatus(
+    status as Record<string, unknown> | null
+  ).docs.enabled
   const isExternalDocs = docsUrl.startsWith('http')
 
   return (
@@ -111,24 +117,22 @@ export function Hero(props: HeroProps) {
               {t('Explore model supply')}
             </Button>
 
-            {isExternalDocs ? (
+            {docsEnabled && (
               <Button
                 variant='ghost'
                 size='lg'
                 className='h-11 rounded-full px-4'
                 render={
-                  <a href={docsUrl} target='_blank' rel='noopener noreferrer' />
+                  isExternalDocs ? (
+                    <a
+                      href={docsUrl}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                    />
+                  ) : (
+                    <Link to={docsUrl} />
+                  )
                 }
-              >
-                <HugeiconsIcon icon={BookOpen01Icon} data-icon='inline-start' />
-                {t('Docs')}
-              </Button>
-            ) : (
-              <Button
-                variant='ghost'
-                size='lg'
-                className='h-11 rounded-full px-4'
-                render={<Link to={docsUrl} />}
               >
                 <HugeiconsIcon icon={BookOpen01Icon} data-icon='inline-start' />
                 {t('Docs')}

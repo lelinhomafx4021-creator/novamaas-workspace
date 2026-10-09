@@ -55,7 +55,8 @@ const headerNavSchema = z.object({
   pricingRequireAuth: z.boolean(),
   rankingsEnabled: z.boolean(),
   rankingsRequireAuth: z.boolean(),
-  docs: z.boolean(),
+  docsEnabled: z.boolean(),
+  docsRequireAuth: z.boolean(),
   about: z.boolean(),
 })
 
@@ -89,8 +90,8 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.rankings?.requireAuth === undefined
       ? HEADER_NAV_DEFAULT.rankings.requireAuth
       : Boolean(config.rankings.requireAuth),
-  docs:
-    config.docs === undefined ? HEADER_NAV_DEFAULT.docs : Boolean(config.docs),
+  docsEnabled: config.docs.enabled,
+  docsRequireAuth: config.docs.requireAuth,
   about:
     config.about === undefined
       ? HEADER_NAV_DEFAULT.about
@@ -119,7 +120,10 @@ export function HeaderNavigationSection({
       ...config,
       home: values.home,
       console: values.console,
-      docs: values.docs,
+      docs: {
+        enabled: values.docsEnabled,
+        requireAuth: values.docsRequireAuth,
+      },
       about: values.about,
       pricing: {
         ...(config.pricing ?? HEADER_NAV_DEFAULT.pricing),
@@ -164,11 +168,6 @@ export function HeaderNavigationSection({
       description: t('User dashboard and quota controls.'),
     },
     {
-      key: 'docs',
-      title: t('Docs'),
-      description: t('Documentation or external knowledge base.'),
-    },
-    {
       key: 'about',
       title: t('About'),
       description: t('Static page describing the platform.'),
@@ -178,12 +177,23 @@ export function HeaderNavigationSection({
   const accessModules: Array<{
     enabledKey: keyof HeaderNavFormValues
     requireAuthKey: keyof HeaderNavFormValues
-    requireAuthDependsOn: 'pricingEnabled' | 'rankingsEnabled'
+    requireAuthDependsOn: 'pricingEnabled' | 'rankingsEnabled' | 'docsEnabled'
     title: string
     description: string
     requireAuthTitle: string
     requireAuthDescription: string
   }> = [
+    {
+      enabledKey: 'docsEnabled',
+      requireAuthKey: 'docsRequireAuth',
+      requireAuthDependsOn: 'docsEnabled',
+      title: t('API documentation'),
+      description: t('Enable the documentation page and its content API.'),
+      requireAuthTitle: t('Require login to read documentation'),
+      requireAuthDescription: t(
+        'Only signed-in users can read the documentation when enabled.'
+      ),
+    },
     {
       enabledKey: 'pricingEnabled',
       requireAuthKey: 'pricingRequireAuth',

@@ -16,7 +16,7 @@ type headerNavAccess struct {
 
 func getHeaderNavAccess(module string) headerNavAccess {
 	fallback := headerNavAccess{
-		Enabled:     true,
+		Enabled:     module != "docs",
 		RequireAuth: false,
 	}
 

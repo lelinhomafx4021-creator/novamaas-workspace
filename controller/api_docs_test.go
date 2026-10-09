@@ -9,6 +9,7 @@ import (
 	apidocs "github.com/QuantumNous/new-api/docs/platform-api"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -20,12 +21,14 @@ func TestAPIDocumentationAccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}))
 	previousDB, previousRedis := model.DB, common.RedisEnabled
 	model.DB, common.RedisEnabled = db, false
 	user := model.User{Id: 7984, Username: "docs-reader", Password: "unused-hash", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	user.SetAccessToken("docs-reader-pat")
 	require.NoError(t, db.Create(&user).Error)
+	bundle, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "docs-test")
+	require.NoError(t, err)
 	common.OptionMapRWMutex.Lock()
 	if common.OptionMap == nil {
 		common.OptionMap = map[string]string{}
@@ -46,25 +49,26 @@ func TestAPIDocumentationAccess(t *testing.T) {
 	engine.GET("/api/docs", middleware.DisableCache(), middleware.HeaderNavModuleAuth("docs"), GetAPIDocumentation)
 	for _, tt := range []struct {
 		name, option string
-		login        bool
+		credential   string
 		status       int
 	}{
 		{name: "not enabled", status: http.StatusForbidden},
 		{name: "invalid configuration", option: "{", status: http.StatusForbidden},
 		{name: "disabled for visitor", option: `{"docs":false}`, status: http.StatusForbidden},
-		{name: "disabled for user", option: `{"docs":false}`, login: true, status: http.StatusForbidden},
+		{name: "disabled for user", option: `{"docs":false}`, credential: "docs-reader-pat", status: http.StatusForbidden},
 		{name: "legacy enabled", option: `{"docs":true}`, status: http.StatusOK},
 		{name: "public enabled", option: `{"docs":{"enabled":true,"requireAuth":false}}`, status: http.StatusOK},
 		{name: "login required", option: `{"docs":{"enabled":true,"requireAuth":true}}`, status: http.StatusUnauthorized},
-		{name: "signed in", option: `{"docs":{"enabled":true,"requireAuth":true}}`, login: true, status: http.StatusOK},
+		{name: "browser signed in", option: `{"docs":{"enabled":true,"requireAuth":true}}`, credential: bundle.AccessToken, status: http.StatusOK},
+		{name: "signed in", option: `{"docs":{"enabled":true,"requireAuth":true}}`, credential: "docs-reader-pat", status: http.StatusOK},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			common.OptionMapRWMutex.Lock()
 			common.OptionMap["HeaderNavModules"] = tt.option
 			common.OptionMapRWMutex.Unlock()
 			request := httptest.NewRequest(http.MethodGet, "/api/docs", nil)
-			if tt.login {
-				request.Header.Set("Authorization", "Bearer docs-reader-pat")
+			if tt.credential != "" {
+				request.Header.Set("Authorization", "Bearer "+tt.credential)
 			}
 			recorder := httptest.NewRecorder()
 			engine.ServeHTTP(recorder, request)

@@ -311,6 +311,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := ensureCostAccountingAdjustmentEventKeyColumn(DB); err != nil {
+		return err
+	}
 	if err := ensureStorageObjectUploadMetadataColumns(DB); err != nil {
 		return err
 	}
@@ -398,6 +401,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := ensureCostAccountingAdjustmentEventKeyColumn(DB); err != nil {
+		return err
+	}
 	if err := ensureStorageObjectUploadMetadataColumns(DB); err != nil {
 		return err
 	}
@@ -499,6 +505,15 @@ func migrateDBFast() error {
 	}
 	common.SysLog("database migrated")
 	return nil
+}
+
+// SQLite cannot add a UNIQUE column to an existing table. Add the nullable
+// column first; AutoMigrate creates the unique index afterwards.
+func ensureCostAccountingAdjustmentEventKeyColumn(db *gorm.DB) error {
+	if db.Dialector.Name() != "sqlite" || !db.Migrator().HasTable(&CostAccountingAdjustment{}) || db.Migrator().HasColumn(&CostAccountingAdjustment{}, "EventKey") {
+		return nil
+	}
+	return db.Exec("ALTER TABLE cost_accounting_adjustments ADD COLUMN `event_key` varchar(191)").Error
 }
 
 // ensureChannelCostDiscountColumn upgrades channel tables created before cost

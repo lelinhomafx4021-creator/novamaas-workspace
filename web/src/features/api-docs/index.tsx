@@ -25,6 +25,7 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouteContext, useSearch } from '@tanstack/react-router'
+import { isAxiosError } from 'axios'
 import { type ReactNode, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -53,14 +54,16 @@ export function APIDocs() {
   const { article = 'quickstart' } = useSearch({ from: '/docs/' })
   const { access } = useRouteContext({ from: '/docs/' })
   const userID = useAuthStore((state) => state.auth.user?.id)
+  const sessionID = useAuthStore((state) => state.auth.session?.sid)
   const [search, setSearch] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const allowed = access.enabled && (!access.requireAuth || !!userID)
   const docs = useQuery({
-    queryKey: ['api-docs', userID ?? null],
+    queryKey: ['api-docs', userID ?? null, sessionID ?? null],
     queryFn: async () => {
       const response = await api.get<{ success: boolean; data: APIDocument[] }>(
-        '/api/docs'
+        '/api/docs',
+        { skipErrorHandler: true }
       )
       return response.data.data
     },
@@ -100,7 +103,13 @@ export function APIDocs() {
           {t('Documentation unavailable')}
         </h1>
         <p className='text-muted-foreground text-sm'>
-          {t('The documentation may be disabled or require login.')}
+          {!allowed
+            ? t('The documentation may be disabled or require login.')
+            : t('Request failed')}
+          {allowed &&
+            isAxiosError(docs.error) &&
+            docs.error.response &&
+            ` (${docs.error.response.status})`}
         </p>
         <Button
           variant='outline'

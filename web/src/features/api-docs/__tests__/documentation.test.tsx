@@ -26,6 +26,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -34,6 +35,7 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError } from 'axios'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -86,7 +88,21 @@ beforeEach(() => {
       }
     }
     if (config.url === '/api/docs') {
-      if (failDocs) throw new Error('Documentation request failed')
+      if (failDocs) {
+        throw new AxiosError(
+          'Request failed with status code 404',
+          undefined,
+          config,
+          undefined,
+          {
+            data: {},
+            status: 404,
+            statusText: 'Not Found',
+            headers: {},
+            config,
+          }
+        )
+      }
       data = apiDocuments
     }
     return {
@@ -246,6 +262,11 @@ test('enforces access control with authentication redirects and error recovery',
     })
   ).toBeVisible()
 
+  expect(
+    screen.queryByText('The documentation may be disabled or require login.')
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent('Request failed')
+  expect(screen.getByRole('alert')).toHaveTextContent('404')
   failDocs = false
   await user.click(screen.getByRole('button', { name: 'Retry' }))
   expect(
@@ -290,4 +311,39 @@ test('scrolling synchronizes the directory without changing the deep link', asyn
   fireEvent.scroll(window)
   await waitFor(() => expect(first).toHaveAttribute('aria-current', 'page'))
   expect(decodeURIComponent(router.state.location.hash)).toBe('请求体')
+})
+
+test('a new login session retries a failed documentation request for the same user', async () => {
+  requireAuth = true
+  const bundle = {
+    user: { id: 72, username: 'docs-reader', role: 1 },
+    access_token: 'test-session-token',
+    token_type: 'Bearer',
+    access_expires_at: 9999999999,
+    session: {
+      sid: 'docs-session',
+      current: true,
+      login_method: 'password',
+      ip: '',
+      user_agent: '',
+      created_at: 1,
+      last_active_at: 1,
+      expires_at: 9999999999,
+    },
+  }
+  useAuthStore.getState().auth.setBundle(bundle)
+  failDocs = true
+  await renderDocumentation()
+  await screen.findByRole('heading', { name: 'Documentation unavailable' })
+  failDocs = false
+  act(() =>
+    useAuthStore.getState().auth.setBundle({
+      ...bundle,
+      access_token: 'replacement-session-token',
+      session: { ...bundle.session, sid: 'replacement-session' },
+    })
+  )
+  expect(
+    await screen.findByRole('heading', { level: 1, name: '快速开始' })
+  ).toBeVisible()
 })

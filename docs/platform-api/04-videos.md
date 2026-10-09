@@ -335,6 +335,30 @@ curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/v1/video/g
 }
 ```
 
+#### 多供应商专有参数透传规范（以阿里通义万相 Wan 系列为例）
+
+> [!NOTE]
+> **多厂商专有控制参数透传说明**：
+> 当通过兼容接口调用特定厂商模型（如阿里百炼 Wan3.0、Wan2.5 等原生音画一体模型）时，若需配置厂商专属的高级控制参数，需将专有字段置于 `metadata.parameters` 内部传入：
+> * **Wan 系列关闭自动音频生成**：阿里 Wan 模型默认开启原生音画同步（`audio: true`）。若需生成纯静音视频，需在 `metadata.parameters` 内部显式传入 `"audio": false`（类型须为布尔值 `false`，不可使用字符串 `"false"`；直接置于根节点将被网关作为非标准通用字段忽略）。
+> * **调用示例**：
+>   ```bash
+>   curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/v1/video/generations' \
+>     --header 'Authorization: Bearer YOUR_API_KEY' \
+>     --header 'Content-Type: application/json' \
+>     --data-raw '{
+>     "model": "wan3.0-video",
+>     "prompt": "金毛小狗在阳光明媚的草地上欢快奔跑，高清画质，电影级质感",
+>     "image": "https://example.com/sample.png",
+>     "metadata": {
+>       "parameters": {
+>         "audio": false,
+>         "prompt_extend": true
+>       }
+>     }
+>   }'
+>   ```
+
 ### 2. 网关兼容视频任务轮询 (GET /v1/video/generations/{task_id})
 
 提供实时百分比进度（`progress`）的扩展状态展示：

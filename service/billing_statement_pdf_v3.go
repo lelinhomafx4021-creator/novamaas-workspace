@@ -319,7 +319,17 @@ func renderBillingStatementPDFV3(statement *model.BillingStatement, snapshot *Bi
 	doc.text(40, 121, 360, 8.5, "STATEMENT OF ACCOUNT")
 	pdf.SetTextColor(25, 51, 94)
 	doc.text(40, 141, 350, 26, "月度对账单")
-	doc.right(410, 144, 145, 22, statement.Month)
+	if snapshot.PDFTemplateVersion >= 17 {
+		month, err := time.Parse("2006-01", statement.Month)
+		if err != nil {
+			return nil, err
+		}
+		pdf.SetFillColor(241, 245, 251)
+		pdf.RectFromUpperLeftWithStyle(370, 133, 185, 45, "F")
+		doc.right(382, 143, 161, 24, month.Format("2006年01月"))
+	} else {
+		doc.right(410, 144, 145, 22, statement.Month)
+	}
 	pdf.SetTextColor(88, 104, 126)
 	doc.text(40, 185, 515, 8.5, fmt.Sprintf("文件编号  %s   /   版本 %02d", statement.ID, statement.Revision))
 	doc.text(40, 202, 515, 8.5, "生成时间  "+time.Unix(statement.CreatedAt, 0).In(billingLocation).Format("2006-01-02 15:04:05")+"   /   Asia/Shanghai (UTC+08:00)")

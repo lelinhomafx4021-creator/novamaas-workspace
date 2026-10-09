@@ -18,7 +18,7 @@ func TestBillingReadableVerificationPreservesFrozenOriginalAndCorporateIdentity(
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			statement, snapshot := frozenBillingExportFixture(t)
-			snapshot.PDFTemplateVersion = 16
+			snapshot.PDFTemplateVersion = 17
 			snapshot.CompanyTitle, snapshot.TaxID = test.company, test.taxID
 			frozen, err := common.Marshal(snapshot)
 			require.NoError(t, err)

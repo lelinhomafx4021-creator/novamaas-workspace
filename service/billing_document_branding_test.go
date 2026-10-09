@@ -272,7 +272,7 @@ func TestBillingDraftArchivesFrozenBrandingAfterSettingsChange(t *testing.T) {
 	assert.NotEmpty(t, archived.PDFLogoPNG)
 	assert.Equal(t, "客户服务公司", archived.OperatingName)
 	assert.NotEmpty(t, archived.PDFOperatingLogoPNG)
-	assert.Equal(t, 16, archived.PDFTemplateVersion)
+	assert.Equal(t, 17, archived.PDFTemplateVersion)
 	assert.NotContains(t, string(store.files["snapshot"]), "signature")
 	assert.NotEmpty(t, store.files["pdf"])
 	assert.NotEmpty(t, statement.PDFSHA256)

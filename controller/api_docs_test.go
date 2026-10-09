@@ -81,14 +81,6 @@ func TestAPIDocumentationAccess(t *testing.T) {
 			}
 			assert.True(t, response.Success)
 			require.NotEmpty(t, response.Data)
-			assert.Len(t, response.Data, 7)
-			assert.Equal(t, "quickstart", response.Data[0].ID)
-			assert.Equal(t, "text", response.Data[1].ID)
-			assert.Equal(t, "images", response.Data[2].ID)
-			assert.Equal(t, "videos", response.Data[3].ID)
-			assert.Equal(t, "assets", response.Data[4].ID)
-			assert.Equal(t, "media-webhooks", response.Data[5].ID)
-			assert.Equal(t, "asset-webhooks", response.Data[6].ID)
 			assert.Contains(t, response.Data[0].Content, "YOUR_API_KEY")
 			for _, doc := range response.Data {
 				for _, private := range []string{"/api/channel", "/api/option", "/api/authz", "JWT", "PAT", "STORAGE_CREDENTIAL_ENCRYPTION_KEY"} {

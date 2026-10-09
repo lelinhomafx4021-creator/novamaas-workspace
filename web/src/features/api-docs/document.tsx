@@ -111,6 +111,9 @@ export function Document(props: { content: string }) {
       const element = document.getElementById(anchor)
       return element && bodyRef.current?.contains(element) ? [element] : []
     })
+    const offset = elements[0]
+      ? Number.parseFloat(getComputedStyle(elements[0]).scrollMarginTop) || 112
+      : 112
     let frame = 0
     const update = () => {
       frame = 0
@@ -118,8 +121,6 @@ export function Document(props: { content: string }) {
       for (const element of elements) {
         const bounds = element.getBoundingClientRect()
         if (!bounds.height) return
-        const offset =
-          Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 112
         if (bounds.top > offset + 1) break
         current = element
       }

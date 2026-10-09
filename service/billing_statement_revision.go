@@ -41,17 +41,9 @@ func billingModelCount(rows []BillingModelRow) int {
 	return len(names)
 }
 
-func billingModelDisplayName(row BillingModelRow, version int) string {
-	name := row.ModelName
-	if name == "" {
-		name = "未标注模型 / OTHER"
+func billingModelDisplayName(row BillingModelRow) string {
+	if row.ModelName == "" {
+		return "未标注模型 / OTHER"
 	}
-	if version == 10 {
-		group := row.BillingGroup
-		if group == "" {
-			group = "未记录"
-		}
-		name += " · 计费组：" + group
-	}
-	return name
+	return row.ModelName
 }

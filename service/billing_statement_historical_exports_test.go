@@ -53,7 +53,7 @@ func TestBillingHistoricalExportsHaveOneConsumedRateAndNoOriginalPriceColumn(t *
 	snapshot.Models[0].BillingGroup = "spe_sd_86"
 	legacyWithGroup, err := RenderBillingStatementPDF(statement, snapshot, false)
 	require.NoError(t, err)
-	assert.NotEqual(t, legacy, legacyWithGroup, "legacy archives must retain their original group descriptions")
+	assert.Equal(t, legacy, legacyWithGroup, "all main-template PDFs omit billing group descriptions")
 	if output := os.Getenv("BILLING_HISTORICAL_EXPORT_TEST_DIR"); output != "" {
 		require.NoError(t, os.MkdirAll(output, 0700))
 		require.NoError(t, os.WriteFile(filepath.Join(output, "historical.xlsx"), workbook, 0600))

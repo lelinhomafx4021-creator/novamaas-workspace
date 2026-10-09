@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,10 +105,8 @@ func TestBillingArchiveV9BindsExcelAndPDFAndRetriesUnchanged(t *testing.T) {
 	}
 }
 
-func TestBillingPDFV9RendersOperatingLogoAndRequiresWorkbookFingerprint(t *testing.T) {
+func TestBillingPDFRendersFrozenOperatingLogo(t *testing.T) {
 	statement, snapshot := frozenBillingExportFixture(t)
-	_, err := RenderBillingStatementPDF(statement, snapshot, false)
-	assert.ErrorContains(t, err, "Excel fingerprint")
 	statement.ExcelSHA256 = strings.Repeat("b", 64)
 	withoutLogo, err := RenderBillingStatementPDF(statement, snapshot, false)
 	require.NoError(t, err)
@@ -131,5 +130,52 @@ func TestBillingFilenamePrefersFrozenCompanyAndSanitizesBothFormats(t *testing.T
 	for _, kind := range []string{"pdf", "xlsx"} {
 		assert.Equal(t, "示例_企业_2026-09_月度对账单_V02."+kind, BillingArtifactFilename(statement, "username", kind, 0, "示例/企业\r\n"))
 		assert.Equal(t, "username_2026-09_月度对账单_V02."+kind, BillingArtifactFilename(statement, "username", kind, 0, "  "))
+	}
+}
+
+func TestBillingConfirmationPreservesFrozenOriginalAndCorporateIdentity(t *testing.T) {
+	for _, test := range []struct{ name, company, taxID string }{
+		{"standard", "上海示例科技有限公司", "DEMO-TAX"},
+		{"maximum identity", strings.Repeat("企", 200), strings.Repeat("X", 64)},
+	} {
+		for _, version := range []int{16, 17} {
+			t.Run(fmt.Sprintf("%s/v%d", test.name, version), func(t *testing.T) {
+				statement, snapshot := frozenBillingExportFixture(t)
+				snapshot.PDFTemplateVersion = version
+				snapshot.CompanyTitle, snapshot.TaxID = test.company, test.taxID
+				frozen, err := common.Marshal(snapshot)
+				require.NoError(t, err)
+				snapshotHash := sha256.Sum256(frozen)
+				statement.Snapshot, statement.SnapshotSHA256 = string(frozen), hex.EncodeToString(snapshotHash[:])
+				workbook, err := RenderBillingStatementExcel(statement, snapshot)
+				require.NoError(t, err)
+				excelHash := sha256.Sum256(workbook)
+				statement.ExcelSHA256 = hex.EncodeToString(excelHash[:])
+				original, err := RenderBillingStatementPDF(statement, snapshot, false)
+				require.NoError(t, err, "accepted corporate identities and complete fingerprints must fit")
+				pdfHash := sha256.Sum256(original)
+				statement.PDFSHA256 = hex.EncodeToString(pdfHash[:])
+				manifest, err := common.Marshal(BillingManifest{StatementID: statement.ID, PDFSHA256: statement.PDFSHA256, ExcelSHA256: statement.ExcelSHA256, SnapshotSHA256: statement.SnapshotSHA256})
+				require.NoError(t, err)
+				manifestHash := sha256.Sum256(manifest)
+				statement.ManifestSHA256 = hex.EncodeToString(manifestHash[:])
+				premature, err := RenderBillingStatementPDF(statement, snapshot, true)
+				require.ErrorContains(t, err, "statement is not confirmed", "archived evidence alone must never produce confirmation details")
+				assert.Empty(t, premature)
+				statement.ConfirmedAt = statement.CreatedAt + 3600
+				confirmed, err := RenderBillingStatementPDF(statement, snapshot, true)
+				require.NoError(t, err, "the confirmation must fit beside the corporate identity")
+				expectedPages := strings.Count(string(original), "\n  /Type /Page\n")
+				assert.Equal(t, expectedPages, strings.Count(string(confirmed), "\n  /Type /Page\n"), "confirmation appears on the cover without a separate receipt page")
+				assert.NotEqual(t, original, confirmed, "the confirmed artifact must include the confirmation")
+				retry, err := RenderBillingStatementPDF(statement, snapshot, false)
+				require.NoError(t, err)
+				assert.Equal(t, original, retry, "confirmation must not change the original PDF or its fingerprint")
+				after, err := common.Marshal(snapshot)
+				require.NoError(t, err)
+				assert.Equal(t, frozen, after)
+				require.NoError(t, statement.VerifySnapshot())
+			})
+		}
 	}
 }

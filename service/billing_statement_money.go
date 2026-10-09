@@ -10,13 +10,20 @@ import (
 // Accounting amounts share exact decimal formatting across PDF and text cells
 // that exceed Excel's 15 significant digit precision.
 func billingAccountingNumber(value string) (string, error) {
+	return billingDisplayAmount(value, 6, true)
+}
+
+func billingDisplayAmount(value string, decimalPlaces int32, zeroDash bool) (string, error) {
 	amount, err := decimal.NewFromString(value)
 	if err != nil {
 		return "", err
 	}
-	fixed := amount.Abs().StringFixed(6)
-	if fixed == "0.000000" {
-		return "-", nil
+	fixed := amount.Abs().StringFixed(decimalPlaces)
+	if amount.Round(decimalPlaces).IsZero() {
+		if zeroDash {
+			return "-", nil
+		}
+		return fixed, nil
 	}
 	parts := strings.SplitN(fixed, ".", 2)
 	integer := parts[0]
@@ -36,24 +43,50 @@ func billingAccountingNumber(value string) (string, error) {
 	return result, nil
 }
 
-// Decimal places align at the right edge, including negative amounts and
-// accounting zero dashes. Legacy templates may also include a currency symbol.
-func (doc *billingPDFDocument) accounting(x, y, width, size float64, value, symbol string) {
+// Postpaid daily balances carry forward net consumption from a zero opening
+// balance. A net refund reduces the amount owed; inactive days carry it forward.
+func billingPostpaidDailyBalances(days []BillingRow) ([]string, error) {
+	const decimalPlaces = 2
+	balances := make([]string, len(days))
+	consumption := decimal.Zero
+	for i, day := range days {
+		if day.State == "outside_period" {
+			balances[i] = "-"
+			continue
+		}
+		amount, err := decimal.NewFromString(day.Amount)
+		if err != nil {
+			return nil, err
+		}
+		consumption = consumption.Add(amount)
+		number, err := billingDisplayAmount(consumption.String(), decimalPlaces, false)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case consumption.Round(decimalPlaces).IsZero():
+			balances[i] = number
+		case strings.HasPrefix(number, "("):
+			balances[i] = strings.TrimSuffix(strings.TrimPrefix(number, "("), ")")
+		default:
+			balances[i] = "-" + number
+		}
+	}
+	return balances, nil
+}
+
+// Align two-place accounting amounts, including negatives, at the right edge.
+func (doc *billingPDFDocument) accounting(x, y, width, size float64, value string) {
 	if doc.err != nil {
 		return
 	}
-	number, err := billingAccountingNumber(value)
+	number, err := billingDisplayAmount(value, 2, false)
 	if err != nil {
 		doc.err = err
 		return
 	}
 	for size >= 6 {
 		if doc.err = doc.pdf.SetFont("billing", "", size); doc.err != nil {
-			return
-		}
-		symbolWidth, err := doc.pdf.MeasureTextWidth(symbol)
-		if err != nil {
-			doc.err = err
 			return
 		}
 		numberWidth, err := doc.pdf.MeasureTextWidth(number)
@@ -64,26 +97,14 @@ func (doc *billingPDFDocument) accounting(x, y, width, size float64, value, symb
 		padding := ")"
 		if strings.HasPrefix(number, "(") {
 			padding = ""
-		} else if number == "-" {
-			padding = ".000000)"
 		}
 		rightInset, err := doc.pdf.MeasureTextWidth(padding)
 		if err != nil {
 			doc.err = err
 			return
 		}
-		leftInset := 0.0
-		if symbol != "" {
-			leftInset = symbolWidth + 3
-		}
-		if leftInset+numberWidth+rightInset <= width {
-			if symbol != "" {
-				doc.pdf.SetXY(x, y)
-				if doc.err = doc.pdf.Cell(nil, symbol); doc.err != nil {
-					return
-				}
-			}
-			doc.right(x+leftInset, y, width-leftInset-rightInset, size, number)
+		if numberWidth+rightInset <= width {
+			doc.right(x, y, width-rightInset, size, number)
 			return
 		}
 		size -= 0.5

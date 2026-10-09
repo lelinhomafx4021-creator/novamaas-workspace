@@ -17,6 +17,7 @@ const (
 	CostAccountingSignedRefundVersion        = 2
 	CostAccountingLegacyTurnoverBasisVersion = 3
 	CostAccountingOriginalPriceBasisVersion  = 4
+	CostAccountingCorrectedBasisVersion      = 5
 	CostAccountingSnapshotVersion            = CostAccountingOriginalPriceBasisVersion
 	CostSnapshotSourceRealtime               = "realtime"
 	CostSnapshotSourceBackfill               = "backfill"
@@ -55,21 +56,34 @@ type CostAccountingSnapshot struct {
 // CostAccountingAdjustment never overwrites a snapshot. NewCostQuota is
 // recorded as an audit convenience; DeltaCostQuota is the value aggregated.
 type CostAccountingAdjustment struct {
-	ID             int64  `json:"id" gorm:"primaryKey"`
-	SnapshotID     int64  `json:"snapshot_id" gorm:"index"`
-	DeltaCostQuota int64  `json:"delta_cost_quota" gorm:"bigint"`
-	NewCostQuota   int64  `json:"new_cost_quota" gorm:"bigint"`
-	CostDiscount   string `json:"cost_discount,omitempty" gorm:"type:varchar(16)"`
-	Reason         string `json:"reason" gorm:"type:varchar(500)"`
-	ActorID        int    `json:"actor_id" gorm:"index"`
-	BatchID        string `json:"batch_id" gorm:"type:varchar(64);index"`
-	CreatedAt      int64  `json:"created_at" gorm:"bigint"`
+	ID                   int64   `json:"id" gorm:"primaryKey"`
+	EventKey             *string `json:"event_key,omitempty" gorm:"type:varchar(191);uniqueIndex"`
+	SnapshotID           int64   `json:"snapshot_id" gorm:"index"`
+	DeltaCostQuota       int64   `json:"delta_cost_quota" gorm:"bigint"`
+	NewCostQuota         int64   `json:"new_cost_quota" gorm:"bigint"`
+	CostDiscount         string  `json:"cost_discount,omitempty" gorm:"type:varchar(16)"`
+	CostBasisQuota       string  `json:"cost_basis_quota,omitempty" gorm:"type:varchar(64)"`
+	CostBasisBefore      string  `json:"cost_basis_before,omitempty" gorm:"type:varchar(64)"`
+	CostBasisAfter       string  `json:"cost_basis_after,omitempty" gorm:"type:varchar(64)"`
+	BasisVersion         int     `json:"basis_version,omitempty"`
+	CorrectionID         string  `json:"correction_id,omitempty" gorm:"type:varchar(64);index"`
+	Action               string  `json:"action,omitempty" gorm:"type:varchar(16)"`
+	PreviousAdjustmentID int64   `json:"previous_adjustment_id,omitempty" gorm:"type:bigint"`
+	Reason               string  `json:"reason" gorm:"type:varchar(500)"`
+	ActorID              int     `json:"actor_id" gorm:"index"`
+	BatchID              string  `json:"batch_id" gorm:"type:varchar(64);index"`
+	CreatedAt            int64   `json:"created_at" gorm:"bigint"`
 }
 
 type CostAccountingAdjustmentTarget struct {
-	SnapshotID   int64
-	NewCostQuota int64
-	CostDiscount string
+	SnapshotID           int64
+	NewCostQuota         int64
+	CostDiscount         string
+	CostBasisQuota       string
+	CostBasisBefore      string
+	CostBasisAfter       string
+	BasisVersion         int
+	ExpectedAdjustmentID *int64
 }
 
 type CostAccountingInput struct {
@@ -122,10 +136,16 @@ type CostAccountingBucket struct {
 }
 
 type CostAccountingSnapshotView struct {
-	CostAccountingSnapshot `gorm:"embedded"`
-	AdjustmentQuota        int64 `json:"adjustment_quota"`
-	EffectiveCostQuota     int64 `json:"effective_cost_quota"`
-	ProfitQuota            int64 `json:"profit_quota"`
+	CostAccountingSnapshot   `gorm:"embedded"`
+	AdjustmentQuota          int64  `json:"adjustment_quota"`
+	EffectiveCostQuota       int64  `json:"effective_cost_quota"`
+	ProfitQuota              int64  `json:"profit_quota"`
+	EffectiveCostBasisQuota  string `json:"effective_cost_basis_quota"`
+	EffectiveCostBasisBefore string `json:"effective_cost_basis_before,omitempty"`
+	EffectiveCostBasisAfter  string `json:"effective_cost_basis_after,omitempty"`
+	EffectiveCostDiscount    string `json:"effective_cost_discount"`
+	EffectiveBasisVersion    int    `json:"effective_basis_version"`
+	LatestAdjustmentID       int64  `json:"latest_adjustment_id"`
 }
 
 type costSnapshotFallbackKey struct {
@@ -621,6 +641,12 @@ func ListCostAccountingSnapshots(filter CostAccountingFilter, offset, limit int)
 			COALESCE(adjustments.adjustment_quota, 0) AS adjustment_quota,
 			snapshots.cost_quota + COALESCE(adjustments.adjustment_quota, 0) AS effective_cost_quota`).
 		Order("snapshots.occurred_at DESC").Order("snapshots.id DESC").Offset(offset).Limit(limit).Scan(&views).Error
+	if err != nil {
+		return nil, total, err
+	}
+	if err := attachCostAccountingBasis(DB, views); err != nil {
+		return nil, total, err
+	}
 	for i := range views {
 		views[i].ProfitQuota = views[i].RevenueQuota - views[i].EffectiveCostQuota
 	}
@@ -744,7 +770,7 @@ func AdjustCostAccountingSnapshots(targets []CostAccountingAdjustmentTarget, rea
 			snapshotIDs[i] = targets[i].SnapshotID
 		}
 		snapshots := make([]CostAccountingSnapshot, 0, len(targets))
-		if err := lockForUpdate(tx).Where("id IN ?", snapshotIDs).Find(&snapshots).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id IN ?", snapshotIDs).Order("id asc").Find(&snapshots).Error; err != nil {
 			return err
 		}
 		if len(snapshots) != len(targets) {
@@ -754,20 +780,13 @@ func AdjustCostAccountingSnapshots(targets []CostAccountingAdjustmentTarget, rea
 		for _, snapshot := range snapshots {
 			snapshotsByID[snapshot.ID] = snapshot
 		}
-		var adjustmentRows []struct {
-			SnapshotID      int64 `gorm:"column:snapshot_id"`
-			AdjustmentQuota int64 `gorm:"column:adjustment_quota"`
-		}
-		if err := tx.Model(&CostAccountingAdjustment{}).
-			Select("snapshot_id, COALESCE(SUM(delta_cost_quota), 0) AS adjustment_quota").
-			Where("snapshot_id IN ?", snapshotIDs).
-			Group("snapshot_id").
-			Scan(&adjustmentRows).Error; err != nil {
+		var adjustmentRows []CostAccountingAdjustment
+		if err := tx.Where("snapshot_id IN ?", snapshotIDs).Order("id asc").Find(&adjustmentRows).Error; err != nil {
 			return err
 		}
-		adjustmentsBySnapshotID := make(map[int64]int64, len(adjustmentRows))
+		adjustmentsBySnapshotID := make(map[int64][]CostAccountingAdjustment, len(adjustmentRows))
 		for _, row := range adjustmentRows {
-			adjustmentsBySnapshotID[row.SnapshotID] = row.AdjustmentQuota
+			adjustmentsBySnapshotID[row.SnapshotID] = append(adjustmentsBySnapshotID[row.SnapshotID], row)
 		}
 		for _, target := range targets {
 			snapshot := snapshotsByID[target.SnapshotID]
@@ -777,18 +796,44 @@ func AdjustCostAccountingSnapshots(targets []CostAccountingAdjustmentTarget, rea
 			if snapshot.LogType == LogTypeRefund && target.NewCostQuota > 0 {
 				return errors.New("refund cost adjustment cannot be positive")
 			}
-			currentCost := snapshot.CostQuota + adjustmentsBySnapshotID[target.SnapshotID]
-			adjustment := CostAccountingAdjustment{
-				SnapshotID:     target.SnapshotID,
-				DeltaCostQuota: target.NewCostQuota - currentCost,
-				NewCostQuota:   target.NewCostQuota,
-				CostDiscount:   target.CostDiscount,
-				Reason:         reason,
-				ActorID:        actorID,
-				BatchID:        batchID,
-				CreatedAt:      createdAt,
+			state, err := effectiveCostAccountingState(snapshot, adjustmentsBySnapshotID[target.SnapshotID])
+			if err != nil {
+				return err
 			}
-			if adjustment.DeltaCostQuota != 0 {
+			if target.ExpectedAdjustmentID != nil && state.LatestID != *target.ExpectedAdjustmentID {
+				return ErrBillingConflict
+			}
+			basis, before, after, version := state.Basis, state.Before, state.After, state.BasisVersion
+			if target.BasisVersion > 0 {
+				value, err := decimal.NewFromString(target.CostBasisQuota)
+				if err != nil || len(target.CostBasisQuota) > 64 || len(target.CostBasisBefore) > 64 || len(target.CostBasisAfter) > 64 ||
+					(snapshot.LogType == LogTypeConsume && value.IsNegative()) || (snapshot.LogType == LogTypeRefund && value.IsPositive()) {
+					return errors.New("invalid cost accounting adjustment basis")
+				}
+				if target.CostBasisBefore != "" || target.CostBasisAfter != "" {
+					prior, priorErr := decimal.NewFromString(target.CostBasisBefore)
+					current, currentErr := decimal.NewFromString(target.CostBasisAfter)
+					if priorErr != nil || currentErr != nil || prior.IsNegative() || current.IsNegative() || !current.Sub(prior).Equal(value) {
+						return errors.New("invalid cost accounting cumulative basis")
+					}
+				}
+				basis, before, after, version = target.CostBasisQuota, target.CostBasisBefore, target.CostBasisAfter, target.BasisVersion
+			}
+			adjustment := CostAccountingAdjustment{
+				SnapshotID:      target.SnapshotID,
+				DeltaCostQuota:  target.NewCostQuota - state.Quota,
+				NewCostQuota:    target.NewCostQuota,
+				CostDiscount:    target.CostDiscount,
+				CostBasisQuota:  basis,
+				CostBasisBefore: before,
+				CostBasisAfter:  after,
+				BasisVersion:    version,
+				Reason:          reason,
+				ActorID:         actorID,
+				BatchID:         batchID,
+				CreatedAt:       createdAt,
+			}
+			if adjustment.DeltaCostQuota != 0 || basis != state.Basis || before != state.Before || after != state.After || version != state.BasisVersion || target.CostDiscount != state.Discount {
 				results = append(results, adjustment)
 			}
 		}

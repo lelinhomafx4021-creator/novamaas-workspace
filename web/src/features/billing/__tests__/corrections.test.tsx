@@ -155,6 +155,102 @@ test('money moves only after reviewing a current preview and confirming the acco
   )
 })
 
+test('a cost-only adjustment confirms the unchanged wallet amount and frozen cost evidence', async () => {
+  const costOnly = {
+    ...batch,
+    charge_delta: 0,
+    refund_delta: 0,
+    net_delta: 0,
+    current_cost_quota: 500000,
+    corrected_cost_quota: 600000,
+    cost_delta: 100000,
+  }
+  vi.mocked(previewCorrection).mockResolvedValue(costOnly)
+  vi.mocked(actOnCorrection).mockResolvedValue({
+    ...costOnly,
+    status: 'applied',
+  })
+  mountPanel()
+  await fillPreview()
+  expect(
+    screen.getByRole('status', { name: 'Wallet balance change' })
+  ).toHaveTextContent('Wallet balance unchanged')
+  expect(
+    screen.getByRole('button', { name: 'Apply adjustment' })
+  ).toBeDisabled()
+  fireEvent.change(screen.getByLabelText('Type the account ID to confirm'), {
+    target: { value: '4' },
+  })
+  expect(screen.getByRole('button', { name: 'Apply adjustment' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Apply adjustment' }))
+  await waitFor(() =>
+    expect(actOnCorrection).toHaveBeenCalledWith(
+      'preview-batch',
+      {
+        action: 'apply',
+        sha256: 'frozen-digest',
+        confirm_user_id: 4,
+        confirm_net_delta: 0,
+        reason: '',
+      },
+      'verified-proof'
+    )
+  )
+  expect(verificationStart).toHaveBeenCalledWith(
+    expect.any(Function),
+    expect.objectContaining({
+      description:
+        'The wallet changes only by the net sales adjustment. Cost corrections do not add wallet charges.',
+    })
+  )
+})
+
+test('reversing a cost-only adjustment confirms zero wallet movement with the original evidence digest', async () => {
+  const costOnly = {
+    ...batch,
+    status: 'applied' as const,
+    charge_delta: 0,
+    refund_delta: 0,
+    net_delta: 0,
+    current_cost_quota: 500000,
+    corrected_cost_quota: 600000,
+    cost_delta: 100000,
+  }
+  vi.mocked(previewCorrection).mockResolvedValue(costOnly)
+  vi.mocked(actOnCorrection).mockResolvedValue({
+    ...costOnly,
+    status: 'reversed',
+  })
+  mountPanel()
+  await fillPreview()
+  fireEvent.change(screen.getByLabelText('Type the account ID to confirm'), {
+    target: { value: '4' },
+  })
+  fireEvent.change(screen.getByLabelText('Reversal reason'), {
+    target: { value: 'Restore platform cost' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Reverse adjustment' }))
+  await waitFor(() =>
+    expect(actOnCorrection).toHaveBeenCalledWith(
+      'preview-batch',
+      {
+        action: 'reverse',
+        sha256: 'frozen-digest',
+        confirm_user_id: 4,
+        confirm_net_delta: 0,
+        reason: 'Restore platform cost',
+      },
+      'verified-proof'
+    )
+  )
+  expect(
+    await screen.findByRole('region', { name: 'Reversal cost changes' })
+  ).toHaveTextContent('Platform cost change-')
+  expect(
+    screen.getByRole('status', { name: 'Wallet balance change' })
+  ).toHaveTextContent('Wallet balance unchanged')
+})
+
 test('changing the selection invalidates its preview', async () => {
   mountPanel()
   await fillPreview()

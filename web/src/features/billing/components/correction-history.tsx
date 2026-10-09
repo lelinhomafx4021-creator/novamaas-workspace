@@ -29,10 +29,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { billingTimestamp } from '../api'
 import type { CorrectionBatch } from '../correction-api'
+import {
+  formatCorrectionAmount,
+  getCorrectionCostDelta,
+} from '../lib/correction-amount'
 
 export function CorrectionHistory(props: {
   items: CorrectionBatch[]
@@ -74,6 +77,10 @@ export function CorrectionHistory(props: {
               <TableHead className='text-right'>
                 {t('Net debit (negative means credit)')}
               </TableHead>
+              <TableHead className='text-right'>
+                {t('Platform cost change')}
+              </TableHead>
+              <TableHead className='text-right'>{t('Profit change')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
               <TableHead className='text-right'>{t('Actions')}</TableHead>
             </TableRow>
@@ -82,7 +89,7 @@ export function CorrectionHistory(props: {
             {props.loading && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={9}
                   className='text-muted-foreground py-6 text-center'
                 >
                   {t('Loading...')}
@@ -92,7 +99,7 @@ export function CorrectionHistory(props: {
             {!props.loading && !props.failed && props.items.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={9}
                   className='text-muted-foreground py-6 text-center'
                 >
                   {t('No data')}
@@ -123,11 +130,24 @@ export function CorrectionHistory(props: {
                   )}
                 </TableCell>
                 <TableCell className='text-right'>
-                  {formatQuotaWithCurrency(item.net_delta, {
-                    digitsLarge: 6,
-                    digitsSmall: 6,
-                    abbreviate: false,
-                  })}
+                  {formatCorrectionAmount(
+                    item.net_delta,
+                    item.status === 'reversed' ? -1 : 1
+                  )}
+                </TableCell>
+                <TableCell className='text-right'>
+                  {getCorrectionCostDelta(item) == null
+                    ? t('Not included')
+                    : formatCorrectionAmount(
+                        getCorrectionCostDelta(item),
+                        item.status === 'reversed' ? -1 : 1
+                      )}
+                </TableCell>
+                <TableCell className='text-right'>
+                  {formatCorrectionAmount(
+                    item.net_delta - (getCorrectionCostDelta(item) ?? 0),
+                    item.status === 'reversed' ? -1 : 1
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge

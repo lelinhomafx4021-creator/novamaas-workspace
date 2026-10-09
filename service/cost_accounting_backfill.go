@@ -187,10 +187,6 @@ func RepriceCostAccounting(input CostAccountingRepriceInput) (*CostAccountingRep
 		NextOffset: input.Offset + len(views),
 		HasMore:    int64(input.Offset+len(views)) < total,
 	}
-	var discountValue decimal.Decimal
-	if discount != "" {
-		discountValue = decimal.RequireFromString(discount)
-	}
 	legacySnapshotLogIDs := make([]int64, 0)
 	for _, view := range views {
 		if discount != "" && costBasisNeedsSourceLog(view) && view.SourceLogID > 0 {
@@ -203,13 +199,11 @@ func RepriceCostAccounting(input CostAccountingRepriceInput) (*CostAccountingRep
 	}
 	targets := make([]model.CostAccountingAdjustmentTarget, 0, len(views))
 	for _, view := range views {
-		costBasis, parseErr := decimal.NewFromString(view.CostBasisQuota)
+		costBasis, parseErr := decimal.NewFromString(view.EffectiveCostBasisQuota)
 		if parseErr != nil {
 			return nil, errors.New("invalid stored cost accounting basis")
 		}
-		if discount == "" {
-			costBasis = decimal.NewFromInt(view.RevenueQuota)
-		} else if costBasisNeedsSourceLog(view) {
+		if discount != "" && costBasisNeedsSourceLog(view) {
 			log, ok := legacySnapshotLogs[view.SourceLogID]
 			if !ok || log.Type != view.LogType || log.Quota < 0 || log.Quota > common.MaxQuota {
 				return nil, errors.New("legacy cost snapshot is missing its source log")
@@ -223,25 +217,40 @@ func RepriceCostAccounting(input CostAccountingRepriceInput) (*CostAccountingRep
 			(view.LogType == model.LogTypeRefund && costBasis.IsPositive()) {
 			return nil, errors.New("stored cost accounting basis has an invalid sign")
 		}
-		costValue := costBasis
-		if discount != "" {
-			costValue = costBasis.Mul(discountValue)
+		basisView := view
+		basisView.EffectiveCostBasisQuota = costBasis.String()
+		if costBasisNeedsSourceLog(view) {
+			basisView.EffectiveCostBasisBefore, basisView.EffectiveCostBasisAfter = "", ""
+			basisView.EffectiveBasisVersion = model.CostAccountingOriginalPriceBasisVersion
 		}
-		newCost, clamp := common.QuotaFromDecimalChecked(costValue)
-		if clamp != nil {
-			return nil, clamp
+		var newCost int64
+		if discount == "" {
+			// Clearing a supplier discount keeps the established break-even
+			// display policy, but must not discard a corrected model price basis.
+			newCost = view.RevenueQuota
+		} else {
+			newCost, parseErr = model.RepriceCostAccountingBasis(basisView, discount)
+			if parseErr != nil {
+				return nil, parseErr
+			}
 		}
 		result.CurrentCostQuota += view.EffectiveCostQuota
-		result.NewCostQuota += int64(newCost)
-		if int64(newCost) == view.EffectiveCostQuota {
+		result.NewCostQuota += newCost
+		if newCost == view.EffectiveCostQuota && basisView.EffectiveCostBasisQuota == view.EffectiveCostBasisQuota &&
+			basisView.EffectiveBasisVersion == view.EffectiveBasisVersion && discount == view.EffectiveCostDiscount {
 			result.Unchanged++
 			continue
 		}
 		result.Changed++
 		targets = append(targets, model.CostAccountingAdjustmentTarget{
-			SnapshotID:   view.ID,
-			NewCostQuota: int64(newCost),
-			CostDiscount: discount,
+			SnapshotID:           view.ID,
+			NewCostQuota:         newCost,
+			CostDiscount:         discount,
+			CostBasisQuota:       basisView.EffectiveCostBasisQuota,
+			CostBasisBefore:      basisView.EffectiveCostBasisBefore,
+			CostBasisAfter:       basisView.EffectiveCostBasisAfter,
+			BasisVersion:         basisView.EffectiveBasisVersion,
+			ExpectedAdjustmentID: &view.LatestAdjustmentID,
 		})
 	}
 	result.DeltaCostQuota = result.NewCostQuota - result.CurrentCostQuota
@@ -256,6 +265,9 @@ func RepriceCostAccounting(input CostAccountingRepriceInput) (*CostAccountingRep
 }
 
 func costBasisNeedsSourceLog(view model.CostAccountingSnapshotView) bool {
+	if view.EffectiveBasisVersion >= model.CostAccountingCorrectedBasisVersion {
+		return false
+	}
 	return strings.TrimSpace(view.CostDiscount) == "" ||
 		view.SnapshotVersion < model.CostAccountingSignedRefundVersion ||
 		view.SnapshotVersion == model.CostAccountingLegacyTurnoverBasisVersion

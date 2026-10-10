@@ -9,12 +9,14 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/samber/lo"
@@ -122,6 +124,7 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
+	wan3Request *wan3VideoRequest
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
@@ -131,8 +134,80 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
-	// ValidateMultipartDirect 负责解析并将原始 TaskSubmitReq 存入 context
-	return relaycommon.ValidateMultipartDirect(c, info)
+	a.wan3Request = nil
+	var req relaycommon.TaskSubmitReq
+	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	// Resolve aliases on a copy: the task pipeline applies model mapping later.
+	mappedInfo := *info
+	channelMeta := *info.ChannelMeta
+	mappedInfo.ChannelMeta = &channelMeta
+	mappedInfo.OriginModelName = req.Model
+	mappedInfo.UpstreamModelName = req.Model
+	if err := helper.ModelMappedHelper(c, &mappedInfo, nil); err != nil {
+		return service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
+	}
+	if !strings.HasPrefix(mappedInfo.UpstreamModelName, "wan3.0") {
+		return relaycommon.ValidateMultipartDirect(c, info)
+	}
+	var fields map[string]any
+	if err := common.UnmarshalBodyReusable(c, &fields); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	// Legacy metadata wins over official nested fields, which win over flat
+	// fields. Merge individual keys so a nested audio flag does not drop ratio.
+	parameters := make(map[string]any)
+	for _, key := range []string{"audio", "ratio", "resolution", "prompt_extend", "watermark", "seed"} {
+		if value, ok := fields[key]; ok {
+			parameters[key] = value
+		}
+	}
+	if _, exists := fields["duration"]; exists {
+		parameters["duration"] = req.Duration
+	}
+	input := make(map[string]any)
+	for _, source := range []map[string]any{fields, req.Metadata} {
+		for _, key := range []string{"input", "parameters"} {
+			value, exists := source[key]
+			if !exists {
+				continue
+			}
+			nested, ok := value.(map[string]any)
+			if !ok {
+				return service.TaskErrorWrapperLocal(fmt.Errorf("%s must be an object", key), "invalid_request", http.StatusBadRequest)
+			}
+			target := input
+			if key == "parameters" {
+				target = parameters
+			}
+			for name, value := range nested {
+				target[name] = value
+			}
+		}
+	}
+	if req.Metadata == nil {
+		req.Metadata = make(map[string]any)
+	}
+	req.Metadata["input"] = input
+	req.Metadata["parameters"] = parameters
+	if strings.TrimSpace(req.Model) == "" {
+		return service.TaskErrorWrapperLocal(fmt.Errorf("model field is required"), "missing_model", http.StatusBadRequest)
+	}
+	aliReq, err := convertToWan3Request(mappedInfo.UpstreamModelName, req)
+	if err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_request", http.StatusBadRequest)
+	}
+	if strings.TrimSpace(aliReq.Input.Prompt) == "" && len(aliReq.Input.Media) == 0 {
+		return service.TaskErrorWrapperLocal(fmt.Errorf("prompt or media is required"), "invalid_request", http.StatusBadRequest)
+	}
+	info.Action = constant.TaskActionTextGenerate
+	if len(aliReq.Input.Media) > 0 || aliReq.Input.ImgURL != "" || aliReq.Input.FirstFrameURL != "" {
+		info.Action = constant.TaskActionGenerate
+	}
+	a.wan3Request = aliReq
+	c.Set("task_request", req)
+	return nil
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -153,9 +228,12 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, errors.Wrap(err, "get_task_request_failed")
 	}
 
-	aliReq, err := a.convertToAliRequest(info, taskReq)
-	if err != nil {
-		return nil, errors.Wrap(err, "convert_to_ali_request_failed")
+	var aliReq any = a.wan3Request
+	if a.wan3Request == nil {
+		aliReq, err = a.convertToAliRequest(info, taskReq)
+		if err != nil {
+			return nil, errors.Wrap(err, "convert_to_ali_request_failed")
+		}
 	}
 	logger.LogJson(c, "ali video request body", aliReq)
 
@@ -450,6 +528,9 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 // EstimateBilling 根据用户请求参数计算 OtherRatios（时长、分辨率等）。
 // 在 ValidateRequestAndSetAction 之后、价格计算之前调用。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	if a.wan3Request != nil {
+		return map[string]float64{"seconds": float64(*a.wan3Request.Parameters.Duration)}
+	}
 	taskReq, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
@@ -638,4 +719,131 @@ func convertAliStatus(aliStatus string) string {
 	default:
 		return dto.VideoStatusUnknown
 	}
+}
+
+// Wan3 uses separate request types so legacy Wan serialization stays unchanged.
+type wan3VideoRequest struct {
+	Model      string               `json:"model"`
+	Input      AliVideoInput        `json:"input"`
+	Parameters *wan3VideoParameters `json:"parameters"`
+}
+
+type wan3VideoParameters struct {
+	Resolution   string         `json:"resolution,omitempty"`
+	Size         string         `json:"size,omitempty"`
+	Ratio        string         `json:"ratio,omitempty"`
+	Duration     *int           `json:"duration,omitempty"`
+	Audio        *dto.BoolValue `json:"audio,omitempty"`
+	PromptExtend *dto.BoolValue `json:"prompt_extend,omitempty"`
+	Watermark    *dto.BoolValue `json:"watermark,omitempty"`
+	Seed         *int           `json:"seed,omitempty"`
+}
+
+func convertToWan3Request(upstreamModel string, req relaycommon.TaskSubmitReq) (*wan3VideoRequest, error) {
+	duration := req.Duration
+	if duration == 0 && req.Seconds != "" {
+		var err error
+		duration, err = strconv.Atoi(req.Seconds)
+		if err != nil {
+			return nil, fmt.Errorf("invalid seconds: %w", err)
+		}
+	}
+	if duration == 0 {
+		duration = 5
+	}
+	request := &wan3VideoRequest{
+		Model: upstreamModel,
+		Input: AliVideoInput{Prompt: req.Prompt, ImgURL: firstTaskImage(req)},
+		Parameters: &wan3VideoParameters{
+			Resolution:   "720P",
+			Size:         req.Size,
+			Duration:     &duration,
+			PromptExtend: lo.ToPtr(dto.BoolValue(true)),
+		},
+	}
+	if req.Metadata != nil {
+		metadata, err := common.Marshal(req.Metadata)
+		if err != nil {
+			return nil, err
+		}
+		if err := common.Unmarshal(metadata, request); err != nil {
+			return nil, err
+		}
+	}
+	if request.Model != upstreamModel {
+		return nil, fmt.Errorf("can't change model with metadata")
+	}
+	parameters := request.Parameters
+	if parameters == nil || parameters.Duration == nil {
+		return nil, fmt.Errorf("parameters and duration cannot be null")
+	}
+	if *parameters.Duration < 2 || *parameters.Duration > min(30, relaycommon.MaxTaskDurationSeconds) {
+		return nil, fmt.Errorf("wan3.0 duration must be between 2 and 30 seconds; automatic duration is not supported")
+	}
+	// Convert legacy size into the official resolution and ratio. Explicit
+	// resolution/ratio take precedence over values derived from pixel dimensions.
+	if parameters.Size != "" {
+		parameters.Size = strings.ReplaceAll(strings.ToLower(parameters.Size), "x", "*")
+		pixelSize := strings.Contains(parameters.Size, "*")
+		resolution := strings.ToUpper(parameters.Size)
+		if pixelSize {
+			var err error
+			resolution, err = sizeToResolution(parameters.Size)
+			if err != nil {
+				return nil, err
+			}
+		} else if !strings.HasSuffix(resolution, "P") {
+			resolution += "P"
+		}
+		explicitParameters, _ := req.Metadata["parameters"].(map[string]any)
+		if _, explicitResolution := explicitParameters["resolution"]; !explicitResolution {
+			parameters.Resolution = resolution
+		}
+		if parameters.Ratio == "" && pixelSize {
+			parts := strings.Split(parameters.Size, "*")
+			width, _ := strconv.Atoi(parts[0])
+			height, _ := strconv.Atoi(parts[1])
+			x, y := width, height
+			for y != 0 {
+				x, y = y, x%y
+			}
+			parameters.Ratio = fmt.Sprintf("%d:%d", width/x, height/x)
+			switch parameters.Size {
+			case "832*480":
+				parameters.Ratio = "16:9"
+			case "480*832":
+				parameters.Ratio = "9:16"
+			case "1088*832", "1632*1248":
+				parameters.Ratio = "4:3"
+			case "832*1088", "1248*1632":
+				parameters.Ratio = "3:4"
+			}
+		}
+		parameters.Size = ""
+	}
+	parameters.Resolution = strings.ToUpper(parameters.Resolution)
+	if !lo.Contains([]string{"480P", "720P", "1080P"}, parameters.Resolution) {
+		return nil, fmt.Errorf("wan3.0 resolution must be 480P, 720P, or 1080P")
+	}
+	if parameters.Ratio != "" && !lo.Contains([]string{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}, parameters.Ratio) {
+		return nil, fmt.Errorf("invalid wan3.0 ratio")
+	}
+	if len(request.Input.Media) == 0 {
+		firstFrame := firstNonEmpty(request.Input.FirstFrameURL, request.Input.ImgURL, firstTaskImage(req))
+		lastFrame := firstNonEmpty(request.Input.LastFrameURL, secondTaskImage(req))
+		for _, media := range []AliVideoMedia{
+			{Type: "first_frame", URL: firstFrame},
+			{Type: "last_frame", URL: lastFrame},
+			{Type: "reference_audio", URL: request.Input.AudioURL},
+		} {
+			if media.URL != "" {
+				request.Input.Media = append(request.Input.Media, media)
+			}
+		}
+	}
+	request.Input.ImgURL = ""
+	request.Input.FirstFrameURL = ""
+	request.Input.LastFrameURL = ""
+	request.Input.AudioURL = ""
+	return request, nil
 }

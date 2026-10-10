@@ -2,6 +2,7 @@ package ali
 
 import (
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -17,7 +18,8 @@ import (
 
 func testRelayInfo() *relaycommon.RelayInfo {
 	return &relaycommon.RelayInfo{
-		ChannelMeta: &relaycommon.ChannelMeta{},
+		ChannelMeta:   &relaycommon.ChannelMeta{},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{},
 	}
 }
 
@@ -36,7 +38,7 @@ func TestConvertToAliRequestWan27I2VBuildsMediaFromImage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "wan2.7-i2v", aliReq.Model)
 	require.Equal(t, "720P", aliReq.Parameters.Resolution)
-	require.Equal(t, 10, aliReq.Parameters.Duration)
+	assert.Equal(t, 10, aliReq.Parameters.Duration)
 	require.Equal(t, []AliVideoMedia{
 		{Type: "first_frame", URL: "https://example.com/first.png"},
 	}, aliReq.Input.Media)
@@ -220,4 +222,127 @@ func TestTaskAdaptorParseTaskResultAcceptsWan3FractionalUsage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.TaskStatusSuccess, result.Status)
 	assert.Equal(t, "https://example.com/video.mp4", result.Url)
+}
+
+func TestWan3RequestCompatibility(t *testing.T) {
+	tests := []struct {
+		name          string
+		body          string
+		parameters    string
+		media         bool
+		seconds       float64
+		upstreamModel string
+	}{
+		{
+			name:       "mapped wan3 model keeps flat parameters",
+			body:       `{"model":"public-video","prompt":"animate","image":"https://example.com/image.png","audio":"false","resolution":"720P","ratio":"16:9"}`,
+			parameters: `{"audio":false,"resolution":"720P","ratio":"16:9","duration":5,"prompt_extend":true}`,
+			media:      true, seconds: 5, upstreamModel: "wan3.0-video",
+		},
+		{
+			name:       "flat string audio and legacy image",
+			body:       `{"model":"wan3.0-video","prompt":"animate","image":"https://example.com/image.png","audio":"false","ratio":"16:9","resolution":"720P","duration":10}`,
+			parameters: `{"audio":false,"ratio":"16:9","resolution":"720P","duration":10,"prompt_extend":true}`,
+			media:      true, seconds: 10,
+		},
+		{
+			name:       "metadata size tier and boolean string",
+			body:       `{"model":"wan3.0-video","prompt":"animate","metadata":{"parameters":{"size":"1080p","audio":"false"}}}`,
+			parameters: `{"audio":false,"resolution":"1080P","duration":5,"prompt_extend":true}`,
+			seconds:    5,
+		},
+		{
+			name:       "existing nested metadata preserves false and zero",
+			body:       `{"model":"wan3.0-video","prompt":"animate","metadata":{"parameters":{"audio":false,"ratio":"9:16","resolution":"480P","prompt_extend":false,"watermark":false,"seed":0,"duration":8}}}`,
+			parameters: `{"audio":false,"ratio":"9:16","resolution":"480P","duration":8,"prompt_extend":false,"watermark":false,"seed":0}`,
+			seconds:    8,
+		},
+		{
+			name:       "official input and parameters",
+			body:       `{"model":"wan3.0-video-prime","input":{"prompt":"animate","media":[{"type":"reference_image","url":"https://example.com/image.png"}]},"parameters":{"audio":"false","ratio":"adaptive","resolution":"720P","duration":12}}`,
+			parameters: `{"audio":false,"ratio":"adaptive","resolution":"720P","duration":12,"prompt_extend":true}`,
+			media:      true, seconds: 12,
+		},
+		{
+			name:       "metadata wins per field without dropping flat ratio",
+			body:       `{"model":"wan3.0-video","prompt":"animate","audio":true,"ratio":"16:9","parameters":{"audio":true,"resolution":"720P","duration":10},"metadata":{"parameters":{"audio":"false","duration":6}}}`,
+			parameters: `{"audio":false,"ratio":"16:9","resolution":"720P","duration":6,"prompt_extend":true}`,
+			seconds:    6,
+		},
+		{
+			name:       "legacy pixel size maps to official fields",
+			body:       `{"model":"wan3.0-video","prompt":"animate","size":"1280*720"}`,
+			parameters: `{"ratio":"16:9","resolution":"720P","duration":5,"prompt_extend":true}`,
+			seconds:    5,
+		},
+		{
+			name:       "explicit resolution overrides legacy pixel size",
+			body:       `{"model":"wan3.0-video","prompt":"animate","size":"1280x720","parameters":{"resolution":"1080P","ratio":"9:16"}}`,
+			parameters: `{"ratio":"9:16","resolution":"1080P","duration":5,"prompt_extend":true}`,
+			seconds:    5,
+		},
+		{
+			name:       "official media without prompt",
+			body:       `{"model":"wan3.0-video","input":{"media":[{"type":"first_frame","url":"https://example.com/image.png"}]}}`,
+			parameters: `{"resolution":"720P","duration":5,"prompt_extend":true}`,
+			media:      true, seconds: 5,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(tt.body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			t.Cleanup(func() { common.CleanupBodyStorage(c) })
+			info := testRelayInfo()
+			adaptor := &TaskAdaptor{}
+			if tt.upstreamModel != "" {
+				c.Set("model_mapping", `{"public-video":"wan3.0-video"}`)
+			}
+			require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+			if tt.upstreamModel != "" {
+				info.IsModelMapped = true
+				info.UpstreamModelName = tt.upstreamModel
+			}
+			body, err := adaptor.BuildRequestBody(c, info)
+			require.NoError(t, err)
+			data, err := io.ReadAll(body)
+			require.NoError(t, err)
+			var upstream struct {
+				Model      string         `json:"model"`
+				Input      AliVideoInput  `json:"input"`
+				Parameters map[string]any `json:"parameters"`
+			}
+			require.NoError(t, common.Unmarshal(data, &upstream))
+			if tt.upstreamModel != "" {
+				assert.Equal(t, tt.upstreamModel, upstream.Model)
+			}
+			parameters, err := common.Marshal(upstream.Parameters)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.parameters, string(parameters))
+			assert.Equal(t, tt.media, len(upstream.Input.Media) > 0)
+			assert.Empty(t, upstream.Input.ImgURL)
+			assert.Equal(t, tt.seconds, adaptor.EstimateBilling(c, info)["seconds"])
+		})
+	}
+}
+
+func TestWan3RejectsInvalidParametersBeforeBilling(t *testing.T) {
+	for _, parameters := range []string{
+		`{"audio":"invalid"}`, `{"ratio":"2:1"}`, `{"resolution":"4K"}`,
+		`{"duration":-1}`, `{"duration":0}`, `{"duration":31}`, `{"duration":3601}`,
+		`null`,
+	} {
+		t.Run(parameters, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"wan3.0-video","prompt":"animate","metadata":{"parameters":`+parameters+`}}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			t.Cleanup(func() { common.CleanupBodyStorage(c) })
+			err := (&TaskAdaptor{}).ValidateRequestAndSetAction(c, testRelayInfo())
+			require.NotNil(t, err)
+			assert.Equal(t, http.StatusBadRequest, err.StatusCode)
+			_, stored := c.Get("task_request")
+			assert.False(t, stored)
+		})
+	}
 }

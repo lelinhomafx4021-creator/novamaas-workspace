@@ -335,29 +335,42 @@ curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/v1/video/g
 }
 ```
 
-#### 多供应商专有参数透传规范（以阿里通义万相 Wan 系列为例）
+#### 阿里百炼 Wan3.0 请求参数
 
-> [!NOTE]
-> **多厂商专有控制参数透传说明**：
-> 当通过兼容接口调用特定厂商模型（如阿里百炼 Wan3.0、Wan2.5 等原生音画一体模型）时，若需配置厂商专属的高级控制参数，需将专有字段置于 `metadata.parameters` 内部传入：
-> * **Wan 系列关闭自动音频生成**：阿里 Wan 模型默认开启原生音画同步（`audio: true`）。若需生成纯静音视频，需在 `metadata.parameters` 内部显式传入 `"audio": false`（类型须为布尔值 `false`，不可使用字符串 `"false"`；直接置于根节点将被网关作为非标准通用字段忽略）。
-> * **调用示例**：
->   ```bash
->   curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/v1/video/generations' \
->     --header 'Authorization: Bearer YOUR_API_KEY' \
->     --header 'Content-Type: application/json' \
->     --data-raw '{
->     "model": "wan3.0-video",
->     "prompt": "金毛小狗在阳光明媚的草地上欢快奔跑，高清画质，电影级质感",
->     "image": "https://example.com/sample.png",
->     "metadata": {
->       "parameters": {
->         "audio": false,
->         "prompt_extend": true
->       }
->     }
->   }'
->   ```
+以下兼容适用于百炼渠道的 `wan3.0-video`、`wan3.0-video-prime`，包括映射到这些模型的别名。不同百炼渠道均适用；其他渠道类型和百炼旧模型继续使用原有规范。
+
+现有请求无需调整。接口仍为 `POST /v1/video/generations`（也支持 `/v1/videos`），请求头使用 `Content-Type: application/json` 和 `Authorization: Bearer YOUR_API_KEY`。
+
+```json
+{
+  "model": "wan3.0-video",
+  "prompt": "金毛小狗在阳光明媚的草地上奔跑，电影级画面",
+  "image": "https://example.com/sample.png",
+  "audio": false,
+  "resolution": "720P",
+  "ratio": "16:9",
+  "duration": 5,
+  "prompt_extend": true,
+  "watermark": false,
+  "seed": 0
+}
+```
+
+将图片地址替换为实际地址；文生视频可省略 `image`。官方 `input/parameters` 和已有的 `metadata.input/metadata.parameters` 写法同样支持，无需迁移参数位置。响应和任务查询继续使用网关视频格式。
+
+| 参数 | 支持范围 |
+| --- | --- |
+| `audio` | 布尔值；兼容字符串 `"true"` / `"false"`，`false` 请求关闭音轨 |
+| `resolution` | `480P`、`720P`、`1080P`，兼容小写；网关默认 `720P` |
+| `ratio` | `adaptive`、`21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16` |
+| `size` | 原有分辨率或预设像素尺寸，如 `720P`、`1280*720`、`1280x720`，服务端转换为官方字段 |
+| `duration` | 2～30 秒，默认 5 秒；暂不支持 `-1` 智能时长，参考视频还需符合上游总时长限制 |
+| `prompt_extend` / `watermark` | 布尔值，兼容字符串布尔值；智能改写默认开启 |
+| `seed` | `-1` 或 `0`～`2147483647`；不指定时由上游随机生成 |
+
+明确传入的 `false`、`0` 会保留。重复参数按 `metadata.parameters > parameters > 顶层字段` 逐字段合并；显式 `resolution/ratio` 优先于从 `size` 推导的值。`metadata.input` 的同名字段优先于顶层 `input`；明确给出的 `input.media` 优先于从旧图片字段生成的媒体列表。建议同一参数只写一次。
+
+百炼旧模型（例如 Wan2.5）关闭音频仍使用 `metadata.parameters.audio: false`，类型及支持范围保持原有适配器行为。媒体类型和素材限制见[Wan3.0 官方文档](https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference)。
 
 ### 2. 网关兼容视频任务轮询 (GET /v1/video/generations/{task_id})
 

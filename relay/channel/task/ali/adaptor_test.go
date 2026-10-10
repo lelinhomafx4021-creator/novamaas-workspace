@@ -233,12 +233,50 @@ func TestWan3RequestCompatibility(t *testing.T) {
 		media         bool
 		seconds       float64
 		upstreamModel string
+		modelMapping  string
 	}{
 		{
 			name:       "mapped wan3 model keeps flat parameters",
 			body:       `{"model":"public-video","prompt":"animate","image":"https://example.com/image.png","audio":"false","resolution":"720P","ratio":"16:9"}`,
 			parameters: `{"audio":false,"resolution":"720P","ratio":"16:9","duration":5,"prompt_extend":true}`,
 			media:      true, seconds: 5, upstreamModel: "wan3.0-video",
+			modelMapping: `{"public-video":"wan3.0-video"}`,
+		},
+		{
+			name:       "mapped 480p model preserves model resolution without parameters",
+			body:       `{"model":"wan3.0-video-prime-480p","input":{"prompt":"keep the person and remove the background","media":[{"type":"reference_video","url":"https://example.com/video.mp4"}]},"seconds":"5","response_format":"url"}`,
+			parameters: `{"resolution":"480P","duration":5,"prompt_extend":true}`,
+			input:      `{"prompt":"keep the person and remove the background","media":[{"type":"reference_video","url":"https://example.com/video.mp4"}]}`,
+			media:      true, seconds: 5, upstreamModel: "wan3.0-video-prime",
+			modelMapping: `{"wan3.0-video-prime-480p":"wan3.0-video-prime"}`,
+		},
+		{
+			name:       "mapped 720p model preserves model resolution",
+			body:       `{"model":"wan3.0-video-prime-720p","prompt":"animate"}`,
+			parameters: `{"resolution":"720P","duration":5,"prompt_extend":true}`,
+			seconds:    5, upstreamModel: "wan3.0-video-prime",
+			modelMapping: `{"wan3.0-video-prime-720p":"wan3.0-video-prime"}`,
+		},
+		{
+			name:       "mapped 1080p model preserves model resolution",
+			body:       `{"model":"wan3.0-video-prime-1080p","prompt":"animate"}`,
+			parameters: `{"resolution":"1080P","duration":5,"prompt_extend":true}`,
+			seconds:    5, upstreamModel: "wan3.0-video-prime",
+			modelMapping: `{"wan3.0-video-prime-1080p":"wan3.0-video-prime"}`,
+		},
+		{
+			name:       "explicit resolution overrides mapped model resolution",
+			body:       `{"model":"wan3.0-video-prime-480p","prompt":"animate","parameters":{"resolution":"1080P"}}`,
+			parameters: `{"resolution":"1080P","duration":5,"prompt_extend":true}`,
+			seconds:    5, upstreamModel: "wan3.0-video-prime",
+			modelMapping: `{"wan3.0-video-prime-480p":"wan3.0-video-prime"}`,
+		},
+		{
+			name:       "legacy size overrides mapped model resolution",
+			body:       `{"model":"wan3.0-video-prime-1080p","prompt":"animate","size":"480P"}`,
+			parameters: `{"resolution":"480P","duration":5,"prompt_extend":true}`,
+			seconds:    5, upstreamModel: "wan3.0-video-prime",
+			modelMapping: `{"wan3.0-video-prime-1080p":"wan3.0-video-prime"}`,
 		},
 		{
 			name:       "flat string audio and legacy image",
@@ -326,8 +364,8 @@ func TestWan3RequestCompatibility(t *testing.T) {
 			t.Cleanup(func() { common.CleanupBodyStorage(c) })
 			info := testRelayInfo()
 			adaptor := &TaskAdaptor{}
-			if tt.upstreamModel != "" {
-				c.Set("model_mapping", `{"public-video":"wan3.0-video"}`)
+			if tt.modelMapping != "" {
+				c.Set("model_mapping", tt.modelMapping)
 			}
 			require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
 			if tt.upstreamModel != "" {

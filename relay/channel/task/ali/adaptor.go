@@ -750,11 +750,21 @@ func convertToWan3Request(upstreamModel string, req relaycommon.TaskSubmitReq) (
 	if duration == 0 {
 		duration = 5
 	}
+	// Resolution aliases retain their tier after the model maps to Wan3.
+	// Explicit size or resolution parameters below still take precedence.
+	resolution := "720P"
+	modelName := strings.ToUpper(req.Model)
+	for _, tier := range []string{"480P", "720P", "1080P"} {
+		if strings.HasSuffix(modelName, "-"+tier) {
+			resolution = tier
+			break
+		}
+	}
 	request := &wan3VideoRequest{
 		Model: upstreamModel,
 		Input: AliVideoInput{Prompt: req.Prompt, ImgURL: firstTaskImage(req)},
 		Parameters: &wan3VideoParameters{
-			Resolution:   "720P",
+			Resolution:   resolution,
 			Size:         req.Size,
 			Duration:     &duration,
 			PromptExtend: lo.ToPtr(dto.BoolValue(true)),

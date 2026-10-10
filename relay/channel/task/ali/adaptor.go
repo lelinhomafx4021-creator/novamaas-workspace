@@ -202,7 +202,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		return service.TaskErrorWrapperLocal(fmt.Errorf("prompt or media is required"), "invalid_request", http.StatusBadRequest)
 	}
 	info.Action = constant.TaskActionTextGenerate
-	if len(aliReq.Input.Media) > 0 || aliReq.Input.ImgURL != "" || aliReq.Input.FirstFrameURL != "" {
+	if len(aliReq.Input.Media) > 0 {
 		info.Action = constant.TaskActionGenerate
 	}
 	a.wan3Request = aliReq
@@ -223,13 +223,12 @@ func (a *TaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info
 }
 
 func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
-	taskReq, err := relaycommon.GetTaskRequest(c)
-	if err != nil {
-		return nil, errors.Wrap(err, "get_task_request_failed")
-	}
-
 	var aliReq any = a.wan3Request
 	if a.wan3Request == nil {
+		taskReq, err := relaycommon.GetTaskRequest(c)
+		if err != nil {
+			return nil, errors.Wrap(err, "get_task_request_failed")
+		}
 		aliReq, err = a.convertToAliRequest(info, taskReq)
 		if err != nil {
 			return nil, errors.Wrap(err, "convert_to_ali_request_failed")

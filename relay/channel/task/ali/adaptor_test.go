@@ -386,6 +386,7 @@ func TestWan3RejectsInvalidParametersBeforeBilling(t *testing.T) {
 func TestWan3ChannelParameterOverrides(t *testing.T) {
 	for _, tt := range []struct {
 		name, body, condition, path string
+		upstreamModel               string
 		value                       any
 		resolution                  string
 		duration                    float64
@@ -400,6 +401,8 @@ func TestWan3ChannelParameterOverrides(t *testing.T) {
 		{name: "nested resolution override", body: `{"model":"wan3.0-video-480p","prompt":"animate","parameters":{"resolution":"1080P"}}`, condition: "wan3.0-video-480p", path: "parameters.resolution", value: "480P", resolution: "480P", duration: 5},
 		{name: "duration used by billing and upstream", body: `{"model":"wan3.0-video-480p","prompt":"animate"}`, condition: "wan3.0-video-480p", path: "parameters.duration", value: 8, resolution: "720P", duration: 8},
 		{name: "invalid override rejected before billing", body: `{"model":"wan3.0-video-480p","prompt":"animate"}`, condition: "wan3.0-video-480p", path: "parameters.duration", value: 1000000, invalid: true},
+		{name: "legacy Ali model stays outside new override path", body: `{"model":"wan2.5-i2v-preview","prompt":"animate"}`, condition: "wan2.5-i2v-preview", path: "size", value: "480p", resolution: "1080P", duration: 5, upstreamModel: "wan2.5-i2v-preview"},
+		{name: "model changes require model mapping", body: `{"model":"wan3.0-video-480p","prompt":"animate"}`, condition: "wan3.0-video-480p", path: "model", value: "different-model", invalid: true},
 		{name: "invalid size rejected", body: `{"model":"wan3.0-video-480p","prompt":"animate"}`, condition: "wan3.0-video-480p", path: "size", value: "invalid", invalid: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -432,6 +435,7 @@ func TestWan3ChannelParameterOverrides(t *testing.T) {
 			}
 			require.Nil(t, taskErr)
 			require.NoError(t, helper.ModelMappedHelper(c, info, nil))
+			assert.Equal(t, original.Model, info.OriginModelName, "channel overrides must preserve the pricing model")
 			assert.Equal(t, tt.duration, adaptor.EstimateBilling(c, info)["seconds"])
 			reader, err := adaptor.BuildRequestBody(c, info)
 			require.NoError(t, err)
@@ -439,7 +443,11 @@ func TestWan3ChannelParameterOverrides(t *testing.T) {
 			require.NoError(t, err)
 			var request wan3VideoRequest
 			require.NoError(t, common.Unmarshal(body, &request))
-			assert.Equal(t, "wan3.0-video", request.Model)
+			expectedModel := tt.upstreamModel
+			if expectedModel == "" {
+				expectedModel = "wan3.0-video"
+			}
+			assert.Equal(t, expectedModel, request.Model)
 			assert.Equal(t, tt.resolution, request.Parameters.Resolution)
 			assert.Equal(t, int(tt.duration), *request.Parameters.Duration)
 			if strings.Contains(tt.body, `"audio"`) {

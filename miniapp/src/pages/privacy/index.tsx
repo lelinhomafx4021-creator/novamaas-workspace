@@ -68,6 +68,7 @@ export default function PrivacyPage() {
       <View className='mobile-card'>
         <Text className='mobile-card__title'>{t('privacy.collection')}</Text>
         <Text className='mobile-card__meta'>{t('privacy.collectionDetail')}</Text>
+        <Text className='mobile-card__meta'>{t('studio.privacy')}</Text>
       </View>
 
       <View className='mobile-card mobile-stack settings-danger'>

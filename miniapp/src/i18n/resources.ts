@@ -3,11 +3,13 @@ import { featureResources } from './feature-resources'
 import { inspectionResources } from './inspection-resources'
 import { phoneResources } from './phone-resources'
 import { usageResources } from './usage-resources'
+import { studioResources } from './studio-resources'
 
 export const resources = {
   en: {
     translation: {
       ...phoneResources['en'],
+      ...studioResources['en'],
       ...accountResources.en,
       ...featureResources.en,
       ...usageResources.en,
@@ -142,6 +144,7 @@ export const resources = {
   zh: {
     translation: {
       ...phoneResources['zh'],
+      ...studioResources['zh'],
       ...accountResources.zh,
       ...featureResources.zh,
       ...usageResources.zh,
@@ -250,6 +253,7 @@ export const resources = {
   'zh-TW': {
     translation: {
       ...phoneResources['zh-TW'],
+      ...studioResources['zh-TW'],
       ...accountResources['zh-TW'],
       ...featureResources['zh-TW'],
       ...usageResources['zh-TW'],
@@ -358,6 +362,7 @@ export const resources = {
   fr: {
     translation: {
       ...phoneResources['fr'],
+      ...studioResources['fr'],
       ...accountResources.fr,
       ...featureResources.fr,
       ...usageResources.fr,
@@ -491,6 +496,7 @@ export const resources = {
   ja: {
     translation: {
       ...phoneResources['ja'],
+      ...studioResources['ja'],
       ...accountResources.ja,
       ...featureResources.ja,
       ...usageResources.ja,
@@ -620,6 +626,7 @@ export const resources = {
   ru: {
     translation: {
       ...phoneResources['ru'],
+      ...studioResources['ru'],
       ...accountResources.ru,
       ...featureResources.ru,
       ...usageResources.ru,
@@ -748,6 +755,7 @@ export const resources = {
   vi: {
     translation: {
       ...phoneResources['vi'],
+      ...studioResources['vi'],
       ...accountResources.vi,
       ...featureResources.vi,
       ...usageResources.vi,

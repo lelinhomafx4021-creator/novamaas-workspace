@@ -1,6 +1,7 @@
 import { apiRequest } from './request'
 
 export interface PlatformStatus {
+  ImageStudioEnabled?: boolean
   sms_login?: boolean
   wechat_miniapp_login?: boolean
   custom_currency_exchange_rate?: number

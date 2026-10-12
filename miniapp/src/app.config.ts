@@ -3,6 +3,7 @@ export default defineAppConfig({
     'pages/home/index',
     'pages/models/index',
     'pages/playground/index',
+    'pages/image-studio/index',
     'pages/usage/index',
     'pages/profile/index',
     'pages/media-preview/index',

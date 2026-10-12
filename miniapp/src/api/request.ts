@@ -24,6 +24,7 @@ export interface RequestOptions {
   header?: Record<string, string>
   method?: keyof Taro.request.Method
   retryAuth?: boolean
+  timeout?: number
 }
 
 interface MiniAuthBundleData {
@@ -78,6 +79,7 @@ async function requestOnce<T>(
     method: options.method ?? 'GET',
     data: options.data,
     header,
+    timeout: options.timeout,
   })
 
   if (response.statusCode < 200 || response.statusCode >= 300) {

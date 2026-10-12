@@ -211,6 +211,14 @@ export default function HomePage() {
         ) : null}
       </View>
 
+      {signedIn && connection.phase === 'ready' && connection.data.ImageStudioEnabled ? (
+        <View className='mobile-card mobile-stack'>
+          <Text className='mobile-card__title'>{t('studio.title')}</Text>
+          <Text className='mobile-card__meta'>{t('studio.description')}</Text>
+          <Button className='mobile-button' onClick={() => Taro.navigateTo({ url: '/pages/image-studio/index' })}>{t('studio.start')}</Button>
+        </View>
+      ) : null}
+
       {!signedIn ? (
         <View className='mobile-card'>
           <Text className='mobile-card__title'>{t('home.signedOut')}</Text>

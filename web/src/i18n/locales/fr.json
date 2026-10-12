@@ -7153,6 +7153,7 @@
     "Landscape": "Paysage",
     "Maximum images per request": "Nombre maximal d’images par requête",
     "Model default": "Par défaut du modèle",
+    "Model defaults apply; you can also specify proportions in your prompt.": "Proportions par défaut du modèle, ou précisées dans le prompt.",
     "Model settings": "Réglages des modèles",
     "No generation records": "Aucune génération",
     "No image models available": "Aucun modèle d’image disponible",

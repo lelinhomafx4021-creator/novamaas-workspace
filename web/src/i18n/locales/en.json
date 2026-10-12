@@ -7153,6 +7153,7 @@
     "Landscape": "Landscape",
     "Maximum images per request": "Maximum images per request",
     "Model default": "Model default",
+    "Model defaults apply; you can also specify proportions in your prompt.": "Model defaults apply; you can also specify proportions in your prompt.",
     "Model settings": "Model settings",
     "No generation records": "No generation records",
     "No image models available": "No image models available",

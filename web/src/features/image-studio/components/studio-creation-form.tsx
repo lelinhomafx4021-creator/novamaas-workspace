@@ -185,6 +185,11 @@ export function StudioCreationForm(props: {
             <p className='bg-muted/30 rounded-lg border px-3 py-2 text-sm'>
               {t('Model default')}
             </p>
+            <FieldDescription>
+              {t(
+                'Model defaults apply; you can also specify proportions in your prompt.'
+              )}
+            </FieldDescription>
           </Field>
           <FieldGroup className='gap-3'>
             <Field

@@ -31,7 +31,6 @@ import {
   FieldGroup,
   FieldLabel,
 } from '@/components/ui/field'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 
 import type { StudioCreationState } from '../hooks/use-studio-creation'
@@ -191,37 +190,6 @@ export function StudioCreationForm(props: {
               )}
             </FieldDescription>
           </Field>
-          <FieldGroup className='gap-3'>
-            <Field
-              data-invalid={Boolean(form.formState.errors.n)}
-              data-disabled={busy}
-            >
-              <FieldLabel htmlFor='studio-n'>{t('Image count')}</FieldLabel>
-              <NativeSelect
-                id='studio-n'
-                className='w-full'
-                disabled={busy || creation.maxImages === 1}
-                {...form.register('n', { valueAsNumber: true })}
-                aria-invalid={Boolean(form.formState.errors.n)}
-              >
-                {Array.from({ length: creation.maxImages }, (_, index) => (
-                  <NativeSelectOption key={index + 1} value={index + 1}>
-                    {index + 1}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-              {form.formState.errors.n && (
-                <p role='alert' className='text-destructive text-xs'>
-                  {t('Maximum images per request')}: {props.settings.max_images}
-                </p>
-              )}
-            </Field>
-          </FieldGroup>
-          {creation.model === 'dall-e-3' && (
-            <p className='text-muted-foreground text-xs'>
-              {t('This model supports one image per request.')}
-            </p>
-          )}
         </FieldGroup>
       </div>
       <div className='shrink-0 border-t p-4'>

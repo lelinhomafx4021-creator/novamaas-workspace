@@ -26,10 +26,7 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
-
 export function StudioPromptExamples(props: {
-  prompt: string
   maxCharacters: number
   disabled: boolean
   onChange: (prompt: string) => void
@@ -42,7 +39,6 @@ export function StudioPromptExamples(props: {
       prompt: t(
         'A ginger cat on a sunny windowsill, warm afternoon light, cinematic photography, soft shadows and a calm composition.'
       ),
-      style: t('cinematic photography, natural light, fine texture'),
     },
     {
       name: t('Anime illustration'),
@@ -50,7 +46,6 @@ export function StudioPromptExamples(props: {
       prompt: t(
         'A small seaside town at sunset, an anime illustration with glowing clouds, colorful rooftops and a gentle breeze.'
       ),
-      style: t('anime illustration, expressive colors, soft light'),
     },
     {
       name: t('3D product'),
@@ -58,7 +53,6 @@ export function StudioPromptExamples(props: {
       prompt: t(
         'A pastel ceramic coffee cup on a studio pedestal, a playful 3D product render with soft lighting and subtle reflections.'
       ),
-      style: t('3D render, soft studio lighting, clean materials'),
     },
     {
       name: t('Ink painting'),
@@ -66,81 +60,47 @@ export function StudioPromptExamples(props: {
       prompt: t(
         'A mountain lake in morning mist, traditional ink painting, flowing brushwork and generous negative space.'
       ),
-      style: t('ink painting, flowing brushwork, poetic negative space'),
     },
   ]
   return (
-    <>
-      <section aria-label={t('Try an example')} className='grid gap-2'>
-        <h3 className='flex items-center gap-2 text-sm font-medium'>
-          <HugeiconsIcon
-            icon={SparklesIcon}
-            className='text-primary size-4'
-            aria-hidden='true'
-          />
-          {t('Try an example')}
-        </h3>
-        <div className='grid grid-cols-2 gap-2'>
-          {examples.map((example) => (
-            <button
-              key={example.name}
-              type='button'
-              aria-label={example.name}
-              title={example.prompt}
-              disabled={
-                props.disabled || example.prompt.length > props.maxCharacters
-              }
-              onClick={() => props.onChange(example.prompt)}
-              className='bg-muted/20 hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-ring flex min-w-0 items-start gap-1.5 rounded-lg border p-2 text-left transition-colors focus-visible:outline-2 disabled:opacity-50'
-            >
-              <HugeiconsIcon
-                icon={example.icon}
-                className='text-primary mt-0.5 size-4 shrink-0'
-                aria-hidden='true'
-              />
-              <span className='grid min-w-0 gap-0.5'>
-                <span className='truncate text-xs font-medium'>
-                  {example.name}
-                </span>
-                <span className='text-muted-foreground line-clamp-1 text-[11px] leading-relaxed'>
-                  {example.prompt}
-                </span>
+    <section aria-label={t('Try an example')} className='grid gap-2'>
+      <h3 className='flex items-center gap-2 text-sm font-medium'>
+        <HugeiconsIcon
+          icon={SparklesIcon}
+          className='text-primary size-4'
+          aria-hidden='true'
+        />
+        {t('Try an example')}
+      </h3>
+      <div className='grid grid-cols-2 gap-2'>
+        {examples.map((example) => (
+          <button
+            key={example.name}
+            type='button'
+            aria-label={example.name}
+            title={example.prompt}
+            disabled={
+              props.disabled || example.prompt.length > props.maxCharacters
+            }
+            onClick={() => props.onChange(example.prompt)}
+            className='bg-muted/20 hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-ring flex min-w-0 items-start gap-1.5 rounded-lg border p-2 text-left transition-colors focus-visible:outline-2 disabled:opacity-50'
+          >
+            <HugeiconsIcon
+              icon={example.icon}
+              className='text-primary mt-0.5 size-4 shrink-0'
+              aria-hidden='true'
+            />
+            <span className='grid min-w-0 gap-0.5'>
+              <span className='truncate text-xs font-medium'>
+                {example.name}
               </span>
-            </button>
-          ))}
-        </div>
-      </section>
-      <div
-        role='group'
-        aria-label={t('Add a style')}
-        className='flex flex-wrap gap-1.5'
-      >
-        <p className='text-muted-foreground w-full text-xs'>
-          {t('Add a style')}
-        </p>
-        {examples.map((example) => {
-          const nextPrompt = [props.prompt.trim(), example.style]
-            .filter(Boolean)
-            .join(', ')
-          return (
-            <Button
-              key={example.name}
-              type='button'
-              variant='outline'
-              size='xs'
-              disabled={
-                props.disabled ||
-                nextPrompt.length > props.maxCharacters ||
-                props.prompt.includes(example.style)
-              }
-              onClick={() => props.onChange(nextPrompt)}
-            >
-              <HugeiconsIcon icon={example.icon} aria-hidden='true' />
-              {example.name}
-            </Button>
-          )
-        })}
+              <span className='text-muted-foreground line-clamp-1 text-[11px] leading-relaxed'>
+                {example.prompt}
+              </span>
+            </span>
+          </button>
+        ))}
       </div>
-    </>
+    </section>
   )
 }

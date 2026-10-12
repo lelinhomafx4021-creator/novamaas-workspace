@@ -166,20 +166,17 @@ test('a failed submission retries with the same idempotency key and nothing is s
   ).toBeEnabled()
 })
 
-test('a replayed run that is still generating shows progress and can be refreshed', async () => {
+test('a replayed run that is still generating polls until it completes', async () => {
   const running: StudioRun = { ...completed, status: 'running', results: [] }
   vi.mocked(api.createStudioRun).mockResolvedValue({
     run: running,
     replay: true,
   })
   vi.mocked(api.getStudioRun).mockResolvedValue(running)
-  const user = await generate()
-  const progress = await screen.findByText(
-    'This generation is still in progress'
-  )
+  await generate()
+  await screen.findByText('This generation is still in progress')
   vi.mocked(api.getStudioRun).mockResolvedValue(completed)
-  await user.click(within(progress).getByRole('button', { name: 'Refresh' }))
-  await screen.findByRole('img', { name: 'A mountain' })
+  await screen.findByRole('img', { name: 'A mountain' }, { timeout: 3000 })
   await waitFor(() =>
     expect(
       screen.queryByText('This generation is still in progress')

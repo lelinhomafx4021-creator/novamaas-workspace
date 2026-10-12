@@ -105,6 +105,9 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
     queryFn: () => getStudioRun(runId),
     enabled: Boolean(runId),
     staleTime: 30_000,
+    // Like the miniapp, keep polling while the run is still generating.
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? 1500 : false,
     gcTime: 0,
   })
   const resultId =
@@ -166,7 +169,6 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
               }
               onSave={setSaveTarget}
               saving={Boolean(saveTarget) || generating}
-              onRefresh={() => void current.refetch()}
             />
           </div>
           <StudioHistory

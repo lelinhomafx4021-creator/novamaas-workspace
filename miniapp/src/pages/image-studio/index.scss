@@ -72,7 +72,6 @@
   font-weight: 600;
 }
 .studio-examples,
-.studio-fields,
 .studio-config__columns,
 .studio-result-actions {
   display: flex;
@@ -163,22 +162,6 @@
 }
 .studio-prompt-actions .mobile-button[disabled] {
   color: #a09bb6;
-}
-.studio-fields {
-  padding-top: 18rpx;
-  border-top: 1rpx solid #f0f1f6;
-}
-.studio-fields > view {
-  flex: 1;
-  min-width: 0;
-}
-.studio-fields .mobile-picker {
-  min-height: 70rpx;
-  padding: 14rpx 20rpx;
-  font-size: 25rpx;
-  background: #f7f8fc;
-  border-color: #eceef5;
-  border-radius: 16rpx;
 }
 .studio-generate {
   min-height: 88rpx;
@@ -324,11 +307,4 @@
   min-height: 56rpx;
   line-height: 56rpx;
   font-size: 22rpx;
-}
-
-.studio-workspace .studio-picker {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16rpx;
 }

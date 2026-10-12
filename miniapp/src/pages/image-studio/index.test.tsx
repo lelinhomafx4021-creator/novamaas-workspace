@@ -293,7 +293,7 @@ it('keeps image and text keys independent and preserves the chosen models after 
   await waitFor(() => expect((screen.getAllByRole('combobox')[1] as HTMLSelectElement).value).toBe('1'))
 })
 
-it('uses model default proportions and quality while limiting the selected count for DALL·E 3', async () => {
+it('uses model defaults without image count controls or extra request parameters', async () => {
   vi.mocked(getStudioModels).mockImplementation(async (_id, kind) =>
     kind === 'image' ? ['gpt-image-1', 'dall-e-3'] : ['text-a']
   )
@@ -301,20 +301,24 @@ it('uses model default proportions and quality while limiting the selected count
   expect(screen.getByText('studio.modelDefault')).toBeTruthy()
   expect(screen.getByText('studio.proportionsHint')).toBeTruthy()
   expect(screen.queryByText('studio.quality')).toBeNull()
-  const count = screen.getByRole('combobox')
-  fireEvent.change(count, { target: { value: '1' } })
+  expect(screen.queryByText('studio.count')).toBeNull()
+  expect(screen.queryByRole('combobox')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'studio.generate' }))
   await screen.findByText('studio.result')
   expect(createStudioRun).toHaveBeenCalledWith(expect.objectContaining({
-    request: { model: 'gpt-image-1', prompt: 'A lake', n: 2 },
+    request: { model: 'gpt-image-1', prompt: 'A lake' },
   }))
   await waitFor(() => expect((screen.getByRole('button', { name: 'studio.configure' }) as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(screen.getByRole('button', { name: 'studio.configure' }))
   fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '1' } })
-  const controls = screen.getAllByRole('combobox')
-  expect((controls[4] as HTMLSelectElement).value).toBe('0')
-  expect((controls[4] as HTMLSelectElement).disabled).toBe(true)
-  expect(screen.getByText('studio.singleImage')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'studio.configure' }))
+  expect(screen.queryByRole('combobox')).toBeNull()
+  expect(screen.queryByText('studio.singleImage')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'studio.generate' }))
+  await waitFor(() => expect(createStudioRun).toHaveBeenCalledTimes(2))
+  expect(createStudioRun).toHaveBeenLastCalledWith(expect.objectContaining({
+    request: { model: 'dall-e-3', prompt: 'A lake' },
+  }))
 })
 
 it('reuses the selected creation prompt without generation or album writes', async () => {

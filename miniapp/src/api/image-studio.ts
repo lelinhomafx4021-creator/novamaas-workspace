@@ -58,7 +58,7 @@ export function getStudioRun(id: string) {
 export function createStudioRun(input: {
   token_id: number
   idempotency_key: string
-  request: { model: string; prompt: string; n?: number }
+  request: { model: string; prompt: string }
 }) {
   return apiRequest<StudioRun>('/api/image-studio/runs', {
     method: 'POST',

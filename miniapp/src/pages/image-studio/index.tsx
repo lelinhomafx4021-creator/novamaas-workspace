@@ -68,7 +68,6 @@ function StudioWorkspace(props: { owner: number; visible: boolean; refresh: numb
   const [showConfig, setShowConfig] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [originalPrompt, setOriginalPrompt] = useState<string>()
-  const [count, setCount] = useState(1)
   const [runs, setRuns] = useState<StudioRun[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -120,7 +119,6 @@ function StudioWorkspace(props: { owner: number; visible: boolean; refresh: numb
         }
         const [tokens, account] = await Promise.all([getStudioKeys(), getAccountSummary()])
         if (!active || !activeOwner()) return
-        setCount(value => Math.min(value, config.max_images))
         setKeys(tokens)
         setGroup(account.group)
         setKeyId(value => (tokens.some(key => key.id === value) ? value : tokens[0]?.id || 0))
@@ -220,12 +218,6 @@ function StudioWorkspace(props: { owner: number; visible: boolean; refresh: numb
     }
   }, [current, pending, props.visible, settings?.enabled, loading])
 
-  const maxImages = model === 'dall-e-3' ? 1 : settings?.max_images || 1
-  const countOptions = Array.from({ length: maxImages }, (_, index) => String(index + 1))
-  useEffect(() => {
-    setCount(value => Math.min(value, maxImages))
-  }, [maxImages])
-
   const execute = async (kind: 'generate' | 'optimize') => {
     if (operationLock.current || busy || !settings?.enabled || !prompt.trim()) return
     if (kind === 'generate' && !models.includes(model)) return
@@ -246,7 +238,6 @@ function StudioWorkspace(props: { owner: number; visible: boolean; refresh: numb
           request: {
             model,
             prompt: prompt.trim(),
-            ...(count > 1 ? { n: count } : {}),
           },
         }
         const signature = JSON.stringify(input)
@@ -508,23 +499,6 @@ function StudioWorkspace(props: { owner: number; visible: boolean; refresh: numb
             <View className='mobile-picker'>{t('studio.modelDefault')}</View>
             <Text className='mobile-card__meta'>{t('studio.proportionsHint')}</Text>
           </View>
-          <View className='studio-fields'>
-            <View>
-              <Text className='studio-label'>{t('studio.count')}</Text>
-              <Picker
-                disabled={busy || maxImages === 1}
-                range={countOptions}
-                value={count - 1}
-                onChange={event => setCount(Number(event.detail.value) + 1)}
-              >
-                <View className='mobile-picker studio-picker'>
-                  <Text>{count}</Text>
-                  <Text aria-hidden>⌄</Text>
-                </View>
-              </Picker>
-            </View>
-          </View>
-          {model === 'dall-e-3' ? <Text className='mobile-card__meta'>{t('studio.singleImage')}</Text> : null}
           <Button
             className='mobile-button studio-generate'
             loading={operation === 'generate' || pending}

@@ -12,7 +12,7 @@ it('uses existing authenticated generation and history without asset writes or r
   await createStudioRun({
     token_id: 7,
     idempotency_key: 'same-request',
-    request: { model: 'image-model', prompt: 'A lake', n: 2 },
+    request: { model: 'image-model', prompt: 'A lake' },
   })
   expect(apiRequest).toHaveBeenCalledWith('/api/image-studio/runs', {
     method: 'POST',
@@ -24,7 +24,6 @@ it('uses existing authenticated generation and history without asset writes or r
       request: {
         model: 'image-model',
         prompt: 'A lake',
-        n: 2,
       },
     },
   })

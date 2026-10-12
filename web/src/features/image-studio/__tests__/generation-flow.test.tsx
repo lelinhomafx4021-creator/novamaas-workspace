@@ -123,6 +123,12 @@ test('image proportions show model defaults without selectable sizes', async () 
   await openStudio()
   expect(screen.getByText('Model default')).toBeVisible()
   expect(
+    screen.queryByRole('combobox', { name: 'Image count' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByText('This model supports one image per request.')
+  ).not.toBeInTheDocument()
+  expect(
     screen.queryByRole('button', { name: 'Model default' })
   ).not.toBeInTheDocument()
   expect(

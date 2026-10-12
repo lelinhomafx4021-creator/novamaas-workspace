@@ -74,7 +74,6 @@ export type CreateStudioRunInput = {
   request: {
     model: string
     prompt: string
-    n?: number
     size?: string
   }
 }

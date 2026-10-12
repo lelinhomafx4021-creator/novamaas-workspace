@@ -37,19 +37,6 @@ export type StudioCreationOptions = {
   onGenerated: (run: StudioRun, replay: boolean) => void
 }
 
-function modelMaxImages(model: string, limit: number): number {
-  if (model === 'dall-e-3') return 1
-  if (
-    model === 'dall-e-2' ||
-    model === 'dall-e' ||
-    model.startsWith('gpt-image-') ||
-    model === 'chatgpt-image-latest'
-  ) {
-    return Math.min(limit, 10)
-  }
-  return limit
-}
-
 export function useStudioCreation(options: StudioCreationOptions) {
   const userGroup = useAuthStore((state) => state.auth.user?.group || 'default')
   const [textSelection, setTextSelection] = useState<StudioModelSelection>({
@@ -69,14 +56,12 @@ export function useStudioCreation(options: StudioCreationOptions) {
           .trim()
           .min(1)
           .max(options.settings.max_prompt_characters),
-        n: z.number().int().min(1).max(options.settings.max_images),
       })
     ),
     defaultValues: {
       tokenId: String(options.keys[0]?.id ?? ''),
       model: '',
       prompt: '',
-      n: 1,
     },
   })
   const tokenId = Number(form.watch('tokenId'))
@@ -89,18 +74,13 @@ export function useStudioCreation(options: StudioCreationOptions) {
   const model = models.data?.includes(selectedModel)
     ? selectedModel
     : (models.data?.[0] ?? '')
-  const maxImages = modelMaxImages(model, options.settings.max_images)
   const previousModel = useRef(model)
   useEffect(() => {
-    if (form.getValues('n') > maxImages) {
-      form.setValue('n', maxImages, { shouldValidate: true })
-      requestKey.current = ''
-    }
     if (previousModel.current !== model) {
       previousModel.current = model
       requestKey.current = ''
     }
-  }, [form, maxImages, model])
+  }, [model])
   const textModels = useQuery({
     queryKey: ['image-studio', 'text-models', textSelection.tokenId],
     queryFn: () => listStudioModels(textSelection.tokenId, 'text'),
@@ -148,7 +128,6 @@ export function useStudioCreation(options: StudioCreationOptions) {
       request: {
         model,
         prompt: values.prompt,
-        ...(values.n > 1 ? { n: values.n } : {}),
       },
     })
   })
@@ -162,7 +141,6 @@ export function useStudioCreation(options: StudioCreationOptions) {
     prompt,
     model,
     models,
-    maxImages,
     optimize,
     generating,
     changePrompt,

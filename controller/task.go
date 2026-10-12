@@ -132,6 +132,9 @@ func GetUserTask(c *gin.Context) {
 
 func GetTaskRequestBody(c *gin.Context) {
 	taskID := c.Param("task_id")
+	if !authorizeImageStudioSnapshot(c, taskID, "") {
+		return
+	}
 	body, exists, err := model.GetTaskRequestBody(taskID)
 	if err != nil {
 		respondTaskRequestBody(c, nil, false, err)
@@ -149,6 +152,9 @@ func GetTaskRequestBody(c *gin.Context) {
 }
 
 func GetTaskRequestSnapshots(c *gin.Context) {
+	if !authorizeImageStudioSnapshot(c, c.Param("task_id"), "") {
+		return
+	}
 	respondTaskRequestSnapshots(c, c.Param("task_id"), "")
 }
 
@@ -194,6 +200,9 @@ func GetLogRequestBody(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Task id or request id is required"})
 		return
 	}
+	if !authorizeImageStudioSnapshot(c, taskID, requestID) {
+		return
+	}
 	body, exists, err := model.GetArchivedRequestBody(taskID, requestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to query log request body"})
@@ -218,7 +227,29 @@ func GetLogRequestSnapshots(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Task id or request id is required"})
 		return
 	}
+	if !authorizeImageStudioSnapshot(c, taskID, requestID) {
+		return
+	}
 	respondTaskRequestSnapshots(c, taskID, requestID)
+}
+
+// authorizeImageStudioSnapshot keeps image studio prompts behind the image
+// review permission. The owner run is resolved from every archive reference
+// form, so AdminAuth alone cannot read another user's generation content.
+func authorizeImageStudioSnapshot(c *gin.Context, taskID string, requestID string) bool {
+	studioRequestID, err := model.ImageStudioSnapshotRequestID(taskID, requestID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to query request snapshots"})
+		return false
+	}
+	if studioRequestID == "" {
+		return true
+	}
+	if !canReviewImageStudio(c) {
+		return false
+	}
+	recordManageAudit(c, "image_studio.snapshot_read", map[string]interface{}{"request_id": studioRequestID})
+	return true
 }
 
 func respondTaskRequestSnapshots(c *gin.Context, taskID string, requestID string) {

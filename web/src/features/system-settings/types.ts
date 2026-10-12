@@ -396,6 +396,7 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'image_studio_setting.enabled': boolean
 }
 
 export type SecuritySettings = {

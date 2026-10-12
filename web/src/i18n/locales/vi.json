@@ -7018,6 +7018,7 @@
     "Landscape": "Ngang",
     "Maximum images per request": "Số ảnh tối đa mỗi yêu cầu",
     "Model default": "Mặc định của mô hình",
+    "Model defaults apply; you can also specify proportions in your prompt.": "Dùng tỷ lệ mặc định của mô hình hoặc chỉ định trong lời nhắc.",
     "Model settings": "Cấu hình mô hình",
     "No generation records": "Chưa có lịch sử tạo ảnh",
     "No image models available": "Không có mô hình tạo ảnh khả dụng",

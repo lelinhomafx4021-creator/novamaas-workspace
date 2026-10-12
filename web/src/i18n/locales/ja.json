@@ -7018,6 +7018,7 @@
     "Landscape": "横向き",
     "Maximum images per request": "リクエストあたりの最大画像数",
     "Model default": "モデルの既定値",
+    "Model defaults apply; you can also specify proportions in your prompt.": "比率はモデルの既定値を使用します。プロンプトで指定することもできます。",
     "Model settings": "モデル設定",
     "No generation records": "生成履歴はありません",
     "No image models available": "利用可能な画像生成モデルはありません",

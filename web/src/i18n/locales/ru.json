@@ -7018,6 +7018,7 @@
     "Landscape": "Альбомная",
     "Maximum images per request": "Максимум изображений на запрос",
     "Model default": "По умолчанию модели",
+    "Model defaults apply; you can also specify proportions in your prompt.": "Пропорции задаются моделью по умолчанию или указываются в промпте.",
     "Model settings": "Настройки моделей",
     "No generation records": "Нет записей генерации",
     "No image models available": "Нет доступных моделей генерации изображений",

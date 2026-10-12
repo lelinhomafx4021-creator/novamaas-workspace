@@ -7018,6 +7018,7 @@
     "Landscape": "橫向",
     "Maximum images per request": "單次請求最大圖片數",
     "Model default": "模型預設",
+    "Model defaults apply; you can also specify proportions in your prompt.": "畫幅預設由模型決定，也可在提示詞中指定。",
     "Model settings": "模型設定",
     "No generation records": "尚無生成紀錄",
     "No image models available": "暫無可用的生圖模型",

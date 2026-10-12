@@ -67,7 +67,7 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-async function generate() {
+async function openStudio() {
   render(
     <QueryClientProvider client={client}>
       <ImageStudio />
@@ -75,6 +75,11 @@ async function generate() {
   )
   await screen.findByText('dall-e-3', { exact: true })
   const user = userEvent.setup()
+  return user
+}
+
+async function generate() {
+  const user = await openStudio()
   await user.type(
     screen.getByRole('textbox', { name: 'Describe your image' }),
     'A mountain'
@@ -82,6 +87,66 @@ async function generate() {
   await user.click(screen.getByRole('button', { name: 'Create images' }))
   return user
 }
+
+test('prompt optimization identifies and calls the chosen text model separately from image generation', async () => {
+  vi.mocked(api.listStudioModels).mockImplementation(async (_id, kind) =>
+    kind === 'text' ? ['text-model', 'chosen-text-model'] : ['dall-e-3']
+  )
+  vi.mocked(api.assistStudioPrompt).mockResolvedValue({
+    suggested_prompt: 'A mountain in soft light',
+  })
+  const user = await openStudio()
+  await user.click(screen.getByRole('button', { name: 'Model settings' }))
+  const textModels = within(screen.getByRole('group', { name: 'Text model' }))
+  await user.selectOptions(
+    textModels.getByRole('combobox', { name: 'Model' }),
+    'chosen-text-model'
+  )
+  await user.click(screen.getByRole('button', { name: 'Done' }))
+  expect(
+    await screen.findByText('Text model: chosen-text-model')
+  ).toBeInTheDocument()
+  const prompt = screen.getByRole('textbox', { name: 'Describe your image' })
+  await user.type(prompt, 'A mountain')
+  await user.click(screen.getByRole('button', { name: 'Optimize prompt' }))
+  await waitFor(() => expect(prompt).toHaveValue('A mountain in soft light'))
+  expect(api.assistStudioPrompt).toHaveBeenCalledWith({
+    token_id: 1,
+    model: 'chosen-text-model',
+    prompt: 'A mountain',
+  })
+  expect(screen.getByText('dall-e-3', { exact: true })).toBeInTheDocument()
+  expect(api.createStudioRun).not.toHaveBeenCalled()
+})
+
+test('choosing a proportion sends its size and returning to model default omits it', async () => {
+  vi.mocked(api.createStudioRun).mockResolvedValue({
+    run: completed,
+    replay: false,
+  })
+  const user = await openStudio()
+  await user.type(
+    screen.getByRole('textbox', { name: 'Describe your image' }),
+    'A mountain'
+  )
+  const landscape = screen.getByRole('button', { name: 'Landscape' })
+  const modelDefault = screen.getByRole('button', { name: 'Model default' })
+  await user.click(landscape)
+  expect(landscape).toHaveAttribute('aria-pressed', 'true')
+  expect(modelDefault).toHaveAttribute('aria-pressed', 'false')
+  await user.click(screen.getByRole('button', { name: 'Create images' }))
+  await screen.findByRole('img', { name: 'A mountain' })
+  expect(vi.mocked(api.createStudioRun).mock.calls[0][0].request.size).toBe(
+    '1792x1024'
+  )
+  await user.click(modelDefault)
+  expect(modelDefault).toHaveAttribute('aria-pressed', 'true')
+  await user.click(screen.getByRole('button', { name: 'Create images' }))
+  await waitFor(() => expect(api.createStudioRun).toHaveBeenCalledTimes(2))
+  expect(
+    vi.mocked(api.createStudioRun).mock.calls[1][0].request
+  ).not.toHaveProperty('size')
+})
 
 test('a failed submission retries with the same idempotency key and nothing is saved by default', async () => {
   vi.mocked(api.createStudioRun)

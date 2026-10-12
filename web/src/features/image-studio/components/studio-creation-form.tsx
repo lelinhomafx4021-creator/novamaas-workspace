@@ -143,6 +143,10 @@ export function StudioCreationForm(props: {
                 {props.settings.max_prompt_characters}
               </span>
             </div>
+            <FieldDescription className='text-xs break-words'>
+              {t('Text model')}:{' '}
+              {creation.textModel || t('No models available')}
+            </FieldDescription>
             {optimize.isError && (
               <p role='alert' className='text-destructive text-xs'>
                 {studioErrorMessage(optimize.error)}
@@ -203,7 +207,7 @@ export function StudioCreationForm(props: {
               <ToggleGroupItem
                 value='default'
                 aria-label={t('Model default')}
-                className='h-14 min-w-0 flex-1 px-1 text-[11px]'
+                className='aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-foreground h-14 min-w-0 flex-1 px-1 text-[11px]'
               >
                 {t('Model default')}
               </ToggleGroupItem>
@@ -224,7 +228,7 @@ export function StudioCreationForm(props: {
                     key={value}
                     value={value}
                     aria-label={name}
-                    className='h-14 min-w-0 flex-1 flex-col gap-1.5 px-1 text-[11px]'
+                    className='aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-foreground h-14 min-w-0 flex-1 flex-col gap-1.5 px-1 text-[11px]'
                   >
                     <span
                       aria-hidden='true'

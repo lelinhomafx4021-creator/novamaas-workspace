@@ -62,7 +62,6 @@ export function StudioGallery(props: {
   onSave?: (result: StudioResult) => void
   saving?: boolean
   compact?: boolean
-  onRefresh?: () => void
 }) {
   const { t } = useTranslation()
   const [preview, setPreview] = useState<StudioResult>()
@@ -150,22 +149,9 @@ export function StudioGallery(props: {
         </div>
       )}
       {!props.compact && run.status === 'running' && (
-        <div
-          role='status'
-          className='text-muted-foreground flex items-center gap-2 text-sm'
-        >
+        <p role='status' className='text-muted-foreground text-sm'>
           {t('This generation is still in progress')}
-          {props.onRefresh && (
-            <Button
-              type='button'
-              size='sm'
-              variant='ghost'
-              onClick={props.onRefresh}
-            >
-              {t('Refresh')}
-            </Button>
-          )}
-        </div>
+        </p>
       )}
       {!props.compact && run.error_message && (
         <p role='alert' className='text-destructive text-sm'>

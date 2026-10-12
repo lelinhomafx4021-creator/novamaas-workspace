@@ -33,7 +33,6 @@ import {
 } from '@/components/ui/field'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 import type { StudioCreationState } from '../hooks/use-studio-creation'
 import { studioErrorMessage } from '../studio-utils'
@@ -181,72 +180,11 @@ export function StudioCreationForm(props: {
             disabled={!props.settings.enabled || busy}
             onChange={creation.changePrompt}
           />
-          <Field data-disabled={busy}>
+          <Field>
             <FieldLabel>{t('Image proportions')}</FieldLabel>
-            <ToggleGroup
-              aria-label={t('Image proportions')}
-              aria-describedby='studio-proportions-description'
-              value={[creation.size || 'default']}
-              onValueChange={(values) => {
-                if (values[0]) {
-                  form.setValue(
-                    'size',
-                    values[0] === 'default' ? '' : values[0],
-                    {
-                      shouldDirty: true,
-                    }
-                  )
-                  creation.resetRequestKey()
-                }
-              }}
-              disabled={busy}
-              variant='outline'
-              spacing={2}
-              className='w-full'
-            >
-              <ToggleGroupItem
-                value='default'
-                aria-label={t('Model default')}
-                className='aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-foreground h-14 min-w-0 flex-1 px-1 text-[11px]'
-              >
-                {t('Model default')}
-              </ToggleGroupItem>
-              {creation.sizeOptions.map((value) => {
-                const [width, height] = value.split('x').map(Number)
-                let name = t('Square image')
-                let shape = 'size-3.5'
-                if (width > height) {
-                  name = t('Landscape')
-                  shape = 'h-2.5 w-4'
-                }
-                if (width < height) {
-                  name = t('Portrait')
-                  shape = 'h-4 w-2.5'
-                }
-                return (
-                  <ToggleGroupItem
-                    key={value}
-                    value={value}
-                    aria-label={name}
-                    className='aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-foreground h-14 min-w-0 flex-1 flex-col gap-1.5 px-1 text-[11px]'
-                  >
-                    <span
-                      aria-hidden='true'
-                      className={`rounded-[2px] border ${shape}`}
-                    />
-                    {name}
-                  </ToggleGroupItem>
-                )
-              })}
-            </ToggleGroup>
-            <FieldDescription
-              id='studio-proportions-description'
-              className='text-xs'
-            >
-              {t(
-                'Aspect ratio support depends on the selected model. Model default lets the model choose the size and aspect ratio.'
-              )}
-            </FieldDescription>
+            <p className='bg-muted/30 rounded-lg border px-3 py-2 text-sm'>
+              {t('Model default')}
+            </p>
           </Field>
           <FieldGroup className='gap-3'>
             <Field

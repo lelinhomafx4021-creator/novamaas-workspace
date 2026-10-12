@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { nanoid } from 'nanoid'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
@@ -35,15 +35,6 @@ export type StudioCreationOptions = {
   keys: ApiKey[]
   disabled: boolean
   onGenerated: (run: StudioRun, replay: boolean) => void
-}
-
-function modelSizeOptions(model: string): string[] {
-  if (model === 'dall-e-3') return ['1024x1024', '1792x1024', '1024x1792']
-  if (model === 'dall-e-2' || model === 'dall-e') return ['1024x1024']
-  if (model.includes('seedream-4-5') || model.includes('seedream-5-0-lite')) {
-    return ['2048x2048', '2496x1664', '1664x2496']
-  }
-  return ['1024x1024', '1536x1024', '1024x1536']
 }
 
 function modelMaxImages(model: string, limit: number): number {
@@ -79,7 +70,6 @@ export function useStudioCreation(options: StudioCreationOptions) {
           .min(1)
           .max(options.settings.max_prompt_characters),
         n: z.number().int().min(1).max(options.settings.max_images),
-        size: z.string().trim(),
       })
     ),
     defaultValues: {
@@ -87,7 +77,6 @@ export function useStudioCreation(options: StudioCreationOptions) {
       model: '',
       prompt: '',
       n: 1,
-      size: '',
     },
   })
   const tokenId = Number(form.watch('tokenId'))
@@ -100,9 +89,7 @@ export function useStudioCreation(options: StudioCreationOptions) {
   const model = models.data?.includes(selectedModel)
     ? selectedModel
     : (models.data?.[0] ?? '')
-  const sizeOptions = useMemo(() => modelSizeOptions(model), [model])
   const maxImages = modelMaxImages(model, options.settings.max_images)
-  const size = form.watch('size')
   const previousModel = useRef(model)
   useEffect(() => {
     if (form.getValues('n') > maxImages) {
@@ -111,7 +98,6 @@ export function useStudioCreation(options: StudioCreationOptions) {
     }
     if (previousModel.current !== model) {
       previousModel.current = model
-      form.setValue('size', '')
       requestKey.current = ''
     }
   }, [form, maxImages, model])
@@ -163,7 +149,6 @@ export function useStudioCreation(options: StudioCreationOptions) {
         model,
         prompt: values.prompt,
         ...(values.n > 1 ? { n: values.n } : {}),
-        ...(values.size ? { size: values.size } : {}),
       },
     })
   })
@@ -177,8 +162,6 @@ export function useStudioCreation(options: StudioCreationOptions) {
     prompt,
     model,
     models,
-    size,
-    sizeOptions,
     maxImages,
     optimize,
     generating,

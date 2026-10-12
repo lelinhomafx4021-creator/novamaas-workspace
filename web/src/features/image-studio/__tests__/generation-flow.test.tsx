@@ -119,33 +119,21 @@ test('prompt optimization identifies and calls the chosen text model separately 
   expect(api.createStudioRun).not.toHaveBeenCalled()
 })
 
-test('choosing a proportion sends its size and returning to model default omits it', async () => {
-  vi.mocked(api.createStudioRun).mockResolvedValue({
-    run: completed,
-    replay: false,
-  })
-  const user = await openStudio()
-  await user.type(
-    screen.getByRole('textbox', { name: 'Describe your image' }),
-    'A mountain'
-  )
-  const landscape = screen.getByRole('button', { name: 'Landscape' })
-  const modelDefault = screen.getByRole('button', { name: 'Model default' })
-  await user.click(landscape)
-  expect(landscape).toHaveAttribute('aria-pressed', 'true')
-  expect(modelDefault).toHaveAttribute('aria-pressed', 'false')
-  await user.click(screen.getByRole('button', { name: 'Create images' }))
-  await screen.findByRole('img', { name: 'A mountain' })
-  expect(vi.mocked(api.createStudioRun).mock.calls[0][0].request.size).toBe(
-    '1792x1024'
-  )
-  await user.click(modelDefault)
-  expect(modelDefault).toHaveAttribute('aria-pressed', 'true')
-  await user.click(screen.getByRole('button', { name: 'Create images' }))
-  await waitFor(() => expect(api.createStudioRun).toHaveBeenCalledTimes(2))
+test('image proportions show model defaults without selectable sizes', async () => {
+  await openStudio()
+  expect(screen.getByText('Model default')).toBeVisible()
   expect(
-    vi.mocked(api.createStudioRun).mock.calls[1][0].request
-  ).not.toHaveProperty('size')
+    screen.queryByRole('button', { name: 'Model default' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Landscape' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Portrait' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Square image' })
+  ).not.toBeInTheDocument()
 })
 
 test('a failed submission retries with the same idempotency key and nothing is saved by default', async () => {

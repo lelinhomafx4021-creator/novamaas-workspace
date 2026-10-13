@@ -1,79 +1,86 @@
-# 视频创作画布：改动与功能规划报告
+# 视频创作画布：最终报告
 
-分支：`codex/video-studio-canvas`（基于 company/main，共 11 个提交）
-范围：第一期 PC 端 + 共用后端。小程序、真实渠道联调不在本期。
+分支 `codex/video-studio-canvas`，基于 company/main，14 个提交。范围是第一期 PC 端加共用后端，小程序不在本期。
 
-## 一 做了什么
+## 一 交付内容
 
-在顶部导航新增“视频创作”入口，进入后是一块无限画布。用户在画布上添加“生成节点”，写提示词、选密钥和模型、可附参考图，点击“生成”后在节点右侧出现“结果节点”，显示状态并在完成后内嵌播放、下载。打开页面自动进入最近的项目，没有项目时自动创建，不再出现空的创建页。
+顶部导航新增“视频创作”，进入后是一块无限画布。打开页面自动进入最近的项目，没有项目就自动创建。
 
-支持三类模型，由后台规则决定，不再靠代码里写死的模型名：
-
-| 协议 | 请求格式 | 默认关键字 | 参考图 |
-| --- | --- | --- | --- |
-| seedance | doubao 的 content 数组，带首帧/尾帧/参考图角色 | `seedance` | 最多 9 张，可用素材库 |
-| wan3 | 万相的 input.media 加 parameters | `wan` | 最多 9 张 |
-| openai_video | OpenAI 兼容的 seconds 加 metadata | `h3` | 本期仅文生视频 |
+用户流程：添加生成节点，选 API 密钥和模型，写提示词，可附参考图，点“生成”。节点右侧出现结果节点，显示状态，完成后内嵌播放和下载。可对提示词做一键优化。页面在桌面、平板、手机上都能用。
 
 ## 二 关键设计
 
-**复用现有视频提交链路，不另起一套。** 画布提交先被转换成标准 `/v1/video/generations` 请求体，再走原有的渠道选择、重试、计费和各家适配器。`/pg/videos` 在渠道选定后才创建 `VideoCreationRun` 和公开任务号，再调用共用的 `submitVideoTask`。对外的 `/v1/videos` 响应契约不变，有回归测试。
+| 主题 | 做法 |
+| --- | --- |
+| 提交链路 | 画布请求先转成标准 `/v1/video/generations` 请求体，再走原有的渠道选择、重试、计费、适配器。对外 `/v1/videos` 契约不变，有回归测试。 |
+| 适配器 | 新增可选接口 `TaskSubmitResponseParser`，sora、doubao、ali 各自实现“只解析”。原 `DoResponse` 等于解析加写响应。 |
+| 幂等 | 每次点“生成”新建 `client_request_id`，（用户，请求号）唯一索引。同请求重放返回原记录，同号不同内容返回 409。哈希取自客户端原始输入。 |
+| 密钥 | 节点保存 `token_id`（密钥编号，不是密钥本身）。服务端按“编号加当前用户”查，取其分组和模型白名单，提交时在渠道分发处再校验。别人的密钥返回 404，禁用或过期返回 403。 |
+| 模型规则 | 后台选项 `video_studio.model_rules`：名字关键字对应协议，按顺序第一条命中。默认 `seedance`、`wan`、`h3`。加新模型家族只需加一条规则。 |
+| 提示词优化 | 后台选项 `video_studio.prompt_model` 指定文本模型，走现有聊天接口，按所选密钥的分组计费。留空则不显示按钮。 |
+| 存储 | 参考图存为 `StorageObject`（用途 `video_studio_reference`），默认临时保存，可手动长期保存。按 sha256 去重，有配额。注册 Seedance 素材时复用同一对象。生成的视频不转存。 |
+| 项目保存 | 乐观锁，冲突返回 409 并停止自动保存。草稿上限 60 KiB，保证落在 MySQL 的 TEXT 内。 |
 
-**适配器解析与写响应拆开。** 新增可选接口 `TaskSubmitResponseParser`，sora、doubao、ali 三个适配器各自实现，原 `DoResponse` 等于解析加写响应。画布提交时跳过写响应，只取上游任务号。
+### 参数
 
-**幂等。** 每次点“生成”新建 `client_request_id`，网络重试复用同一个。（`owner_user_id`, `client_request_id`）有唯一索引。相同请求重放返回原记录，不再请求上游；同一个 ID 带不同内容返回 409。请求哈希取自客户端原始输入，不受服务端补默认值影响。
+| 模型 | 协议 | 分辨率 | 参考图 |
+| --- | --- | --- | --- |
+| Seedance 2.0 | seedance | 480p、720p、1080p、4k | 最多 9 张，可用素材库 |
+| Seedance 2.0 fast | seedance | 480p、720p | 同上 |
+| Seedance 2.5 | seedance | 480p、720p、1080p | 同上 |
+| 万相 3 | wan3 | 480P、720P | 最多 9 张 |
+| MiniMax-H3 | openai_video | 768P、1080P | 本期仅文生视频 |
 
-**用密钥而不是分组。** 节点保存 `token_id`（密钥的数据库编号，不是密钥本身）。服务端按“编号加当前用户”查密钥，取它的分组和模型白名单：模型列表是分组模型与白名单的交集，提交时在渠道分发处再校验一次。别人的密钥返回 404，禁用或过期返回 403。
+Seedance 的分辨率取自仓库定价表，480p 按 720p 计价。万相和 H3 的分辨率由你提供。比例沿用通用列表，时长上限用 `relaycommon.MaxTaskDurationSeconds`，万相为 2 到 30 秒。
 
-**后台可配置的模型规则。** 系统选项 `video_studio.model_rules` 是“名字关键字加协议”的有序列表，第一条命中的决定协议，关键字不区分大小写。默认值保留上表三条，保存校验协议合法、关键字非空且不重复、最多 50 条。要接新的模型家族只需加一条规则。各协议的时长、比例、参考图数量仍在代码里，与上游适配器保持一致。分辨率按型号确定：万相 480P、720P；H3 768P、1080P；Seedance 取自定价表，2.0 为 480p、720p、1080p、4k，2.0 fast 只有 480p、720p，2.5 为 480p、720p、1080p（480p 按 720p 计价）。
+## 三 规模
 
-**提示词优化。** 系统选项 `video_studio.prompt_model` 指定一个文本模型，节点面板的“优化提示词”按钮通过现有的聊天接口改写提示词，按所选密钥的分组计费。留空或该模型不在所选密钥可用范围内，按钮不显示。
+对比 company/main：80 个文件，新增 6884 行，删除 95 行。
 
-**存储。** 参考图存为 `StorageObject`，用途 `video_studio_reference`。默认临时保存（到期自动清理），可手动保存为长期素材；同一用户按 sha256 去重，有配额限制；注册到 Seedance 素材库时复用同一个对象，不重复上传。只接受官方阿里云 OSS 地址。生成的视频文件不转存，播放和下载走上游地址（见“已知限制”）。
+| 部分 | 行数 |
+| --- | --- |
+| Go 生产代码 | 1915 |
+| Go 测试 | 695 |
+| 前端源码（不含语言文件和生成的路由树） | 3546 |
 
-**项目保存。** 乐观锁，保存带 `revision`，冲突返回 409，此时前端停止自动保存并提示。草稿上限 60 KiB，保证在 MySQL 的 TEXT 列内。
-
-**前端。** TanStack Router 文件路由，Zustand 按选择器订阅，画布复用 `@xyflow/react` 封装，暗色科技风样式限定在 `.studio-surface` 内。结果节点的轮询只在任务进行时运行。1024px 以下两侧面板改为抽屉。节点拖动时每帧更新位置，自动保存有 800ms 防抖。七种语言的文案已补全。
-
-## 三 改动规模
-
-对比 company/main：78 个文件，新增 6730 行、删除 95 行。Go 生产代码约 2300 行，测试 678 行，前端源码约 3500 行（不含语言文件和生成的路由树）。
-
-- 后端新增：`model/video_studio.go`、`service/videostudio/`、`service/storage/video_studio.go`、`controller/video_studio.go`、`setting/model_setting/video_studio.go`
-- 后端修改：`controller/relay.go`（抽出 `submitVideoTask`）、`relay/channel/adapter.go` 及三个适配器、`middleware/distributor.go`（`/pg/videos` 路径映射）、`service/assetlibrary/service.go`、`model/option.go`
-- 前端：`web/src/features/video-studio/`、`web/src/stores/video-studio-store.ts`、`web/src/routes/studio/`、后台“视频创作模型”设置卡片、顶部导航与导航模块开关
+后端新增 `model/video_studio.go`、`service/videostudio/`、`service/storage/video_studio.go`、`controller/video_studio.go`、`setting/model_setting/video_studio.go`。修改处集中在 `controller/relay.go`（抽出 `submitVideoTask`）、三个适配器、`middleware/distributor.go`、`service/assetlibrary/service.go`、`model/option.go`。前端在 `web/src/features/video-studio/`，另有后台设置卡片和导航开关。
 
 ## 四 核查结果
 
-- `go build ./...` 通过；`relaykit` 单独构建通过（`GOWORK=off`）；`go vet` 对改动包无告警；`gofmt` 无差异。
-- Go 测试：controller、service、relay、model、middleware、setting 全部通过。视频创作的 8 个控制器测试在 SQLite 和本地 OrbStack MySQL 上都通过。
-- 前端：类型检查通过，oxlint 对视频创作代码无告警，vitest 112 个文件、593 个用例全部通过，生产构建成功。
-- 浏览器：桌面、平板（820px）、手机（390px）无横向溢出；配置区折叠、按密钥收窄模型列表已在预览中点过。
-- 代码自查：新增生产代码里没有 `encoding/json` 直接调用、没有 TODO、没有遗留的调试输出；没有使用 `FOR UPDATE`、布尔默认值标签等跨库风险写法。
-- 核查中发现并修复一个测试问题：MySQL 夹具缺少 asset webhook 的两张表，导致任务入库失败、测试误报。原因在夹具，不在生产代码，已修复。
+| 检查 | 结果 |
+| --- | --- |
+| Go 构建、`relaykit` 独立构建、`go vet`、`gofmt` | 通过 |
+| Go 测试（controller、service、relay、model、middleware、setting、pkg） | 通过 |
+| 视频创作的 8 个控制器测试 | SQLite 和本地 MySQL 都通过 |
+| 前端类型检查、oxlint | 通过 |
+| vitest | 112 个文件、595 个用例通过 |
+| 前端生产构建 | 通过 |
+| 浏览器 | 桌面、平板（820px）、手机（390px）无横向溢出；配置区折叠、按密钥收窄模型已点过 |
+| 代码自查 | 无 TODO、无调试输出、无 `encoding/json` 直接调用、无跨库风险写法 |
 
-## 五 已知限制和风险
+精简：内联了只有一处调用的 `ValidateVideoStudioPromptModel`；把“切换模型保留哪些参数”从组件挪进 `lib/draft.ts` 并补测试；`properties-panel` 拆出 `model-config` 后回到 206 行。其余只有一处调用的函数是 controller、service、model 分层之间的导出函数，或带专属规则的函数，保留。
 
-1. **生成的视频不转存。** 视频文件在上游，地址有有效期，过期后节点提示“视频暂不可用”，下载也会失败。刷新页面不会丢记录，但过期后视频丢失。若要长期保存，需要新增“任务完成后转存到 OSS”，涉及流量和存储成本，建议做成默认关闭的可选策略。
-2. **没有真实渠道和 OSS 联调。** 本地没有上游凭证，提交、计费、状态流转用模拟上游验证，真实视频的播放画面、跨域、格式兼容没有人看过。上线前需要用真实渠道提交一个短视频走完整流程。
-3. **万相适配器只转换以 `wan3.0` 开头的模型名**（`relay/channel/task/ali/adaptor.go:151`）。后台规则可以让其他万相名字走万相协议，但适配器不会转换，可能被上游拒绝。放宽前需要先确认万相的实际命名。
-4. **关键字过短会误命中。** 例如 `h3`、`wan` 出现在别的模型名里会被一并列出，可在后台把关键字改长。
-5. **没有“失败后自动换 v1 重发”。** 换格式重试可能重复生成、重复扣费。现在的做法是把模型关键字设为“OpenAI 兼容”，直接走通用 v1 格式。
-6. **旧草稿的分组字段不再生效。** 节点里原来的 `group` 换成了 `token_id`，旧项目里保存的分组按默认分组处理。
-7. **密钥选择器只取前 100 把密钥。**
-8. **迁移只在 SQLite 和 MySQL 上验证过**，PostgreSQL 没有实际跑。代码按三库兼容规范编写。
-9. **两个前端面板文件偏长：** `reference-panel.tsx` 282 行、`model-config.tsx` 273 行，超过约 200 行的建议，尚未拆分。
+## 五 已知限制
 
-## 六 后续规划
+1. 生成的视频不转存。上游地址过期后视频打不开，记录和节点还在。
+2. 没有用真实渠道和 OSS 联调。提交、计费、状态流转用模拟上游验证，真实视频的播放、跨域、格式兼容没有人看过。
+3. 万相适配器只转换以 `wan3.0` 开头的模型名（`relay/channel/task/ali/adaptor.go:151`）。后台规则可让别的万相名字走万相协议，但适配器不会转换，可能被上游拒绝。
+4. 万相适配器本身仍接受 1080P，画布里只提供 480P、720P。
+5. 关键字过短会误命中，例如 `h3`、`wan` 出现在别的模型名里。可在后台改长。
+6. 没有“失败后自动换 v1 重发”，因为换格式重试可能重复生成、重复扣费。想走通用 v1，把模型关键字设为 openai_video。
+7. 旧草稿里的 `group` 字段换成了 `token_id`，旧项目的分组按默认分组处理。
+8. 密钥选择器只取前 100 把。
+9. 迁移只在 SQLite 和 MySQL 验证过，PostgreSQL 没跑。
+10. 画面比例和 Seedance 以外的时长范围没有对照厂商文档核实。
+11. `reference-panel.tsx` 282 行，超过约 200 行的建议，没拆。
 
-| 优先级 | 事项 | 说明 |
-| --- | --- | --- |
-| 上线前 | 真实渠道端到端 | 用 Seedance、万相、H3 各提交一次，确认播放、下载、计费、失败退款 |
-| 上线前 | PostgreSQL 迁移验证 | 补跑迁移和视频创作测试 |
-| 上线前 | 推分支、开 PR | 使用仓库 PR 模板，注明 AI 辅助；在 README 的下游差异清单补一条，需要真实 PR 链接 |
-| 建议 | 视频转存到 OSS | 默认关闭的可选策略，任务完成后拉取并存入 `StorageObject`，结果节点优先播放副本 |
-| 建议 | 万相命名确认 | 确认后决定是否放宽适配器的 `wan3.0` 前缀限制 |
-| 可选 | H3 参考图 | 需要 multipart 上传，目前只做文生视频 |
-| 可选 | 沉浸模式 | 隐藏 64px 站点顶栏，给画布更多空间 |
-| 可选 | 小程序端 | 项目接口已按“只写传入字段”设计，小程序可只保存草稿而不动画布布局 |
-| 可选 | 拆分长文件 | `reference-panel.tsx`、`model-config.tsx` |
+## 六 上线前待办
+
+| 事项 | 说明 |
+| --- | --- |
+| 真实渠道端到端 | Seedance、万相、H3 各提交一次，确认播放、下载、计费、失败退款 |
+| PostgreSQL | 补跑迁移和视频创作测试 |
+| 推分支、开 PR | 用仓库 PR 模板并注明 AI 辅助。README 下游差异清单需补一条，要等有真实 PR 链接 |
+| 万相命名 | 确认实际模型名后决定是否放宽适配器的前缀限制 |
+
+后续可选：视频转存到 OSS（默认关闭的策略）、H3 参考图（需 multipart）、沉浸模式、小程序端、拆分 `reference-panel.tsx`。

@@ -7062,6 +7062,13 @@
     "Seedance (content with roles)": "Seedance (content with roles)",
     "Wan 3 (input.media + parameters)": "Wan 3 (input.media + parameters)",
     "OpenAI-compatible (seconds + metadata)": "OpenAI-compatible (seconds + metadata)",
-    "Add rule": "Add rule"
+    "Add rule": "Add rule",
+    "API key": "API key",
+    "Default (account group)": "Default (account group)",
+    "Model and parameters": "Model and parameters",
+    "Optimize prompt": "Optimize prompt",
+    "Optimizing...": "Optimizing...",
+    "Prompt optimization model": "Prompt optimization model",
+    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "A text model that rewrites prompts in the video studio. Leave empty to hide the button."
   }
 }

@@ -7062,6 +7062,13 @@
     "Seedance (content with roles)": "Seedance（带角色的 content）",
     "Wan 3 (input.media + parameters)": "万相 3（input.media + parameters）",
     "OpenAI-compatible (seconds + metadata)": "OpenAI 兼容（seconds + metadata）",
-    "Add rule": "添加规则"
+    "Add rule": "添加规则",
+    "API key": "API 密钥",
+    "Default (account group)": "默认（账号分组）",
+    "Model and parameters": "模型与参数",
+    "Optimize prompt": "优化提示词",
+    "Optimizing...": "优化中...",
+    "Prompt optimization model": "提示词优化模型",
+    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "在视频创作中改写提示词的文本模型。留空则隐藏优化按钮。"
   }
 }

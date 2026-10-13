@@ -25,8 +25,8 @@ import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
 import { MiniappMediaCard } from './miniapp-media-card'
-import { VideoStudioRulesCard } from './video-studio-rules-card'
 import { RoutingReliabilitySection } from './routing-reliability-section'
+import { VideoStudioRulesCard } from './video-studio-rules-card'
 
 function formatJsonForEditor(value: string, fallback: string) {
   const raw = (value ?? '').toString().trim()
@@ -70,12 +70,19 @@ const MODELS_SECTIONS = [
   {
     id: 'miniapp-media',
     titleKey: 'Mini Program Media',
-    build: (settings: ModelSettings) => <MiniappMediaCard value={settings['miniapp.playground_media']} />,
+    build: (settings: ModelSettings) => (
+      <MiniappMediaCard value={settings['miniapp.playground_media']} />
+    ),
   },
   {
     id: 'video-studio',
     titleKey: 'Video Studio Models',
-    build: (settings: ModelSettings) => <VideoStudioRulesCard value={settings['video_studio.model_rules']} />,
+    build: (settings: ModelSettings) => (
+      <VideoStudioRulesCard
+        value={settings['video_studio.model_rules']}
+        promptModel={settings['video_studio.prompt_model']}
+      />
+    ),
   },
   {
     id: 'routing-reliability',

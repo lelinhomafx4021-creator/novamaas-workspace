@@ -16,23 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { X } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import type { ApiKey } from '@/features/keys/types'
 import { useVideoStudioStore } from '@/stores/video-studio-store'
 
+import { optimizePrompt } from '../api'
 import { draftIssues } from '../lib/draft'
-import type { Capability, ReferenceRole, SubmitParameters } from '../types'
+import { studioErrorMessage } from '../lib/errors'
+import type { Capability, ReferenceRole } from '../types'
+import { FIELD_LABEL, ModelConfig } from './model-config'
 import { ReferenceThumbnail } from './reference-thumbnail'
-
-const FIELD_LABEL =
-  'text-muted-foreground font-mono text-[10px] tracking-wider uppercase'
 
 const ROLE_LABELS: Record<ReferenceRole, string> = {
   first_frame: 'First frame',
@@ -42,7 +43,9 @@ const ROLE_LABELS: Record<ReferenceRole, string> = {
 
 type PropertiesPanelProps = {
   capabilities: Capability[]
-  groups: { value: string; label: string }[]
+  keys: ApiKey[]
+  /** Text model for prompt optimization; empty hides the button. */
+  promptModel: string
   submitting: boolean
   onSubmit: (nodeId: string) => void
 }
@@ -55,6 +58,11 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     state.selectedNodeId ? state.draft.nodes[state.selectedNodeId] : undefined
   )
   const updateNode = useVideoStudioStore((state) => state.updateNode)
+  const optimize = useMutation({
+    mutationFn: (input: { prompt: string; group?: string }) =>
+      optimizePrompt(props.promptModel, input.group, input.prompt),
+    onError: (error) => toast.error(studioErrorMessage(error)),
+  })
 
   if (!nodeId || !draft) {
     return (
@@ -68,73 +76,44 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     (item) => item.model === draft.model
   )
   const issues = draftIssues(draft, capability)
-  const parameters = draft.parameters
-  const setParameter = (patch: Partial<typeof parameters>) =>
-    updateNode(nodeId, { parameters: { ...parameters, ...patch } })
 
   return (
     <aside className='bg-background/80 flex w-80 shrink-0 flex-col gap-5 overflow-y-auto border-l p-4 backdrop-blur-xl'>
-      <div className='grid gap-1.5'>
-        <Label htmlFor='studio-model' className={FIELD_LABEL}>
-          {t('Model')}
-        </Label>
-        <NativeSelect
-          id='studio-model'
-          className='w-full'
-          value={draft.model}
-          onChange={(event) => {
-            const next = props.capabilities.find(
-              (item) => item.model === event.target.value
-            )
-            // Keep prompt and references; only reset values the new model lacks.
-            updateNode(nodeId, {
-              model: event.target.value,
-              parameters: next
-                ? { ...next.defaults, ...pickSupported(parameters, next) }
-                : parameters,
-            })
-          }}
-        >
-          <NativeSelectOption value=''>
-            {t('Select a model')}
-          </NativeSelectOption>
-          {props.capabilities.map((item) => (
-            <NativeSelectOption key={item.model} value={item.model}>
-              {item.model}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-      </div>
+      <ModelConfig
+        nodeId={nodeId}
+        draft={draft}
+        capability={capability}
+        capabilities={props.capabilities}
+        keys={props.keys}
+      />
 
-      {props.groups.length > 1 && (
-        <div className='grid gap-1.5'>
-          <Label htmlFor='studio-group' className={FIELD_LABEL}>
-            {t('Group')}
+      <div className='grid gap-1.5'>
+        <div className='flex items-center justify-between'>
+          <Label htmlFor='studio-prompt' className={FIELD_LABEL}>
+            {t('Prompt')}
           </Label>
-          <NativeSelect
-            id='studio-group'
-            className='w-full'
-            value={draft.group}
-            onChange={(event) =>
-              updateNode(nodeId, { group: event.target.value })
-            }
-          >
-            <NativeSelectOption value=''>
-              {t('Default group')}
-            </NativeSelectOption>
-            {props.groups.map((group) => (
-              <NativeSelectOption key={group.value} value={group.value}>
-                {group.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+          {props.promptModel && (
+            <Button
+              size='xs'
+              variant='ghost'
+              disabled={!draft.prompt.trim() || optimize.isPending}
+              onClick={() =>
+                optimize.mutate(
+                  {
+                    prompt: draft.prompt.trim(),
+                    group:
+                      props.keys.find((key) => key.id === draft.token_id)
+                        ?.group || undefined,
+                  },
+                  { onSuccess: (prompt) => updateNode(nodeId, { prompt }) }
+                )
+              }
+            >
+              <Sparkles />
+              {optimize.isPending ? t('Optimizing...') : t('Optimize prompt')}
+            </Button>
+          )}
         </div>
-      )}
-
-      <div className='grid gap-1.5'>
-        <Label htmlFor='studio-prompt' className={FIELD_LABEL}>
-          {t('Prompt')}
-        </Label>
         <Textarea
           id='studio-prompt'
           rows={5}
@@ -209,78 +188,6 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
         })}
       </div>
 
-      {capability && (
-        <div className='grid grid-cols-2 gap-3'>
-          <div className='grid gap-1.5'>
-            <Label htmlFor='studio-duration' className={FIELD_LABEL}>
-              {t('Duration (s)')}
-            </Label>
-            <Input
-              id='studio-duration'
-              type='number'
-              min={capability.min_duration}
-              max={capability.max_duration}
-              value={parameters.duration ?? ''}
-              onChange={(event) =>
-                setParameter({
-                  duration: Number.isNaN(event.target.valueAsNumber)
-                    ? undefined
-                    : event.target.valueAsNumber,
-                })
-              }
-            />
-          </div>
-          <OptionField
-            id='studio-resolution'
-            label={t('Resolution')}
-            value={parameters.resolution ?? ''}
-            options={capability.resolutions}
-            onChange={(resolution) => setParameter({ resolution })}
-          />
-          <OptionField
-            id='studio-ratio'
-            label={t('Aspect ratio')}
-            value={parameters.ratio ?? ''}
-            options={capability.ratios}
-            onChange={(ratio) => setParameter({ ratio })}
-          />
-          {capability.seed && (
-            <div className='grid gap-1.5'>
-              <Label htmlFor='studio-seed' className={FIELD_LABEL}>
-                {t('Seed')}
-              </Label>
-              <Input
-                id='studio-seed'
-                type='number'
-                placeholder={t('Random')}
-                value={parameters.seed ?? ''}
-                onChange={(event) =>
-                  setParameter({
-                    seed: Number.isNaN(event.target.valueAsNumber)
-                      ? undefined
-                      : event.target.valueAsNumber,
-                  })
-                }
-              />
-            </div>
-          )}
-          {capability.audio && (
-            <div className='col-span-2 flex items-center justify-between'>
-              <Label htmlFor='studio-audio' className={FIELD_LABEL}>
-                {t('Generate audio')}
-              </Label>
-              <Switch
-                id='studio-audio'
-                checked={parameters.generate_audio ?? false}
-                onCheckedChange={(checked) =>
-                  setParameter({ generate_audio: checked })
-                }
-              />
-            </div>
-          )}
-        </div>
-      )}
-
       {issues.length > 0 && (
         <ul className='text-destructive list-disc pl-4 text-xs'>
           {issues.map((issue) => (
@@ -295,68 +202,5 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
         {props.submitting ? t('Submitting...') : t('Generate')}
       </Button>
     </aside>
-  )
-}
-
-function pickSupported(parameters: SubmitParameters, capability: Capability) {
-  const kept: {
-    resolution?: string
-    ratio?: string
-    duration?: number
-    generate_audio?: boolean
-    seed?: number
-  } = {}
-  if (capability.audio && parameters.generate_audio !== undefined) {
-    kept.generate_audio = parameters.generate_audio
-  }
-  if (capability.seed && parameters.seed !== undefined) {
-    kept.seed = parameters.seed
-  }
-  if (
-    parameters.resolution &&
-    capability.resolutions.includes(parameters.resolution)
-  ) {
-    kept.resolution = parameters.resolution
-  }
-  if (parameters.ratio && capability.ratios.includes(parameters.ratio)) {
-    kept.ratio = parameters.ratio
-  }
-  if (
-    parameters.duration !== undefined &&
-    parameters.duration >= capability.min_duration &&
-    parameters.duration <= capability.max_duration
-  ) {
-    kept.duration = parameters.duration
-  }
-  return kept
-}
-
-type OptionFieldProps = {
-  id: string
-  label: string
-  value: string
-  options: string[]
-  onChange: (value: string) => void
-}
-
-function OptionField(props: OptionFieldProps) {
-  return (
-    <div className='grid gap-1.5'>
-      <Label htmlFor={props.id} className={FIELD_LABEL}>
-        {props.label}
-      </Label>
-      <NativeSelect
-        id={props.id}
-        className='w-full'
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-      >
-        {props.options.map((option) => (
-          <NativeSelectOption key={option} value={option}>
-            {option}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
-    </div>
   )
 }

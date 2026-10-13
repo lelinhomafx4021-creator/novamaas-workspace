@@ -47,6 +47,12 @@ export type Capability = {
   defaults: { duration: number; resolution: string; ratio: string }
 }
 
+export type ModelCatalog = {
+  models: Capability[]
+  /** Text model that rewrites prompts; empty when optimization is off. */
+  prompt_model: string
+}
+
 export type StudioReference = {
   id: string
   file_name: string
@@ -90,7 +96,7 @@ export type SubmitRequest = {
   node_id: string
   client_request_id: string
   model: string
-  group?: string
+  token_id?: number
   prompt: string
   references: SubmitReference[]
   parameters: SubmitParameters
@@ -126,7 +132,8 @@ export type NodeReference = SubmitReference & {
 /** Persisted generation node fields; layout lives in the canvas JSON. */
 export type GenerationDraft = {
   model: string
-  group: string
+  /** API key the run is billed to; 0 uses the account's default group. */
+  token_id: number
   prompt: string
   references: NodeReference[]
   parameters: SubmitParameters

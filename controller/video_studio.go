@@ -12,6 +12,7 @@ import (
 	assetService "github.com/QuantumNous/new-api/service/assetlibrary"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 	"github.com/QuantumNous/new-api/service/videostudio"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -142,18 +143,66 @@ func respondVideoStudioReference(c *gin.Context, reference *storageService.Video
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": reference})
 }
 
-// ListVideoStudioModels returns studio-capable models the user's group can
+// videoStudioKey resolves the API key a studio request runs under. A zero ID
+// means the account's default group with no model whitelist.
+func videoStudioKey(userID int, tokenID int) (*model.Token, error) {
+	if tokenID == 0 {
+		return nil, nil
+	}
+	token, err := model.GetTokenByIds(tokenID, userID)
+	if err != nil {
+		return nil, &videostudio.RequestError{StatusCode: http.StatusNotFound, Err: errors.New("api key does not exist")}
+	}
+	if token.Status != common.TokenStatusEnabled || (token.ExpiredTime != -1 && token.ExpiredTime < common.GetTimestamp()) {
+		return nil, &videostudio.RequestError{StatusCode: http.StatusForbidden, Err: errors.New("api key is disabled or expired")}
+	}
+	return token, nil
+}
+
+// availableForKey narrows the group's models to the key's whitelist.
+func availableForKey(available map[string]bool, token *model.Token) map[string]bool {
+	if token == nil || !token.ModelLimitsEnabled {
+		return available
+	}
+	limits := token.GetModelLimitsMap()
+	allowed := make(map[string]bool, len(limits))
+	for name := range available {
+		if limits[name] {
+			allowed[name] = true
+		}
+	}
+	return allowed
+}
+
+// ListVideoStudioModels returns studio-capable models the chosen key can
 // reach, so the canvas never offers a model without an available channel.
 func ListVideoStudioModels(c *gin.Context) {
-	available, ok := playgroundAvailableModels(c, c.Query("group"))
+	token, err := videoStudioKey(c.GetInt("id"), common.String2Int(c.Query("token_id")))
+	if err != nil {
+		abortVideoStudio(c, err)
+		return
+	}
+	group := c.Query("group")
+	if token != nil {
+		group = token.Group
+	}
+	available, ok := playgroundAvailableModels(c, group)
 	if !ok {
 		return
 	}
+	available = availableForKey(available, token)
 	enabled := make([]string, 0, len(available))
 	for name := range available {
 		enabled = append(enabled, name)
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": videostudio.AvailableCapabilities(enabled)})
+	promptModel := model_setting.GetVideoStudioPromptModel()
+	if !available[promptModel] {
+		promptModel = ""
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"models":       videostudio.AvailableCapabilities(enabled),
+		"prompt_model": promptModel,
+	}})
 }
 
 func ListVideoStudioProjects(c *gin.Context) {
@@ -217,11 +266,21 @@ func ValidatePlaygroundVideo(c *gin.Context) {
 		abortVideoStudio(c, &videostudio.RequestError{StatusCode: http.StatusBadRequest, Err: errors.New("invalid video studio request")})
 		return
 	}
+	userID := c.GetInt("id")
+	key, err := videoStudioKey(userID, input.TokenID)
+	if err != nil {
+		abortVideoStudio(c, err)
+		return
+	}
+	if key != nil {
+		// The chosen key decides the group; a client-sent group is ignored.
+		input.Group = key.Group
+	}
 	available, ok := playgroundAvailableModels(c, input.Group)
 	if !ok {
 		return
 	}
-	userID := c.GetInt("id")
+	available = availableForKey(available, key)
 	// A replayed request answers from the stored run before any revalidation:
 	// its references may have expired since, but the task already exists.
 	if run, err := model.FindVideoCreationRunByClientRequest(userID, input.ClientRequestID); err == nil {
@@ -255,6 +314,12 @@ func ValidatePlaygroundVideo(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyVideoStudioSubmission, prepared)
 	if err = setupPlaygroundToken(c, input.Group); err != nil {
 		abortVideoStudio(c, err)
+		return
+	}
+	if key != nil && key.ModelLimitsEnabled {
+		// Keep the key's whitelist so Distribute enforces it on the real channel pick.
+		c.Set("token_model_limit_enabled", true)
+		c.Set("token_model_limit", key.GetModelLimitsMap())
 	}
 }
 

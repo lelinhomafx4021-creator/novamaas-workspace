@@ -57,14 +57,17 @@ type Parameters struct {
 // SubmitInput is the studio submission. It deliberately has no free-form
 // metadata so clients cannot reach upstream fields the gateway does not check.
 type SubmitInput struct {
-	ProjectID       string      `json:"project_id"`
-	NodeID          string      `json:"node_id"`
-	ClientRequestID string      `json:"client_request_id"`
-	Model           string      `json:"model"`
-	Group           string      `json:"group"`
-	Prompt          string      `json:"prompt"`
-	References      []Reference `json:"references"`
-	Parameters      Parameters  `json:"parameters"`
+	ProjectID       string `json:"project_id"`
+	NodeID          string `json:"node_id"`
+	ClientRequestID string `json:"client_request_id"`
+	Model           string `json:"model"`
+	// TokenID selects one of the user's API keys: its group and model
+	// whitelist decide which models and channels the submission may use.
+	TokenID    int         `json:"token_id,omitempty"`
+	Group      string      `json:"group"`
+	Prompt     string      `json:"prompt"`
+	References []Reference `json:"references"`
+	Parameters Parameters  `json:"parameters"`
 }
 
 // Validate normalizes the submission against the model capability and fills
@@ -134,9 +137,14 @@ func (input *SubmitInput) Validate(capability Capability) error {
 	return nil
 }
 
-// Hash identifies the submission content for idempotency checks.
+// Hash identifies the submission content for idempotency checks. Group is
+// derived from the key when one is chosen, so it is not part of the identity.
 func (input *SubmitInput) Hash() (string, error) {
-	data, err := common.Marshal(input)
+	identity := *input
+	if identity.TokenID != 0 {
+		identity.Group = ""
+	}
+	data, err := common.Marshal(&identity)
 	if err != nil {
 		return "", err
 	}

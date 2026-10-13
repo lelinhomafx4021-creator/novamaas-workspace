@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { getApiKeys } from '@/features/keys/api'
+import { sendChatCompletion } from '@/features/playground/api'
 import { api } from '@/lib/api'
 
 import type {
-  Capability,
+  ModelCatalog,
   Page,
   Project,
   ProjectSummary,
@@ -31,10 +33,10 @@ import type {
 
 const quiet = { skipBusinessError: true, skipErrorHandler: true }
 
-export async function listCapabilities(group?: string) {
-  const response = await api.get<VideoStudioResponse<Capability[]>>(
+export async function listCapabilities(tokenId?: number) {
+  const response = await api.get<VideoStudioResponse<ModelCatalog>>(
     '/api/video-studio/models',
-    { params: { group: group || undefined } }
+    { params: { token_id: tokenId || undefined } }
   )
   return response.data
 }
@@ -136,4 +138,42 @@ export async function submitVideo(input: SubmitRequest) {
     quiet
   )
   return response.data
+}
+
+const PROMPT_INSTRUCTION =
+  'You rewrite prompts for an AI video generation model. Keep the original intent and language. Add concrete subject, scene, camera movement, lighting and style details. Reply with the rewritten prompt only, under 800 characters, without quotes or explanations.'
+
+/** Rewrites a prompt through the administrator-chosen text model. */
+export async function optimizePrompt(
+  model: string,
+  group: string | undefined,
+  prompt: string,
+  signal?: AbortSignal
+) {
+  const response = await sendChatCompletion(
+    {
+      model,
+      stream: false,
+      temperature: 0.7,
+      group,
+      messages: [
+        { role: 'system', content: PROMPT_INSTRUCTION },
+        { role: 'user', content: prompt },
+      ],
+    },
+    signal
+  )
+  const text = response.choices[0]?.message.content.trim()
+  if (!text) throw new Error('The model returned an empty prompt')
+  return text
+}
+
+/** Enabled keys the user can run studio generations under. */
+export async function listStudioKeys() {
+  const response = await getApiKeys({ p: 1, size: 100 })
+  const now = Date.now() / 1000
+  return (response.data?.items ?? []).filter(
+    (key) =>
+      key.status === 1 && (key.expired_time === -1 || key.expired_time > now)
+  )
 }

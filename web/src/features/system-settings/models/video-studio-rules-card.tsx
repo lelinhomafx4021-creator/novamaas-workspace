@@ -16,13 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { getPricing } from '@/features/pricing/api'
 
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
@@ -51,27 +54,48 @@ function parseRules(raw: string): Rule[] {
   }
 }
 
-export function VideoStudioRulesCard({ value }: { value: string }) {
+type VideoStudioRulesCardProps = { value: string; promptModel: string }
+
+export function VideoStudioRulesCard(props: VideoStudioRulesCardProps) {
+  const { value } = props
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const [promptModel, setPromptModel] = useState(props.promptModel)
+  const pricing = useQuery({
+    queryKey: ['pricing', 'video-studio'],
+    queryFn: getPricing,
+  })
+  const modelNames = useMemo(
+    () =>
+      [
+        ...new Set(pricing.data?.data?.map((item) => item.model_name) ?? []),
+      ].sort(),
+    [pricing.data]
+  )
   const [rules, setRules] = useState<EditableRule[]>(() =>
     parseRules(value).map(withId)
   )
 
   useEffect(() => setRules(parseRules(value).map(withId)), [value])
+  useEffect(() => setPromptModel(props.promptModel), [props.promptModel])
 
   const update = (id: string, patch: Partial<Rule>) =>
     setRules((current) =>
       current.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule))
     )
 
-  const save = () =>
-    updateOption.mutateAsync({
+  const save = async () => {
+    await updateOption.mutateAsync({
       key: 'video_studio.model_rules',
       value: JSON.stringify(
         rules.map(({ keyword, protocol }) => ({ keyword, protocol }))
       ),
     })
+    await updateOption.mutateAsync({
+      key: 'video_studio.prompt_model',
+      value: promptModel.trim(),
+    })
+  }
 
   return (
     <SettingsSection title={t('Video Studio Models')}>
@@ -131,6 +155,28 @@ export function VideoStudioRulesCard({ value }: { value: string }) {
           <Plus />
           {t('Add rule')}
         </Button>
+      </div>
+      <div className='grid max-w-sm gap-1.5'>
+        <Label htmlFor='video-studio-prompt-model'>
+          {t('Prompt optimization model')}
+        </Label>
+        <datalist id='video-studio-prompt-models'>
+          {modelNames.map((name) => (
+            <option value={name} key={name} />
+          ))}
+        </datalist>
+        <Input
+          id='video-studio-prompt-model'
+          list='video-studio-prompt-models'
+          value={promptModel}
+          placeholder='gpt-4o-mini'
+          onChange={(event) => setPromptModel(event.target.value)}
+        />
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            'A text model that rewrites prompts in the video studio. Leave empty to hide the button.'
+          )}
+        </p>
       </div>
     </SettingsSection>
   )

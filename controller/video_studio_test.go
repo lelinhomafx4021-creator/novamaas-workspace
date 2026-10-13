@@ -281,3 +281,31 @@ func TestPlaygroundVideoRejectedBeforeChannelLeavesNoRun(t *testing.T) {
 	assert.Empty(t, runs.Items)
 	assert.Zero(t, fixture.calls.Load())
 }
+
+func TestVideoStudioKeyScopesModelsAndOwnership(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	other := &model.User{Username: "key-other", Quota: 1, Group: "default", AffCode: "key-other-aff"}
+	require.NoError(t, model.DB.Create(other).Error)
+	own := &model.Token{UserId: fixture.user.Id, Name: "own", Key: "own-key", Status: common.TokenStatusEnabled, ExpiredTime: -1, Group: "vip", ModelLimitsEnabled: true, ModelLimits: "MiniMax-H3"}
+	disabled := &model.Token{UserId: fixture.user.Id, Name: "off", Key: "off-key", Status: common.TokenStatusDisabled, ExpiredTime: -1}
+	foreign := &model.Token{UserId: other.Id, Name: "foreign", Key: "foreign-key", Status: common.TokenStatusEnabled, ExpiredTime: -1}
+	require.NoError(t, model.DB.Create([]*model.Token{own, disabled, foreign}).Error)
+
+	key, err := videoStudioKey(fixture.user.Id, own.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "vip", key.Group, "the key decides the group")
+	assert.Equal(t, map[string]bool{"MiniMax-H3": true}, availableForKey(map[string]bool{"MiniMax-H3": true, "wan3.0-video": true}, key), "the key whitelist narrows the group's models")
+
+	passthrough, err := videoStudioKey(fixture.user.Id, 0)
+	require.NoError(t, err)
+	assert.Nil(t, passthrough)
+	assert.Len(t, availableForKey(map[string]bool{"a": true, "b": true}, nil), 2)
+
+	_, err = videoStudioKey(fixture.user.Id, foreign.Id)
+	var requestErr *videostudio.RequestError
+	require.ErrorAs(t, err, &requestErr)
+	assert.Equal(t, http.StatusNotFound, requestErr.StatusCode, "another user's key must look nonexistent")
+	_, err = videoStudioKey(fixture.user.Id, disabled.Id)
+	require.ErrorAs(t, err, &requestErr)
+	assert.Equal(t, http.StatusForbidden, requestErr.StatusCode)
+}

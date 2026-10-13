@@ -22,11 +22,16 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { getUserGroups } from '@/features/playground/api'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useVideoStudioStore } from '@/stores/video-studio-store'
 
-import { getProject, listCapabilities, listRuns, submitVideo } from '../api'
+import {
+  getProject,
+  listCapabilities,
+  listRuns,
+  listStudioKeys,
+  submitVideo,
+} from '../api'
 import { useProjectAutosave } from '../hooks/use-project-autosave'
 import {
   buildSubmitRequest,
@@ -80,17 +85,24 @@ export function StudioEditor(props: { projectId: string }) {
     if (project.data) store.getState().load(project.data)
   }, [project.data, store])
 
-  const capabilities = useQuery({
-    queryKey: ['video-studio', 'capabilities'],
+  const selectedTokenId = useVideoStudioStore((state) =>
+    state.selectedNodeId
+      ? (state.draft.nodes[state.selectedNodeId]?.token_id ?? 0)
+      : 0
+  )
+  // Models follow the key chosen on the selected node.
+  const catalog = useQuery({
+    queryKey: ['video-studio', 'capabilities', selectedTokenId],
     queryFn: async () => {
-      const response = await listCapabilities()
+      const response = await listCapabilities(selectedTokenId)
       if (!response.success) throw new Error(response.message)
       return response.data
     },
   })
-  const groups = useQuery({
-    queryKey: ['video-studio', 'groups'],
-    queryFn: getUserGroups,
+  const capabilityList = catalog.data?.models
+  const keys = useQuery({
+    queryKey: ['video-studio', 'keys'],
+    queryFn: listStudioKeys,
   })
 
   const runsQueryKey = ['video-studio', 'runs', props.projectId]
@@ -141,12 +153,12 @@ export function StudioEditor(props: { projectId: string }) {
   })
 
   const addNode = useCallback(
-    (initial = newGenerationDraft(capabilities.data?.[0])) => {
+    (initial = newGenerationDraft(capabilityList?.[0])) => {
       const state = store.getState()
       const count = Object.keys(state.draft.nodes).length
       state.addNode(newNodeId(), initial, { x: 0, y: count * 190 })
     },
-    [capabilities.data, store]
+    [capabilityList, store]
   )
 
   const regenerate = useCallback(
@@ -194,7 +206,7 @@ export function StudioEditor(props: { projectId: string }) {
   const selectedModel = selectedNodeId
     ? draft.nodes[selectedNodeId]?.model
     : undefined
-  const selectedCapability = capabilities.data?.find(
+  const selectedCapability = capabilityList?.find(
     (item) => item.model === selectedModel
   )
 
@@ -227,7 +239,7 @@ export function StudioEditor(props: { projectId: string }) {
         <StudioCanvas
           nodes={graph.nodes}
           edges={graph.edges}
-          noModels={capabilities.data?.length === 0}
+          noModels={capabilityList?.length === 0}
           onAddNode={() => addNode()}
         />
         <StudioDock
@@ -238,8 +250,9 @@ export function StudioEditor(props: { projectId: string }) {
           onOpenChange={setPropertiesOpen}
         >
           <PropertiesPanel
-            capabilities={capabilities.data ?? []}
-            groups={groups.data ?? []}
+            capabilities={capabilityList ?? []}
+            promptModel={catalog.data?.prompt_model ?? ''}
+            keys={keys.data ?? []}
             submitting={submit.isPending}
             onSubmit={(nodeId) => {
               setPropertiesOpen(false)

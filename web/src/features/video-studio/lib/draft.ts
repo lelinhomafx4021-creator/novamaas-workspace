@@ -50,7 +50,7 @@ export function parseCanvas(raw: string): ProjectCanvas {
 export function newGenerationDraft(capability?: Capability): GenerationDraft {
   return {
     model: capability?.model ?? '',
-    group: '',
+    token_id: 0,
     prompt: '',
     references: [],
     parameters: capability ? { ...capability.defaults } : {},
@@ -118,7 +118,7 @@ export function buildSubmitRequest(
     node_id: nodeId,
     client_request_id: clientRequestId,
     model: draft.model,
-    group: draft.group || undefined,
+    token_id: draft.token_id || undefined,
     prompt: draft.prompt.trim(),
     references: draft.references.map(({ source, id, role }) => ({
       source,
@@ -147,7 +147,7 @@ export function draftFromRun(
     )
     return {
       model: snapshot.model ?? fallback.model,
-      group: snapshot.group ?? fallback.group,
+      token_id: snapshot.token_id ?? fallback.token_id,
       prompt: snapshot.prompt ?? fallback.prompt,
       references,
       parameters: snapshot.parameters ?? fallback.parameters,

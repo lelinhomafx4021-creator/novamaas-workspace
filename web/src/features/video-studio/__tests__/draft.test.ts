@@ -129,7 +129,7 @@ describe('submission and history', () => {
     expect(request.references).toEqual([
       { source: 'storage', id: 'ref_1', role: 'first_frame' },
     ])
-    expect(request.group).toBeUndefined()
+    expect(request.token_id).toBeUndefined()
   })
 
   test('generate again restores the submitted snapshot, not the current draft', () => {

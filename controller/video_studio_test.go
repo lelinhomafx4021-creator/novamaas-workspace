@@ -40,6 +40,7 @@ var videoStudioTables = []any{
 	&model.BillingOperation{}, &model.BillingStatement{}, &model.StorageObject{}, &model.MediaAsset{},
 	&model.VideoProject{}, &model.VideoCreationRun{}, &model.TaskRequestBody{}, &model.Ability{},
 	&model.UserSubscription{}, &model.SubscriptionPlan{}, &model.SubscriptionPreConsumeRecord{},
+	&model.AssetWebhookEndpoint{}, &model.AssetWebhookDelivery{},
 }
 
 // setupVideoStudioSubmit runs on SQLite by default and on MySQL when

@@ -47,11 +47,13 @@ import {
   createStoragePolicySchema,
   RELAY_MEDIA_ALLOWED_MIME_TYPES,
   storagePolicyToForm,
+  VIDEO_STUDIO_ALLOWED_MIME_TYPES,
   type StoragePolicyFormValues,
 } from './storage-schemas'
 import type { StoragePolicy, StorageProfile } from './types'
 
 type RelayMediaPolicyFormProps = {
+  variant?: 'relay-media' | 'video-studio'
   policy: StoragePolicy
   profiles: StorageProfile[]
   isSaving: boolean
@@ -100,12 +102,14 @@ function NumberField({
 }
 
 export function RelayMediaPolicyForm({
+  variant = 'relay-media',
   policy,
   profiles,
   isSaving,
   onSave,
 }: RelayMediaPolicyFormProps) {
   const { t } = useTranslation()
+  const isVideoStudio = variant === 'video-studio'
   const form = useForm<StoragePolicyFormValues>({
     resolver: zodResolver(createStoragePolicySchema(t)),
     defaultValues: storagePolicyToForm(policy),
@@ -118,11 +122,19 @@ export function RelayMediaPolicyForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t('Relay media temporary storage')}</CardTitle>
+        <CardTitle>
+          {isVideoStudio
+            ? t('Video studio reference storage')
+            : t('Relay media temporary storage')}
+        </CardTitle>
         <CardDescription>
-          {t(
-            'Controls Base64 materialization for supported relay channels. Objects remain private and upstream receives a time-limited signed URL.'
-          )}
+          {isVideoStudio
+            ? t(
+                'Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.'
+              )
+            : t(
+                'Controls Base64 materialization for supported relay channels. Objects remain private and upstream receives a time-limited signed URL.'
+              )}
         </CardDescription>
       </CardHeader>
       <Form {...form}>
@@ -138,9 +150,13 @@ export function RelayMediaPolicyForm({
                       {t('Enable temporary storage policy')}
                     </FormLabel>
                     <FormDescription>
-                      {t(
-                        'A Volc Native or DoubaoVideo channel must also enable Base64 staging before this policy is used.'
-                      )}
+                      {isVideoStudio
+                        ? t(
+                            'Users cannot upload video studio references until this policy is enabled.'
+                          )
+                        : t(
+                            'A Volc Native or DoubaoVideo channel must also enable Base64 staging before this policy is used.'
+                          )}
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -192,7 +208,14 @@ export function RelayMediaPolicyForm({
                 <FormItem>
                   <FormLabel>{t('Object prefix')}</FormLabel>
                   <FormControl>
-                    <Input placeholder='temporary/relay-media' {...field} />
+                    <Input
+                      placeholder={
+                        isVideoStudio
+                          ? 'video-studio/references'
+                          : 'temporary/relay-media'
+                      }
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription>
                     {t(
@@ -215,9 +238,15 @@ export function RelayMediaPolicyForm({
               form={form}
               name='retention_hours'
               label={t('Maximum retention (hours)')}
-              description={t(
-                'Terminal tasks are cleaned immediately; this value is the failure-safe deadline.'
-              )}
+              description={
+                isVideoStudio
+                  ? t(
+                      'Unsaved references are deleted after this period. Saved references are kept until the user deletes them.'
+                    )
+                  : t(
+                      'Terminal tasks are cleaned immediately; this value is the failure-safe deadline.'
+                    )
+              }
             />
             <NumberField
               form={form}
@@ -227,22 +256,35 @@ export function RelayMediaPolicyForm({
             <NumberField
               form={form}
               name='max_total_mib'
-              label={t('Maximum request size (MiB)')}
+              label={
+                isVideoStudio
+                  ? t('Storage quota per user (MiB)')
+                  : t('Maximum request size (MiB)')
+              }
             />
             <NumberField
               form={form}
               name='max_files'
-              label={t('Maximum files per request')}
+              label={
+                isVideoStudio
+                  ? t('Maximum references per generation')
+                  : t('Maximum files per request')
+              }
             />
-            <p className='text-muted-foreground text-xs sm:col-span-2'>
-              {t(
-                'For audit integrity, the complete video task request body must stay within 2 MiB; larger requests are rejected before upload.'
-              )}
-            </p>
+            {!isVideoStudio && (
+              <p className='text-muted-foreground text-xs sm:col-span-2'>
+                {t(
+                  'For audit integrity, the complete video task request body must stay within 2 MiB; larger requests are rejected before upload.'
+                )}
+              </p>
+            )}
             <FormItem>
               <FormLabel>{t('Allowed media types')}</FormLabel>
               <Input
-                value={RELAY_MEDIA_ALLOWED_MIME_TYPES.replaceAll(',', ', ')}
+                value={(isVideoStudio
+                  ? VIDEO_STUDIO_ALLOWED_MIME_TYPES
+                  : RELAY_MEDIA_ALLOWED_MIME_TYPES
+                ).replaceAll(',', ', ')}
                 disabled
               />
               <FormDescription>

@@ -98,6 +98,24 @@ export async function updateRelayMediaStoragePolicy(input: StoragePolicyInput) {
   return response.data
 }
 
+export async function getVideoStudioStoragePolicy() {
+  const response = await api.get<StorageAPIResponse<StoragePolicy>>(
+    '/api/storage/policies/video-studio'
+  )
+  return response.data
+}
+
+export async function updateVideoStudioStoragePolicy(
+  input: StoragePolicyInput
+) {
+  const response = await api.put<StorageAPIResponse<StoragePolicy>>(
+    '/api/storage/policies/video-studio',
+    input,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
 export async function getAssetLibraryStoragePolicy() {
   const response = await api.get<StorageAPIResponse<StoragePolicy>>(
     '/api/storage/policies/asset-library'

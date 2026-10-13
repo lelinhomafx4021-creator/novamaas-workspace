@@ -6984,6 +6984,12 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Video studio reference storage": "ビデオスタジオ参照画像ストレージ",
+    "Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.": "ビデオスタジオでアップロードされた参照画像を保存します。ユーザーがライブラリに保存するまでは一時ファイルです。",
+    "Users cannot upload video studio references until this policy is enabled.": "このポリシーを有効にするまで、ユーザーは参照画像をアップロードできません。",
+    "Unsaved references are deleted after this period. Saved references are kept until the user deletes them.": "未保存の参照画像はこの期間後に削除されます。保存済みの画像はユーザーが削除するまで保持されます。",
+    "Storage quota per user (MiB)": "ユーザーごとのストレージ容量（MiB）",
+    "Maximum references per generation": "1回の生成あたりの最大参照画像数"
   }
 }

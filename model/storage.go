@@ -28,6 +28,8 @@ const (
 
 	StoragePolicyRelayMediaTemp  = "relay_media_temp"
 	StoragePolicyAssetLibrary    = "asset_library"
+	StoragePolicyVideoStudio     = "video_studio_reference"
+	VideoStudioAllowedMIMETypes  = "image/jpeg,image/png,image/webp"
 	RelayMediaAllowedMIMETypes   = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
 	AssetLibraryAllowedMIMETypes = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg"
 	legacyRelayMediaMIMETypes    = "image/jpeg,image/png,image/webp"
@@ -35,12 +37,15 @@ const (
 	StorageObjectPurposeRelayMediaTemp = "relay_media_temp"
 	StorageObjectPurposeAssetLibrary   = "asset_library"
 	StorageObjectPurposeBillingArchive = "billing_archive"
-	StorageObjectStatusUploading       = "uploading"
-	StorageObjectStatusUploaded        = "uploaded"
-	StorageObjectStatusDeletePending   = "delete_pending"
-	StorageObjectStatusDeleting        = "deleting"
-	StorageObjectStatusDeleteFailed    = "delete_failed"
-	StorageObjectStatusDeleted         = "deleted"
+	// Video studio references are temporary while DeleteAfter > 0 and become
+	// library files when DeleteAfter is cleared.
+	StorageObjectPurposeVideoStudio  = "video_studio_reference"
+	StorageObjectStatusUploading     = "uploading"
+	StorageObjectStatusUploaded      = "uploaded"
+	StorageObjectStatusDeletePending = "delete_pending"
+	StorageObjectStatusDeleting      = "deleting"
+	StorageObjectStatusDeleteFailed  = "delete_failed"
+	StorageObjectStatusDeleted       = "deleted"
 )
 
 type StorageProfile struct {
@@ -97,6 +102,7 @@ type StorageObject struct {
 	StoragePolicyID  int64  `json:"storage_policy_id" gorm:"index"`
 	Purpose          string `json:"purpose" gorm:"type:varchar(64);index"`
 	ObjectKey        string `json:"object_key" gorm:"type:varchar(1024)"`
+	FileName         string `json:"file_name" gorm:"type:varchar(255)"`
 	ContentType      string `json:"content_type" gorm:"type:varchar(128)"`
 	Size             int64  `json:"size" gorm:"bigint"`
 	SHA256           string `json:"sha256" gorm:"type:char(64);index"`
@@ -191,6 +197,22 @@ func DefaultAssetLibraryStoragePolicy() *StoragePolicy {
 		MaxTotalBytes:       512 * 1024 * 1024,
 		MaxFiles:            100,
 		AllowedMIMETypes:    AssetLibraryAllowedMIMETypes,
+		Enabled:             false,
+	}
+}
+
+func DefaultVideoStudioStoragePolicy() *StoragePolicy {
+	return &StoragePolicy{
+		Key:                 StoragePolicyVideoStudio,
+		Name:                "Video studio reference storage",
+		Purpose:             StorageObjectPurposeVideoStudio,
+		ObjectPrefix:        "video-studio/references",
+		SignedURLTTLSeconds: 24 * 60 * 60,
+		RetentionSeconds:    72 * 60 * 60,
+		MaxFileBytes:        10 * 1024 * 1024,
+		MaxTotalBytes:       512 * 1024 * 1024,
+		MaxFiles:            9,
+		AllowedMIMETypes:    VideoStudioAllowedMIMETypes,
 		Enabled:             false,
 	}
 }

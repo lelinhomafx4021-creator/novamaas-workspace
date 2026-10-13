@@ -6984,6 +6984,12 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Video studio reference storage": "Stockage des images de référence du studio vidéo",
+    "Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.": "Stocke les images de référence téléversées dans le studio vidéo. Elles restent temporaires jusqu'à ce que l'utilisateur les enregistre dans sa bibliothèque.",
+    "Users cannot upload video studio references until this policy is enabled.": "Les utilisateurs ne peuvent pas téléverser d'images de référence tant que cette politique n'est pas activée.",
+    "Unsaved references are deleted after this period. Saved references are kept until the user deletes them.": "Les références non enregistrées sont supprimées après ce délai. Les références enregistrées sont conservées jusqu'à leur suppression par l'utilisateur.",
+    "Storage quota per user (MiB)": "Quota de stockage par utilisateur (Mio)",
+    "Maximum references per generation": "Nombre maximal de références par génération"
   }
 }

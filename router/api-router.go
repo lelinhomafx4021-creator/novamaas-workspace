@@ -323,6 +323,18 @@ func SetApiRouter(router *gin.Engine) {
 			storageRoute.PUT("/policies/relay-media-temp", controller.UpdateRelayMediaStoragePolicy)
 			storageRoute.GET("/policies/asset-library", controller.GetAssetLibraryStoragePolicy)
 			storageRoute.PUT("/policies/asset-library", controller.UpdateAssetLibraryStoragePolicy)
+			storageRoute.GET("/policies/video-studio", controller.GetVideoStudioStoragePolicy)
+			storageRoute.PUT("/policies/video-studio", controller.UpdateVideoStudioStoragePolicy)
+		}
+		videoStudioRoute := apiRouter.Group("/video-studio")
+		videoStudioRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		{
+			videoStudioRoute.GET("/references", controller.ListVideoStudioReferences)
+			videoStudioRoute.POST("/references", middleware.UploadRateLimit(), controller.UploadVideoStudioReference)
+			videoStudioRoute.GET("/references/:id/preview", controller.GetVideoStudioReferencePreview)
+			videoStudioRoute.PUT("/references/:id/retention", controller.SaveVideoStudioReference)
+			videoStudioRoute.DELETE("/references/:id", controller.DeleteVideoStudioReference)
+			videoStudioRoute.POST("/references/:id/seedance-asset", controller.RegisterVideoStudioReferenceAsset)
 		}
 		assetLibraryRoute := apiRouter.Group("/asset-library")
 		assetLibraryRoute.Use(middleware.TokenOrUserAuth(), middleware.DisableCache())

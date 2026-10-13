@@ -6984,6 +6984,12 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Video studio reference storage": "Lưu trữ ảnh tham chiếu của video studio",
+    "Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.": "Lưu ảnh tham chiếu được tải lên trong video studio. Ảnh là tạm thời cho đến khi người dùng lưu vào thư viện.",
+    "Users cannot upload video studio references until this policy is enabled.": "Người dùng chưa thể tải ảnh tham chiếu lên cho đến khi chính sách này được bật.",
+    "Unsaved references are deleted after this period. Saved references are kept until the user deletes them.": "Ảnh chưa lưu sẽ bị xóa sau thời gian này. Ảnh đã lưu được giữ cho đến khi người dùng xóa.",
+    "Storage quota per user (MiB)": "Hạn mức lưu trữ mỗi người dùng (MiB)",
+    "Maximum references per generation": "Số ảnh tham chiếu tối đa mỗi lần tạo"
   }
 }

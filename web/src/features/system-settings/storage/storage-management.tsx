@@ -51,11 +51,13 @@ import {
   archiveStorageProfile,
   createStorageProfile,
   getRelayMediaStoragePolicy,
+  getVideoStudioStoragePolicy,
   listStorageProfiles,
   testSavedStorageProfile,
   testStorageProfile,
   updateRelayMediaStoragePolicy,
   updateStorageProfile,
+  updateVideoStudioStoragePolicy,
 } from './api'
 import { RelayMediaPolicyForm } from './relay-media-policy-form'
 import { StorageProfileDialog } from './storage-profile-dialog'
@@ -68,6 +70,10 @@ import type { StorageAPIResponse, StorageProfile } from './types'
 
 const STORAGE_QUERY_KEY = ['storage', 'profiles'] as const
 const RELAY_POLICY_QUERY_KEY = ['storage', 'relay-media-policy'] as const
+const VIDEO_STUDIO_POLICY_QUERY_KEY = [
+  'storage',
+  'video-studio-policy',
+] as const
 
 function assertSuccess<T>(response: StorageAPIResponse<T>): T {
   if (!response.success) {
@@ -107,6 +113,10 @@ export function StorageManagement() {
   const policyQuery = useQuery({
     queryKey: RELAY_POLICY_QUERY_KEY,
     queryFn: async () => assertSuccess(await getRelayMediaStoragePolicy()),
+  })
+  const videoStudioPolicyQuery = useQuery({
+    queryKey: VIDEO_STUDIO_POLICY_QUERY_KEY,
+    queryFn: async () => assertSuccess(await getVideoStudioStoragePolicy()),
   })
 
   const saveProfileMutation = useMutation({
@@ -156,6 +166,20 @@ export function StorageManagement() {
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: RELAY_POLICY_QUERY_KEY })
+      toast.success(t('Storage policy saved'))
+    },
+    onError: (error) => toast.error(storageErrorMessage(error)),
+  })
+
+  const videoStudioPolicyMutation = useMutation({
+    mutationFn: async (values: StoragePolicyFormValues) =>
+      assertSuccess(
+        await updateVideoStudioStoragePolicy(storagePolicyToInput(values))
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: VIDEO_STUDIO_POLICY_QUERY_KEY,
+      })
       toast.success(t('Storage policy saved'))
     },
     onError: (error) => toast.error(storageErrorMessage(error)),
@@ -300,6 +324,18 @@ export function StorageManagement() {
                     profiles={profilesQuery.data ?? []}
                     isSaving={policyMutation.isPending}
                     onSave={(values) => policyMutation.mutate(values)}
+                  />
+                )}
+
+                {videoStudioPolicyQuery.data && (
+                  <RelayMediaPolicyForm
+                    variant='video-studio'
+                    policy={videoStudioPolicyQuery.data}
+                    profiles={profilesQuery.data ?? []}
+                    isSaving={videoStudioPolicyMutation.isPending}
+                    onSave={(values) =>
+                      videoStudioPolicyMutation.mutate(values)
+                    }
                   />
                 )}
               </>

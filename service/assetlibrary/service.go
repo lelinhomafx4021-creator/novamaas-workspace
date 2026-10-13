@@ -315,23 +315,7 @@ func CreateAsset(ctx context.Context, ownerUserID int, input AssetInput) (*Asset
 		Status:          model.AssetStatusProcessing,
 	}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
-		channelIDs, err := enabledChannelIDs(tx)
-		if err != nil {
-			return err
-		}
-		if len(channelIDs) == 0 {
-			asset.Status = model.AssetStatusReady
-		}
-		if err := tx.Create(asset).Error; err != nil {
-			return err
-		}
-		if err := model.QueueAssetReplicas(tx, asset.ID, channelIDs); err != nil {
-			return err
-		}
-		if asset.Status == model.AssetStatusReady {
-			return queueAssetWebhookDeliveries(tx, asset, WebhookEventAssetActive)
-		}
-		return nil
+		return registerAsset(tx, asset)
 	})
 	if err != nil {
 		_ = storageService.DeleteAssetObject(object.ID, "asset metadata transaction failed")
@@ -340,6 +324,96 @@ func CreateAsset(ctx context.Context, ownerUserID int, input AssetInput) (*Asset
 	views := assetViews([]model.MediaAsset{*asset}, map[int64]string{group.ID: group.PublicID})
 	views[0].GroupName = group.Name
 	return &views[0], nil
+}
+
+// CreateAssetFromVideoStudioReference registers an existing video studio
+// reference as a Seedance asset without copying the file. The reference is
+// saved to the user's library in the same transaction.
+func CreateAssetFromVideoStudioReference(ownerUserID int, groupPublicID string, referenceID string, name string) (*AssetView, error) {
+	group, err := model.FindAssetGroup(groupPublicID, ownerUserID, false)
+	if err != nil {
+		return nil, err
+	}
+	policy, err := storageService.GetAssetLibraryPolicy()
+	if err != nil {
+		return nil, err
+	}
+	publicID, err := newPublicID("asset-")
+	if err != nil {
+		return nil, err
+	}
+	var asset *model.MediaAsset
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		object, err := storageService.AdoptVideoStudioReferenceForAsset(tx, ownerUserID, referenceID)
+		if err != nil {
+			return err
+		}
+		var existing model.MediaAsset
+		err = tx.Where("storage_object_id = ? AND status <> ?", object.ID, model.AssetStatusDeleted).First(&existing).Error
+		if err == nil {
+			if existing.GroupID != group.ID {
+				return &RequestError{StatusCode: http.StatusConflict, Err: errors.New("reference is already registered in another asset group")}
+			}
+			asset = &existing
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var count int64
+		if err = tx.Model(&model.MediaAsset{}).Where("group_id = ? AND status <> ?", group.ID, model.AssetStatusDeleted).Count(&count).Error; err != nil {
+			return err
+		}
+		if count >= int64(policy.MaxFiles) {
+			return &RequestError{StatusCode: http.StatusConflict, Err: fmt.Errorf("asset group already contains the maximum of %d assets", policy.MaxFiles)}
+		}
+		assetName := strings.TrimSpace(name)
+		if assetName == "" {
+			assetName = object.FileName
+		}
+		if len([]rune(assetName)) > 255 {
+			return &RequestError{StatusCode: http.StatusBadRequest, Err: errors.New("asset name must contain 1 to 255 characters")}
+		}
+		asset = &model.MediaAsset{
+			PublicID:        publicID,
+			OwnerUserID:     ownerUserID,
+			GroupID:         group.ID,
+			StorageObjectID: object.ID,
+			Name:            assetName,
+			AssetType:       model.AssetTypeImage,
+			ContentType:     object.ContentType,
+			Size:            object.Size,
+			SHA256:          object.SHA256,
+			Status:          model.AssetStatusProcessing,
+		}
+		return registerAsset(tx, asset)
+	})
+	if err != nil {
+		return nil, err
+	}
+	views := assetViews([]model.MediaAsset{*asset}, map[int64]string{group.ID: group.PublicID})
+	views[0].GroupName = group.Name
+	return &views[0], nil
+}
+
+func registerAsset(tx *gorm.DB, asset *model.MediaAsset) error {
+	channelIDs, err := enabledChannelIDs(tx)
+	if err != nil {
+		return err
+	}
+	if len(channelIDs) == 0 {
+		asset.Status = model.AssetStatusReady
+	}
+	if err := tx.Create(asset).Error; err != nil {
+		return err
+	}
+	if err := model.QueueAssetReplicas(tx, asset.ID, channelIDs); err != nil {
+		return err
+	}
+	if asset.Status == model.AssetStatusReady {
+		return queueAssetWebhookDeliveries(tx, asset, WebhookEventAssetActive)
+	}
+	return nil
 }
 
 func ListAssets(input AssetListInput) (*AssetListView, error) {
@@ -482,7 +556,7 @@ func DeleteAsset(publicID string, ownerUserID int, isAdmin bool) error {
 		}
 		if count == 0 {
 			return tx.Model(&model.StorageObject{}).
-				Where("id = ? AND status <> ?", asset.StorageObjectID, model.StorageObjectStatusDeleted).
+				Where("id = ? AND purpose = ? AND status <> ?", asset.StorageObjectID, model.StorageObjectPurposeAssetLibrary, model.StorageObjectStatusDeleted).
 				Updates(map[string]any{
 					"status":       model.StorageObjectStatusDeletePending,
 					"delete_after": now,

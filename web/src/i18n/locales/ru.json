@@ -6984,6 +6984,12 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Video studio reference storage": "Хранилище референсов видеостудии",
+    "Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.": "Хранит референсные изображения, загруженные в видеостудии. Файлы остаются временными, пока пользователь не сохранит их в библиотеку.",
+    "Users cannot upload video studio references until this policy is enabled.": "Пользователи не смогут загружать референсы, пока эта политика не включена.",
+    "Unsaved references are deleted after this period. Saved references are kept until the user deletes them.": "Несохранённые референсы удаляются по истечении этого срока. Сохранённые хранятся, пока пользователь их не удалит.",
+    "Storage quota per user (MiB)": "Квота хранилища на пользователя (МиБ)",
+    "Maximum references per generation": "Максимум референсов на генерацию"
   }
 }

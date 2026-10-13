@@ -95,7 +95,7 @@ const (
 
 func PresignAssetObject(ctx context.Context, objectID int64, ttl time.Duration, mode AssetObjectURLMode, downloadName string) (string, error) {
 	var object model.StorageObject
-	if err := model.DB.Where("id = ? AND purpose = ? AND status = ?", objectID, model.StorageObjectPurposeAssetLibrary, model.StorageObjectStatusUploaded).First(&object).Error; err != nil {
+	if err := model.DB.Where("id = ? AND purpose IN ? AND status = ?", objectID, []string{model.StorageObjectPurposeAssetLibrary, model.StorageObjectPurposeVideoStudio}, model.StorageObjectStatusUploaded).First(&object).Error; err != nil {
 		return "", err
 	}
 	profile, err := model.GetStorageProfileByID(object.StorageProfileID)
@@ -142,8 +142,21 @@ func PresignAssetObject(ctx context.Context, objectID int64, ttl time.Duration, 
 	return driver.PresignGet(ctx, object.ObjectKey, ttl, options)
 }
 
+// DeleteAssetObject schedules removal of a file owned by the asset library.
+// Video studio library files outlive the Seedance asset registered on them.
 func DeleteAssetObject(objectID int64, reason string) error {
-	return model.MarkStorageObjectForDeletion(objectID, common.GetTimestamp(), reason)
+	if len(reason) > 2000 {
+		reason = reason[:2000]
+	}
+	now := common.GetTimestamp()
+	return model.DB.Model(&model.StorageObject{}).
+		Where("id = ? AND purpose = ? AND status <> ?", objectID, model.StorageObjectPurposeAssetLibrary, model.StorageObjectStatusDeleted).
+		Updates(map[string]any{
+			"status":       model.StorageObjectStatusDeletePending,
+			"delete_after": now,
+			"last_error":   reason,
+			"updated_at":   now,
+		}).Error
 }
 
 func policyAllowsMIMEType(policy *model.StoragePolicy, contentType string) bool {

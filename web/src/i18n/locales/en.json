@@ -6984,6 +6984,12 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Video studio reference storage": "Video studio reference storage",
+    "Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.": "Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.",
+    "Users cannot upload video studio references until this policy is enabled.": "Users cannot upload video studio references until this policy is enabled.",
+    "Unsaved references are deleted after this period. Saved references are kept until the user deletes them.": "Unsaved references are deleted after this period. Saved references are kept until the user deletes them.",
+    "Storage quota per user (MiB)": "Storage quota per user (MiB)",
+    "Maximum references per generation": "Maximum references per generation"
   }
 }

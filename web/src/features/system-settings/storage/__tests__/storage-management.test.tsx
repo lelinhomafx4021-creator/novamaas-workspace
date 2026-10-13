@@ -48,11 +48,32 @@ vi.mock('../api', () => ({
       updated_at: 0,
     },
   })),
+  getVideoStudioStoragePolicy: vi.fn(async () => ({
+    success: true,
+    data: {
+      id: 0,
+      key: 'video_studio_reference',
+      name: 'Video studio reference storage',
+      purpose: 'video_studio_reference',
+      storage_profile_id: 0,
+      object_prefix: 'video-studio/references',
+      signed_url_ttl_seconds: 86400,
+      retention_seconds: 259200,
+      max_file_bytes: 10485760,
+      max_total_bytes: 536870912,
+      max_files: 9,
+      allowed_mime_types: 'image/jpeg,image/png,image/webp',
+      enabled: false,
+      created_at: 0,
+      updated_at: 0,
+    },
+  })),
   listStorageProfiles: vi.fn(async () => ({ success: true, data: [] })),
   testSavedStorageProfile: vi.fn(),
   testStorageProfile: vi.fn(),
   updateRelayMediaStoragePolicy: vi.fn(),
   updateStorageProfile: vi.fn(),
+  updateVideoStudioStoragePolicy: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 

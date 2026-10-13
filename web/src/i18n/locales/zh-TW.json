@@ -6984,6 +6984,12 @@
     "Zero retention": "零數據保留",
     "Zhipu": "智譜",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "Video studio reference storage": "影片創作參考圖儲存",
+    "Stores reference images uploaded in the video studio. Uploads stay temporary until the user saves them to their library.": "保存影片創作中上傳的參考圖。上傳後為暫存檔，使用者儲存至儲存庫後轉為長期保存。",
+    "Users cannot upload video studio references until this policy is enabled.": "啟用此策略後，使用者才能在影片創作中上傳參考圖。",
+    "Unsaved references are deleted after this period. Saved references are kept until the user deletes them.": "未儲存的參考圖在此期限後刪除；已儲存的參考圖保留至使用者刪除。",
+    "Storage quota per user (MiB)": "每位使用者儲存配額（MiB）",
+    "Maximum references per generation": "每次生成的最大參考圖數"
   }
 }

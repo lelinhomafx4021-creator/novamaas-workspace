@@ -22,7 +22,10 @@ type ObjectGetOptions struct {
 	ResponseContentDisposition string
 }
 
-func driverForProfile(profile *model.StorageProfile, credential *model.StorageCredential) (ObjectDriver, error) {
+// driverForProfile is a variable so tests can substitute an in-memory driver.
+var driverForProfile = newObjectDriver
+
+func newObjectDriver(profile *model.StorageProfile, credential *model.StorageCredential) (ObjectDriver, error) {
 	if profile == nil {
 		return nil, fmt.Errorf("storage profile is required")
 	}

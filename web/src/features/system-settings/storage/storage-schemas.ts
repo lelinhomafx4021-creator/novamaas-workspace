@@ -35,6 +35,8 @@ type Translate = (key: string) => string
 export const RELAY_MEDIA_ALLOWED_MIME_TYPES =
   'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime'
 
+export const VIDEO_STUDIO_ALLOWED_MIME_TYPES = 'image/jpeg,image/png,image/webp'
+
 export const ASSET_LIBRARY_ALLOWED_MIME_TYPES =
   'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg'
 

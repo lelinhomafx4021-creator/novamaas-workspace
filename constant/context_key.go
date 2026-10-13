@@ -73,6 +73,7 @@ const (
 	ContextKeyVideoTaskUpstreamRequestBody ContextKey = "video_task_upstream_request_body"
 	ContextKeyVideoTaskRequestBodyStored   ContextKey = "video_task_request_body_stored"
 	ContextKeyVideoTaskPublicID            ContextKey = "video_task_public_id"
+	ContextKeyVideoStudioSubmission        ContextKey = "video_studio_submission"
 	ContextKeyTemporaryMediaConverted      ContextKey = "temporary_media_converted"
 	ContextKeyTemporaryMediaConvertedCount ContextKey = "temporary_media_converted_count"
 	ContextKeyTemporaryMediaMilliseconds   ContextKey = "temporary_media_ms"

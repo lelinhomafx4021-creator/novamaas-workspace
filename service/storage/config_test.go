@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,21 +12,29 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
+// setupStorageDatabase uses in-memory SQLite, or MySQL when
+// VIDEO_STUDIO_MYSQL_DSN points at a disposable database.
 func setupStorageDatabase(t *testing.T) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	tables := []any{&model.StorageProfile{}, &model.StorageCredential{}, &model.StoragePolicy{}, &model.StorageObject{}}
+	dialector := sqlite.Open(":memory:")
+	databaseType := common.DatabaseTypeSQLite
+	if dsn := strings.TrimSpace(os.Getenv("VIDEO_STUDIO_MYSQL_DSN")); dsn != "" {
+		dialector = mysql.Open(dsn)
+		databaseType = common.DatabaseTypeMySQL
+	}
+	db, err := gorm.Open(dialector, &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
-		&model.StorageProfile{},
-		&model.StorageCredential{},
-		&model.StoragePolicy{},
-		&model.StorageObject{},
-	))
+	if databaseType == common.DatabaseTypeMySQL {
+		require.NoError(t, db.Migrator().DropTable(append(tables, &model.MediaAsset{})...))
+	}
+	require.NoError(t, db.AutoMigrate(tables...))
 	model.DB = db
-	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	common.SetDatabaseTypes(databaseType, databaseType)
 }
 
 func TestSaveProfileEncryptsStaticCredentialAndReturnsOnlyHint(t *testing.T) {

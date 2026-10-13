@@ -34,7 +34,7 @@ export type ReferenceSource = 'storage' | 'seedance_asset'
 
 export type Capability = {
   model: string
-  protocol: 'seedance' | 'wan3' | 'minimax'
+  protocol: 'seedance' | 'wan3' | 'openai_video'
   roles: ReferenceRole[]
   max_references: number
   min_duration: number

@@ -299,16 +299,11 @@ function pickSupported(parameters: SubmitParameters, capability: Capability) {
   }
   if (
     parameters.resolution &&
-    (capability.resolutions.length === 0 ||
-      capability.resolutions.includes(parameters.resolution))
+    capability.resolutions.includes(parameters.resolution)
   ) {
     kept.resolution = parameters.resolution
   }
-  if (
-    parameters.ratio &&
-    (capability.ratios.length === 0 ||
-      capability.ratios.includes(parameters.ratio))
-  ) {
+  if (parameters.ratio && capability.ratios.includes(parameters.ratio)) {
     kept.ratio = parameters.ratio
   }
   if (
@@ -329,32 +324,22 @@ type OptionFieldProps = {
   onChange: (value: string) => void
 }
 
-/** A fixed list when the model constrains the value, free text otherwise. */
 function OptionField(props: OptionFieldProps) {
   return (
     <div className='grid gap-1.5'>
       <Label htmlFor={props.id}>{props.label}</Label>
-      {props.options.length > 0 ? (
-        <NativeSelect
-          id={props.id}
-          className='w-full'
-          value={props.value}
-          onChange={(event) => props.onChange(event.target.value)}
-        >
-          {props.options.map((option) => (
-            <NativeSelectOption key={option} value={option}>
-              {option}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-      ) : (
-        <Input
-          id={props.id}
-          value={props.value}
-          maxLength={32}
-          onChange={(event) => props.onChange(event.target.value.trim())}
-        />
-      )}
+      <NativeSelect
+        id={props.id}
+        className='w-full'
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+      >
+        {props.options.map((option) => (
+          <NativeSelectOption key={option} value={option}>
+            {option}
+          </NativeSelectOption>
+        ))}
+      </NativeSelect>
     </div>
   )
 }

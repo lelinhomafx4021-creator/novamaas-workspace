@@ -7,12 +7,19 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
-// Protocol names the request shape a model accepts on the shared video task
-// relay. Each protocol maps to an existing task adaptor; no adaptor is added.
+// Protocol names the body shape sent to /v1/video/generations. The route is
+// the same for every model; the selected channel's adaptor reads this shape.
 const (
-	ProtocolSeedance = "seedance" // doubao-video adaptor, content[] with roles
-	ProtocolWan3     = "wan3"     // ali adaptor, input.media + parameters
-	ProtocolMiniMax  = "minimax"  // OpenAI-compatible /v1/videos adaptor
+	ProtocolSeedance    = "seedance"     // doubao-video adaptor: content[] with roles
+	ProtocolWan3        = "wan3"         // ali adaptor: input.media + parameters
+	ProtocolOpenAIVideo = "openai_video" // OpenAI-compatible adaptor: seconds + metadata
+)
+
+// Common choices for providers whose exact limits are not encoded in an
+// adaptor. The upstream still rejects combinations it does not support.
+var (
+	commonResolutions = []string{"480p", "720p", "1080p"}
+	commonRatios      = []string{"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"}
 )
 
 const (
@@ -22,9 +29,7 @@ const (
 )
 
 // Capability is the single description used both for the model picker and
-// for server-side validation of a studio submission. Empty option lists mean
-// the gateway does not constrain the value and the upstream decides; only
-// limits already enforced by an adaptor are listed here.
+// for server-side validation of a studio submission.
 type Capability struct {
 	Model         string   `json:"model"`
 	Protocol      string   `json:"protocol"`
@@ -60,8 +65,8 @@ var capabilityProfiles = []capabilityProfile{
 			MaxReferences: 9,
 			MinDuration:   1,
 			MaxDuration:   relaycommon.MaxTaskDurationSeconds,
-			Resolutions:   []string{},
-			Ratios:        []string{},
+			Resolutions:   commonResolutions,
+			Ratios:        append([]string{"adaptive"}, commonRatios...),
 			Audio:         true,
 			Seed:          true,
 			AssetLibrary:  true,
@@ -85,17 +90,16 @@ var capabilityProfiles = []capabilityProfile{
 		},
 	},
 	{
-		// MiniMax-H3 is served through an OpenAI-compatible /v1/videos channel
-		// (JSON: seconds + metadata.resolution/ratio). Image references need a
-		// multipart upload upstream, so this version is text-to-video only.
+		// MiniMax-H3 is served by an OpenAI-compatible channel. Reference
+		// images need a multipart upload upstream, so it is text-to-video here.
 		matches: func(model string) bool { return strings.HasPrefix(model, "MiniMax-H3") },
 		capability: Capability{
-			Protocol:    ProtocolMiniMax,
+			Protocol:    ProtocolOpenAIVideo,
 			Roles:       []string{},
 			MinDuration: 1,
 			MaxDuration: relaycommon.MaxTaskDurationSeconds,
-			Resolutions: []string{},
-			Ratios:      []string{},
+			Resolutions: []string{"768P", "1080P"},
+			Ratios:      commonRatios,
 			Defaults:    Defaults{Duration: 5, Resolution: "768P", Ratio: "16:9"},
 		},
 	},

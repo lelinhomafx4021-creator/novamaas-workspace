@@ -116,13 +116,13 @@ func (input *SubmitInput) Validate(capability Capability) error {
 	if parameters.Resolution == nil {
 		parameters.Resolution = common.GetPointer(capability.Defaults.Resolution)
 	}
-	if len(capability.Resolutions) > 0 && !slices.Contains(capability.Resolutions, *parameters.Resolution) {
+	if !slices.Contains(capability.Resolutions, *parameters.Resolution) {
 		return badRequest("unsupported resolution %q", *parameters.Resolution)
 	}
 	if parameters.Ratio == nil {
 		parameters.Ratio = common.GetPointer(capability.Defaults.Ratio)
 	}
-	if len(capability.Ratios) > 0 && !slices.Contains(capability.Ratios, *parameters.Ratio) {
+	if !slices.Contains(capability.Ratios, *parameters.Ratio) {
 		return badRequest("unsupported ratio %q", *parameters.Ratio)
 	}
 	if parameters.GenerateAudio != nil && !capability.Audio {
@@ -227,7 +227,7 @@ func BuildTaskRequest(capability Capability, input *SubmitInput, references []re
 		}
 		body["input"] = input
 		body["parameters"] = wanParameters
-	case ProtocolMiniMax:
+	case ProtocolOpenAIVideo:
 		if len(references) > 0 {
 			return nil, badRequest("%s does not accept reference images in the studio yet", capability.Model)
 		}
@@ -237,4 +237,53 @@ func BuildTaskRequest(capability Capability, input *SubmitInput, references []re
 		return nil, errors.New("unsupported video studio protocol")
 	}
 	return body, nil
+}
+
+// PreparedSubmission is a validated submission ready to send: ownership was
+// checked, references resolved, and the provider task body built.
+type PreparedSubmission struct {
+	Project     *model.VideoProject
+	Input       *SubmitInput
+	RequestHash string
+	Snapshot    string
+	TaskBody    map[string]any
+}
+
+// PrepareSubmission validates a submission and builds its task body. It does
+// not write: nothing is recorded until a channel has been selected.
+// modelAvailable reports whether the user's group can reach input.Model.
+func PrepareSubmission(ctx context.Context, ownerUserID int, input *SubmitInput, modelAvailable bool) (*PreparedSubmission, error) {
+	// Hash the client's own submission so an identical retry matches even
+	// though Validate fills in defaults below.
+	hash, err := input.Hash()
+	if err != nil {
+		return nil, err
+	}
+	capability, ok := CapabilityFor(input.Model)
+	if !ok {
+		return nil, badRequest("model is not available in the video studio")
+	}
+	if !modelAvailable {
+		return nil, &RequestError{StatusCode: http.StatusForbidden, Err: errors.New("model is not available for this group")}
+	}
+	if err = input.Validate(capability); err != nil {
+		return nil, err
+	}
+	project, err := model.FindVideoProject(ownerUserID, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	references, err := ResolveReferences(ctx, ownerUserID, input.References)
+	if err != nil {
+		return nil, err
+	}
+	taskBody, err := BuildTaskRequest(capability, input, references)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := common.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	return &PreparedSubmission{Project: project, Input: input, RequestHash: hash, Snapshot: string(snapshot), TaskBody: taskBody}, nil
 }

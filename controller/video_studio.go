@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	assetService "github.com/QuantumNous/new-api/service/assetlibrary"
 	storageService "github.com/QuantumNous/new-api/service/storage"
@@ -201,12 +202,14 @@ func ListVideoStudioRuns(c *gin.Context) {
 	respondVideoStudio(c, runs, err)
 }
 
-// ValidatePlaygroundVideo turns a studio submission into a standard
-// /v1/video/generations task body before channel selection, so Distribute,
-// retries, billing, and the provider adaptors run unchanged.
+// ValidatePlaygroundVideo checks a studio submission and replaces the body with
+// the standard /v1/video/generations task request before channel selection,
+// so Distribute, retries, billing, and provider adaptors run unchanged. It
+// writes nothing: a submission rejected before a channel is chosen leaves no
+// run behind.
 func ValidatePlaygroundVideo(c *gin.Context) {
 	if c.GetBool("use_access_token") {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"success": false, "message": "access tokens cannot submit studio videos"})
+		abortVideoStudio(c, &videostudio.RequestError{StatusCode: http.StatusForbidden, Err: errors.New("access tokens cannot submit studio videos")})
 		return
 	}
 	var input videostudio.SubmitInput
@@ -214,49 +217,27 @@ func ValidatePlaygroundVideo(c *gin.Context) {
 		abortVideoStudio(c, &videostudio.RequestError{StatusCode: http.StatusBadRequest, Err: errors.New("invalid video studio request")})
 		return
 	}
-	capability, ok := videostudio.CapabilityFor(input.Model)
-	if !ok {
-		abortVideoStudio(c, &videostudio.RequestError{StatusCode: http.StatusBadRequest, Err: errors.New("model is not available in the video studio")})
-		return
-	}
 	available, ok := playgroundAvailableModels(c, input.Group)
 	if !ok {
 		return
 	}
-	if !available[input.Model] {
-		abortVideoStudio(c, &videostudio.RequestError{StatusCode: http.StatusForbidden, Err: errors.New("model is not available for this group")})
-		return
-	}
-	if err := input.Validate(capability); err != nil {
-		abortVideoStudio(c, err)
-		return
-	}
 	userID := c.GetInt("id")
-	project, err := model.FindVideoProject(userID, input.ProjectID)
-	if err != nil {
-		abortVideoStudio(c, err)
-		return
-	}
-	references, err := videostudio.ResolveReferences(c.Request.Context(), userID, input.References)
-	if err != nil {
-		abortVideoStudio(c, err)
-		return
-	}
-	taskBody, err := videostudio.BuildTaskRequest(capability, &input, references)
-	if err != nil {
-		abortVideoStudio(c, err)
-		return
-	}
-	run, replayed, err := videostudio.CreateRun(project, &input)
-	if err != nil {
-		abortVideoStudio(c, err)
-		return
-	}
-	if replayed {
+	// A replayed request answers from the stored run before any revalidation:
+	// its references may have expired since, but the task already exists.
+	if run, err := model.FindVideoCreationRunByClientRequest(userID, input.ClientRequestID); err == nil {
+		if err = videostudio.CheckReplay(run, &input); err != nil {
+			abortVideoStudio(c, err)
+			return
+		}
 		c.AbortWithStatusJSON(http.StatusOK, gin.H{"success": true, "data": videostudio.RunViewFor(userID, run)})
 		return
 	}
-	data, err := common.Marshal(taskBody)
+	prepared, err := videostudio.PrepareSubmission(c.Request.Context(), userID, &input, available[input.Model])
+	if err != nil {
+		abortVideoStudio(c, err)
+		return
+	}
+	data, err := common.Marshal(prepared.TaskBody)
 	if err != nil {
 		abortVideoStudio(c, err)
 		return
@@ -271,24 +252,37 @@ func ValidatePlaygroundVideo(c *gin.Context) {
 	c.Request.Body = storage
 	c.Request.ContentLength = int64(len(data))
 	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("video_studio_run", run)
+	common.SetContextKey(c, constant.ContextKeyVideoStudioSubmission, prepared)
 	if err = setupPlaygroundToken(c, input.Group); err != nil {
-		videostudio.FailRun(run, err.Error())
 		abortVideoStudio(c, err)
 	}
 }
 
-// PlaygroundVideo submits the prepared task under the run's reserved task ID
-// and answers with the studio run instead of the provider-shaped body.
+// PlaygroundVideo runs after a channel is selected. It reserves the run (and
+// its public task ID) before the upstream call, submits through the shared
+// task path, and answers with the run instead of the provider-shaped body.
 func PlaygroundVideo(c *gin.Context) {
-	run := c.MustGet("video_studio_run").(*model.VideoCreationRun)
-	_, taskErr := submitVideoTask(c, run.TaskID, true)
-	if taskErr != nil {
+	prepared, ok := common.GetContextKeyType[*videostudio.PreparedSubmission](c, constant.ContextKeyVideoStudioSubmission)
+	if !ok {
+		respondVideoStudio(c, nil, errors.New("video studio submission was not prepared"))
+		return
+	}
+	run, replayed, err := videostudio.CreateRun(prepared)
+	if err != nil {
+		respondVideoStudio(c, nil, err)
+		return
+	}
+	userID := c.GetInt("id")
+	if replayed {
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": videostudio.RunViewFor(userID, run)})
+		return
+	}
+	if _, taskErr := submitVideoTask(c, run.TaskID, true); taskErr != nil {
 		videostudio.FailRun(run, taskErr.Message)
 		respondTaskError(c, taskErr)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": videostudio.RunViewFor(c.GetInt("id"), run)})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": videostudio.RunViewFor(userID, run)})
 }
 
 func respondVideoStudio(c *gin.Context, data any, err error) {

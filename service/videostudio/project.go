@@ -10,12 +10,21 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 )
+
+// RunStatusSubmitting marks a run whose task is not linked yet; every other
+// status is the linked Task's own video status.
+const RunStatusSubmitting = "submitting"
+
+// A submission still unlinked after this long ended without creating a task.
+const staleSubmissionAfter = 10 * time.Minute
 
 const (
 	maxProjectNameRunes = 128
 	// Drafts carry prompts and layout only; reference files are stored by ID.
-	maxProjectJSONBytes = 1 << 20
+	// Stays under the 64 KiB MySQL TEXT limit shared by every supported DB.
+	maxProjectJSONBytes = 60 * 1024
 )
 
 type ProjectInput struct {
@@ -131,42 +140,43 @@ func applyProjectInput(project *model.VideoProject, input ProjectInput) error {
 	return nil
 }
 
-// CreateRun reserves the generation record before the upstream call so a
-// retried submission never sends a second task. It returns the existing run
-// for a repeated client request ID with the same content.
-func CreateRun(project *model.VideoProject, input *SubmitInput) (*model.VideoCreationRun, bool, error) {
+// CheckReplay accepts a retried submission only when it repeats the stored
+// one exactly; reusing a request ID for different content is a conflict.
+func CheckReplay(run *model.VideoCreationRun, input *SubmitInput) error {
 	hash, err := input.Hash()
 	if err != nil {
-		return nil, false, err
+		return err
 	}
-	existing, err := model.FindVideoCreationRunByClientRequest(project.OwnerUserID, input.ClientRequestID)
-	if err == nil {
-		if existing.RequestHash != hash || existing.ProjectID != project.ID {
-			return nil, false, &RequestError{StatusCode: http.StatusConflict, Err: errors.New("client_request_id was already used for a different submission")}
-		}
-		return existing, true, nil
+	if run.RequestHash != hash {
+		return &RequestError{StatusCode: http.StatusConflict, Err: errors.New("client_request_id was already used for a different submission")}
 	}
-	snapshot, err := common.Marshal(input)
-	if err != nil {
-		return nil, false, err
-	}
+	return nil
+}
+
+// CreateRun reserves the generation record and its public task ID before the
+// upstream call, so a retried submission never sends a second task.
+func CreateRun(prepared *PreparedSubmission) (*model.VideoCreationRun, bool, error) {
 	run := &model.VideoCreationRun{
 		PublicID:        "vr_" + strings.TrimPrefix(model.GenerateTaskID(), "task_"),
-		ProjectID:       project.ID,
-		NodeID:          input.NodeID,
-		OwnerUserID:     project.OwnerUserID,
-		ClientRequestID: input.ClientRequestID,
-		RequestHash:     hash,
-		Snapshot:        string(snapshot),
+		ProjectID:       prepared.Project.ID,
+		NodeID:          prepared.Input.NodeID,
+		OwnerUserID:     prepared.Project.OwnerUserID,
+		ClientRequestID: prepared.Input.ClientRequestID,
+		RequestHash:     prepared.RequestHash,
+		Snapshot:        prepared.Snapshot,
 		TaskID:          model.GenerateTaskID(),
 		CreatedAt:       common.GetTimestamp(),
 	}
-	if err = model.DB.Create(run).Error; err != nil {
+	if err := model.DB.Create(run).Error; err != nil {
 		// A concurrent request with the same client ID won the unique index.
-		if existing, findErr := model.FindVideoCreationRunByClientRequest(project.OwnerUserID, input.ClientRequestID); findErr == nil && existing.RequestHash == hash {
-			return existing, true, nil
+		existing, findErr := model.FindVideoCreationRunByClientRequest(run.OwnerUserID, run.ClientRequestID)
+		if findErr != nil {
+			return nil, false, err
 		}
-		return nil, false, err
+		if existing.RequestHash != run.RequestHash {
+			return nil, false, &RequestError{StatusCode: http.StatusConflict, Err: errors.New("client_request_id was already used for a different submission")}
+		}
+		return existing, true, nil
 	}
 	return run, false, nil
 }
@@ -221,21 +231,21 @@ func RunViewFor(ownerUserID int, run *model.VideoCreationRun) RunView {
 func runView(run model.VideoCreationRun, task *model.Task) RunView {
 	view := RunView{VideoCreationRun: run}
 	if task == nil {
-		view.Status = "submitting"
+		view.Status = RunStatusSubmitting
 		if run.ErrorMessage != "" {
-			view.Status = "failed"
+			view.Status = dto.VideoStatusFailed
 			view.FailReason = run.ErrorMessage
-		} else if common.GetTimestamp()-run.CreatedAt > int64(10*time.Minute/time.Second) {
+		} else if common.GetTimestamp()-run.CreatedAt > int64(staleSubmissionAfter/time.Second) {
 			// The submit request ended without linking a task; nothing was charged.
-			view.Status = "failed"
+			view.Status = dto.VideoStatusFailed
 			view.FailReason = "submission did not complete"
 		}
 		return view
 	}
-	view.Status = model.TaskStatus(task.Status).ToVideoStatus()
+	view.Status = task.Status.ToVideoStatus()
 	// A freshly inserted task stays NOT_START until the first poll.
 	if task.Status == model.TaskStatusNotStart {
-		view.Status = "queued"
+		view.Status = dto.VideoStatusQueued
 	}
 	view.Progress = task.Progress
 	view.Quota = task.Quota

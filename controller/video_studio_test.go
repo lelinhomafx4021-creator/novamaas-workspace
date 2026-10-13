@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,6 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 type studioFixture struct {
@@ -31,15 +34,44 @@ type studioFixture struct {
 	statusFor func() int
 }
 
+var videoStudioTables = []any{
+	&model.Task{}, &model.Channel{}, &model.User{}, &model.Token{}, &model.Log{},
+	&model.BillingAccount{}, &model.BillingAccountEvent{}, &model.BillingEntry{}, &model.BillingHour{},
+	&model.BillingOperation{}, &model.BillingStatement{}, &model.StorageObject{}, &model.MediaAsset{},
+	&model.VideoProject{}, &model.VideoCreationRun{}, &model.TaskRequestBody{}, &model.Ability{},
+	&model.UserSubscription{}, &model.SubscriptionPlan{}, &model.SubscriptionPreConsumeRecord{},
+}
+
+// setupVideoStudioSubmit runs on SQLite by default and on MySQL when
+// VIDEO_STUDIO_MYSQL_DSN points at a disposable database.
 func setupVideoStudioSubmit(t *testing.T) *studioFixture {
 	t.Helper()
 	initModelListColumnNames(t)
-	db := setupVolcNativeControllerTest(t)
-	// ":memory:" SQLite is per connection; async billing work must reuse it.
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&model.VideoProject{}, &model.VideoCreationRun{}, &model.TaskRequestBody{}, &model.Ability{}, &model.UserSubscription{}, &model.SubscriptionPlan{}, &model.SubscriptionPreConsumeRecord{}))
+	var db *gorm.DB
+	var err error
+	if dsn := strings.TrimSpace(os.Getenv("VIDEO_STUDIO_MYSQL_DSN")); dsn != "" {
+		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		require.NoError(t, err)
+		require.NoError(t, db.Migrator().DropTable(videoStudioTables...))
+		previousDB, previousLogDB, previousDBType := model.DB, model.LOG_DB, common.MainDatabaseType()
+		previousRedis, previousBatch, previousLog := common.RedisEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled
+		model.DB, model.LOG_DB = db, db
+		common.SetDatabaseTypes(common.DatabaseTypeMySQL, common.DatabaseTypeMySQL)
+		common.RedisEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled = false, false, false
+		t.Cleanup(func() {
+			model.DB, model.LOG_DB = previousDB, previousLogDB
+			common.SetDatabaseTypes(previousDBType, previousDBType)
+			common.RedisEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled = previousRedis, previousBatch, previousLog
+		})
+	} else {
+		db = setupVolcNativeControllerTest(t)
+		// ":memory:" SQLite is per connection; async billing work must reuse it.
+		sqlDB, dbErr := db.DB()
+		require.NoError(t, dbErr)
+		sqlDB.SetMaxOpenConns(1)
+	}
+	// initModelListColumnNames set backtick quoting, which MySQL shares.
+	require.NoError(t, db.AutoMigrate(videoStudioTables...))
 	savedPrices := ratio_setting.ModelPrice2JSONString()
 	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"MiniMax-H3":0.1}`))
 	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(savedPrices)) })
@@ -209,4 +241,43 @@ func TestRelayTaskKeepsProviderResponseContract(t *testing.T) {
 	assert.Equal(t, "video", gjson.Get(response, "object").String())
 	assert.True(t, strings.HasPrefix(gjson.Get(response, "id").String(), "task_"), "the public task ID replaces the upstream ID")
 	assert.False(t, gjson.Get(response, "success").Exists())
+}
+
+func TestVideoStudioProjectSaveUsesRevisionAndFitsTextColumns(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	userID := fixture.user.Id
+	draft := `{"version":1,"nodes":{"gen_1":{"prompt":"` + strings.Repeat("夜", 18000) + `"}}}`
+
+	saved, err := videostudio.SaveProject(userID, fixture.project.PublicID, videostudio.ProjectInput{Revision: fixture.project.Revision, Draft: &draft})
+	require.NoError(t, err, "a draft at the size limit must fit a MySQL TEXT column")
+	assert.Equal(t, fixture.project.Revision+1, saved.Revision)
+	loaded, err := model.FindVideoProject(userID, fixture.project.PublicID)
+	require.NoError(t, err)
+	assert.Equal(t, draft, loaded.Draft)
+	assert.Equal(t, "{}", loaded.Canvas, "saving the draft alone keeps the canvas layout")
+
+	_, err = videostudio.SaveProject(userID, fixture.project.PublicID, videostudio.ProjectInput{Revision: fixture.project.Revision, Draft: &draft})
+	var requestErr *videostudio.RequestError
+	require.ErrorAs(t, err, &requestErr)
+	assert.Equal(t, http.StatusConflict, requestErr.StatusCode, "a stale revision must not overwrite")
+
+	oversized := `{"version":1,"blob":"` + strings.Repeat("x", 61*1024) + `"}`
+	_, err = videostudio.SaveProject(userID, fixture.project.PublicID, videostudio.ProjectInput{Revision: saved.Revision, Draft: &oversized})
+	require.ErrorAs(t, err, &requestErr)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, requestErr.StatusCode)
+}
+
+// A submission rejected before channel selection must leave nothing behind,
+// otherwise the canvas would show a run stuck in "submitting".
+func TestPlaygroundVideoRejectedBeforeChannelLeavesNoRun(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	body := `{"project_id":"` + fixture.project.PublicID + `","node_id":"n1","client_request_id":"req-1","model":"MiniMax-H3","prompt":"x","parameters":{"duration":5,"resolution":"4k"}}`
+
+	recorder := fixture.submit(t, body)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	runs, err := videostudio.ListRuns(fixture.user.Id, fixture.project, 1, 20)
+	require.NoError(t, err)
+	assert.Empty(t, runs.Items)
+	assert.Zero(t, fixture.calls.Load())
 }

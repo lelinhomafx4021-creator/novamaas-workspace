@@ -45,7 +45,7 @@ const wan3: Capability = {
 const minimax: Capability = {
   ...wan3,
   model: 'MiniMax-H3',
-  protocol: 'minimax',
+  protocol: 'openai_video',
   roles: [],
   max_references: 0,
   audio: false,

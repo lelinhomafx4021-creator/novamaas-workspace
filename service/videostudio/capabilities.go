@@ -5,14 +5,15 @@ import (
 	"strings"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 )
 
 // Protocol names the body shape sent to /v1/video/generations. The route is
 // the same for every model; the selected channel's adaptor reads this shape.
 const (
-	ProtocolSeedance    = "seedance"     // doubao-video adaptor: content[] with roles
-	ProtocolWan3        = "wan3"         // ali adaptor: input.media + parameters
-	ProtocolOpenAIVideo = "openai_video" // OpenAI-compatible adaptor: seconds + metadata
+	ProtocolSeedance    = model_setting.VideoStudioProtocolSeedance    // doubao-video adaptor: content[] with roles
+	ProtocolWan3        = model_setting.VideoStudioProtocolWan3        // ali adaptor: input.media + parameters
+	ProtocolOpenAIVideo = model_setting.VideoStudioProtocolOpenAIVideo // OpenAI-compatible adaptor: seconds + metadata
 )
 
 // Common choices for providers whose exact limits are not encoded in an
@@ -51,68 +52,60 @@ type Defaults struct {
 	Ratio      string `json:"ratio"`
 }
 
-type capabilityProfile struct {
-	matches    func(model string) bool
-	capability Capability
-}
-
-var capabilityProfiles = []capabilityProfile{
-	{
-		matches: func(model string) bool { return strings.HasPrefix(model, "doubao-seedance") },
-		capability: Capability{
-			Protocol:      ProtocolSeedance,
-			Roles:         []string{RoleFirstFrame, RoleLastFrame, RoleReferenceImage},
-			MaxReferences: 9,
-			MinDuration:   1,
-			MaxDuration:   relaycommon.MaxTaskDurationSeconds,
-			Resolutions:   commonResolutions,
-			Ratios:        append([]string{"adaptive"}, commonRatios...),
-			Audio:         true,
-			Seed:          true,
-			AssetLibrary:  true,
-			Defaults:      Defaults{Duration: 5, Resolution: "720p", Ratio: "16:9"},
-		},
+// capabilityProfiles holds the limits of each protocol. Which protocol a
+// model uses is decided by the administrator's keyword rules, not here.
+var capabilityProfiles = map[string]Capability{
+	ProtocolSeedance: {
+		Protocol:      ProtocolSeedance,
+		Roles:         []string{RoleFirstFrame, RoleLastFrame, RoleReferenceImage},
+		MaxReferences: 9,
+		MinDuration:   1,
+		MaxDuration:   relaycommon.MaxTaskDurationSeconds,
+		Resolutions:   commonResolutions,
+		Ratios:        append([]string{"adaptive"}, commonRatios...),
+		Audio:         true,
+		Seed:          true,
+		AssetLibrary:  true,
+		Defaults:      Defaults{Duration: 5, Resolution: "720p", Ratio: "16:9"},
 	},
-	{
-		// Mirrors the bounds enforced by convertToWan3Request.
-		matches: func(model string) bool { return strings.HasPrefix(model, "wan3.0") },
-		capability: Capability{
-			Protocol:      ProtocolWan3,
-			Roles:         []string{RoleFirstFrame, RoleLastFrame, RoleReferenceImage},
-			MaxReferences: 9,
-			MinDuration:   2,
-			MaxDuration:   30,
-			Resolutions:   []string{"480P", "720P", "1080P"},
-			Ratios:        []string{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"},
-			Audio:         true,
-			Seed:          true,
-			Defaults:      Defaults{Duration: 5, Resolution: "720P", Ratio: "16:9"},
-		},
+	// Mirrors the bounds enforced by convertToWan3Request; the ali adaptor
+	// only converts this shape for wan3.0 models.
+	ProtocolWan3: {
+		Protocol:      ProtocolWan3,
+		Roles:         []string{RoleFirstFrame, RoleLastFrame, RoleReferenceImage},
+		MaxReferences: 9,
+		MinDuration:   2,
+		MaxDuration:   30,
+		Resolutions:   []string{"480P", "720P", "1080P"},
+		Ratios:        []string{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"},
+		Audio:         true,
+		Seed:          true,
+		Defaults:      Defaults{Duration: 5, Resolution: "720P", Ratio: "16:9"},
 	},
-	{
-		// MiniMax-H3 is served by an OpenAI-compatible channel. Reference
-		// images need a multipart upload upstream, so it is text-to-video here.
-		matches: func(model string) bool { return strings.HasPrefix(model, "MiniMax-H3") },
-		capability: Capability{
-			Protocol:    ProtocolOpenAIVideo,
-			Roles:       []string{},
-			MinDuration: 1,
-			MaxDuration: relaycommon.MaxTaskDurationSeconds,
-			Resolutions: []string{"768P", "1080P"},
-			Ratios:      commonRatios,
-			Defaults:    Defaults{Duration: 5, Resolution: "768P", Ratio: "16:9"},
-		},
+	// Served by an OpenAI-compatible channel. Reference images need a
+	// multipart upload upstream, so it is text-to-video here.
+	ProtocolOpenAIVideo: {
+		Protocol:    ProtocolOpenAIVideo,
+		Roles:       []string{},
+		MinDuration: 1,
+		MaxDuration: relaycommon.MaxTaskDurationSeconds,
+		Resolutions: []string{"768P", "1080P"},
+		Ratios:      commonRatios,
+		Defaults:    Defaults{Duration: 5, Resolution: "768P", Ratio: "16:9"},
 	},
 }
 
-// CapabilityFor returns the studio capability for a public model name.
+// CapabilityFor returns the studio capability for a public model name: the
+// first administrator rule whose keyword the name contains selects the protocol.
 func CapabilityFor(model string) (Capability, bool) {
-	for _, profile := range capabilityProfiles {
-		if profile.matches(model) {
-			capability := profile.capability
-			capability.Model = model
-			return capability, true
+	name := strings.ToLower(model)
+	for _, rule := range model_setting.GetVideoStudioModelRules() {
+		if !strings.Contains(name, rule.Keyword) {
+			continue
 		}
+		capability := capabilityProfiles[rule.Protocol]
+		capability.Model = model
+		return capability, true
 	}
 	return Capability{}, false
 }

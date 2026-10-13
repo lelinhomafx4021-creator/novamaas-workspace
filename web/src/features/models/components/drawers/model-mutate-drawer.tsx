@@ -288,6 +288,7 @@ export function ModelMutateDrawer({
     if (!systemOptionsData?.data) return null
     const defaultModelSettings: ModelSettings = {
       'miniapp.playground_media': '{}',
+      'video_studio.model_rules': '[]',
       'global.pass_through_request_enabled': false,
       'global.thinking_model_blacklist': '[]',
       'global.chat_completions_to_responses_policy': '{}',

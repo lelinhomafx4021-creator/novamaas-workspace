@@ -27,6 +27,8 @@ import {
 const defaultModelSettings: ModelSettings = {
   'global.pass_through_request_enabled': false,
   'miniapp.playground_media': '{}',
+  'video_studio.model_rules':
+    '[{"keyword":"seedance","protocol":"seedance"},{"keyword":"wan","protocol":"wan3"},{"keyword":"h3","protocol":"openai_video"}]',
   'global.thinking_model_blacklist': '[]',
   'global.chat_completions_to_responses_policy': '{}',
   'general_setting.ping_interval_enabled': false,

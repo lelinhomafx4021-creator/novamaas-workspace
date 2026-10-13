@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -145,4 +146,45 @@ func TestBuildTaskRequestMatchesProviderContracts(t *testing.T) {
 	data, err = common.Marshal(body)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"model":"MiniMax-H3","prompt":"city at night","seconds":"5","metadata":{"resolution":"768P","ratio":"16:9"}}`, string(data))
+}
+
+func TestCapabilityMatchesByNameKeyword(t *testing.T) {
+	tests := map[string]string{
+		"doubao-seedance-2-0":  ProtocolSeedance,
+		"Seedance-Pro":         ProtocolSeedance,
+		"wan3.0-video":         ProtocolWan3,
+		"alibaba/wan3.0-t2v":   ProtocolWan3,
+		"MiniMax-H3":           ProtocolOpenAIVideo,
+		"vendor-h3-video-fast": ProtocolOpenAIVideo,
+	}
+	for name, protocol := range tests {
+		capability, ok := CapabilityFor(name)
+		require.True(t, ok, name)
+		assert.Equal(t, protocol, capability.Protocol, name)
+		assert.Equal(t, name, capability.Model)
+	}
+	_, ok := CapabilityFor("gpt-4o")
+	assert.False(t, ok)
+}
+
+func TestCapabilityRulesAreConfigurable(t *testing.T) {
+	common.OptionMapRWMutex.Lock()
+	previousMap := common.OptionMap
+	common.OptionMap = map[string]string{}
+	common.OptionMap[model_setting.VideoStudioModelRulesOptionKey] = `[{"keyword":" Kling ","protocol":"openai_video"}]`
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousMap
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	capability, ok := CapabilityFor("vendor-KLING-v2")
+	require.True(t, ok)
+	assert.Equal(t, ProtocolOpenAIVideo, capability.Protocol)
+	_, ok = CapabilityFor("doubao-seedance-2-0")
+	assert.False(t, ok, "saved rules replace the defaults")
+
+	require.Error(t, model_setting.ValidateVideoStudioModelRules(`[{"keyword":"x","protocol":"unknown"}]`))
+	require.Error(t, model_setting.ValidateVideoStudioModelRules(`[{"keyword":"a","protocol":"wan3"},{"keyword":"A","protocol":"wan3"}]`))
 }

@@ -126,6 +126,7 @@ func InitOptionMap() {
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap[model_setting.MiniAppPlaygroundMediaOptionKey] = `{}`
+	common.OptionMap[model_setting.VideoStudioModelRulesOptionKey] = model_setting.DefaultVideoStudioModelRules
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
 	common.OptionMap["MaxTokenAutoGroups"] = strconv.Itoa(setting.GetMaxTokenAutoGroups())
@@ -224,6 +225,9 @@ func validateOptionValue(key string, value string) error {
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
 			return errors.New("operating entity logo must be an HTTP(S) URL without credentials or a fragment")
 		}
+	}
+	if key == model_setting.VideoStudioModelRulesOptionKey {
+		return model_setting.ValidateVideoStudioModelRules(value)
 	}
 	if key == model_setting.MiniAppPlaygroundMediaOptionKey {
 		return model_setting.ValidateMiniAppPlaygroundMedia(value)

@@ -228,7 +228,10 @@ func validateOptionValue(key string, value string) error {
 		}
 	}
 	if key == model_setting.VideoStudioPromptModelOptionKey {
-		return model_setting.ValidateVideoStudioPromptModel(value)
+		if strings.TrimSpace(value) != value || len(value) > 128 {
+			return errors.New("invalid video studio prompt model")
+		}
+		return nil
 	}
 	if key == model_setting.VideoStudioModelRulesOptionKey {
 		return model_setting.ValidateVideoStudioModelRules(value)

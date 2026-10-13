@@ -81,10 +81,3 @@ func GetVideoStudioPromptModel() string {
 	defer common.OptionMapRWMutex.RUnlock()
 	return strings.TrimSpace(common.Interface2String(common.OptionMap[VideoStudioPromptModelOptionKey]))
 }
-
-func ValidateVideoStudioPromptModel(value string) error {
-	if strings.TrimSpace(value) != value || len(value) > 128 {
-		return errors.New("invalid video studio prompt model")
-	}
-	return nil
-}

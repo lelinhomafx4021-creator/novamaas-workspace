@@ -7055,6 +7055,13 @@
     "Add a generation node, write a prompt, and optionally attach reference images.": "添加生成节点，写下提示词，也可以附上参考图。",
     "Switch project": "切换项目",
     "Projects": "项目",
-    "Drop or click to upload images": "点击上传图片"
+    "Drop or click to upload images": "点击上传图片",
+    "Node settings": "节点设置",
+    "Video Studio Models": "视频创作模型",
+    "A model appears in the video studio when its name contains a keyword below. Rules are checked in order and the first match decides the request format.": "模型名称包含下方关键字时，才会出现在视频创作中。规则按顺序匹配，第一条命中的规则决定请求格式。",
+    "Seedance (content with roles)": "Seedance（带角色的 content）",
+    "Wan 3 (input.media + parameters)": "万相 3（input.media + parameters）",
+    "OpenAI-compatible (seconds + metadata)": "OpenAI 兼容（seconds + metadata）",
+    "Add rule": "添加规则"
   }
 }

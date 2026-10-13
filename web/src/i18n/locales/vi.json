@@ -7055,6 +7055,13 @@
     "Add a generation node, write a prompt, and optionally attach reference images.": "Thêm nút tạo, viết prompt và có thể đính kèm ảnh tham chiếu.",
     "Switch project": "Chuyển dự án",
     "Projects": "Dự án",
-    "Drop or click to upload images": "Bấm để tải ảnh lên"
+    "Drop or click to upload images": "Bấm để tải ảnh lên",
+    "Node settings": "Cài đặt nút",
+    "Video Studio Models": "Mô hình studio video",
+    "A model appears in the video studio when its name contains a keyword below. Rules are checked in order and the first match decides the request format.": "Mô hình xuất hiện trong studio video khi tên chứa một từ khóa bên dưới. Các quy tắc được kiểm tra theo thứ tự và quy tắc khớp đầu tiên quyết định định dạng yêu cầu.",
+    "Seedance (content with roles)": "Seedance (content có vai trò)",
+    "Wan 3 (input.media + parameters)": "Wan 3 (input.media + parameters)",
+    "OpenAI-compatible (seconds + metadata)": "Tương thích OpenAI (seconds + metadata)",
+    "Add rule": "Thêm quy tắc"
   }
 }

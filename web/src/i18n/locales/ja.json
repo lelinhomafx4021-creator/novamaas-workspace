@@ -7055,6 +7055,13 @@
     "Add a generation node, write a prompt, and optionally attach reference images.": "生成ノードを追加し、プロンプトを入力して、必要なら参照画像を添付します。",
     "Switch project": "プロジェクトを切り替え",
     "Projects": "プロジェクト",
-    "Drop or click to upload images": "クリックして画像をアップロード"
+    "Drop or click to upload images": "クリックして画像をアップロード",
+    "Node settings": "ノード設定",
+    "Video Studio Models": "動画スタジオのモデル",
+    "A model appears in the video studio when its name contains a keyword below. Rules are checked in order and the first match decides the request format.": "モデル名に以下のキーワードが含まれると動画スタジオに表示されます。ルールは順に評価され、最初に一致したものがリクエスト形式を決めます。",
+    "Seedance (content with roles)": "Seedance（ロール付き content）",
+    "Wan 3 (input.media + parameters)": "Wan 3（input.media + parameters）",
+    "OpenAI-compatible (seconds + metadata)": "OpenAI 互換（seconds + metadata）",
+    "Add rule": "ルールを追加"
   }
 }

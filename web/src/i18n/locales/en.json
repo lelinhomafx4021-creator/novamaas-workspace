@@ -7055,6 +7055,13 @@
     "Add a generation node, write a prompt, and optionally attach reference images.": "Add a generation node, write a prompt, and optionally attach reference images.",
     "Switch project": "Switch project",
     "Projects": "Projects",
-    "Drop or click to upload images": "Drop or click to upload images"
+    "Drop or click to upload images": "Drop or click to upload images",
+    "Node settings": "Node settings",
+    "Video Studio Models": "Video Studio Models",
+    "A model appears in the video studio when its name contains a keyword below. Rules are checked in order and the first match decides the request format.": "A model appears in the video studio when its name contains a keyword below. Rules are checked in order and the first match decides the request format.",
+    "Seedance (content with roles)": "Seedance (content with roles)",
+    "Wan 3 (input.media + parameters)": "Wan 3 (input.media + parameters)",
+    "OpenAI-compatible (seconds + metadata)": "OpenAI-compatible (seconds + metadata)",
+    "Add rule": "Add rule"
   }
 }

@@ -7055,6 +7055,13 @@
     "Add a generation node, write a prompt, and optionally attach reference images.": "Ajoutez un nœud de génération, écrivez un prompt et joignez éventuellement des images de référence.",
     "Switch project": "Changer de projet",
     "Projects": "Projets",
-    "Drop or click to upload images": "Cliquez pour téléverser des images"
+    "Drop or click to upload images": "Cliquez pour téléverser des images",
+    "Node settings": "Paramètres du nœud",
+    "Video Studio Models": "Modèles du studio vidéo",
+    "A model appears in the video studio when its name contains a keyword below. Rules are checked in order and the first match decides the request format.": "Un modèle apparaît dans le studio vidéo lorsque son nom contient un mot-clé ci-dessous. Les règles sont évaluées dans l'ordre et la première correspondance détermine le format de requête.",
+    "Seedance (content with roles)": "Seedance (content avec rôles)",
+    "Wan 3 (input.media + parameters)": "Wan 3 (input.media + parameters)",
+    "OpenAI-compatible (seconds + metadata)": "Compatible OpenAI (seconds + metadata)",
+    "Add rule": "Ajouter une règle"
   }
 }

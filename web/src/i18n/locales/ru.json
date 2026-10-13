@@ -7050,6 +7050,10 @@
     "Uploading...": "Загрузка...",
     "Video Studio": "Видеостудия",
     "Video is not available yet.": "Видео пока недоступно.",
-    "Video studio request failed": "Ошибка запроса видеостудии"
+    "Video studio request failed": "Ошибка запроса видеостудии",
+    "Start your first video": "Создайте своё первое видео",
+    "Add a generation node, write a prompt, and optionally attach reference images.": "Добавьте узел генерации, напишите промпт и при желании прикрепите референсы.",
+    "Switch project": "Сменить проект",
+    "Projects": "Проекты"
   }
 }

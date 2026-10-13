@@ -16,28 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { listProjects } from '../api'
 
-import { Main } from '@/components/layout'
-import { StudioEditor } from '@/features/video-studio'
-import { isSidebarModuleEnabled } from '@/lib/nav-modules'
+export const PROJECTS_QUERY_KEY = ['video-studio', 'projects'] as const
 
-export const Route = createFileRoute('/_authenticated/video-studio/$projectId')(
-  {
-    beforeLoad: () => {
-      if (!isSidebarModuleEnabled('chat', 'video_studio')) {
-        throw redirect({ to: '/dashboard' })
-      }
-    },
-    component: VideoStudioProjectPage,
-  }
-)
-
-function VideoStudioProjectPage() {
-  const { projectId } = Route.useParams()
-  return (
-    <Main className='h-[calc(100svh-4rem)] p-0'>
-      <StudioEditor projectId={projectId} />
-    </Main>
-  )
+export async function fetchProjects() {
+  const response = await listProjects(1, 100)
+  if (!response.success) throw new Error(response.message)
+  return response.data.items
 }

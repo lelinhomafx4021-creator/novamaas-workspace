@@ -57,6 +57,7 @@ const headerNavSchema = z.object({
   rankingsRequireAuth: z.boolean(),
   docsEnabled: z.boolean(),
   docsRequireAuth: z.boolean(),
+  studio: z.boolean(),
   about: z.boolean(),
 })
 
@@ -92,6 +93,10 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
       : Boolean(config.rankings.requireAuth),
   docsEnabled: config.docs.enabled,
   docsRequireAuth: config.docs.requireAuth,
+  studio:
+    config.studio === undefined
+      ? HEADER_NAV_DEFAULT.studio
+      : Boolean(config.studio),
   about:
     config.about === undefined
       ? HEADER_NAV_DEFAULT.about
@@ -124,6 +129,7 @@ export function HeaderNavigationSection({
         enabled: values.docsEnabled,
         requireAuth: values.docsRequireAuth,
       },
+      studio: values.studio,
       about: values.about,
       pricing: {
         ...(config.pricing ?? HEADER_NAV_DEFAULT.pricing),
@@ -166,6 +172,13 @@ export function HeaderNavigationSection({
       key: 'console',
       title: t('Console'),
       description: t('User dashboard and quota controls.'),
+    },
+    {
+      key: 'studio',
+      title: t('Video Studio'),
+      description: t(
+        'Generate videos from prompts and reference images on a canvas.'
+      ),
     },
     {
       key: 'about',

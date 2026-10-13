@@ -7050,6 +7050,10 @@
     "Uploading...": "Téléversement...",
     "Video Studio": "Studio vidéo",
     "Video is not available yet.": "La vidéo n'est pas encore disponible.",
-    "Video studio request failed": "Échec de la requête du studio vidéo"
+    "Video studio request failed": "Échec de la requête du studio vidéo",
+    "Start your first video": "Lancez votre première vidéo",
+    "Add a generation node, write a prompt, and optionally attach reference images.": "Ajoutez un nœud de génération, écrivez un prompt et joignez éventuellement des images de référence.",
+    "Switch project": "Changer de projet",
+    "Projects": "Projets"
   }
 }

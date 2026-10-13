@@ -7050,6 +7050,10 @@
     "Uploading...": "上傳中...",
     "Video Studio": "影片創作",
     "Video is not available yet.": "影片暫不可用。",
-    "Video studio request failed": "影片創作請求失敗"
+    "Video studio request failed": "影片創作請求失敗",
+    "Start your first video": "開始你的第一部影片",
+    "Add a generation node, write a prompt, and optionally attach reference images.": "新增生成節點，寫下提示詞，也可以附上參考圖。",
+    "Switch project": "切換專案",
+    "Projects": "專案"
   }
 }

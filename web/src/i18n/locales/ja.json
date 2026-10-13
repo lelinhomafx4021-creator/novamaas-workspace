@@ -7050,6 +7050,10 @@
     "Uploading...": "アップロード中...",
     "Video Studio": "ビデオスタジオ",
     "Video is not available yet.": "動画はまだ利用できません。",
-    "Video studio request failed": "ビデオスタジオのリクエストに失敗しました"
+    "Video studio request failed": "ビデオスタジオのリクエストに失敗しました",
+    "Start your first video": "最初の動画を作成",
+    "Add a generation node, write a prompt, and optionally attach reference images.": "生成ノードを追加し、プロンプトを入力して、必要なら参照画像を添付します。",
+    "Switch project": "プロジェクトを切り替え",
+    "Projects": "プロジェクト"
   }
 }

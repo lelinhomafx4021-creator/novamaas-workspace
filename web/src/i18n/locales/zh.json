@@ -7050,6 +7050,10 @@
     "Uploading...": "上传中...",
     "Video Studio": "视频创作",
     "Video is not available yet.": "视频暂不可用。",
-    "Video studio request failed": "视频创作请求失败"
+    "Video studio request failed": "视频创作请求失败",
+    "Start your first video": "开始你的第一个视频",
+    "Add a generation node, write a prompt, and optionally attach reference images.": "添加生成节点，写下提示词，也可以附上参考图。",
+    "Switch project": "切换项目",
+    "Projects": "项目"
   }
 }

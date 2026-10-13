@@ -1,0 +1,89 @@
+/*
+ * Video studio surface. Scoped to .studio-surface so the rest of the app
+ * keeps its theme; the canvas is always dark, like a node-graph editor.
+ */
+.studio-surface {
+  --background: oklch(0.15 0.02 265);
+  --foreground: oklch(0.96 0.01 265);
+  --card: oklch(0.2 0.025 265);
+  --card-foreground: oklch(0.96 0.01 265);
+  --popover: oklch(0.2 0.025 265);
+  --popover-foreground: oklch(0.96 0.01 265);
+  --muted: oklch(0.24 0.025 265);
+  --muted-foreground: oklch(0.7 0.03 265);
+  --secondary: oklch(0.26 0.03 265);
+  --secondary-foreground: oklch(0.96 0.01 265);
+  --accent: oklch(0.28 0.04 265);
+  --accent-foreground: oklch(0.96 0.01 265);
+  --border: oklch(0.32 0.04 265 / 70%);
+  --input: oklch(0.32 0.04 265 / 70%);
+  --ring: oklch(0.75 0.15 200);
+  --primary: oklch(0.78 0.15 200);
+  --primary-foreground: oklch(0.15 0.02 265);
+  --studio-glow: oklch(0.78 0.15 200 / 35%);
+  color-scheme: dark;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.studio-surface .react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: oklch(0.78 0.15 200 / 55%);
+  --xy-edge-stroke-selected: oklch(0.85 0.15 200);
+  --xy-handle-background-color: oklch(0.78 0.15 200);
+  --xy-handle-border-color: oklch(0.15 0.02 265);
+  background:
+    radial-gradient(
+      60% 50% at 50% 0%,
+      oklch(0.55 0.18 265 / 22%),
+      transparent 70%
+    ),
+    var(--background);
+}
+
+/* The Canvas wrapper paints --sidebar behind the dots; keep it dark. */
+.studio-surface .react-flow__background {
+  --xy-background-color-props: transparent;
+  background-color: transparent !important;
+  opacity: 0.6;
+}
+.studio-surface .react-flow__background-pattern {
+  color: oklch(0.5 0.06 265 / 55%);
+}
+
+.studio-surface .react-flow__edge-path {
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 4px var(--studio-glow));
+}
+
+.studio-surface .react-flow__edge.animated .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+}
+
+.studio-surface .node-container {
+  background: oklch(0.2 0.025 265 / 85%);
+  backdrop-filter: blur(10px);
+  border-color: oklch(0.4 0.06 265 / 60%);
+  transition:
+    box-shadow 0.2s,
+    border-color 0.2s;
+}
+
+.studio-surface .react-flow__node.selected .node-container {
+  border-color: var(--primary);
+  box-shadow:
+    0 0 0 1px var(--primary),
+    0 0 24px -2px var(--studio-glow);
+}
+
+.studio-surface .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 8px var(--studio-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-surface .node-container {
+    transition: none;
+  }
+}

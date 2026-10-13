@@ -16,5 +16,4 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export { ProjectList } from './components/project-list'
-export { StudioEditor } from './components/studio-editor'
+export { VideoStudio } from './components/video-studio'

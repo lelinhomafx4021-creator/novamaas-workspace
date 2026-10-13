@@ -7050,6 +7050,10 @@
     "Uploading...": "Đang tải lên...",
     "Video Studio": "Video Studio",
     "Video is not available yet.": "Video chưa sẵn sàng.",
-    "Video studio request failed": "Yêu cầu video studio thất bại"
+    "Video studio request failed": "Yêu cầu video studio thất bại",
+    "Start your first video": "Bắt đầu video đầu tiên của bạn",
+    "Add a generation node, write a prompt, and optionally attach reference images.": "Thêm nút tạo, viết prompt và có thể đính kèm ảnh tham chiếu.",
+    "Switch project": "Chuyển dự án",
+    "Projects": "Dự án"
   }
 }

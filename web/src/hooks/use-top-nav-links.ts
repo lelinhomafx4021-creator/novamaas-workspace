@@ -77,6 +77,15 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Console'), href: '/dashboard' })
   }
 
+  // Video studio canvas; it acts on the user's own account.
+  if (modules?.studio !== false) {
+    links.push({
+      title: t('Video Studio'),
+      href: '/studio',
+      requiresAuth: !isAuthed,
+    })
+  }
+
   // Pricing
   const pricing = modules?.pricing
   if (pricing && typeof pricing === 'object' && pricing.enabled) {

@@ -26,7 +26,11 @@ type CanvasProps = ReactFlowProps & {
   children?: ReactNode
 }
 
-export const Canvas = ({ children, ...props }: CanvasProps) => (
+export const Canvas = ({
+  children,
+  bgColor = 'var(--sidebar)',
+  ...props
+}: CanvasProps & { bgColor?: string }) => (
   <ReactFlow
     deleteKeyCode={['Backspace', 'Delete']}
     fitView
@@ -36,7 +40,7 @@ export const Canvas = ({ children, ...props }: CanvasProps) => (
     zoomOnDoubleClick={false}
     {...props}
   >
-    <Background bgColor='var(--sidebar)' />
+    <Background bgColor={bgColor} />
     <Controls />
     {children}
   </ReactFlow>

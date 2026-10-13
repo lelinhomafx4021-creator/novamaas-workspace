@@ -27,6 +27,7 @@ export type HeaderNavModulesConfig = {
   pricing: HeaderNavAccessConfig
   rankings: HeaderNavAccessConfig
   docs: HeaderNavAccessConfig
+  studio: boolean
   about: boolean
   [key: string]: boolean | HeaderNavAccessConfig
 }
@@ -53,6 +54,7 @@ export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
     enabled: false,
     requireAuth: false,
   },
+  studio: true,
   about: true,
 }
 
@@ -60,7 +62,6 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
   chat: {
     enabled: true,
     playground: true,
-    video_studio: true,
     chat: true,
   },
   console: {

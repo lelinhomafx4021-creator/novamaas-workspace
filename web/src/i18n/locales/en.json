@@ -7050,6 +7050,10 @@
     "Uploading...": "Uploading...",
     "Video Studio": "Video Studio",
     "Video is not available yet.": "Video is not available yet.",
-    "Video studio request failed": "Video studio request failed"
+    "Video studio request failed": "Video studio request failed",
+    "Start your first video": "Start your first video",
+    "Add a generation node, write a prompt, and optionally attach reference images.": "Add a generation node, write a prompt, and optionally attach reference images.",
+    "Switch project": "Switch project",
+    "Projects": "Projects"
   }
 }

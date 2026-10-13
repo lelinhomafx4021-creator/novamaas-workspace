@@ -47,14 +47,14 @@ export const GenerationNode = memo(function GenerationNode(
   return (
     <Node
       handles={{ target: false, source: true }}
-      className={cn('w-72', props.selected && 'ring-primary ring-2')}
+      className={cn('w-64 overflow-hidden', props.selected && 'selected')}
     >
       <NodeHeader>
-        <NodeTitle className='flex items-center gap-1.5 text-sm'>
-          <Clapperboard className='size-4' />
+        <NodeTitle className='flex items-center gap-1.5 font-mono text-xs tracking-wider uppercase'>
+          <Clapperboard className='text-primary size-3.5' />
           {t('Generate video')}
         </NodeTitle>
-        <NodeDescription className='truncate text-xs'>
+        <NodeDescription className='text-primary/80 truncate font-mono text-[11px]'>
           {draft.model || t('No model selected')}
         </NodeDescription>
         <NodeAction>

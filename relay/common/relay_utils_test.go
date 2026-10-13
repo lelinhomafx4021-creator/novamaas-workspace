@@ -112,8 +112,17 @@ func TestTaskDurationBounds(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "huge numeric seconds is rejected",
+			body:    `{"model":"MiniMax-H3","prompt":"a cat","seconds":9999999999}`,
+			wantErr: true,
+		},
+		{
 			name: "normal duration is accepted",
 			body: `{"model":"sora-2","prompt":"a cat","seconds":"8"}`,
+		},
+		{
+			name: "numeric seconds is accepted",
+			body: `{"model":"MiniMax-H3","prompt":"a cat","seconds":5,"metadata":{"resolution":"768P","ratio":"16:9"}}`,
 		},
 	}
 

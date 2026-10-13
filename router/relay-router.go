@@ -100,6 +100,7 @@ func SetRelayRouter(router *gin.Engine) {
 		playgroundRouter.POST("/chat/completions", controller.ValidatePlaygroundChat, middleware.Distribute(), controller.Playground)
 		playgroundRouter.POST("/audio/transcriptions", controller.ValidatePlaygroundAudio, middleware.Distribute(), controller.PlaygroundAudio)
 		playgroundRouter.POST("/audio/speech", controller.ValidatePlaygroundAudio, middleware.Distribute(), controller.PlaygroundAudio)
+		playgroundRouter.POST("/videos", controller.ValidatePlaygroundVideo, middleware.Distribute(), controller.PlaygroundVideo)
 	}
 	relayV1Router := router.Group("/v1")
 	relayV1Router.Use(middleware.RouteTag("relay"))

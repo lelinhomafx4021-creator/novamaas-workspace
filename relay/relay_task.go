@@ -270,7 +270,18 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	c.Header("X-New-Api-Other-Ratios", string(ratiosJSON))
 
 	// 11. 解析响应
-	upstreamTaskID, taskData, taskErr := adaptor.DoResponse(c, resp, info)
+	var upstreamTaskID string
+	var taskData []byte
+	var taskErr *dto.TaskError
+	if info.SkipClientResponse {
+		parser, ok := adaptor.(channel.TaskSubmitResponseParser)
+		if !ok {
+			return nil, service.TaskErrorWrapperLocal(fmt.Errorf("channel does not support studio submission"), "unsupported_channel", http.StatusBadRequest)
+		}
+		upstreamTaskID, taskData, taskErr = parser.ParseSubmitResponse(resp, info)
+	} else {
+		upstreamTaskID, taskData, taskErr = adaptor.DoResponse(c, resp, info)
+	}
 	if taskErr != nil {
 		return nil, taskErr
 	}

@@ -79,6 +79,13 @@ type TaskAdaptor interface {
 	ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error)
 }
 
+// TaskSubmitResponseParser is implemented by adaptors whose submit response
+// can be parsed without writing the client response. Callers that need the
+// result instead of the provider-shaped body (the video studio) require it.
+type TaskSubmitResponseParser interface {
+	ParseSubmitResponse(resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, err *taskdto.TaskError)
+}
+
 type OpenAIVideoConverter interface {
 	ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error)
 }

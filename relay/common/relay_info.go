@@ -862,6 +862,10 @@ type TaskRelayInfo struct {
 	ConsumeQuota   bool
 	RequestMetrics hosttypes.TaskRequestMetrics
 
+	// SkipClientResponse makes the submit path parse the upstream response
+	// without writing the adaptor's client body; the caller responds itself.
+	SkipClientResponse bool
+
 	// LockedChannel holds the full channel object when the request is bound to
 	// a specific channel (e.g., remix on origin task's channel). Stored as any
 	// to avoid an import cycle with model; callers type-assert to *model.Channel.
@@ -894,6 +898,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	aux := &struct {
 		Metadata json.RawMessage `json:"metadata,omitempty"`
 		Duration json.RawMessage `json:"duration,omitempty"`
+		Seconds  json.RawMessage `json:"seconds,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(t),
@@ -913,6 +918,20 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 				if v, err := strconv.Atoi(durationStr); err == nil {
 					t.Duration = v
 				}
+			}
+		}
+	}
+
+	// OpenAI-style video APIs send seconds as a string; MiniMax-compatible
+	// gateways send a number. Normalize both to the string form.
+	if len(aux.Seconds) > 0 {
+		var secondsNumber json.Number
+		if err := common.Unmarshal(aux.Seconds, &secondsNumber); err == nil {
+			t.Seconds = secondsNumber.String()
+		} else {
+			var secondsStr string
+			if err := common.Unmarshal(aux.Seconds, &secondsStr); err == nil {
+				t.Seconds = secondsStr
 			}
 		}
 	}

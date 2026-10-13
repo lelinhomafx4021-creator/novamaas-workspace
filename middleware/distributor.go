@@ -130,7 +130,7 @@ func Distribute() func(c *gin.Context) {
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
 						TokenGroup:  usingGroup,
-						RequestPath: playgroundRelayRequestPath(c.Request.URL.Path),
+						RequestPath: PlaygroundRelayRequestPath(c.Request.URL.Path),
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
@@ -154,7 +154,7 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 		}
-		if channel != nil && !channelSupportsRequestPath(channel, playgroundRelayRequestPath(c.Request.URL.Path), modelRequest.Model) {
+		if channel != nil && !channelSupportsRequestPath(channel, PlaygroundRelayRequestPath(c.Request.URL.Path), modelRequest.Model) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, "the selected channel does not support this request path")
 			return
 		}
@@ -172,7 +172,7 @@ func Distribute() func(c *gin.Context) {
 // are deliberately isolated to Fire Ark's native /api/v3 endpoints, in both
 // directions, so compatible and native routes cannot select each other's channels.
 func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
-	requestPath = playgroundRelayRequestPath(requestPath)
+	requestPath = PlaygroundRelayRequestPath(requestPath)
 	if channel == nil {
 		return false
 	}
@@ -186,9 +186,15 @@ func channelSupportsRequestPath(channel *model.Channel, requestPath string, requ
 	return config != nil && config.SupportsPathForModel(requestPath, requestModel)
 }
 
-func playgroundRelayRequestPath(path string) string {
+// PlaygroundRelayRequestPath maps a /pg route to the relay route whose
+// channels can serve it.
+func PlaygroundRelayRequestPath(path string) string {
 	if strings.HasPrefix(path, "/pg/audio/") {
 		return "/v1" + strings.TrimPrefix(path, "/pg")
+	}
+	// Studio submissions are converted to the generic task request shape.
+	if path == "/pg/videos" {
+		return "/v1/video/generations"
 	}
 	return path
 }
@@ -328,7 +334,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			modelRequest.Model = getTaskOriginModelName(c)
 		}
 		c.Set("relay_mode", relayMode)
-	} else if strings.Contains(c.Request.URL.Path, "/v1/video/generations") {
+	} else if strings.Contains(c.Request.URL.Path, "/v1/video/generations") || c.Request.URL.Path == "/pg/videos" {
 		relayMode := relayconstant.RelayModeUnknown
 		if c.Request.Method == http.MethodPost {
 			req, err := getModelFromRequest(c)
@@ -336,6 +342,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 				return nil, false, err
 			}
 			modelRequest.Model = req.Model
+			modelRequest.Group = req.Group
 			relayMode = relayconstant.RelayModeVideoSubmit
 		} else if c.Request.Method == http.MethodGet {
 			relayMode = relayconstant.RelayModeVideoFetchByID

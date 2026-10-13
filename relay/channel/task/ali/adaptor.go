@@ -593,6 +593,29 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, req
 
 // DoResponse handles upstream response
 func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *taskdto.TaskError) {
+	taskID, taskData, taskErr = a.ParseSubmitResponse(resp, info)
+	if taskErr != nil {
+		return
+	}
+	var aliResp AliVideoResponse
+	_ = common.Unmarshal(taskData, &aliResp)
+	// 转换为 OpenAI 格式响应
+	openAIResp := dto.NewOpenAIVideo()
+	openAIResp.ID = info.PublicTaskID
+	openAIResp.TaskID = info.PublicTaskID
+	openAIResp.Model = c.GetString("model")
+	if openAIResp.Model == "" && info != nil {
+		openAIResp.Model = info.OriginModelName
+	}
+	openAIResp.Status = convertAliStatus(aliResp.Output.TaskStatus)
+	openAIResp.CreatedAt = common.GetTimestamp()
+
+	// 返回 OpenAI 格式
+	c.JSON(http.StatusOK, openAIResp)
+	return
+}
+
+func (a *TaskAdaptor) ParseSubmitResponse(resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *taskdto.TaskError) {
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		taskErr = service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
@@ -617,20 +640,6 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		taskErr = service.TaskErrorWrapper(fmt.Errorf("task_id is empty"), "invalid_response", http.StatusInternalServerError)
 		return
 	}
-
-	// 转换为 OpenAI 格式响应
-	openAIResp := dto.NewOpenAIVideo()
-	openAIResp.ID = info.PublicTaskID
-	openAIResp.TaskID = info.PublicTaskID
-	openAIResp.Model = c.GetString("model")
-	if openAIResp.Model == "" && info != nil {
-		openAIResp.Model = info.OriginModelName
-	}
-	openAIResp.Status = convertAliStatus(aliResp.Output.TaskStatus)
-	openAIResp.CreatedAt = common.GetTimestamp()
-
-	// 返回 OpenAI 格式
-	c.JSON(http.StatusOK, openAIResp)
 
 	return aliResp.Output.TaskID, responseBody, nil
 }

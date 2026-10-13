@@ -370,6 +370,8 @@ func migrateDB() error {
 		&AssetWebhookDelivery{},
 		&AssetGroupReplica{},
 		&AssetReplica{},
+		&VideoProject{},
+		&VideoCreationRun{},
 		&CasbinRule{},
 		&AuthzRole{},
 	)
@@ -458,6 +460,8 @@ func migrateDBFast() error {
 		{&StorageCredential{}, "StorageCredential"},
 		{&StoragePolicy{}, "StoragePolicy"},
 		{&StorageObject{}, "StorageObject"},
+		{&VideoProject{}, "VideoProject"},
+		{&VideoCreationRun{}, "VideoCreationRun"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

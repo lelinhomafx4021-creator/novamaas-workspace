@@ -533,23 +533,35 @@ func RelayTaskFetch(c *gin.Context) {
 }
 
 func RelayTask(c *gin.Context) {
+	if _, taskErr := submitVideoTask(c, "", false); taskErr != nil {
+		respondTaskError(c, taskErr)
+	}
+}
+
+// submitVideoTask runs one task submission with channel retry, billing
+// settlement, and task persistence. On failure the caller writes taskErr.
+// On success the adaptor writes its client response unless skipClientResponse
+// is set. A non-empty publicTaskID is used as the task ID so callers can link
+// it before the upstream call.
+func submitVideoTask(c *gin.Context, publicTaskID string, skipClientResponse bool) (*model.Task, *taskdto.TaskError) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, &taskdto.TaskError{
+		return nil, &taskdto.TaskError{
 			Code:       "gen_relay_info_failed",
 			Message:    err.Error(),
 			StatusCode: http.StatusInternalServerError,
-		})
-		return
+		}
 	}
+	relayInfo.PublicTaskID = publicTaskID
+	relayInfo.SkipClientResponse = skipClientResponse
 
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
-		respondTaskError(c, taskErr)
-		return
+		return nil, taskErr
 	}
 
 	var result *relay.TaskSubmitResult
 	var taskErr *taskdto.TaskError
+	var task *model.Task
 	var requestBodyToStore []byte
 	requestBodyStored := false
 	defer func() {
@@ -562,7 +574,7 @@ func RelayTask(c *gin.Context) {
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
-		RequestPath: c.Request.URL.Path,
+		RequestPath: middleware.PlaygroundRelayRequestPath(c.Request.URL.Path),
 		Retry:       common.GetPointer(0),
 	}
 
@@ -666,7 +678,7 @@ func RelayTask(c *gin.Context) {
 		}
 		service.LogTaskConsumption(c, relayInfo)
 
-		task := model.InitTask(result.Platform, relayInfo)
+		task = model.InitTask(result.Platform, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
@@ -694,8 +706,9 @@ func RelayTask(c *gin.Context) {
 		if relayInfo.PublicTaskID != "" && taskErr.StatusCode >= http.StatusBadRequest && taskErr.StatusCode < http.StatusInternalServerError && taskErr.StatusCode != http.StatusRequestTimeout && taskErr.StatusCode != http.StatusTooManyRequests {
 			storageService.ScheduleTaskCleanup(relayInfo.PublicTaskID, common.GetTimestamp())
 		}
-		respondTaskError(c, taskErr)
+		return nil, taskErr
 	}
+	return task, nil
 }
 
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）

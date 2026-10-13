@@ -335,6 +335,13 @@ func SetApiRouter(router *gin.Engine) {
 			videoStudioRoute.PUT("/references/:id/retention", controller.SaveVideoStudioReference)
 			videoStudioRoute.DELETE("/references/:id", controller.DeleteVideoStudioReference)
 			videoStudioRoute.POST("/references/:id/seedance-asset", controller.RegisterVideoStudioReferenceAsset)
+			videoStudioRoute.GET("/models", controller.ListVideoStudioModels)
+			videoStudioRoute.GET("/projects", controller.ListVideoStudioProjects)
+			videoStudioRoute.POST("/projects", controller.CreateVideoStudioProject)
+			videoStudioRoute.GET("/projects/:id", controller.GetVideoStudioProject)
+			videoStudioRoute.PUT("/projects/:id", controller.UpdateVideoStudioProject)
+			videoStudioRoute.DELETE("/projects/:id", controller.DeleteVideoStudioProject)
+			videoStudioRoute.GET("/projects/:id/runs", controller.ListVideoStudioRuns)
 		}
 		assetLibraryRoute := apiRouter.Group("/asset-library")
 		assetLibraryRoute.Use(middleware.TokenOrUserAuth(), middleware.DisableCache())

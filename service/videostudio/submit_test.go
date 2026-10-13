@@ -188,3 +188,19 @@ func TestCapabilityRulesAreConfigurable(t *testing.T) {
 	require.Error(t, model_setting.ValidateVideoStudioModelRules(`[{"keyword":"x","protocol":"unknown"}]`))
 	require.Error(t, model_setting.ValidateVideoStudioModelRules(`[{"keyword":"a","protocol":"wan3"},{"keyword":"A","protocol":"wan3"}]`))
 }
+
+func TestResolutionsFollowTheModel(t *testing.T) {
+	tests := map[string][]string{
+		"doubao-seedance-2-0":             {"480p", "720p", "1080p", "4k"},
+		"doubao-seedance-2-0-fast-260128": {"480p", "720p"},
+		"doubao-seedance-2-5":             {"480p", "720p", "1080p"},
+		"doubao-seedance-1-0-pro-250528":  {"480p", "720p", "1080p"},
+		"wan3.0-video":                    {"480P", "720P"},
+		"MiniMax-H3":                      {"768P", "1080P"},
+	}
+	for name, resolutions := range tests {
+		capability, ok := CapabilityFor(name)
+		require.True(t, ok, name)
+		assert.Equal(t, resolutions, capability.Resolutions, name)
+	}
+}

@@ -23,6 +23,7 @@ import {
   draftFromRun,
   draftIssues,
   newGenerationDraft,
+  parametersForModel,
   parseDraft,
 } from '../lib/draft'
 import type { Capability, GenerationDraft, Run } from '../types'
@@ -34,7 +35,7 @@ const wan3: Capability = {
   max_references: 9,
   min_duration: 2,
   max_duration: 30,
-  resolutions: ['480P', '720P', '1080P'],
+  resolutions: ['480P', '720P'],
   ratios: ['16:9'],
   audio: true,
   seed: true,
@@ -48,8 +49,10 @@ const minimax: Capability = {
   protocol: 'openai_video',
   roles: [],
   max_references: 0,
+  resolutions: ['768P', '1080P'],
   audio: false,
   seed: false,
+  defaults: { duration: 5, resolution: '768P', ratio: '16:9' },
 }
 
 function draftWith(patch: Partial<GenerationDraft>): GenerationDraft {
@@ -149,5 +152,40 @@ describe('submission and history', () => {
 
   test('a corrupt stored draft opens as an empty project', () => {
     expect(parseDraft('not json')).toEqual({ version: 1, nodes: {} })
+  })
+})
+
+describe('parametersForModel', () => {
+  test('keeps values the new model supports and resets the rest to its defaults', () => {
+    const next = parametersForModel(
+      {
+        duration: 12,
+        resolution: '720P',
+        ratio: '16:9',
+        generate_audio: true,
+        seed: 7,
+      },
+      minimax
+    )
+    // 720P does not exist for H3; audio and seed are not offered.
+    expect(next).toEqual({ duration: 12, resolution: '768P', ratio: '16:9' })
+  })
+
+  test('keeps an explicit audio=false and seed=0 when the model supports them', () => {
+    const next = parametersForModel(
+      {
+        duration: 5,
+        resolution: '480P',
+        ratio: '16:9',
+        generate_audio: false,
+        seed: 0,
+      },
+      wan3
+    )
+    expect(next).toMatchObject({
+      resolution: '480P',
+      generate_audio: false,
+      seed: 0,
+    })
   })
 })

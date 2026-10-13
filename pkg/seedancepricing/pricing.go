@@ -56,6 +56,22 @@ func BasePriceCNY(modelName string) (float64, bool) {
 	return prices[priceKey{resolution: "720p"}], true
 }
 
+// OutputResolutions lists the output resolutions a priced model accepts, in
+// ascending order. 480p is accepted wherever 720p is, and billed as 720p.
+func OutputResolutions(modelName string) ([]string, bool) {
+	prices, ok := modelPrices[modelName]
+	if !ok {
+		return nil, false
+	}
+	resolutions := []string{"480p"}
+	for _, resolution := range []string{"720p", "1080p", "4k"} {
+		if _, ok := prices[priceKey{resolution: resolution}]; ok {
+			resolutions = append(resolutions, resolution)
+		}
+	}
+	return resolutions, true
+}
+
 // Lookup requires an explicit, supported output resolution. In particular,
 // historical corrections must not guess a price from missing request evidence
 // or silently treat an unsupported Seedance 2.5 4k request as the base tier.

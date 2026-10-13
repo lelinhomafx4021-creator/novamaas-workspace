@@ -33,7 +33,8 @@ import { Switch } from '@/components/ui/switch'
 import type { ApiKey } from '@/features/keys/types'
 import { useVideoStudioStore } from '@/stores/video-studio-store'
 
-import type { Capability, GenerationDraft, SubmitParameters } from '../types'
+import { parametersForModel } from '../lib/draft'
+import type { Capability, GenerationDraft } from '../types'
 
 export const FIELD_LABEL =
   'text-muted-foreground font-mono text-[10px] tracking-wider uppercase'
@@ -117,7 +118,7 @@ export function ModelConfig(props: ModelConfigProps) {
               updateNode(nodeId, {
                 model: event.target.value,
                 parameters: next
-                  ? { ...next.defaults, ...pickSupported(parameters, next) }
+                  ? parametersForModel(parameters, next)
                   : parameters,
               })
             }}
@@ -207,39 +208,6 @@ export function ModelConfig(props: ModelConfigProps) {
       </CollapsibleContent>
     </Collapsible>
   )
-}
-
-function pickSupported(parameters: SubmitParameters, capability: Capability) {
-  const kept: {
-    resolution?: string
-    ratio?: string
-    duration?: number
-    generate_audio?: boolean
-    seed?: number
-  } = {}
-  if (capability.audio && parameters.generate_audio !== undefined) {
-    kept.generate_audio = parameters.generate_audio
-  }
-  if (capability.seed && parameters.seed !== undefined) {
-    kept.seed = parameters.seed
-  }
-  if (
-    parameters.resolution &&
-    capability.resolutions.includes(parameters.resolution)
-  ) {
-    kept.resolution = parameters.resolution
-  }
-  if (parameters.ratio && capability.ratios.includes(parameters.ratio)) {
-    kept.ratio = parameters.ratio
-  }
-  if (
-    parameters.duration !== undefined &&
-    parameters.duration >= capability.min_duration &&
-    parameters.duration <= capability.max_duration
-  ) {
-    kept.duration = parameters.duration
-  }
-  return kept
 }
 
 type OptionFieldProps = {

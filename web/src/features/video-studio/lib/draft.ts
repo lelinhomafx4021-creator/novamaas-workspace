@@ -23,6 +23,7 @@ import type {
   ProjectCanvas,
   ProjectDraft,
   Run,
+  SubmitParameters,
   SubmitRequest,
 } from '../types'
 
@@ -163,4 +164,38 @@ export function isRunActive(run: Run): boolean {
     run.status === 'queued' ||
     run.status === 'in_progress'
   )
+}
+
+/**
+ * Parameters to carry over when switching to another model: the model's
+ * defaults, overridden by the current values the new model also supports.
+ */
+export function parametersForModel(
+  parameters: SubmitParameters,
+  capability: Capability
+): SubmitParameters {
+  const kept: SubmitParameters = {}
+  if (capability.audio && parameters.generate_audio !== undefined) {
+    kept.generate_audio = parameters.generate_audio
+  }
+  if (capability.seed && parameters.seed !== undefined) {
+    kept.seed = parameters.seed
+  }
+  if (
+    parameters.resolution &&
+    capability.resolutions.includes(parameters.resolution)
+  ) {
+    kept.resolution = parameters.resolution
+  }
+  if (parameters.ratio && capability.ratios.includes(parameters.ratio)) {
+    kept.ratio = parameters.ratio
+  }
+  if (
+    parameters.duration !== undefined &&
+    parameters.duration >= capability.min_duration &&
+    parameters.duration <= capability.max_duration
+  ) {
+    kept.duration = parameters.duration
+  }
+  return { ...capability.defaults, ...kept }
 }

@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/QuantumNous/new-api/pkg/seedancepricing"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 )
@@ -68,15 +69,15 @@ var capabilityProfiles = map[string]Capability{
 		AssetLibrary:  true,
 		Defaults:      Defaults{Duration: 5, Resolution: "720p", Ratio: "16:9"},
 	},
-	// Mirrors the bounds enforced by convertToWan3Request; the ali adaptor
-	// only converts this shape for wan3.0 models.
+	// The ali adaptor also accepts 1080P, but the studio offers only the
+	// resolutions the service supports. It converts this shape for wan3.0 models.
 	ProtocolWan3: {
 		Protocol:      ProtocolWan3,
 		Roles:         []string{RoleFirstFrame, RoleLastFrame, RoleReferenceImage},
 		MaxReferences: 9,
 		MinDuration:   2,
 		MaxDuration:   30,
-		Resolutions:   []string{"480P", "720P", "1080P"},
+		Resolutions:   []string{"480P", "720P"},
 		Ratios:        []string{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"},
 		Audio:         true,
 		Seed:          true,
@@ -105,6 +106,10 @@ func CapabilityFor(model string) (Capability, bool) {
 		}
 		capability := capabilityProfiles[rule.Protocol]
 		capability.Model = model
+		if resolutions, priced := seedancepricing.OutputResolutions(model); priced && rule.Protocol == ProtocolSeedance {
+			// Seedance output resolution differs per model (2.0 fast: 720p only).
+			capability.Resolutions = resolutions
+		}
 		return capability, true
 	}
 	return Capability{}, false

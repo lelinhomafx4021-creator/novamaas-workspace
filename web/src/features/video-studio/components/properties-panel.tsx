@@ -31,6 +31,9 @@ import { draftIssues } from '../lib/draft'
 import type { Capability, ReferenceRole, SubmitParameters } from '../types'
 import { ReferenceThumbnail } from './reference-thumbnail'
 
+const FIELD_LABEL =
+  'text-muted-foreground font-mono text-[10px] tracking-wider uppercase'
+
 const ROLE_LABELS: Record<ReferenceRole, string> = {
   first_frame: 'First frame',
   last_frame: 'Last frame',
@@ -55,7 +58,7 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
 
   if (!nodeId || !draft) {
     return (
-      <aside className='bg-background text-muted-foreground w-80 shrink-0 border-l p-4 text-sm'>
+      <aside className='bg-background/80 text-muted-foreground flex w-80 shrink-0 items-center justify-center border-l p-8 text-center text-sm'>
         {t('Select a generation node to edit it.')}
       </aside>
     )
@@ -70,9 +73,11 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
     updateNode(nodeId, { parameters: { ...parameters, ...patch } })
 
   return (
-    <aside className='bg-background flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4'>
+    <aside className='bg-background/80 flex w-80 shrink-0 flex-col gap-5 overflow-y-auto border-l p-4 backdrop-blur-xl'>
       <div className='grid gap-1.5'>
-        <Label htmlFor='studio-model'>{t('Model')}</Label>
+        <Label htmlFor='studio-model' className={FIELD_LABEL}>
+          {t('Model')}
+        </Label>
         <NativeSelect
           id='studio-model'
           className='w-full'
@@ -103,7 +108,9 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
 
       {props.groups.length > 1 && (
         <div className='grid gap-1.5'>
-          <Label htmlFor='studio-group'>{t('Group')}</Label>
+          <Label htmlFor='studio-group' className={FIELD_LABEL}>
+            {t('Group')}
+          </Label>
           <NativeSelect
             id='studio-group'
             className='w-full'
@@ -125,7 +132,9 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
       )}
 
       <div className='grid gap-1.5'>
-        <Label htmlFor='studio-prompt'>{t('Prompt')}</Label>
+        <Label htmlFor='studio-prompt' className={FIELD_LABEL}>
+          {t('Prompt')}
+        </Label>
         <Textarea
           id='studio-prompt'
           rows={5}
@@ -138,7 +147,7 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
       </div>
 
       <div className='grid gap-2'>
-        <Label>{t('References')}</Label>
+        <Label className={FIELD_LABEL}>{t('References')}</Label>
         {draft.references.length === 0 && (
           <p className='text-muted-foreground text-xs'>
             {t('No references. The video is generated from the prompt alone.')}
@@ -203,7 +212,9 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
       {capability && (
         <div className='grid grid-cols-2 gap-3'>
           <div className='grid gap-1.5'>
-            <Label htmlFor='studio-duration'>{t('Duration (s)')}</Label>
+            <Label htmlFor='studio-duration' className={FIELD_LABEL}>
+              {t('Duration (s)')}
+            </Label>
             <Input
               id='studio-duration'
               type='number'
@@ -235,7 +246,9 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
           />
           {capability.seed && (
             <div className='grid gap-1.5'>
-              <Label htmlFor='studio-seed'>{t('Seed')}</Label>
+              <Label htmlFor='studio-seed' className={FIELD_LABEL}>
+                {t('Seed')}
+              </Label>
               <Input
                 id='studio-seed'
                 type='number'
@@ -253,7 +266,9 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
           )}
           {capability.audio && (
             <div className='col-span-2 flex items-center justify-between'>
-              <Label htmlFor='studio-audio'>{t('Generate audio')}</Label>
+              <Label htmlFor='studio-audio' className={FIELD_LABEL}>
+                {t('Generate audio')}
+              </Label>
               <Switch
                 id='studio-audio'
                 checked={parameters.generate_audio ?? false}
@@ -327,7 +342,9 @@ type OptionFieldProps = {
 function OptionField(props: OptionFieldProps) {
   return (
     <div className='grid gap-1.5'>
-      <Label htmlFor={props.id}>{props.label}</Label>
+      <Label htmlFor={props.id} className={FIELD_LABEL}>
+        {props.label}
+      </Label>
       <NativeSelect
         id={props.id}
         className='w-full'

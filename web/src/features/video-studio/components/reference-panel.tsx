@@ -181,15 +181,14 @@ export function ReferencePanel(props: ReferencePanelProps) {
   return (
     <aside className='bg-background flex w-64 shrink-0 flex-col border-r'>
       <div className='flex items-center justify-between gap-2 border-b p-3'>
-        <span className='text-sm font-medium'>{t('References')}</span>
-        <Button
-          size='sm'
-          disabled={upload.isPending}
-          onClick={() => inputRef.current?.click()}
-        >
-          <Upload />
-          {upload.isPending ? t('Uploading...') : t('Upload')}
-        </Button>
+        <span className='font-mono text-xs tracking-wider uppercase'>
+          {t('References')}
+        </span>
+        {upload.isPending && (
+          <span className='text-muted-foreground font-mono text-[10px]'>
+            {t('Uploading...')}
+          </span>
+        )}
         <input
           ref={inputRef}
           type='file'
@@ -203,8 +202,18 @@ export function ReferencePanel(props: ReferencePanelProps) {
           }}
         />
       </div>
+      <button
+        type='button'
+        disabled={upload.isPending}
+        onClick={() => inputRef.current?.click()}
+        className='border-border text-muted-foreground hover:border-primary/60 hover:text-primary focus-visible:ring-ring mx-3 mt-3 flex flex-col items-center gap-1 rounded-lg border border-dashed px-3 py-5 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50'
+      >
+        <Upload className='size-5' />
+        {t('Drop or click to upload images')}
+        <span className='text-[10px] opacity-70'>JPEG / PNG / WebP</span>
+      </button>
       {!selectedDraft && (
-        <p className='text-muted-foreground px-3 pt-3 text-xs'>
+        <p className='text-muted-foreground px-3 pt-3 text-[11px]'>
           {t('Select a generation node, then click an image to attach it.')}
         </p>
       )}

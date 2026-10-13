@@ -7054,6 +7054,7 @@
     "Start your first video": "Bắt đầu video đầu tiên của bạn",
     "Add a generation node, write a prompt, and optionally attach reference images.": "Thêm nút tạo, viết prompt và có thể đính kèm ảnh tham chiếu.",
     "Switch project": "Chuyển dự án",
-    "Projects": "Dự án"
+    "Projects": "Dự án",
+    "Drop or click to upload images": "Bấm để tải ảnh lên"
   }
 }

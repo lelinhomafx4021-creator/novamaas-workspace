@@ -7054,6 +7054,7 @@
     "Start your first video": "开始你的第一个视频",
     "Add a generation node, write a prompt, and optionally attach reference images.": "添加生成节点，写下提示词，也可以附上参考图。",
     "Switch project": "切换项目",
-    "Projects": "项目"
+    "Projects": "项目",
+    "Drop or click to upload images": "点击上传图片"
   }
 }

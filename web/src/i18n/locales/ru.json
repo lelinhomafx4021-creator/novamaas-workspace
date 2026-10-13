@@ -7054,6 +7054,7 @@
     "Start your first video": "Создайте своё первое видео",
     "Add a generation node, write a prompt, and optionally attach reference images.": "Добавьте узел генерации, напишите промпт и при желании прикрепите референсы.",
     "Switch project": "Сменить проект",
-    "Projects": "Проекты"
+    "Projects": "Проекты",
+    "Drop or click to upload images": "Нажмите, чтобы загрузить изображения"
   }
 }

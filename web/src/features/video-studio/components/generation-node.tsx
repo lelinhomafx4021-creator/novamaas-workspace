@@ -73,9 +73,30 @@ export const GenerationNode = memo(function GenerationNode(
         </NodeAction>
       </NodeHeader>
       <NodeContent className='grid gap-2'>
-        <p className='text-muted-foreground line-clamp-3 text-xs'>
+        <p
+          className={cn(
+            'line-clamp-3 text-xs leading-relaxed',
+            draft.prompt ? 'text-foreground/90' : 'text-muted-foreground italic'
+          )}
+        >
           {draft.prompt || t('No prompt yet')}
         </p>
+        <div className='flex flex-wrap gap-1 font-mono text-[10px]'>
+          {[
+            draft.parameters.duration ? `${draft.parameters.duration}s` : '',
+            draft.parameters.resolution,
+            draft.parameters.ratio,
+          ]
+            .filter(Boolean)
+            .map((chip) => (
+              <span
+                key={chip}
+                className='border-primary/30 text-primary/90 rounded border px-1.5 py-0.5'
+              >
+                {chip}
+              </span>
+            ))}
+        </div>
         {draft.references.length > 0 && (
           <div className='flex gap-1'>
             {draft.references.map((reference, index) => (

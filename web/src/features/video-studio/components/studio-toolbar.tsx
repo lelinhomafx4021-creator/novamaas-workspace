@@ -60,11 +60,11 @@ export function StudioToolbar(props: StudioToolbarProps) {
   const SaveIcon = SAVE_ICONS[saveState]
 
   return (
-    <header className='bg-background/70 flex h-12 shrink-0 items-center gap-2 border-b px-3 backdrop-blur-xl'>
+    <header className='bg-background/70 flex h-11 shrink-0 items-center gap-1 border-b px-2 backdrop-blur-xl'>
       <ProjectSwitcher projectId={projectId} />
       <Input
         aria-label={t('Project name')}
-        className='hover:border-input focus-visible:border-input h-8 w-48 border-transparent bg-transparent shadow-none'
+        className='hover:bg-muted/60 focus-visible:bg-muted/60 h-7 w-52 border-transparent bg-transparent px-2 text-sm font-medium shadow-none'
         value={name}
         maxLength={128}
         onChange={(event) => setName(event.target.value)}
@@ -73,8 +73,8 @@ export function StudioToolbar(props: StudioToolbarProps) {
         role='status'
         aria-live='polite'
         className={cn(
-          'text-muted-foreground flex items-center gap-1 font-mono text-[11px]',
-          failed && 'text-destructive'
+          'bg-muted/50 text-muted-foreground ml-1 flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px]',
+          failed && 'bg-destructive/15 text-destructive'
         )}
       >
         <SaveIcon className='size-3.5' />

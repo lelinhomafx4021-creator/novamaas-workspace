@@ -19,6 +19,32 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  // Video studio labels held in constants
+  'Saved',
+  'Unsaved changes',
+  'Saving...',
+  'Edited elsewhere',
+  'Save failed',
+  'Submitting',
+  'Queued',
+  'Generating',
+  'Completed',
+  'Failed',
+  'Unknown',
+  'First frame',
+  'Last frame',
+  'Reference image',
+  'Select a model',
+  'Enter a prompt',
+  'Too many reference images for this model',
+  'This model does not support some reference roles',
+  'Seedance assets only work with Seedance models',
+  'A last frame requires a first frame',
+  'Reference images cannot be combined with first or last frames',
+  'This model does not support audio generation',
+  'This model does not support a fixed seed',
+  'Duration is out of range for this model',
+
   // Billing document branding errors
   'Unable to prepare PDF branding. Check the system Logo URL and Footer settings, then try again.',
 

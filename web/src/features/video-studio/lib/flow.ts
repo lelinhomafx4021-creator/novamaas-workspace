@@ -58,12 +58,11 @@ export function buildFlowGraph(
       nodes.push({
         id: resultId,
         type: 'result',
-        position: {
+        position: canvas.positions[resultId] ?? {
           x: position.x + RESULT_OFFSET_X,
           y: position.y + index * RESULT_SPACING_Y,
         },
         data: { run, onRegenerate },
-        draggable: false,
         selectable: false,
       })
       edges.push({ id: `edge-${run.id}`, source: nodeId, target: resultId })

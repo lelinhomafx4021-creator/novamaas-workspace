@@ -16,7 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Cloud, CloudAlert, CloudUpload, Plus } from 'lucide-react'
+import {
+  Cloud,
+  CloudAlert,
+  CloudUpload,
+  Images,
+  Plus,
+  SlidersHorizontal,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -46,6 +53,9 @@ const SAVE_ICONS: Record<SaveState, typeof Cloud> = {
 }
 
 type StudioToolbarProps = {
+  docked: boolean
+  onOpenReferences: () => void
+  onOpenProperties: () => void
   onAddNode: () => void
   onReload: () => void
 }
@@ -61,10 +71,20 @@ export function StudioToolbar(props: StudioToolbarProps) {
 
   return (
     <header className='bg-background/70 flex h-11 shrink-0 items-center gap-1 border-b px-2 backdrop-blur-xl'>
+      {!props.docked && (
+        <Button
+          size='icon-sm'
+          variant='ghost'
+          aria-label={t('References')}
+          onClick={props.onOpenReferences}
+        >
+          <Images />
+        </Button>
+      )}
       <ProjectSwitcher projectId={projectId} />
       <Input
         aria-label={t('Project name')}
-        className='hover:bg-muted/60 focus-visible:bg-muted/60 h-7 w-52 border-transparent bg-transparent px-2 text-sm font-medium shadow-none'
+        className='hover:bg-muted/60 focus-visible:bg-muted/60 h-7 w-28 border-transparent bg-transparent px-2 text-sm font-medium shadow-none sm:w-52'
         value={name}
         maxLength={128}
         onChange={(event) => setName(event.target.value)}
@@ -86,9 +106,19 @@ export function StudioToolbar(props: StudioToolbarProps) {
         </Button>
       )}
       <div className='flex-1' />
+      {!props.docked && (
+        <Button
+          size='icon-sm'
+          variant='ghost'
+          aria-label={t('Node settings')}
+          onClick={props.onOpenProperties}
+        >
+          <SlidersHorizontal />
+        </Button>
+      )}
       <Button size='sm' onClick={props.onAddNode}>
         <Plus />
-        {t('Add generation node')}
+        <span className='hidden sm:inline'>{t('Add generation node')}</span>
       </Button>
     </header>
   )

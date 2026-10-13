@@ -51,12 +51,9 @@ export function StudioCanvas(props: StudioCanvasProps) {
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const state = useVideoStudioStore.getState()
     for (const change of changes) {
-      // Persist only when a drag ends, not on every intermediate frame.
-      if (
-        change.type === 'position' &&
-        change.position &&
-        change.dragging === false
-      ) {
+      // Controlled nodes only follow the cursor if every drag frame is stored;
+      // autosave is debounced, so this does not write per frame.
+      if (change.type === 'position' && change.position) {
         state.moveNode(change.id, change.position)
       }
       if (change.type === 'select' && state.draft.nodes[change.id]) {

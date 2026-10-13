@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { getUserGroups } from '@/features/playground/api'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { useVideoStudioStore } from '@/stores/video-studio-store'
 
 import { getProject, listCapabilities, listRuns, submitVideo } from '../api'
@@ -39,6 +40,7 @@ import type { Run } from '../types'
 import { PropertiesPanel } from './properties-panel'
 import { ReferencePanel } from './reference-panel'
 import { StudioCanvas } from './studio-canvas'
+import { StudioDock, STUDIO_DOCK_QUERY } from './studio-dock'
 import { StudioToolbar } from './studio-toolbar'
 
 const RUN_POLL_MS = 5000
@@ -61,6 +63,9 @@ export function StudioEditor(props: { projectId: string }) {
   >({})
 
   useProjectAutosave()
+  const docked = useMediaQuery(STUDIO_DOCK_QUERY)
+  const [referencesOpen, setReferencesOpen] = useState(false)
+  const [propertiesOpen, setPropertiesOpen] = useState(false)
 
   const project = useQuery({
     queryKey: ['video-studio', 'project', props.projectId],
@@ -152,6 +157,10 @@ export function StudioEditor(props: { projectId: string }) {
     [addNode, store]
   )
 
+  useEffect(() => {
+    if (!docked && selectedNodeId) setPropertiesOpen(true)
+  }, [docked, selectedNodeId])
+
   const graph = useMemo(
     () =>
       buildFlowGraph(
@@ -192,6 +201,9 @@ export function StudioEditor(props: { projectId: string }) {
   return (
     <div className='bg-muted/30 flex h-full min-h-0 flex-col'>
       <StudioToolbar
+        docked={docked}
+        onOpenReferences={() => setReferencesOpen(true)}
+        onOpenProperties={() => setPropertiesOpen(true)}
         onAddNode={() => addNode()}
         onReload={async () => {
           // Discards local edits in favour of the stored version.
@@ -200,22 +212,41 @@ export function StudioEditor(props: { projectId: string }) {
         }}
       />
       <div className='flex min-h-0 flex-1'>
-        <ReferencePanel
-          supportsAssets={selectedCapability?.asset_library ?? false}
-          defaultRole={selectedCapability?.roles[0]}
-        />
+        <StudioDock
+          docked={docked}
+          side='left'
+          title='References'
+          open={referencesOpen}
+          onOpenChange={setReferencesOpen}
+        >
+          <ReferencePanel
+            supportsAssets={selectedCapability?.asset_library ?? false}
+            defaultRole={selectedCapability?.roles[0]}
+          />
+        </StudioDock>
         <StudioCanvas
           nodes={graph.nodes}
           edges={graph.edges}
           noModels={capabilities.data?.length === 0}
           onAddNode={() => addNode()}
         />
-        <PropertiesPanel
-          capabilities={capabilities.data ?? []}
-          groups={groups.data ?? []}
-          submitting={submit.isPending}
-          onSubmit={(nodeId) => submit.mutate(nodeId)}
-        />
+        <StudioDock
+          docked={docked}
+          side='right'
+          title='Node settings'
+          open={propertiesOpen}
+          onOpenChange={setPropertiesOpen}
+        >
+          <PropertiesPanel
+            capabilities={capabilities.data ?? []}
+            groups={groups.data ?? []}
+            submitting={submit.isPending}
+            onSubmit={(nodeId) => {
+              setPropertiesOpen(false)
+              submit.mutate(nodeId)
+            }}
+          />
+        </StudioDock>
       </div>
     </div>
   )

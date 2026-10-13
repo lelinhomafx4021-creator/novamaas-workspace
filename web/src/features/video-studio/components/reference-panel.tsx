@@ -42,7 +42,12 @@ type ReferencePanelProps = {
 }
 
 function formatExpiry(expiresAt: number) {
-  return new Date(expiresAt * 1000).toLocaleString()
+  return new Date(expiresAt * 1000).toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 /** Left panel: uploads, the user's saved library, and Seedance assets. */
@@ -92,6 +97,15 @@ export function ReferencePanel(props: ReferencePanelProps) {
         ...uploaded,
         ...current.filter((item) => !uploaded.some((u) => u.id === item.id)),
       ])
+      const expiring = uploaded.find((item) => !item.saved)
+      if (expiring) {
+        // Remind on every upload: unsaved images are deleted automatically.
+        toast.warning(
+          t('Uploaded images are deleted at {{time}} unless you save them.', {
+            time: formatExpiry(expiring.expires_at),
+          })
+        )
+      }
       if (selectedNodeId && props.defaultRole) {
         for (const reference of uploaded) {
           attach({
@@ -163,17 +177,21 @@ export function ReferencePanel(props: ReferencePanelProps) {
       {reference.saved ? (
         <Badge variant='secondary'>{t('Saved')}</Badge>
       ) : (
-        <Button
-          size='xs'
-          variant='outline'
-          disabled={save.isPending}
-          title={t('Expires at {{time}}', {
-            time: formatExpiry(reference.expires_at),
-          })}
-          onClick={() => save.mutate(reference.id)}
-        >
-          {t('Save to library')}
-        </Button>
+        <>
+          <span className='text-[10px] text-amber-500'>
+            {t('Deleted at {{time}}', {
+              time: formatExpiry(reference.expires_at),
+            })}
+          </span>
+          <Button
+            size='xs'
+            variant='outline'
+            disabled={save.isPending}
+            onClick={() => save.mutate(reference.id)}
+          >
+            {t('Save to library')}
+          </Button>
+        </>
       )}
     </div>
   )
@@ -229,7 +247,9 @@ export function ReferencePanel(props: ReferencePanelProps) {
           <TabsContent value='uploads' className='grid grid-cols-2 gap-2 pt-2'>
             {uploads.length === 0 && (
               <p className='text-muted-foreground col-span-2 text-xs'>
-                {t('Uploaded images are kept temporarily until you save them.')}
+                {t(
+                  'Uploaded images are deleted automatically after a while. Save the ones you want to keep.'
+                )}
               </p>
             )}
             {uploads.map(renderReference)}

@@ -7,12 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-const (
-	VideoStudioModelRulesOptionKey = "video_studio.model_rules"
-	// VideoStudioPromptModelOptionKey names the text model that rewrites a
-	// prompt; empty disables prompt optimization.
-	VideoStudioPromptModelOptionKey = "video_studio.prompt_model"
-)
+const VideoStudioModelRulesOptionKey = "video_studio.model_rules"
 
 // Request body shapes the video studio can send to /v1/video/generations.
 const (
@@ -74,10 +69,4 @@ func GetVideoStudioModelRules() []VideoStudioModelRule {
 	}
 	rules, _ := ParseVideoStudioModelRules(DefaultVideoStudioModelRules)
 	return rules
-}
-
-func GetVideoStudioPromptModel() string {
-	common.OptionMapRWMutex.RLock()
-	defer common.OptionMapRWMutex.RUnlock()
-	return strings.TrimSpace(common.Interface2String(common.OptionMap[VideoStudioPromptModelOptionKey]))
 }

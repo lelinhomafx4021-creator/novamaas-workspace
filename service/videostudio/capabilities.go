@@ -99,8 +99,12 @@ var capabilityProfiles = map[string]Capability{
 // CapabilityFor returns the studio capability for a public model name: the
 // first administrator rule whose keyword the name contains selects the protocol.
 func CapabilityFor(model string) (Capability, bool) {
+	return capabilityForRules(model, model_setting.GetVideoStudioModelRules())
+}
+
+func capabilityForRules(model string, rules []model_setting.VideoStudioModelRule) (Capability, bool) {
 	name := strings.ToLower(model)
-	for _, rule := range model_setting.GetVideoStudioModelRules() {
+	for _, rule := range rules {
 		if !strings.Contains(name, rule.Keyword) {
 			continue
 		}
@@ -115,15 +119,20 @@ func CapabilityFor(model string) (Capability, bool) {
 	return Capability{}, false
 }
 
-// AvailableCapabilities intersects the profiles with the models the user's
-// groups can actually reach.
-func AvailableCapabilities(enabledModels []string) []Capability {
-	capabilities := make([]Capability, 0)
+// SplitModels sorts the models a key can reach into studio video models and
+// the remaining models, which the canvas offers for prompt optimization.
+func SplitModels(enabledModels []string) (video []Capability, text []string) {
+	rules := model_setting.GetVideoStudioModelRules()
+	video = make([]Capability, 0)
+	text = make([]string, 0)
 	for _, model := range enabledModels {
-		if capability, ok := CapabilityFor(model); ok {
-			capabilities = append(capabilities, capability)
+		if capability, ok := capabilityForRules(model, rules); ok {
+			video = append(video, capability)
+		} else {
+			text = append(text, model)
 		}
 	}
-	slices.SortFunc(capabilities, func(a, b Capability) int { return strings.Compare(a.Model, b.Model) })
-	return capabilities
+	slices.SortFunc(video, func(a, b Capability) int { return strings.Compare(a.Model, b.Model) })
+	slices.Sort(text)
+	return video, text
 }

@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -91,15 +92,20 @@ export function ProjectSwitcher(props: { projectId: string }) {
         <span className='sr-only'>{t('Switch project')}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='start' className='w-64'>
-        <DropdownMenuLabel>{t('Projects')}</DropdownMenuLabel>
-        <div className='max-h-72 overflow-y-auto'>
-          {projects.data?.map((project) => (
-            <DropdownMenuItem key={project.id} onClick={() => open(project.id)}>
-              <span className='min-w-0 flex-1 truncate'>{project.name}</span>
-              {project.id === props.projectId && <Check />}
-            </DropdownMenuItem>
-          ))}
-        </div>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{t('Projects')}</DropdownMenuLabel>
+          <div className='max-h-72 overflow-y-auto'>
+            {projects.data?.map((project) => (
+              <DropdownMenuItem
+                key={project.id}
+                onClick={() => open(project.id)}
+              >
+                <span className='min-w-0 flex-1 truncate'>{project.name}</span>
+                {project.id === props.projectId && <Check />}
+              </DropdownMenuItem>
+            ))}
+          </div>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={create.isPending}

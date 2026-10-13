@@ -21,7 +21,7 @@ import { sendChatCompletion } from '@/features/playground/api'
 import { api } from '@/lib/api'
 
 import type {
-  ModelCatalog,
+  Capability,
   Page,
   Project,
   ProjectSummary,
@@ -34,9 +34,18 @@ import type {
 const quiet = { skipBusinessError: true, skipErrorHandler: true }
 
 export async function listCapabilities(tokenId?: number) {
-  const response = await api.get<VideoStudioResponse<ModelCatalog>>(
+  const response = await api.get<VideoStudioResponse<Capability[]>>(
     '/api/video-studio/models',
     { params: { token_id: tokenId || undefined } }
+  )
+  return response.data
+}
+
+/** Non-video models the key can reach, for prompt optimization. */
+export async function listTextModels(tokenId: number) {
+  const response = await api.get<VideoStudioResponse<string[]>>(
+    '/api/video-studio/models',
+    { params: { token_id: tokenId, kind: 'text' } }
   )
   return response.data
 }

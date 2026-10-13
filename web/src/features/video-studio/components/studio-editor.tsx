@@ -99,7 +99,7 @@ export function StudioEditor(props: { projectId: string }) {
       return response.data
     },
   })
-  const capabilityList = catalog.data?.models
+  const capabilityList = catalog.data
   const keys = useQuery({
     queryKey: ['video-studio', 'keys'],
     queryFn: listStudioKeys,
@@ -251,7 +251,6 @@ export function StudioEditor(props: { projectId: string }) {
         >
           <PropertiesPanel
             capabilities={capabilityList ?? []}
-            promptModel={catalog.data?.prompt_model ?? ''}
             keys={keys.data ?? []}
             submitting={submit.isPending}
             onSubmit={(nodeId) => {

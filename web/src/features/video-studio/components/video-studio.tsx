@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { PublicLayout } from '@/components/layout'
 
@@ -56,9 +57,15 @@ export function VideoStudio(props: { projectId?: string }) {
     // Guard against a second create from a re-run effect.
     if (creating.current) return
     creating.current = true
-    void createProject(t('Untitled project')).then((response) => {
-      if (response.success) void open(response.data.id)
-    })
+    createProject(t('Untitled project'))
+      .then((response) => {
+        if (!response.success) throw new Error(response.message)
+        return open(response.data.id)
+      })
+      .catch((error) => {
+        creating.current = false
+        toast.error(studioErrorMessage(error))
+      })
   }, [props.projectId, projects.data, navigate, t])
 
   return (

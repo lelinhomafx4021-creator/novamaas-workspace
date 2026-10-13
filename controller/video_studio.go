@@ -12,7 +12,6 @@ import (
 	assetService "github.com/QuantumNous/new-api/service/assetlibrary"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 	"github.com/QuantumNous/new-api/service/videostudio"
-	"github.com/QuantumNous/new-api/setting/model_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -174,8 +173,10 @@ func availableForKey(available map[string]bool, token *model.Token) map[string]b
 	return allowed
 }
 
-// ListVideoStudioModels returns studio-capable models the chosen key can
-// reach, so the canvas never offers a model without an available channel.
+// ListVideoStudioModels returns the models the chosen key can reach. By
+// default these are the studio's video models, so the canvas never offers one
+// without an available channel; kind=text returns the other models, for prompt
+// optimization under a separate text key.
 func ListVideoStudioModels(c *gin.Context) {
 	token, err := videoStudioKey(c.GetInt("id"), common.String2Int(c.Query("token_id")))
 	if err != nil {
@@ -191,18 +192,16 @@ func ListVideoStudioModels(c *gin.Context) {
 		return
 	}
 	available = availableForKey(available, token)
-	enabled := make([]string, 0, len(available))
+	names := make([]string, 0, len(available))
 	for name := range available {
-		enabled = append(enabled, name)
+		names = append(names, name)
 	}
-	promptModel := model_setting.GetVideoStudioPromptModel()
-	if !available[promptModel] {
-		promptModel = ""
+	video, text := videostudio.SplitModels(names)
+	if c.Query("kind") == "text" {
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": text})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
-		"models":       videostudio.AvailableCapabilities(enabled),
-		"prompt_model": promptModel,
-	}})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": video})
 }
 
 func ListVideoStudioProjects(c *gin.Context) {

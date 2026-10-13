@@ -518,7 +518,7 @@
     "API info deleted. Click \"Save Settings\" to apply.": "API情報が削除されました。「Save Settings」をクリックして適用してください。",
     "API info saved successfully": "API情報が正常に保存されました",
     "API info updated. Click \"Save Settings\" to apply.": "API情報が更新されました。「Save Settings」をクリックして適用してください。",
-    "API key": "APIキー",
+    "API key": "API キー",
     "API Key": "APIキー",
     "API Key (one per line for batch mode)": "API キー (バッチモード時は1行に1つ)",
     "API Key (Production)": "APIキー（本番）",
@@ -7063,12 +7063,15 @@
     "Wan 3 (input.media + parameters)": "Wan 3（input.media + parameters）",
     "OpenAI-compatible (seconds + metadata)": "OpenAI 互換（seconds + metadata）",
     "Add rule": "ルールを追加",
-    "API key": "API キー",
     "Default (account group)": "デフォルト（アカウントのグループ）",
     "Model and parameters": "モデルとパラメータ",
     "Optimize prompt": "プロンプトを最適化",
     "Optimizing...": "最適化中...",
     "Prompt optimization model": "プロンプト最適化モデル",
-    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "動画スタジオでプロンプトを書き換えるテキストモデル。空欄にするとボタンを非表示にします。"
+    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "動画スタジオでプロンプトを書き換えるテキストモデル。空欄にするとボタンを非表示にします。",
+    "Video API key": "動画用 API キー",
+    "Text API key": "テキスト用 API キー",
+    "Off (no prompt optimization)": "オフ（プロンプトを最適化しない）",
+    "Text model": "テキストモデル"
   }
 }

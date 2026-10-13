@@ -7063,12 +7063,15 @@
     "Wan 3 (input.media + parameters)": "Wan 3 (input.media + parameters)",
     "OpenAI-compatible (seconds + metadata)": "Tương thích OpenAI (seconds + metadata)",
     "Add rule": "Thêm quy tắc",
-    "API key": "Khóa API",
     "Default (account group)": "Mặc định (nhóm tài khoản)",
     "Model and parameters": "Mô hình và tham số",
     "Optimize prompt": "Tối ưu lời nhắc",
     "Optimizing...": "Đang tối ưu...",
     "Prompt optimization model": "Mô hình tối ưu lời nhắc",
-    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "Mô hình văn bản viết lại lời nhắc trong studio video. Để trống để ẩn nút."
+    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "Mô hình văn bản viết lại lời nhắc trong studio video. Để trống để ẩn nút.",
+    "Video API key": "Khóa API video",
+    "Text API key": "Khóa API văn bản",
+    "Off (no prompt optimization)": "Tắt (không tối ưu lời nhắc)",
+    "Text model": "Mô hình văn bản"
   }
 }

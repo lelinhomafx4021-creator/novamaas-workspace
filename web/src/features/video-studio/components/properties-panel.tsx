@@ -31,8 +31,9 @@ import { useVideoStudioStore } from '@/stores/video-studio-store'
 import { optimizePrompt } from '../api'
 import { draftIssues } from '../lib/draft'
 import { studioErrorMessage } from '../lib/errors'
+import { FIELD_LABEL } from '../lib/styles'
 import type { Capability, ReferenceRole } from '../types'
-import { FIELD_LABEL, ModelConfig } from './model-config'
+import { ModelConfig } from './model-config'
 import { ReferenceThumbnail } from './reference-thumbnail'
 
 const ROLE_LABELS: Record<ReferenceRole, string> = {
@@ -44,8 +45,6 @@ const ROLE_LABELS: Record<ReferenceRole, string> = {
 type PropertiesPanelProps = {
   capabilities: Capability[]
   keys: ApiKey[]
-  /** Text model for prompt optimization; empty hides the button. */
-  promptModel: string
   submitting: boolean
   onSubmit: (nodeId: string) => void
 }
@@ -59,8 +58,8 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   )
   const updateNode = useVideoStudioStore((state) => state.updateNode)
   const optimize = useMutation({
-    mutationFn: (input: { prompt: string; group?: string }) =>
-      optimizePrompt(props.promptModel, input.group, input.prompt),
+    mutationFn: (input: { model: string; group?: string; prompt: string }) =>
+      optimizePrompt(input.model, input.group, input.prompt),
     onError: (error) => toast.error(studioErrorMessage(error)),
   })
 
@@ -92,7 +91,7 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
           <Label htmlFor='studio-prompt' className={FIELD_LABEL}>
             {t('Prompt')}
           </Label>
-          {props.promptModel && (
+          {draft.text_token_id > 0 && draft.text_model && (
             <Button
               size='xs'
               variant='ghost'
@@ -100,10 +99,11 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
               onClick={() =>
                 optimize.mutate(
                   {
-                    prompt: draft.prompt.trim(),
+                    model: draft.text_model,
                     group:
-                      props.keys.find((key) => key.id === draft.token_id)
+                      props.keys.find((key) => key.id === draft.text_token_id)
                         ?.group || undefined,
+                    prompt: draft.prompt.trim(),
                   },
                   { onSuccess: (prompt) => updateNode(nodeId, { prompt }) }
                 )

@@ -34,10 +34,9 @@ import type { ApiKey } from '@/features/keys/types'
 import { useVideoStudioStore } from '@/stores/video-studio-store'
 
 import { parametersForModel } from '../lib/draft'
+import { FIELD_LABEL } from '../lib/styles'
 import type { Capability, GenerationDraft } from '../types'
-
-export const FIELD_LABEL =
-  'text-muted-foreground font-mono text-[10px] tracking-wider uppercase'
+import { TextModelFields } from './text-model-fields'
 
 type ModelConfigProps = {
   nodeId: string
@@ -76,7 +75,7 @@ export function ModelConfig(props: ModelConfigProps) {
       <CollapsibleContent className='grid gap-4 pt-3'>
         <div className='grid gap-1.5'>
           <Label htmlFor='studio-key' className={FIELD_LABEL}>
-            {t('API key')}
+            {t('Video API key')}
           </Label>
           <NativeSelect
             id='studio-key'
@@ -133,6 +132,8 @@ export function ModelConfig(props: ModelConfigProps) {
             ))}
           </NativeSelect>
         </div>
+
+        <TextModelFields nodeId={nodeId} draft={draft} keys={keys} />
 
         {capability && (
           <div className='grid grid-cols-2 gap-3'>

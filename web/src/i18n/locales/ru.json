@@ -518,7 +518,7 @@
     "API info deleted. Click \"Save Settings\" to apply.": "Информация API удалена. Нажмите «Сохранить настройки», чтобы применить.",
     "API info saved successfully": "Информация API успешно сохранена",
     "API info updated. Click \"Save Settings\" to apply.": "Информация API обновлена. Нажмите «Сохранить настройки», чтобы применить.",
-    "API key": "Ключ API",
+    "API key": "API-ключ",
     "API Key": "Ключ API",
     "API Key (one per line for batch mode)": "Ключ API (по одному на строку для пакетного режима)",
     "API Key (Production)": "API-ключ (Продакшн)",
@@ -7063,12 +7063,15 @@
     "Wan 3 (input.media + parameters)": "Wan 3 (input.media + parameters)",
     "OpenAI-compatible (seconds + metadata)": "Совместимо с OpenAI (seconds + metadata)",
     "Add rule": "Добавить правило",
-    "API key": "API-ключ",
     "Default (account group)": "По умолчанию (группа аккаунта)",
     "Model and parameters": "Модель и параметры",
     "Optimize prompt": "Улучшить промпт",
     "Optimizing...": "Оптимизация...",
     "Prompt optimization model": "Модель оптимизации промпта",
-    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "Текстовая модель, переписывающая промпты в видеостудии. Оставьте пустым, чтобы скрыть кнопку."
+    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "Текстовая модель, переписывающая промпты в видеостудии. Оставьте пустым, чтобы скрыть кнопку.",
+    "Video API key": "API-ключ для видео",
+    "Text API key": "API-ключ для текста",
+    "Off (no prompt optimization)": "Выкл. (без оптимизации промпта)",
+    "Text model": "Текстовая модель"
   }
 }

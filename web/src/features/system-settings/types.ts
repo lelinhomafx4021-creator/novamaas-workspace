@@ -219,7 +219,6 @@ export type ContentSettings = {
 export type ModelSettings = {
   'miniapp.playground_media': string
   'video_studio.model_rules': string
-  'video_studio.prompt_model': string
   'global.pass_through_request_enabled': boolean
   'global.thinking_model_blacklist': string
   'global.chat_completions_to_responses_policy': string

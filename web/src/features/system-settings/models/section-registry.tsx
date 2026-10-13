@@ -78,10 +78,7 @@ const MODELS_SECTIONS = [
     id: 'video-studio',
     titleKey: 'Video Studio Models',
     build: (settings: ModelSettings) => (
-      <VideoStudioRulesCard
-        value={settings['video_studio.model_rules']}
-        promptModel={settings['video_studio.prompt_model']}
-      />
+      <VideoStudioRulesCard value={settings['video_studio.model_rules']} />
     ),
   },
   {

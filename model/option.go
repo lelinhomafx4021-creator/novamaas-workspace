@@ -127,7 +127,6 @@ func InitOptionMap() {
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap[model_setting.MiniAppPlaygroundMediaOptionKey] = `{}`
 	common.OptionMap[model_setting.VideoStudioModelRulesOptionKey] = model_setting.DefaultVideoStudioModelRules
-	common.OptionMap[model_setting.VideoStudioPromptModelOptionKey] = ""
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
 	common.OptionMap["MaxTokenAutoGroups"] = strconv.Itoa(setting.GetMaxTokenAutoGroups())
@@ -226,12 +225,6 @@ func validateOptionValue(key string, value string) error {
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
 			return errors.New("operating entity logo must be an HTTP(S) URL without credentials or a fragment")
 		}
-	}
-	if key == model_setting.VideoStudioPromptModelOptionKey {
-		if strings.TrimSpace(value) != value || len(value) > 128 {
-			return errors.New("invalid video studio prompt model")
-		}
-		return nil
 	}
 	if key == model_setting.VideoStudioModelRulesOptionKey {
 		return model_setting.ValidateVideoStudioModelRules(value)

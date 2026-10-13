@@ -40,8 +40,17 @@ function parseObject<T extends { version: 1 }>(raw: string, empty: T): T {
   return empty
 }
 
+/** Nodes saved before a field existed get that field's default. */
 export function parseDraft(raw: string): ProjectDraft {
-  return parseObject(raw, EMPTY_DRAFT)
+  const draft = parseObject(raw, EMPTY_DRAFT)
+  const defaults = newGenerationDraft()
+  const nodes = Object.fromEntries(
+    Object.entries(draft.nodes).map(([id, node]) => [
+      id,
+      { ...defaults, ...node },
+    ])
+  )
+  return { ...draft, nodes }
 }
 
 export function parseCanvas(raw: string): ProjectCanvas {
@@ -52,6 +61,8 @@ export function newGenerationDraft(capability?: Capability): GenerationDraft {
   return {
     model: capability?.model ?? '',
     token_id: 0,
+    text_token_id: 0,
+    text_model: '',
     prompt: '',
     references: [],
     parameters: capability ? { ...capability.defaults } : {},
@@ -149,6 +160,8 @@ export function draftFromRun(
     return {
       model: snapshot.model ?? fallback.model,
       token_id: snapshot.token_id ?? fallback.token_id,
+      text_token_id: fallback.text_token_id,
+      text_model: fallback.text_model,
       prompt: snapshot.prompt ?? fallback.prompt,
       references,
       parameters: snapshot.parameters ?? fallback.parameters,

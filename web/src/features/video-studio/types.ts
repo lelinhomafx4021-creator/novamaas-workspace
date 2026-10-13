@@ -47,12 +47,6 @@ export type Capability = {
   defaults: { duration: number; resolution: string; ratio: string }
 }
 
-export type ModelCatalog = {
-  models: Capability[]
-  /** Text model that rewrites prompts; empty when optimization is off. */
-  prompt_model: string
-}
-
 export type StudioReference = {
   id: string
   file_name: string
@@ -134,6 +128,9 @@ export type GenerationDraft = {
   model: string
   /** API key the run is billed to; 0 uses the account's default group. */
   token_id: number
+  /** Key and model used to optimize the prompt; 0 or empty turns it off. */
+  text_token_id: number
+  text_model: string
   prompt: string
   references: NodeReference[]
   parameters: SubmitParameters

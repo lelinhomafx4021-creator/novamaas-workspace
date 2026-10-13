@@ -189,3 +189,22 @@ describe('parametersForModel', () => {
     })
   })
 })
+
+describe('parseDraft', () => {
+  test('fills fields that older drafts did not save', () => {
+    const draft = parseDraft(
+      JSON.stringify({
+        version: 1,
+        nodes: { n1: { model: 'wan3.0-video', group: 'vip', prompt: 'x' } },
+      })
+    )
+    expect(draft.nodes.n1).toMatchObject({
+      model: 'wan3.0-video',
+      prompt: 'x',
+      token_id: 0,
+      text_token_id: 0,
+      text_model: '',
+      references: [],
+    })
+  })
+})

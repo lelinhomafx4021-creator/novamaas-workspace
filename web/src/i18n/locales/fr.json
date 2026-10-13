@@ -7063,12 +7063,15 @@
     "Wan 3 (input.media + parameters)": "Wan 3 (input.media + parameters)",
     "OpenAI-compatible (seconds + metadata)": "Compatible OpenAI (seconds + metadata)",
     "Add rule": "Ajouter une règle",
-    "API key": "Clé API",
     "Default (account group)": "Par défaut (groupe du compte)",
     "Model and parameters": "Modèle et paramètres",
     "Optimize prompt": "Optimiser le prompt",
     "Optimizing...": "Optimisation...",
     "Prompt optimization model": "Modèle d'optimisation du prompt",
-    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "Un modèle de texte qui réécrit les prompts dans le studio vidéo. Laissez vide pour masquer le bouton."
+    "A text model that rewrites prompts in the video studio. Leave empty to hide the button.": "Un modèle de texte qui réécrit les prompts dans le studio vidéo. Laissez vide pour masquer le bouton.",
+    "Video API key": "Clé API vidéo",
+    "Text API key": "Clé API texte",
+    "Off (no prompt optimization)": "Désactivé (pas d'optimisation du prompt)",
+    "Text model": "Modèle de texte"
   }
 }

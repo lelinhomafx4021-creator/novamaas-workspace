@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -309,4 +310,30 @@ func TestVideoStudioKeyScopesModelsAndOwnership(t *testing.T) {
 	_, err = videoStudioKey(fixture.user.Id, disabled.Id)
 	require.ErrorAs(t, err, &requestErr)
 	assert.Equal(t, http.StatusForbidden, requestErr.StatusCode)
+}
+
+func TestListVideoStudioModelsSplitsVideoAndTextByKey(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "gpt-4o-mini", ChannelId: fixture.channel.Id, Enabled: true}).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "gpt-4o", ChannelId: fixture.channel.Id, Enabled: true}).Error)
+	textKey := &model.Token{UserId: fixture.user.Id, Name: "text", Key: "text-key", Status: common.TokenStatusEnabled, ExpiredTime: -1, Group: "default", ModelLimitsEnabled: true, ModelLimits: "gpt-4o-mini,MiniMax-H3"}
+	require.NoError(t, model.DB.Create(textKey).Error)
+
+	list := func(query string) []gjson.Result {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/video-studio/models?"+query, nil)
+		c.Set("id", fixture.user.Id)
+		ListVideoStudioModels(c)
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		return gjson.Get(recorder.Body.String(), "data").Array()
+	}
+
+	text := list("kind=text&token_id=" + strconv.Itoa(textKey.Id))
+	require.Len(t, text, 1, "the whitelist keeps one text model and the video model never shows as text")
+	assert.Equal(t, "gpt-4o-mini", text[0].String())
+
+	video := list("token_id=" + strconv.Itoa(textKey.Id))
+	require.Len(t, video, 1)
+	assert.Equal(t, "MiniMax-H3", video[0].Get("model").String())
 }

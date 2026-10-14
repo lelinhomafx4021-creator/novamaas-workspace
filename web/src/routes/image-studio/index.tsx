@@ -19,24 +19,29 @@ For commercial licensing, please contact support@quantumnous.com
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { Main } from '@/components/layout'
+import { SkipToMain } from '@/components/skip-to-main'
 import { ImageStudio } from '@/features/image-studio'
 import { getStudioSettings } from '@/features/image-studio/api'
+import { LoginNoticeDialog } from '@/features/login-notice/login-notice-dialog'
 
-export const Route = createFileRoute('/_authenticated/image-studio/')({
-  staticData: { fullScreen: true },
+export const Route = createFileRoute('/image-studio/')({
   beforeLoad: async () => {
     const settings = await getStudioSettings()
     if (!settings.enabled) {
-      throw redirect({ to: '/dashboard' })
+      throw redirect({ to: '/' })
     }
   },
   component: ImageStudioPage,
 })
 
-function ImageStudioPage() {
+export function ImageStudioPage() {
   return (
-    <Main id='content' tabIndex={-1} className='p-0'>
-      <ImageStudio />
-    </Main>
+    <div className='bg-background flex h-svh min-h-0 w-full flex-col overflow-hidden'>
+      <SkipToMain />
+      <Main id='content' tabIndex={-1} className='p-0'>
+        <ImageStudio />
+      </Main>
+      <LoginNoticeDialog />
+    </div>
   )
 }

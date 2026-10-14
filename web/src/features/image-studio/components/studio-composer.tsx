@@ -53,6 +53,7 @@ import {
 import { StudioPromptExamples } from './studio-prompt-examples'
 
 export function StudioComposer(props: {
+  authenticated: boolean
   settings: StudioSettings
   keys: ApiKey[]
   disabled: boolean
@@ -92,7 +93,7 @@ export function StudioComposer(props: {
   const models = useQuery({
     queryKey: ['image-studio', 'models', tokenId],
     queryFn: () => listStudioModels(tokenId),
-    enabled: Boolean(tokenId),
+    enabled: props.authenticated && Boolean(tokenId),
   })
   const selectedModel = form.watch('model')
   const model = models.data?.includes(selectedModel)
@@ -101,7 +102,7 @@ export function StudioComposer(props: {
   const textModels = useQuery({
     queryKey: ['image-studio', 'text-models', text.tokenId],
     queryFn: () => listStudioModels(text.tokenId, 'text'),
-    enabled: Boolean(text.tokenId),
+    enabled: props.authenticated && Boolean(text.tokenId),
   })
   const textModel = textModels.data?.includes(text.model)
     ? text.model
@@ -136,7 +137,11 @@ export function StudioComposer(props: {
   const generating = generate.isPending || props.disabled
   const busy = generating || optimize.isPending
   const canGenerate =
-    props.settings.enabled && Boolean(model) && Boolean(prompt.trim()) && !busy
+    props.authenticated &&
+    props.settings.enabled &&
+    Boolean(model) &&
+    Boolean(prompt.trim()) &&
+    !busy
   const submit = form.handleSubmit((values) => {
     if (canGenerate) generate.mutate(values)
   })
@@ -157,7 +162,7 @@ export function StudioComposer(props: {
             text={{ ...text, model: textModel }}
             imageModels={models}
             textModels={textModels}
-            disabled={busy}
+            disabled={busy || !props.authenticated}
             onImageChange={(selection) => {
               requestKey.current = ''
               form.setValue('tokenId', String(selection.tokenId))
@@ -168,10 +173,19 @@ export function StudioComposer(props: {
           <Button
             variant='ghost'
             nativeButton={false}
-            render={<Link to='/dashboard' />}
+            render={
+              <Link
+                to={props.authenticated ? '/dashboard' : '/sign-in'}
+                search={
+                  props.authenticated
+                    ? undefined
+                    : { redirect: '/image-studio' }
+                }
+              />
+            }
             role='link'
           >
-            {t('Back to Dashboard')}
+            {props.authenticated ? t('Back to Dashboard') : t('Sign in')}
           </Button>
         </div>
       </header>
@@ -195,7 +209,9 @@ export function StudioComposer(props: {
                     aria-hidden='true'
                   />
                   <span className='truncate' title={model}>
-                    {model || t('No image models available')}
+                    {props.authenticated
+                      ? model || t('No image models available')
+                      : t('Sign in to choose a model')}
                   </span>
                 </p>
               </div>
@@ -204,11 +220,16 @@ export function StudioComposer(props: {
                   {t('Image generation is disabled')}
                 </p>
               )}
-              {!props.keys.length && (
+              {props.authenticated && !props.keys.length && (
                 <p role='status' className='text-muted-foreground text-sm'>
                   {t(
                     'No API keys available. Create your first API key to get started.'
                   )}
+                </p>
+              )}
+              {!props.authenticated && (
+                <p className='text-muted-foreground text-xs'>
+                  {t('Sign in to use your API keys and models.')}
                 </p>
               )}
               {models.isError && (
@@ -250,6 +271,7 @@ export function StudioComposer(props: {
                     size='sm'
                     variant='outline'
                     disabled={
+                      !props.authenticated ||
                       !props.settings.enabled ||
                       busy ||
                       !textModel ||
@@ -269,7 +291,10 @@ export function StudioComposer(props: {
                   </span>
                 </div>
                 <FieldDescription className='text-xs break-words'>
-                  {t('Text model')}: {textModel || t('No models available')}
+                  {t('Text model')}:{' '}
+                  {props.authenticated
+                    ? textModel || t('No models available')
+                    : t('Sign in to choose a model')}
                 </FieldDescription>
                 {optimize.isError && (
                   <p role='alert' className='text-destructive text-xs'>
@@ -323,15 +348,28 @@ export function StudioComposer(props: {
                 {studioErrorMessage(generate.error)}
               </p>
             )}
-            <Button
-              type='submit'
-              size='lg'
-              className='h-10 w-full'
-              disabled={!canGenerate}
-            >
-              <HugeiconsIcon icon={SparklesIcon} aria-hidden='true' />
-              {generating ? t('Generating...') : t('Create images')}
-            </Button>
+            {props.authenticated ? (
+              <Button
+                type='submit'
+                size='lg'
+                className='h-10 w-full'
+                disabled={!canGenerate}
+              >
+                <HugeiconsIcon icon={SparklesIcon} aria-hidden='true' />
+                {generating ? t('Generating...') : t('Create images')}
+              </Button>
+            ) : (
+              <Button
+                nativeButton={false}
+                role='link'
+                className='h-10 w-full'
+                render={
+                  <Link to='/sign-in' search={{ redirect: '/image-studio' }} />
+                }
+              >
+                {t('Sign in to create images')}
+              </Button>
+            )}
           </div>
         </form>
         {props.children(busy, (value) => {

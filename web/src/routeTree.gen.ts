@@ -31,6 +31,7 @@ import { Route as AuthenticatedRequestSnapshotsRouteImport } from './routes/_aut
 import { Route as AuthenticatedSystemSettingsRouteRouteImport } from './routes/_authenticated/system-settings/route'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
+import { Route as ImageStudioIndexRouteImport } from './routes/image-studio/index'
 import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
 import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
@@ -44,7 +45,6 @@ import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedImageReviewIndexRouteImport } from './routes/_authenticated/image-review/index'
-import { Route as AuthenticatedImageStudioIndexRouteImport } from './routes/_authenticated/image-studio/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
@@ -187,6 +187,11 @@ const DocsIndexRoute = DocsIndexRouteImport.update({
   path: '/docs/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImageStudioIndexRoute = ImageStudioIndexRouteImport.update({
+  id: '/image-studio/',
+  path: '/image-studio/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OauthProviderRoute = OauthProviderRouteImport.update({
   id: '/oauth/$provider',
   path: '/oauth/$provider',
@@ -257,12 +262,6 @@ const AuthenticatedImageReviewIndexRoute =
   AuthenticatedImageReviewIndexRouteImport.update({
     id: '/image-review/',
     path: '/image-review/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedImageStudioIndexRoute =
-  AuthenticatedImageStudioIndexRouteImport.update({
-    id: '/image-studio/',
-    path: '/image-studio/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
@@ -471,6 +470,7 @@ export interface FileRoutesByFullPath {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/image-studio/': typeof ImageStudioIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
@@ -485,7 +485,6 @@ export interface FileRoutesByFullPath {
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/image-review/': typeof AuthenticatedImageReviewIndexRoute
-  '/image-studio/': typeof AuthenticatedImageStudioIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -537,6 +536,7 @@ export interface FileRoutesByTo {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about': typeof AboutIndexRoute
   '/docs': typeof DocsIndexRoute
+  '/image-studio': typeof ImageStudioIndexRoute
   '/pricing': typeof PricingIndexRoute
   '/rankings': typeof RankingsIndexRoute
   '/setup': typeof SetupIndexRoute
@@ -551,7 +551,6 @@ export interface FileRoutesByTo {
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/image-review': typeof AuthenticatedImageReviewIndexRoute
-  '/image-studio': typeof AuthenticatedImageStudioIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
@@ -607,6 +606,7 @@ export interface FileRoutesById {
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/image-studio/': typeof ImageStudioIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
@@ -621,7 +621,6 @@ export interface FileRoutesById {
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/image-review/': typeof AuthenticatedImageReviewIndexRoute
-  '/_authenticated/image-studio/': typeof AuthenticatedImageStudioIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -676,6 +675,7 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about/'
     | '/docs/'
+    | '/image-studio/'
     | '/pricing/'
     | '/rankings/'
     | '/setup/'
@@ -690,7 +690,6 @@ export interface FileRouteTypes {
     | '/channels/'
     | '/dashboard/'
     | '/image-review/'
-    | '/image-studio/'
     | '/keys/'
     | '/models/'
     | '/playground/'
@@ -742,6 +741,7 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about'
     | '/docs'
+    | '/image-studio'
     | '/pricing'
     | '/rankings'
     | '/setup'
@@ -756,7 +756,6 @@ export interface FileRouteTypes {
     | '/channels'
     | '/dashboard'
     | '/image-review'
-    | '/image-studio'
     | '/keys'
     | '/models'
     | '/playground'
@@ -811,6 +810,7 @@ export interface FileRouteTypes {
     | '/oauth/$provider'
     | '/about/'
     | '/docs/'
+    | '/image-studio/'
     | '/pricing/'
     | '/rankings/'
     | '/setup/'
@@ -825,7 +825,6 @@ export interface FileRouteTypes {
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/image-review/'
-    | '/_authenticated/image-studio/'
     | '/_authenticated/keys/'
     | '/_authenticated/models/'
     | '/_authenticated/playground/'
@@ -871,6 +870,7 @@ export interface RootRouteChildren {
   OauthProviderRoute: typeof OauthProviderRoute
   AboutIndexRoute: typeof AboutIndexRoute
   DocsIndexRoute: typeof DocsIndexRoute
+  ImageStudioIndexRoute: typeof ImageStudioIndexRoute
   PricingIndexRoute: typeof PricingIndexRoute
   RankingsIndexRoute: typeof RankingsIndexRoute
   SetupIndexRoute: typeof SetupIndexRoute
@@ -1033,6 +1033,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/image-studio/': {
+      id: '/image-studio/'
+      path: '/image-studio'
+      fullPath: '/image-studio/'
+      preLoaderRoute: typeof ImageStudioIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/oauth/$provider': {
       id: '/oauth/$provider'
       path: '/oauth/$provider'
@@ -1122,13 +1129,6 @@ declare module '@tanstack/react-router' {
       path: '/image-review'
       fullPath: '/image-review/'
       preLoaderRoute: typeof AuthenticatedImageReviewIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/image-studio/': {
-      id: '/_authenticated/image-studio/'
-      path: '/image-studio'
-      fullPath: '/image-studio/'
-      preLoaderRoute: typeof AuthenticatedImageStudioIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/keys/': {
@@ -1454,7 +1454,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedImageReviewIndexRoute: typeof AuthenticatedImageReviewIndexRoute
-  AuthenticatedImageStudioIndexRoute: typeof AuthenticatedImageStudioIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
@@ -1483,7 +1482,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedImageReviewIndexRoute: AuthenticatedImageReviewIndexRoute,
-  AuthenticatedImageStudioIndexRoute: AuthenticatedImageStudioIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
@@ -1515,6 +1513,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthProviderRoute: OauthProviderRoute,
   AboutIndexRoute: AboutIndexRoute,
   DocsIndexRoute: DocsIndexRoute,
+  ImageStudioIndexRoute: ImageStudioIndexRoute,
   PricingIndexRoute: PricingIndexRoute,
   RankingsIndexRoute: RankingsIndexRoute,
   SetupIndexRoute: SetupIndexRoute,

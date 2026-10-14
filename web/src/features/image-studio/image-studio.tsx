@@ -39,12 +39,16 @@ import type {
 
 export function ImageStudio() {
   const { t } = useTranslation()
+  const userId = useAuthStore((state) =>
+    state.auth.accessToken ? (state.auth.user?.id ?? 0) : 0
+  )
   const settings = useQuery({
     queryKey: ['image-studio', 'settings'],
     queryFn: getStudioSettings,
   })
   const keys = useQuery({
-    queryKey: ['api-keys', 'image-studio'],
+    queryKey: ['api-keys', 'image-studio', userId],
+    enabled: Boolean(userId),
     queryFn: async () => {
       const items: ApiKey[] = []
       for (let page = 1; ; page++) {
@@ -62,33 +66,42 @@ export function ImageStudio() {
 
   return (
     <div className='flex min-h-0 flex-1 flex-col overflow-y-auto xl:overflow-hidden'>
-      {(settings.isPending || keys.isPending) && (
+      {(settings.isPending || (userId > 0 && keys.isPending)) && (
         <p role='status' className='p-6'>
           {t('Loading...')}
         </p>
       )}
-      {(settings.isError || keys.isError) && (
+      {(settings.isError || (userId > 0 && keys.isError)) && (
         <div role='alert' className='p-6'>
           <p>{t('Failed to load data')}</p>
           <Button
             variant='outline'
             onClick={() => {
               void settings.refetch()
-              void keys.refetch()
+              if (userId) void keys.refetch()
             }}
           >
             {t('Retry')}
           </Button>
         </div>
       )}
-      {settings.data && keys.data && (
-        <StudioWorkspace settings={settings.data} keys={keys.data} />
+      {settings.data && (!userId || keys.data) && (
+        <StudioWorkspace
+          key={userId}
+          userId={userId}
+          settings={settings.data}
+          keys={keys.data ?? []}
+        />
       )}
     </div>
   )
 }
 
-function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
+function StudioWorkspace(props: {
+  userId: number
+  settings: StudioSettings
+  keys: ApiKey[]
+}) {
   const { t } = useTranslation()
   const ownerName = useAuthStore((state) => state.auth.user?.username || '')
   const client = useQueryClient()
@@ -97,13 +110,14 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
   const [activeResultId, setActiveResultId] = useState('')
   const [saveTarget, setSaveTarget] = useState<StudioResult>()
   const runs = useQuery({
-    queryKey: ['image-studio', 'runs', page],
+    queryKey: ['image-studio', 'runs', props.userId, page],
     queryFn: () => listStudioRuns(page),
+    enabled: Boolean(props.userId),
   })
   const current = useQuery({
-    queryKey: ['image-studio', 'run', runId],
+    queryKey: ['image-studio', 'run', props.userId, runId],
     queryFn: () => getStudioRun(runId),
-    enabled: Boolean(runId),
+    enabled: Boolean(props.userId && runId),
     staleTime: 30_000,
     // Like the miniapp, keep polling while the run is still generating.
     refetchInterval: (query) =>
@@ -122,6 +136,7 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
     const refreshed = client.getQueryData<StudioRunList>([
       'image-studio',
       'runs',
+      props.userId,
       page,
     ])
     if (!runId) {
@@ -133,7 +148,7 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
     if (selected) {
       selectRun(selected)
       await client.invalidateQueries({
-        queryKey: ['image-studio', 'run', selected.id],
+        queryKey: ['image-studio', 'run', props.userId, selected.id],
       })
     } else {
       setActiveId('')
@@ -143,11 +158,12 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
   }
   return (
     <StudioComposer
+      authenticated={Boolean(props.userId)}
       settings={props.settings}
       keys={props.keys}
       disabled={current.data?.status === 'running'}
       onGenerated={(run) => {
-        client.setQueryData(['image-studio', 'run', run.id], run)
+        client.setQueryData(['image-studio', 'run', props.userId, run.id], run)
         selectRun(run)
         void client.invalidateQueries({ queryKey: ['image-studio', 'runs'] })
       }}
@@ -172,6 +188,7 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
             />
           </div>
           <StudioHistory
+            authenticated={Boolean(props.userId)}
             runs={runs}
             page={page}
             runId={runId}
@@ -181,7 +198,7 @@ function StudioWorkspace(props: { settings: StudioSettings; keys: ApiKey[] }) {
             onSelect={(run, id) => {
               selectRun(run, id)
               void client.invalidateQueries({
-                queryKey: ['image-studio', 'run', run.id],
+                queryKey: ['image-studio', 'run', props.userId, run.id],
               })
             }}
             onPageChange={setPage}

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { Delete02Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, type UseQueryResult } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -44,6 +45,7 @@ import type {
 import { StudioRunSummary } from './studio-gallery'
 
 export function StudioHistory(props: {
+  authenticated: boolean
   runs: UseQueryResult<StudioRunList>
   page: number
   runId: string
@@ -56,28 +58,30 @@ export function StudioHistory(props: {
 }) {
   const { t } = useTranslation()
   const runs = props.runs
-  const page = props.page
-  const runId = props.runId
-  const resultId = props.resultId
-  const ownerName = props.ownerName
   // A run without images (for example a failed one) is removed as a whole.
-  const [deleteTarget, setDeleteTarget] = useState<{
-    run: StudioRun
-    result?: StudioResult
-  }>()
+  const [deleteTarget, setDeleteTarget] = useState<StudioRun | StudioResult>()
+  const deletingImage = Boolean(deleteTarget && !('results' in deleteTarget))
   // Images still saved in the asset library need an explicit choice.
-  const hasLinkedAsset = deleteTarget
-    ? (deleteTarget.result
-        ? [deleteTarget.result]
-        : deleteTarget.run.results
-      ).some((result) => Boolean(result.asset_id))
-    : false
+  const hasLinkedAsset =
+    deleteTarget &&
+    ('results' in deleteTarget
+      ? deleteTarget.results.some((result) => Boolean(result.asset_id))
+      : Boolean(deleteTarget.asset_id))
+  let deleteDescription = t(
+    'Delete this generation record? This cannot be undone.'
+  )
+  if (deletingImage) deleteDescription = t('Delete this generated image?')
+  if (hasLinkedAsset) {
+    deleteDescription = t(
+      'This image is also saved in the asset library. Delete only the generated image, or delete the asset library copy as well?'
+    )
+  }
   const remove = useMutation({
     mutationFn: (linkedAssets?: StudioLinkedAssets) => {
       if (!deleteTarget) return Promise.resolve(undefined)
-      return deleteTarget.result
-        ? deleteStudioResult(deleteTarget.result.id, linkedAssets)
-        : deleteStudioRun(deleteTarget.run.id, linkedAssets)
+      return 'results' in deleteTarget
+        ? deleteStudioRun(deleteTarget.id, linkedAssets)
+        : deleteStudioResult(deleteTarget.id, linkedAssets)
     },
     onSuccess: async () => {
       await props.onRemoved()
@@ -92,18 +96,31 @@ export function StudioHistory(props: {
       >
         <div className='flex shrink-0 items-center justify-between gap-3'>
           <h2 className='font-semibold'>{t('Generation records')}</h2>
-          <Button
-            variant='ghost'
-            disabled={runs.isFetching}
-            onClick={() => void runs.refetch()}
-          >
-            {t('Refresh')}
-          </Button>
+          {props.authenticated && (
+            <Button
+              variant='ghost'
+              disabled={runs.isFetching}
+              onClick={() => void runs.refetch()}
+            >
+              {t('Refresh')}
+            </Button>
+          )}
         </div>
         <p className='text-muted-foreground text-xs'>
-          {t('Images are saved here automatically.')}
+          {t('Images are kept until you delete them.')}
         </p>
-        {runs.isPending && <p role='status'>{t('Loading...')}</p>}
+        {!props.authenticated && (
+          <Link
+            to='/sign-in'
+            search={{ redirect: '/image-studio' }}
+            className='text-primary text-sm hover:underline'
+          >
+            {t('Sign in to view your generation records')}
+          </Link>
+        )}
+        {props.authenticated && runs.isPending && (
+          <p role='status'>{t('Loading...')}</p>
+        )}
         {runs.isError && <p role='alert'>{t('Failed to load data')}</p>}
         {runs.data?.items.length === 0 && (
           <p className='text-muted-foreground text-sm'>
@@ -118,7 +135,8 @@ export function StudioHistory(props: {
                   type='button'
                   onClick={() => props.onSelect(run, result?.id)}
                   aria-pressed={
-                    runId === run.id && (!result || resultId === result.id)
+                    props.runId === run.id &&
+                    (!result || props.resultId === result.id)
                   }
                   className='hover:bg-muted/60 aria-pressed:border-primary/60 aria-pressed:bg-primary/5 focus-visible:outline-ring flex w-full min-w-0 items-start gap-2 rounded-xl border p-2 pr-8 text-left transition-colors focus-visible:outline-2'
                 >
@@ -131,7 +149,11 @@ export function StudioHistory(props: {
                     />
                   )}
                   <div className='flex min-w-0 flex-1 flex-col gap-1'>
-                    <StudioRunSummary run={run} ownerName={ownerName} compact />
+                    <StudioRunSummary
+                      run={run}
+                      ownerName={props.ownerName}
+                      compact
+                    />
                     <span
                       className='text-muted-foreground line-clamp-2 text-xs break-words'
                       title={result?.description || run.prompt}
@@ -157,7 +179,7 @@ export function StudioHistory(props: {
                   }
                   onClick={() => {
                     remove.reset()
-                    setDeleteTarget({ run, result })
+                    setDeleteTarget(result ?? run)
                   }}
                 >
                   <HugeiconsIcon icon={Delete02Icon} aria-hidden='true' />
@@ -166,11 +188,13 @@ export function StudioHistory(props: {
             ))
           )}
         </div>
-        <StudioRunPagination
-          page={page}
-          runs={runs}
-          onPageChange={props.onPageChange}
-        />
+        {props.authenticated && (
+          <StudioRunPagination
+            page={props.page}
+            runs={runs}
+            onPageChange={props.onPageChange}
+          />
+        )}
       </section>
       <AlertDialog
         open={Boolean(deleteTarget)}
@@ -181,14 +205,17 @@ export function StudioHistory(props: {
         <AlertDialogContent>
           <AlertDialogHeader className='text-start'>
             <AlertDialogTitle>
-              {deleteTarget?.result ? t('Delete image') : t('Delete record')}
+              {deletingImage ? t('Delete image') : t('Delete record')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {hasLinkedAsset
-                ? t(
-                    'This image is also saved in the asset library. Delete only the generated image, or delete the asset library copy as well?'
-                  )
-                : t('Delete this generated image?')}
+              {deleteDescription}
+              {deletingImage && (
+                <span className='mt-2 block'>
+                  {t(
+                    'Deleted images cannot be restored. Files are removed in the background.'
+                  )}
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {remove.isError && (

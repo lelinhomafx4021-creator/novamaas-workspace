@@ -377,10 +377,10 @@ func SetApiRouter(router *gin.Engine) {
 			assetLibraryAdminRoute.POST("/sync-jobs/:id/retry", controller.RetryAssetSyncJob)
 		}
 		imageStudioRoute := apiRouter.Group("/image-studio")
-		imageStudioRoute.Use(middleware.UserAuth(), middleware.DisableCache())
+		imageStudioRoute.Use(middleware.DisableCache())
+		imageStudioRoute.GET("/settings", controller.GetImageStudioSettings)
+		imageStudioRoute.Use(middleware.UserAuth(), controller.ImageStudioEnabled())
 		{
-			imageStudioRoute.GET("/settings", controller.GetImageStudioSettings)
-			imageStudioRoute.Use(controller.ImageStudioEnabled())
 			imageStudioRoute.GET("/models", controller.ListImageStudioModels)
 			imageStudioRoute.POST("/prompt-assist", middleware.CriticalRateLimit(), controller.PromptAssistImageStudio)
 			imageStudioRoute.GET("/runs", controller.ListImageStudioRuns)

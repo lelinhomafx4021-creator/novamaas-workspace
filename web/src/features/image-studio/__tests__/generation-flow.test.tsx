@@ -7,12 +7,13 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
+import { ImageStudioPage } from '@/routes/image-studio'
 import { useAuthStore } from '@/stores/auth-store'
 
 import * as api from '../api'
@@ -53,9 +54,22 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   client.setQueryData(['status'], { ImageStudioEnabled: true })
-  useAuthStore
-    .getState()
-    .auth.setUser({ id: 7, username: 'artist', role: 1, group: 'default' })
+  useAuthStore.getState().auth.setBundle({
+    access_token: 'studio-test-session',
+    token_type: 'Bearer',
+    access_expires_at: 2000000000,
+    user: { id: 7, username: 'artist', role: 1, group: 'default' },
+    session: {
+      sid: 'studio-session',
+      current: true,
+      login_method: 'password',
+      ip: '127.0.0.1',
+      user_agent: 'vitest',
+      created_at: 1,
+      last_active_at: 1,
+      expires_at: 2000000000,
+    },
+  })
   vi.mocked(api.getStudioSettings).mockResolvedValue({
     enabled: true,
     max_images: 4,
@@ -76,20 +90,28 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-async function openStudio() {
+async function openStudio(guest = false) {
   const root = createRootRoute({ component: Outlet })
   const studio = createRoute({
     getParentRoute: () => root,
     path: '/image-studio',
-    component: ImageStudio,
+    component: guest ? ImageStudioPage : ImageStudio,
   })
   const dashboard = createRoute({
     getParentRoute: () => root,
     path: '/dashboard',
     component: () => <main>Dashboard page</main>,
   })
+  const signIn = createRoute({
+    getParentRoute: () => root,
+    path: '/sign-in',
+    validateSearch: (search: Record<string, unknown>) => ({
+      redirect: String(search.redirect || ''),
+    }),
+    component: () => <main>Sign in page</main>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([studio, dashboard]),
+    routeTree: root.addChildren([studio, dashboard, signIn]),
     history: createMemoryHistory({ initialEntries: ['/image-studio'] }),
   })
   await router.load()
@@ -98,10 +120,120 @@ async function openStudio() {
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  await screen.findByText('dall-e-3', { exact: true })
+  if (guest) await screen.findByRole('heading', { name: 'Image creation' })
+  else await screen.findByText('dall-e-3', { exact: true })
   const user = userEvent.setup()
   return user
 }
+
+test('guests can browse the editor and examples without fetching keys, models or private records', async () => {
+  useAuthStore.getState().auth.reset()
+  const user = await openStudio(true)
+  expect(screen.getByRole('main').closest('.h-svh')).toHaveClass(
+    'w-full',
+    'overflow-hidden'
+  )
+  expect(
+    screen.getByText('Images are kept until you delete them.')
+  ).toBeVisible()
+  await user.click(
+    screen.getByRole('button', { name: 'Cinematic photography' })
+  )
+  expect(
+    screen.getByRole('textbox', { name: 'Describe your image' })
+  ).not.toHaveValue('')
+  expect(screen.getByRole('button', { name: 'Optimize prompt' })).toBeDisabled()
+  expect(getApiKeys).not.toHaveBeenCalled()
+  expect(api.listStudioModels).not.toHaveBeenCalled()
+  expect(api.listStudioRuns).not.toHaveBeenCalled()
+  expect(api.createStudioRun).not.toHaveBeenCalled()
+  const signIn = screen.getByRole('link', { name: 'Sign in to create images' })
+  expect(signIn).toHaveAttribute('href', '/sign-in?redirect=%2Fimage-studio')
+  await user.click(signIn)
+  expect(await screen.findByText('Sign in page')).toBeVisible()
+})
+
+test('signing out clears the prompt, private generation records and model selection from the editor', async () => {
+  vi.mocked(api.listStudioRuns).mockResolvedValue({
+    items: [completed],
+    total: 1,
+  })
+  const user = await openStudio()
+  await user.type(
+    screen.getByRole('textbox', { name: 'Describe your image' }),
+    'Private draft'
+  )
+  expect(screen.getByRole('button', { name: 'Delete image' })).toBeVisible()
+  await act(() => useAuthStore.getState().auth.reset())
+  expect(
+    await screen.findByRole('link', { name: 'Sign in to create images' })
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Delete image' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByText('dall-e-3', { exact: true })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('textbox', { name: 'Describe your image' })
+  ).toHaveValue('')
+})
+
+test.each([
+  ['keep', 'Delete generated image only'],
+  ['delete', 'Also delete asset library image'],
+] as const)(
+  'deleting a saved image explains cleanup and applies the %s library choice',
+  async (choice, label) => {
+    const saved = {
+      ...completed,
+      results: [{ ...completed.results[0], asset_id: 'asset-1' }],
+    }
+    vi.mocked(api.listStudioRuns).mockResolvedValueOnce({
+      items: [saved],
+      total: 1,
+    })
+    vi.mocked(api.deleteStudioResult).mockResolvedValue(undefined)
+    const user = await openStudio()
+    await user.click(screen.getByRole('button', { name: 'Delete image' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete image' })
+    expect(
+      within(dialog).getByText(
+        'Deleted images cannot be restored. Files are removed in the background.'
+      )
+    ).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: label }))
+    await waitFor(() =>
+      expect(api.deleteStudioResult).toHaveBeenCalledWith('result-1', choice)
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    )
+    expect(api.deleteStudioRun).not.toHaveBeenCalled()
+  }
+)
+
+test('deleting a failed record confirms irreversible removal and deletes the record instead of an image', async () => {
+  vi.mocked(api.listStudioRuns).mockResolvedValueOnce({
+    items: [{ ...completed, status: 'failed', results: [] }],
+    total: 1,
+  })
+  vi.mocked(api.deleteStudioRun).mockResolvedValue(undefined)
+  const user = await openStudio()
+  await user.click(screen.getByRole('button', { name: 'Delete record' }))
+  expect(
+    screen.getByText('Delete this generation record? This cannot be undone.')
+  ).toBeVisible()
+  await user.click(
+    within(screen.getByRole('alertdialog')).getByRole('button', {
+      name: 'Delete',
+    })
+  )
+  await waitFor(() =>
+    expect(api.deleteStudioRun).toHaveBeenCalledWith('run-1', undefined)
+  )
+  expect(api.deleteStudioResult).not.toHaveBeenCalled()
+})
 
 async function generate() {
   const user = await openStudio()

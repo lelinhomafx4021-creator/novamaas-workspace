@@ -68,7 +68,7 @@ export function StudioGallery(props: {
   const [unavailable, setUnavailable] = useState<string[]>([])
   const layout = props.compact
     ? 'contents'
-    : 'flex min-h-0 min-w-0 flex-1 flex-col gap-3'
+    : 'flex min-h-0 min-w-0 flex-col gap-3'
   const run = props.run
   const runId = run?.id || ''
   const original = useQuery({
@@ -91,30 +91,22 @@ export function StudioGallery(props: {
       <Empty
         role='region'
         aria-label={t('Generation results')}
-        className='from-primary/5 via-background to-muted/40 relative isolate min-h-80 overflow-hidden rounded-2xl border border-solid bg-gradient-to-br'
+        className='bg-muted/30 relative mx-auto aspect-square max-h-[32rem] min-h-64 max-w-[32rem] flex-none overflow-hidden rounded-2xl border'
       >
-        <div
-          aria-hidden='true'
-          className='pointer-events-none absolute inset-0 -z-10 [background-image:radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px] opacity-40'
-        />
-        <div
-          aria-hidden='true'
-          className='pointer-events-none absolute inset-4 rounded-xl border border-dashed'
-        />
-        <p className='text-muted-foreground absolute top-7 left-7 text-xs font-medium'>
+        <p className='text-muted-foreground absolute top-5 left-5 text-xs font-medium'>
           {t('Generation results')}
         </p>
-        <EmptyHeader className='relative gap-3 py-6'>
-          <EmptyMedia aria-hidden='true' className='relative h-32 w-44'>
-            <div className='bg-primary/5 absolute left-3 h-24 w-20 -rotate-12 rounded-xl border shadow-sm' />
-            <div className='bg-muted absolute right-3 h-24 w-20 rotate-12 rounded-xl border shadow-sm' />
-            <div className='from-background to-primary/10 text-primary relative flex size-24 items-center justify-center rounded-2xl border bg-gradient-to-br shadow-sm'>
-              <HugeiconsIcon
-                icon={Image01Icon}
-                className='size-9'
-                aria-hidden='true'
-              />
-            </div>
+        <EmptyHeader>
+          <EmptyMedia
+            variant='icon'
+            aria-hidden='true'
+            className='size-12 rounded-xl'
+          >
+            <HugeiconsIcon
+              icon={Image01Icon}
+              className='size-6'
+              aria-hidden='true'
+            />
           </EmptyMedia>
           <EmptyTitle className='text-base'>
             {t('Your image will appear here')}
@@ -160,7 +152,12 @@ export function StudioGallery(props: {
       )}
       {run.results.length === 0 && (
         <Empty
-          className={cn('border', props.compact ? 'min-h-24' : 'min-h-80')}
+          className={cn(
+            'border',
+            props.compact
+              ? 'min-h-24'
+              : 'mx-auto aspect-square min-h-64 max-h-[32rem] max-w-[32rem] flex-none'
+          )}
         >
           <EmptyHeader>
             <EmptyTitle>{t(studioStatusLabelKey(run.status))}</EmptyTitle>
@@ -183,9 +180,7 @@ export function StudioGallery(props: {
               key={result.id}
               className={cn(
                 'relative flex min-w-0 flex-col gap-3',
-                props.compact
-                  ? 'bg-card rounded-xl border p-2'
-                  : 'min-h-0 flex-1'
+                props.compact ? 'bg-card rounded-xl border p-2' : 'min-h-0'
               )}
             >
               {imageURL && !unavailable.includes(imageURL) ? (
@@ -197,7 +192,7 @@ export function StudioGallery(props: {
                     'bg-muted/30 focus-visible:outline-ring rounded-xl focus-visible:outline-2',
                     props.compact
                       ? ''
-                      : 'relative flex min-h-48 flex-1 items-center justify-center overflow-hidden border'
+                      : 'relative mx-auto flex aspect-square min-h-48 w-full max-w-[32rem] flex-none items-center justify-center overflow-hidden border'
                   )}
                 >
                   <img
@@ -208,9 +203,7 @@ export function StudioGallery(props: {
                     loading='lazy'
                     className={cn(
                       'w-full rounded-lg object-contain',
-                      props.compact
-                        ? 'h-40'
-                        : 'max-h-[50vh] lg:absolute lg:inset-0 lg:h-full lg:max-h-none'
+                      props.compact ? 'h-40' : 'absolute inset-0 h-full'
                     )}
                     onError={(event) => {
                       const url = event.currentTarget.src
@@ -219,7 +212,13 @@ export function StudioGallery(props: {
                   />
                 </button>
               ) : (
-                <Empty className={props.compact ? 'h-40' : 'min-h-64'}>
+                <Empty
+                  className={
+                    props.compact
+                      ? 'h-40'
+                      : 'mx-auto aspect-square max-h-[32rem] min-h-64 max-w-[32rem] flex-none'
+                  }
+                >
                   <EmptyHeader>
                     <EmptyTitle>{t('Preview unavailable')}</EmptyTitle>
                   </EmptyHeader>

@@ -189,7 +189,7 @@ export function StudioComposer(props: {
           </Button>
         </div>
       </header>
-      <div className='grid shrink-0 items-start gap-3 p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[17rem_minmax(0,1fr)_16rem] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch 2xl:grid-cols-[18rem_minmax(0,1fr)_17rem]'>
+      <div className='mx-auto grid w-full max-w-[100rem] shrink-0 items-start gap-3 p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(18rem,1fr)_minmax(0,1.35fr)_minmax(16rem,0.85fr)] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch'>
         <form
           noValidate
           onSubmit={submit}

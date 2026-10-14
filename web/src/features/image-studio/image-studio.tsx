@@ -170,7 +170,7 @@ function StudioWorkspace(props: {
     >
       {(generating, reusePrompt) => (
         <>
-          <div className='bg-card/60 flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-2xl border p-4 shadow-sm'>
+          <div className='flex min-h-0 min-w-0 flex-col overflow-y-auto'>
             {current.isError && <p role='alert'>{t('Failed to load data')}</p>}
             {current.isPending && runId && (
               <p role='status'>{t('Loading...')}</p>

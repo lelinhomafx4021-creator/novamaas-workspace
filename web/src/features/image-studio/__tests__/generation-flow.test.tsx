@@ -179,15 +179,18 @@ test('signing out clears the prompt, private generation records and model select
   ).toHaveValue('')
 })
 
-test('desktop windows arrange the editor, output and history in three columns from 1024px', async () => {
+test('desktop windows balance three columns and keep the empty canvas square instead of stretching to screen height', async () => {
   await openStudio()
   const editor = screen
     .getByRole('textbox', { name: 'Describe your image' })
     .closest('form')
   expect(editor?.parentElement).toHaveClass(
-    'lg:grid-cols-[17rem_minmax(0,1fr)_16rem]',
+    'lg:grid-cols-[minmax(18rem,1fr)_minmax(0,1.35fr)_minmax(16rem,0.85fr)]',
     'lg:min-h-0'
   )
+  expect(
+    screen.getByRole('region', { name: 'Generation results' })
+  ).toHaveClass('aspect-square', 'max-h-[32rem]', 'flex-none')
   expect(
     screen.getByRole('region', { name: 'Generation records' })
   ).toHaveClass('lg:col-start-3')
@@ -258,6 +261,26 @@ async function generate() {
   await user.click(screen.getByRole('button', { name: 'Create images' }))
   return user
 }
+
+test('completed images stay in a bounded square canvas and still open the full preview', async () => {
+  vi.mocked(api.createStudioRun).mockResolvedValue({
+    run: completed,
+    replay: false,
+  })
+  const user = await generate()
+  const preview = await screen.findByRole('button', { name: 'Preview' })
+  expect(preview).toHaveClass('aspect-square', 'max-w-[32rem]', 'flex-none')
+  expect(within(preview).getByRole('img', { name: 'A mountain' })).toHaveClass(
+    'object-contain'
+  )
+  await user.click(preview)
+  expect(
+    within(screen.getByRole('dialog', { name: 'Generated image' })).getByRole(
+      'img',
+      { name: 'A mountain' }
+    )
+  ).toHaveAttribute('src', completed.results[0].preview_url)
+})
 
 test('prompt optimization identifies and calls the chosen text model separately from image generation', async () => {
   vi.mocked(api.listStudioModels).mockImplementation(async (_id, kind) =>

@@ -19,16 +19,52 @@ For commercial licensing, please contact support@quantumnous.com
 import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+import { requestSnapshotPageURL } from '../../request-snapshot-download'
+import { RequestSnapshotDownloadButton } from './request-snapshot-download-button'
+import { MAX_REQUEST_SNAPSHOT_PREVIEW_CHARACTERS } from './request-snapshot-limits'
 
 const RequestJsonViewer = lazy(() => import('./request-json-viewer'))
 
 function SnapshotJson(props: {
   filename: 'original-request.json' | 'upstream-request.json'
   json: string
+  url?: string
 }) {
-  return <RequestJsonViewer filename={props.filename} json={props.json} />
+  const { t } = useTranslation()
+  const pageURL = props.url ? requestSnapshotPageURL(props.url) : null
+  return (
+    <div className='flex min-w-0 flex-col gap-2'>
+      {props.url && (
+        <div className='flex flex-wrap items-center gap-2'>
+          <RequestSnapshotDownloadButton url={props.url} />
+          {pageURL && (
+            <CopyButton
+              value={pageURL}
+              aria-label={t('Copy permanent link')}
+              size='sm'
+              variant='outline'
+            >
+              {t('Copy permanent link')}
+            </CopyButton>
+          )}
+          <span className='text-muted-foreground text-xs'>
+            {t(
+              'The permanent link opens a download page after administrator sign-in.'
+            )}
+          </span>
+        </div>
+      )}
+      <RequestJsonViewer
+        filename={props.filename}
+        json={props.json}
+        downloadUrl={props.url}
+      />
+    </div>
+  )
 }
 
 function formatRequestBody(body: unknown): string | null {
@@ -36,18 +72,23 @@ function formatRequestBody(body: unknown): string | null {
     return null
   }
   if (typeof body === 'string') {
+    if (body.length > MAX_REQUEST_SNAPSHOT_PREVIEW_CHARACTERS) return body
     try {
       return JSON.stringify(JSON.parse(body), null, 2)
     } catch {
       return body
     }
   }
+  const compact = JSON.stringify(body) ?? 'null'
+  if (compact.length > MAX_REQUEST_SNAPSHOT_PREVIEW_CHARACTERS) return compact
   return JSON.stringify(body, null, 2) ?? 'null'
 }
 
 export function RequestSnapshotsViewer(props: {
   original?: unknown
   upstream?: unknown
+  originalUrl?: string
+  upstreamUrl?: string
 }) {
   const { t } = useTranslation()
   const originalJson = useMemo(
@@ -73,6 +114,7 @@ export function RequestSnapshotsViewer(props: {
         <SnapshotJson
           filename='original-request.json'
           json={originalJson ?? ''}
+          url={props.originalUrl}
         />
       </Suspense>
     )
@@ -80,7 +122,11 @@ export function RequestSnapshotsViewer(props: {
   if (originalJson === null) {
     return (
       <Suspense fallback={fallback}>
-        <SnapshotJson filename='upstream-request.json' json={upstreamJson} />
+        <SnapshotJson
+          filename='upstream-request.json'
+          json={upstreamJson}
+          url={props.upstreamUrl}
+        />
       </Suspense>
     )
   }
@@ -95,10 +141,18 @@ export function RequestSnapshotsViewer(props: {
           </TabsTrigger>
         </TabsList>
         <TabsContent value='original' className='min-w-0'>
-          <SnapshotJson filename='original-request.json' json={originalJson} />
+          <SnapshotJson
+            filename='original-request.json'
+            json={originalJson}
+            url={props.originalUrl}
+          />
         </TabsContent>
         <TabsContent value='upstream' className='min-w-0'>
-          <SnapshotJson filename='upstream-request.json' json={upstreamJson} />
+          <SnapshotJson
+            filename='upstream-request.json'
+            json={upstreamJson}
+            url={props.upstreamUrl}
+          />
         </TabsContent>
       </Tabs>
     </Suspense>

@@ -23,8 +23,9 @@ var (
 )
 
 type aliyunOSSDriver struct {
-	client *oss.Client
-	bucket string
+	client          *oss.Client
+	bucket          string
+	idleConnections interface{ CloseIdleConnections() }
 }
 
 func newAliyunOSSDriver(profile *model.StorageProfile, credential *model.StorageCredential) (*aliyunOSSDriver, error) {
@@ -55,7 +56,17 @@ func newAliyunOSSDriver(profile *model.StorageProfile, credential *model.Storage
 		WithConnectTimeout(10 * time.Second).
 		WithReadWriteTimeout(60 * time.Second).
 		WithRetryMaxAttempts(3)
-	return &aliyunOSSDriver{client: oss.NewClient(config), bucket: profile.Bucket}, nil
+	driver := &aliyunOSSDriver{bucket: profile.Bucket}
+	driver.client = oss.NewClient(config, func(options *oss.Options) {
+		driver.idleConnections, _ = options.HttpClient.(interface{ CloseIdleConnections() })
+	})
+	return driver, nil
+}
+
+func (driver *aliyunOSSDriver) CloseIdleConnections() {
+	if driver.idleConnections != nil {
+		driver.idleConnections.CloseIdleConnections()
+	}
 }
 
 func validateAliyunProfile(profile *model.StorageProfile) error {
@@ -85,7 +96,7 @@ func validateAliyunProfile(profile *model.StorageProfile) error {
 func (driver *aliyunOSSDriver) PutObject(ctx context.Context, objectKey string, contentType string, size int64, body io.Reader) (string, error) {
 	cacheControl := "private, no-store"
 	forbidOverwrite := "true"
-	result, err := driver.client.PutObject(ctx, &oss.PutObjectRequest{
+	request := &oss.PutObjectRequest{
 		Bucket:          oss.Ptr(driver.bucket),
 		Key:             oss.Ptr(objectKey),
 		Body:            body,
@@ -93,7 +104,13 @@ func (driver *aliyunOSSDriver) PutObject(ctx context.Context, objectKey string, 
 		ContentType:     oss.Ptr(contentType),
 		CacheControl:    oss.Ptr(cacheControl),
 		ForbidOverwrite: oss.Ptr(forbidOverwrite),
-	})
+	}
+	// Snapshot JSON contains administrator-only request data. Never inherit a
+	// public bucket ACL for these objects; media uploads retain their policy.
+	if contentType == "application/json" {
+		request.Acl = oss.ObjectACLPrivate
+	}
+	result, err := driver.client.PutObject(ctx, request)
 	if err != nil {
 		return "", err
 	}
@@ -121,6 +138,17 @@ func (driver *aliyunOSSDriver) PresignGet(ctx context.Context, objectKey string,
 		return "", err
 	}
 	return result.URL, nil
+}
+
+func (driver *aliyunOSSDriver) GetObject(ctx context.Context, objectKey string) (io.ReadCloser, error) {
+	result, err := driver.client.GetObject(ctx, &oss.GetObjectRequest{
+		Bucket: oss.Ptr(driver.bucket),
+		Key:    oss.Ptr(objectKey),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.Body, nil
 }
 
 func (driver *aliyunOSSDriver) DeleteObject(ctx context.Context, objectKey string) error {

@@ -218,6 +218,10 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 	}
 
+	if record, ok := common.GetContextKeyType[func()](c, constant.ContextKeyVideoTaskOriginalRecorder); ok {
+		record()
+	}
+
 	// 8. 构建请求体
 	requestBody, err := adaptor.BuildRequestBody(c, info)
 	if info.TaskRelayInfo != nil {
@@ -232,7 +236,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 		info.RequestMetrics.RequestPreparationMilliseconds += preparationMilliseconds
 		info.RequestMetrics.TemporaryStorageMilliseconds = temporaryStorageMilliseconds
-		info.RequestMetrics.UpstreamBodyBytes = int64(len(common.GetContextKeyString(c, constant.ContextKeyVideoTaskUpstreamRequestBody)))
+		info.RequestMetrics.UpstreamBodyBytes, _ = common.GetContextKeyType[int64](c, constant.ContextKeyVideoTaskUpstreamBodySize)
 	}
 	if err != nil {
 		statusCode := http.StatusInternalServerError

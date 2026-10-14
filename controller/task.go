@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	storageService "github.com/QuantumNous/new-api/service/storage"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -132,7 +133,7 @@ func GetUserTask(c *gin.Context) {
 
 func GetTaskRequestBody(c *gin.Context) {
 	taskID := c.Param("task_id")
-	body, exists, err := model.GetTaskRequestBody(taskID)
+	body, exists, err := storageService.ReadArchivedRequestBody(c.Request.Context(), taskID, "")
 	if err != nil {
 		respondTaskRequestBody(c, nil, false, err)
 		return
@@ -194,7 +195,7 @@ func GetLogRequestBody(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Task id or request id is required"})
 		return
 	}
-	body, exists, err := model.GetArchivedRequestBody(taskID, requestID)
+	body, exists, err := storageService.ReadArchivedRequestBody(c.Request.Context(), taskID, requestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to query log request body"})
 		return
@@ -222,7 +223,7 @@ func GetLogRequestSnapshots(c *gin.Context) {
 }
 
 func respondTaskRequestSnapshots(c *gin.Context, taskID string, requestID string) {
-	snapshots, exists, err := model.GetArchivedRequestSnapshots(taskID, requestID)
+	snapshots, exists, err := storageService.ReadArchivedRequestSnapshots(c.Request.Context(), taskID, requestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to query request snapshots"})
 		return
@@ -238,11 +239,42 @@ func respondTaskRequestSnapshots(c *gin.Context, taskID string, requestID string
 			exists = true
 		}
 	}
-	if !exists {
+	pending := storageService.RequestSnapshotPending(taskID, requestID)
+	if !pending && taskID != "" {
+		task, found, taskErr := model.GetByTaskIdForAdmin(taskID)
+		if taskErr != nil {
+			common.ApiError(c, taskErr)
+			return
+		}
+		if found && task != nil {
+			for _, kind := range task.Properties.SnapshotKinds {
+				if kind == "original" && len(snapshots.Original) == 0 || kind == "upstream" && len(snapshots.Upstream) == 0 {
+					pending = true
+				}
+			}
+			if !exists && len(task.Properties.SnapshotKinds) == 0 {
+				pending = task.RequestBodyAvailable
+			}
+		}
+	}
+	if !exists && !pending {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Request snapshots not found"})
 		return
 	}
-	common.ApiSuccess(c, snapshots)
+	data := gin.H{"pending": pending}
+	if len(snapshots.Original) > 0 {
+		data["original"] = snapshots.Original
+		data["original_url"] = snapshotDownloadURL(taskID, requestID, "original")
+	}
+	if len(snapshots.Upstream) > 0 {
+		data["upstream"] = snapshots.Upstream
+		data["upstream_url"] = snapshotDownloadURL(taskID, requestID, "upstream")
+	}
+	if pending {
+		c.JSON(http.StatusAccepted, gin.H{"success": true, "message": "", "data": data})
+		return
+	}
+	common.ApiSuccess(c, data)
 }
 
 func respondTaskRequestBody(c *gin.Context, task *model.Task, exists bool, err error) {

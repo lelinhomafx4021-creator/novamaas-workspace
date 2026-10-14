@@ -68,6 +68,37 @@ describe('TaskLogDetailsCell', () => {
     vi.mocked(getTaskInformation).mockReset()
   })
 
+  test('reloads pending snapshots without hiding an already archived original body', async () => {
+    vi.mocked(getTaskRequestSnapshots)
+      .mockResolvedValueOnce({
+        success: true,
+        data: { pending: true, original: { prompt: 'archiving request' } },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          original: { prompt: 'archiving request' },
+          upstream: { model: 'provider-model' },
+        },
+      })
+    render(<TaskLogDetailsCell isAdmin log={successfulVideoLog} />)
+    fireEvent.click(screen.getByRole('button', { name: 'View request body' }))
+    expect(
+      await screen.findByText('Snapshot archive in progress')
+    ).toBeVisible()
+    expect((await screen.findByTestId('request-json')).textContent).toContain(
+      'archiving request'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Reload snapshots' }))
+    expect(
+      await screen.findByRole('tab', { name: 'Actual Upstream Request' })
+    ).toBeVisible()
+    expect(getTaskRequestSnapshots).toHaveBeenCalledTimes(2)
+    expect(
+      screen.queryByText('Snapshot archive in progress')
+    ).not.toBeInTheDocument()
+  })
+
   test('shows the formatted request JSON regardless of task status', async () => {
     vi.mocked(getTaskRequestSnapshots).mockResolvedValue({
       success: true,

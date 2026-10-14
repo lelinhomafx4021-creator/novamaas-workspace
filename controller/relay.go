@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -601,7 +602,53 @@ func RelayTask(c *gin.Context) {
 			relayInfo.RequestMetrics.RequestBodyBytes, _ = common.GetContextKeyType[int64](c, constant.ContextKeyRequestBodyBytes)
 			relayInfo.RequestMetrics.BodyReadMilliseconds, _ = common.GetContextKeyType[int64](c, constant.ContextKeyRequestBodyReadMilliseconds)
 		}
-		requestBodyToStore, bodyErr = captureVideoTaskRequestBody(channel.Type, bodyStorage)
+		externalSnapshots := false
+		if constant.ShouldStoreVideoTaskRequestBody(channel.Type) {
+			externalSnapshots = storageService.RequestSnapshotPolicyEnabled()
+		}
+		common.SetContextKey(c, constant.ContextKeyVideoTaskOriginalRecorder, nil)
+		common.SetContextKey(c, constant.ContextKeyVideoTaskSnapshotRecorder, nil)
+		common.SetContextKey(c, constant.ContextKeyVideoTaskRequestEvidence, nil)
+		common.SetContextKey(c, constant.ContextKeyVideoTaskUpstreamBodySize, int64(0))
+		common.SetContextKey(c, constant.ContextKeyVideoTaskUpstreamCaptured, false)
+		common.SetContextKey(c, constant.ContextKeyVideoTaskExternalSnapshots, externalSnapshots)
+		if externalSnapshots {
+			common.SetContextKey(c, constant.ContextKeyVideoTaskOriginalRecorder, func() {
+				if !common.GetContextKeyBool(c, constant.ContextKeyVideoTaskOriginalCaptured) {
+					reader, captureErr := bodyStorage.NewReader()
+					if captureErr == nil {
+						captureErr = storageService.CaptureRequestSnapshot(storageService.SnapshotCapture{
+							TaskID: relayInfo.PublicTaskID, RequestID: c.GetString(common.RequestIdKey), Kind: "original",
+							NodeName: common.NodeName, UserID: relayInfo.UserId, Evidence: model.TaskRequestEvidence{Version: model.TaskRequestEvidenceVersion},
+						}, reader, bodyStorage.Size())
+						_ = reader.Close()
+					}
+					if captureErr != nil {
+						logger.LogError(c, "original snapshot capture failed: "+captureErr.Error())
+					} else {
+						common.SetContextKey(c, constant.ContextKeyVideoTaskOriginalCaptured, true)
+						common.SetContextKey(c, constant.ContextKeyVideoTaskRequestBodyStored, true)
+					}
+				}
+			})
+			common.SetContextKey(c, constant.ContextKeyVideoTaskSnapshotRecorder, func(body []byte) {
+				evidence := model.ExtractTaskRequestEvidence(body)
+				common.SetContextKey(c, constant.ContextKeyVideoTaskRequestEvidence, evidence)
+				captureErr := storageService.CaptureRequestSnapshot(storageService.SnapshotCapture{
+					TaskID: relayInfo.PublicTaskID, RequestID: c.GetString(common.RequestIdKey), Kind: "upstream",
+					NodeName: common.NodeName, UserID: relayInfo.UserId, Evidence: evidence,
+				}, bytes.NewReader(body), int64(len(body)))
+				if captureErr != nil {
+					logger.LogError(c, "upstream snapshot capture failed: "+captureErr.Error())
+				} else {
+					common.SetContextKey(c, constant.ContextKeyVideoTaskUpstreamCaptured, true)
+					common.SetContextKey(c, constant.ContextKeyVideoTaskRequestBodyStored, true)
+				}
+			})
+			requestBodyToStore, bodyErr = nil, nil
+		} else {
+			requestBodyToStore, bodyErr = captureVideoTaskRequestBody(channel.Type, bodyStorage)
+		}
 		if bodyErr != nil {
 			statusCode := http.StatusBadRequest
 			if errors.Is(bodyErr, model.ErrTaskRequestBodyTooLarge) {
@@ -628,7 +675,7 @@ func RelayTask(c *gin.Context) {
 		if relayInfo.PublicTaskID != "" {
 			common.SetContextKey(c, constant.ContextKeyVideoTaskPublicID, relayInfo.PublicTaskID)
 		}
-		if relayInfo.PublicTaskID != "" && len(requestBodyToStore) > 0 {
+		if !externalSnapshots && relayInfo.PublicTaskID != "" && len(requestBodyToStore) > 0 {
 			upstreamRequestBody := []byte(common.GetContextKeyString(c, constant.ContextKeyVideoTaskUpstreamRequestBody))
 			if storeErr := model.SaveTaskRequestSnapshots(relayInfo.PublicTaskID, c.GetString(common.RequestIdKey), requestBodyToStore, upstreamRequestBody); storeErr != nil {
 				logger.LogError(c, "failed to store task request body: "+storeErr.Error())
@@ -684,7 +731,19 @@ func RelayTask(c *gin.Context) {
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action
-		task.RequestBodyAvailable = requestBodyStored
+		task.RequestBodyAvailable = requestBodyStored || common.GetContextKeyBool(c, constant.ContextKeyVideoTaskRequestBodyStored)
+		task.Properties.RequestID = c.GetString(common.RequestIdKey)
+		if common.GetContextKeyBool(c, constant.ContextKeyVideoTaskExternalSnapshots) {
+			if common.GetContextKeyBool(c, constant.ContextKeyVideoTaskOriginalCaptured) {
+				task.Properties.SnapshotKinds = append(task.Properties.SnapshotKinds, "original")
+			}
+			if common.GetContextKeyBool(c, constant.ContextKeyVideoTaskUpstreamCaptured) {
+				task.Properties.SnapshotKinds = append(task.Properties.SnapshotKinds, "upstream")
+			}
+		}
+		if evidence, ok := common.GetContextKeyType[model.TaskRequestEvidence](c, constant.ContextKeyVideoTaskRequestEvidence); ok {
+			task.Properties.RequestEvidence = &evidence
+		}
 		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
 		}

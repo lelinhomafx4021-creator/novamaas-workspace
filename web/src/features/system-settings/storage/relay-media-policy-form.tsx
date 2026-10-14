@@ -234,11 +234,6 @@ export function RelayMediaPolicyForm({
               name='max_files'
               label={t('Maximum files per request')}
             />
-            <p className='text-muted-foreground text-xs sm:col-span-2'>
-              {t(
-                'For audit integrity, the complete video task request body must stay within 2 MiB; larger requests are rejected before upload.'
-              )}
-            </p>
             <FormItem>
               <FormLabel>{t('Allowed media types')}</FormLabel>
               <Input

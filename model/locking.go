@@ -17,8 +17,12 @@ import (
 // SQLite has no FOR UPDATE syntax (the clause would be a syntax error), so it
 // is skipped there; SQLite's single-writer model makes one of two conflicting
 // transactions fail instead of both committing.
-func lockForUpdate(tx *gorm.DB) *gorm.DB {
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+func lockForUpdate(tx *gorm.DB, logDatabase ...bool) *gorm.DB {
+	isSQLite := common.UsingMainDatabase(common.DatabaseTypeSQLite)
+	if len(logDatabase) > 0 && logDatabase[0] {
+		isSQLite = common.UsingLogDatabase(common.DatabaseTypeSQLite)
+	}
+	if isSQLite {
 		return tx
 	}
 	return tx.Clauses(clause.Locking{Strength: "UPDATE"})

@@ -127,6 +127,28 @@ describe('DetailsDialog request body', () => {
     )
   })
 
+  test('shows a pending archive with no ready bodies and reloads it on demand', async () => {
+    vi.mocked(getLogRequestSnapshots)
+      .mockResolvedValueOnce({ success: true, data: { pending: true } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { original: { prompt: 'ready after upload' } },
+      })
+    renderDialog(true)
+    expect(
+      await screen.findByText('Snapshot archive in progress')
+    ).toBeVisible()
+    expect(screen.queryByTestId('request-json')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reload snapshots' }))
+    expect((await screen.findByTestId('request-json')).textContent).toContain(
+      'ready after upload'
+    )
+    expect(getLogRequestSnapshots).toHaveBeenCalledTimes(2)
+    expect(
+      screen.queryByText('Snapshot archive in progress')
+    ).not.toBeInTheDocument()
+  })
+
   test('does not request or show the request body for non-administrators', () => {
     renderDialog(false)
 

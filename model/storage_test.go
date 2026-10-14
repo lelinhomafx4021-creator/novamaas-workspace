@@ -113,3 +113,25 @@ func TestMigrateRelayMediaPolicyAllowedMIMETypesUpgradesLegacyDefault(t *testing
 	require.NotNil(t, stored)
 	assert.Equal(t, RelayMediaAllowedMIMETypes, stored.AllowedMIMETypes)
 }
+
+func TestTaskDeletionPreservesPermanentStorageObjects(t *testing.T) {
+	db := setupTaskRequestBodyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&StorageObject{}))
+	objects := []StorageObject{
+		{ObjectID: "temp-object", TaskID: "storage-task", Purpose: StorageObjectPurposeRelayMediaTemp, Status: StorageObjectStatusUploaded},
+		{ObjectID: "snapshot-object", TaskID: "storage-task", Purpose: StorageObjectPurposeRequestSnapshot, Status: StorageObjectStatusUploaded},
+		{ObjectID: "asset-object", TaskID: "storage-task", Purpose: StorageObjectPurposeAssetLibrary, Status: StorageObjectStatusUploaded},
+		{ObjectID: "billing-object", TaskID: "storage-task", Purpose: StorageObjectPurposeBillingArchive, Status: StorageObjectStatusUploaded},
+	}
+	require.NoError(t, db.Create(&objects).Error)
+	require.NoError(t, MarkStorageObjectsForTaskDeletion("storage-task", 123))
+	var stored []StorageObject
+	require.NoError(t, db.Order("id ASC").Find(&stored).Error)
+	require.Len(t, stored, 4)
+	assert.Equal(t, StorageObjectStatusDeletePending, stored[0].Status)
+	assert.EqualValues(t, 123, stored[0].DeleteAfter)
+	for _, object := range stored[1:] {
+		assert.Equal(t, StorageObjectStatusUploaded, object.Status, object.Purpose)
+		assert.Zero(t, object.DeleteAfter, object.Purpose)
+	}
+}

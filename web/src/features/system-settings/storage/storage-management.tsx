@@ -17,8 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
-import i18next from 'i18next'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -58,36 +56,18 @@ import {
   updateStorageProfile,
 } from './api'
 import { RelayMediaPolicyForm } from './relay-media-policy-form'
+import { RequestSnapshotManagement } from './request-snapshot-management'
 import { StorageProfileDialog } from './storage-profile-dialog'
 import {
   storagePolicyToInput,
   type StoragePolicyFormValues,
   type StorageProfileFormValues,
 } from './storage-schemas'
-import type { StorageAPIResponse, StorageProfile } from './types'
+import { assertStorageSuccess, storageErrorMessage } from './storage-utils'
+import type { StorageProfile } from './types'
 
 const STORAGE_QUERY_KEY = ['storage', 'profiles'] as const
 const RELAY_POLICY_QUERY_KEY = ['storage', 'relay-media-policy'] as const
-
-function assertSuccess<T>(response: StorageAPIResponse<T>): T {
-  if (!response.success) {
-    throw new Error(response.message || i18next.t('Storage operation failed'))
-  }
-  return response.data
-}
-
-function storageErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<StorageAPIResponse>(error)) {
-    return (
-      error.response?.data?.message ||
-      error.message ||
-      i18next.t('Storage operation failed')
-    )
-  }
-  return error instanceof Error
-    ? error.message
-    : i18next.t('Storage operation failed')
-}
 
 export function StorageManagement() {
   const { t } = useTranslation()
@@ -102,11 +82,12 @@ export function StorageManagement() {
 
   const profilesQuery = useQuery({
     queryKey: STORAGE_QUERY_KEY,
-    queryFn: async () => assertSuccess(await listStorageProfiles()),
+    queryFn: async () => assertStorageSuccess(await listStorageProfiles()),
   })
   const policyQuery = useQuery({
     queryKey: RELAY_POLICY_QUERY_KEY,
-    queryFn: async () => assertSuccess(await getRelayMediaStoragePolicy()),
+    queryFn: async () =>
+      assertStorageSuccess(await getRelayMediaStoragePolicy()),
   })
 
   const saveProfileMutation = useMutation({
@@ -114,7 +95,7 @@ export function StorageManagement() {
       const response = editingProfile
         ? await updateStorageProfile(editingProfile.id, values)
         : await createStorageProfile(values)
-      return assertSuccess(response)
+      return assertStorageSuccess(response)
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: STORAGE_QUERY_KEY })
@@ -126,21 +107,21 @@ export function StorageManagement() {
 
   const testDraftMutation = useMutation({
     mutationFn: async (values: StorageProfileFormValues) =>
-      assertSuccess(await testStorageProfile(values)),
+      assertStorageSuccess(await testStorageProfile(values)),
     onSuccess: () => toast.success(t('Storage test completed successfully')),
     onError: (error) => toast.error(storageErrorMessage(error)),
   })
 
   const testSavedMutation = useMutation({
     mutationFn: async (id: number) =>
-      assertSuccess(await testSavedStorageProfile(id)),
+      assertStorageSuccess(await testSavedStorageProfile(id)),
     onSuccess: () => toast.success(t('Storage test completed successfully')),
     onError: (error) => toast.error(storageErrorMessage(error)),
   })
 
   const archiveMutation = useMutation({
     mutationFn: async (id: number) =>
-      assertSuccess(await archiveStorageProfile(id)),
+      assertStorageSuccess(await archiveStorageProfile(id)),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: STORAGE_QUERY_KEY })
       setArchiveTarget(null)
@@ -151,7 +132,7 @@ export function StorageManagement() {
 
   const policyMutation = useMutation({
     mutationFn: async (values: StoragePolicyFormValues) =>
-      assertSuccess(
+      assertStorageSuccess(
         await updateRelayMediaStoragePolicy(storagePolicyToInput(values))
       ),
     onSuccess: async () => {
@@ -186,12 +167,10 @@ export function StorageManagement() {
         <SectionPageLayout.Content>
           <div className='flex flex-col gap-4 pb-4'>
             <Alert>
-              <AlertTitle>
-                {t('Private storage with temporary access')}
-              </AlertTitle>
+              <AlertTitle>{t('Private object storage')}</AlertTitle>
               <AlertDescription>
                 {t(
-                  'Buckets stay private. The platform uploads Base64 media, sends a signed HTTPS URL upstream, and deletes the object after task completion or the retention deadline.'
+                  'Storage profiles provide private destinations for relay media, assets, and request snapshots.'
                 )}{' '}
                 {t(
                   'Set STORAGE_CREDENTIAL_ENCRYPTION_KEY before saving static credentials so encrypted keys remain readable across restarts.'
@@ -304,6 +283,10 @@ export function StorageManagement() {
                 )}
               </>
             )}
+            <RequestSnapshotManagement
+              profiles={profilesQuery.data ?? []}
+              profilesReady={profilesQuery.isSuccess}
+            />
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>

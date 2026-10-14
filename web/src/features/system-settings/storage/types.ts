@@ -79,6 +79,43 @@ export type StorageAPIResponse<T = undefined> = {
   data: T
 }
 
+export type RequestSnapshotLogCursor = {
+  ID: number
+  CreatedAt: number
+  RequestID: string
+  OtherSHA256: string
+}
+
+export type RequestSnapshotJob = {
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  mode: 'migrate' | 'cleanup'
+  cursor: number
+  processed: number
+  failed: number
+  error?: string
+  phase?: string
+  initialized?: boolean
+  task_cursor?: number
+  task_upper_id?: number
+  log_cursor?: RequestSnapshotLogCursor
+  log_upper_cursor?: RequestSnapshotLogCursor
+  archive_upper_id?: number
+  scanned?: number
+  updated_at?: number
+  active_files?: number
+  workers?: number
+}
+
+export type RequestSnapshotStatus = {
+  node_name: string
+  spool_directory: string
+  workers: number
+  pending_files: number
+  pending_bytes: number
+  last_error?: string
+  migration: RequestSnapshotJob
+}
+
 export type AssetChannelConfig = {
   channel_id: number
   channel_name: string

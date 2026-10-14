@@ -25,8 +25,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 
-import { getLogRequestSnapshots } from '../../task-content-api'
+import {
+  getLogRequestSnapshots,
+  type TaskRequestSnapshots,
+} from '../../task-content-api'
 import { RequestSnapshotsViewer } from './request-snapshots-viewer'
+import { SnapshotArchivePending } from './snapshot-archive-pending'
 
 interface UsageLogRequestBodySectionProps {
   isAdmin: boolean
@@ -68,10 +72,12 @@ export function UsageLogRequestBodySection(
       Boolean(props.taskId || props.requestId),
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
+    refetchInterval: (query) => (query.state.data?.pending ? 2000 : false),
   })
-  const requestSnapshots = hasEmbeddedRequestBody
-    ? { original: props.requestBody }
-    : requestBodyQuery.data
+  const requestSnapshots: TaskRequestSnapshots | undefined =
+    hasEmbeddedRequestBody
+      ? { original: props.requestBody }
+      : requestBodyQuery.data
 
   if (!props.open) return null
 
@@ -80,12 +86,20 @@ export function UsageLogRequestBodySection(
       <Label className='flex items-center gap-1.5 text-xs font-semibold'>
         {t('Request Snapshots')}
       </Label>
-      {!hasEmbeddedRequestBody && requestBodyQuery.isFetching ? (
+      {!hasEmbeddedRequestBody &&
+      requestBodyQuery.isPending &&
+      requestBodyQuery.isFetching ? (
         <div className='bg-muted/30 text-muted-foreground flex min-h-32 items-center justify-center gap-2 rounded-md border text-sm'>
           <Spinner />
           <span>{t('Loading request body...')}</span>
         </div>
       ) : null}
+      {requestSnapshots?.pending && (
+        <SnapshotArchivePending
+          refreshing={requestBodyQuery.isFetching}
+          onRefresh={() => void requestBodyQuery.refetch()}
+        />
+      )}
       {!hasEmbeddedRequestBody && requestBodyQuery.isError ? (
         <Alert variant='destructive'>
           <HugeiconsIcon icon={AlertCircleIcon} strokeWidth={2} />
@@ -97,6 +111,8 @@ export function UsageLogRequestBodySection(
         <RequestSnapshotsViewer
           original={requestSnapshots.original}
           upstream={requestSnapshots.upstream}
+          originalUrl={requestSnapshots.original_url}
+          upstreamUrl={requestSnapshots.upstream_url}
         />
       ) : null}
     </section>

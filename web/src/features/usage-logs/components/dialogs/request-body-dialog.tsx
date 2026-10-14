@@ -25,6 +25,7 @@ import { Spinner } from '@/components/ui/spinner'
 
 import type { TaskRequestSnapshots } from '../../task-content-api'
 import { RequestSnapshotsViewer } from './request-snapshots-viewer'
+import { SnapshotArchivePending } from './snapshot-archive-pending'
 
 interface RequestBodyDialogProps {
   error: boolean
@@ -32,6 +33,7 @@ interface RequestBodyDialogProps {
   onOpenChange: (open: boolean) => void
   open: boolean
   snapshots: TaskRequestSnapshots | null
+  onRefresh: () => void
 }
 
 export function RequestBodyDialog(props: RequestBodyDialogProps) {
@@ -43,7 +45,7 @@ export function RequestBodyDialog(props: RequestBodyDialogProps) {
       onOpenChange={props.onOpenChange}
       title={t('Request Snapshots')}
       description={t(
-        'Original client request and actual upstream request snapshots for this video task.'
+        'Original client request and actual upstream request snapshots for this media task.'
       )}
       contentClassName='sm:max-w-3xl'
       contentHeight='min(70vh, 42rem)'
@@ -62,10 +64,20 @@ export function RequestBodyDialog(props: RequestBodyDialogProps) {
         </Alert>
       ) : null}
       {!props.loading && !props.error && props.snapshots !== null ? (
-        <RequestSnapshotsViewer
-          original={props.snapshots.original}
-          upstream={props.snapshots.upstream}
-        />
+        <div className='flex min-w-0 flex-col gap-3'>
+          {props.snapshots.pending && (
+            <SnapshotArchivePending
+              refreshing={props.loading}
+              onRefresh={props.onRefresh}
+            />
+          )}
+          <RequestSnapshotsViewer
+            original={props.snapshots.original}
+            upstream={props.snapshots.upstream}
+            originalUrl={props.snapshots.original_url}
+            upstreamUrl={props.snapshots.upstream_url}
+          />
+        </div>
       ) : null}
     </Dialog>
   )

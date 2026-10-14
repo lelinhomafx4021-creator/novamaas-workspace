@@ -26,6 +26,8 @@ import type {
   StoragePolicyInput,
   StorageProfile,
   StorageProfileInput,
+  RequestSnapshotJob,
+  RequestSnapshotStatus,
 } from './types'
 
 export async function listStorageProfiles() {
@@ -93,6 +95,50 @@ export async function updateRelayMediaStoragePolicy(input: StoragePolicyInput) {
   const response = await api.put<StorageAPIResponse<StoragePolicy>>(
     '/api/storage/policies/relay-media-temp',
     input,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function getRequestSnapshotStoragePolicy() {
+  const response = await api.get<StorageAPIResponse<StoragePolicy>>(
+    '/api/storage/policies/request-snapshots'
+  )
+  return response.data
+}
+
+export async function updateRequestSnapshotStoragePolicy(
+  input: StoragePolicyInput
+) {
+  const response = await api.put<StorageAPIResponse<StoragePolicy>>(
+    '/api/storage/policies/request-snapshots',
+    input,
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function getRequestSnapshotStatus() {
+  const response = await api.get<StorageAPIResponse<RequestSnapshotStatus>>(
+    '/api/storage/request-snapshots/status',
+    { disableDuplicate: true, skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function startRequestSnapshotMigration() {
+  const response = await api.post<StorageAPIResponse<RequestSnapshotJob>>(
+    '/api/storage/request-snapshots/migrate',
+    { batch_size: 50, clear_database_body: false },
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return response.data
+}
+
+export async function startRequestSnapshotCleanup() {
+  const response = await api.post<StorageAPIResponse<RequestSnapshotJob>>(
+    '/api/storage/request-snapshots/cleanup',
+    { batch_size: 50 },
     { skipBusinessError: true, skipErrorHandler: true }
   )
   return response.data

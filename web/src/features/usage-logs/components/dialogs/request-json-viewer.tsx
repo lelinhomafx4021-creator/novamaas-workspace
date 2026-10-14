@@ -22,15 +22,64 @@ import {
   CodeBlock,
   CodeBlockCopyButton,
 } from '@/components/ai-elements/code-block'
+import { CopyButton } from '@/components/copy-button'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+
+import { MAX_REQUEST_SNAPSHOT_PREVIEW_CHARACTERS } from './request-snapshot-limits'
 
 export default function RequestJsonViewer({
   filename = 'request-body.json',
   json,
+  downloadUrl,
 }: {
   filename?: string
   json: string
+  downloadUrl?: string
 }) {
   const { t } = useTranslation()
+  if (json.length > MAX_REQUEST_SNAPSHOT_PREVIEW_CHARACTERS) {
+    return (
+      <Alert>
+        <AlertTitle>{t('Large request snapshot')}</AlertTitle>
+        <AlertDescription>
+          {t(
+            'This snapshot is too large to preview. Download the complete JSON file or copy its content.'
+          )}
+          <div className='mt-2 flex flex-wrap gap-2'>
+            <CopyButton
+              value={json}
+              size='sm'
+              variant='outline'
+              aria-label={t('Copy complete JSON')}
+            >
+              {t('Copy complete JSON')}
+            </CopyButton>
+            {!downloadUrl && (
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                onClick={() => {
+                  const blob = new Blob([json], {
+                    type: 'application/json;charset=utf-8',
+                  })
+                  const url = URL.createObjectURL(blob)
+                  const link = document.createElement('a')
+                  link.href = url
+                  link.download = filename
+                  link.click()
+                  URL.revokeObjectURL(url)
+                }}
+              >
+                {t('Download complete JSON')}
+              </Button>
+            )}
+          </div>
+        </AlertDescription>
+      </Alert>
+    )
+  }
   return (
     <CodeBlock
       code={json}

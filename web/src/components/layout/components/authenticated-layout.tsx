@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useRouterState } from '@tanstack/react-router'
+
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -28,12 +30,32 @@ import { cn } from '@/lib/utils'
 import { AppHeader } from './app-header'
 import { AppSidebar } from './app-sidebar'
 
+declare module '@tanstack/react-router' {
+  interface StaticDataRouteOption {
+    fullScreen?: boolean
+  }
+}
+
 type AuthenticatedLayoutProps = {
   children?: React.ReactNode
 }
 
 export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
+  const fullScreen = useRouterState({
+    select: (state) =>
+      state.matches.some((match) => match.staticData.fullScreen),
+  })
   const defaultOpen = getCookie('sidebar_state') !== 'false'
+
+  if (fullScreen) {
+    return (
+      <div className='bg-background flex h-svh min-h-0 w-full flex-col overflow-hidden'>
+        <SkipToMain />
+        {props.children ?? <AnimatedOutlet />}
+        <LoginNoticeDialog />
+      </div>
+    )
+  }
 
   return (
     <LayoutProvider>

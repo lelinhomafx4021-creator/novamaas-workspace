@@ -21,12 +21,12 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { Main } from '@/components/layout'
 import { ImageStudio } from '@/features/image-studio'
 import { getStudioSettings } from '@/features/image-studio/api'
-import { isSidebarModuleEnabled } from '@/lib/nav-modules'
 
 export const Route = createFileRoute('/_authenticated/image-studio/')({
+  staticData: { fullScreen: true },
   beforeLoad: async () => {
     const settings = await getStudioSettings()
-    if (!settings.enabled || !isSidebarModuleEnabled('chat', 'image_studio')) {
+    if (!settings.enabled) {
       throw redirect({ to: '/dashboard' })
     }
   },
@@ -35,7 +35,7 @@ export const Route = createFileRoute('/_authenticated/image-studio/')({
 
 function ImageStudioPage() {
   return (
-    <Main className='p-0'>
+    <Main id='content' tabIndex={-1} className='p-0'>
       <ImageStudio />
     </Main>
   )

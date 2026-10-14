@@ -35,7 +35,6 @@ import {
   User,
   Users,
   Wallet,
-  WandSparkles,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -71,15 +70,6 @@ export function useSidebarData(): SidebarData {
             url: '/playground',
             icon: FlaskConical,
           },
-          ...(status?.ImageStudioEnabled === false
-            ? []
-            : [
-                {
-                  title: t('Image generation'),
-                  url: '/image-studio',
-                  icon: WandSparkles,
-                },
-              ]),
           {
             title: t('Chat'),
             icon: MessageSquare,

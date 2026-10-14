@@ -75,8 +75,8 @@ test.each([
   expect(urls('admin', disabled.navGroups)).not.toContain('/image-review')
 })
 
-test('image generation entry follows ImageStudioEnabled', () => {
-  expect(urls('chat', renderSidebar().result.current.navGroups)).toContain(
+test('image creation is absent from the console sidebar even when enabled', () => {
+  expect(urls('chat', renderSidebar().result.current.navGroups)).not.toContain(
     '/image-studio'
   )
   expect(

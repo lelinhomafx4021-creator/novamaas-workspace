@@ -24,12 +24,14 @@ import {
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { nanoid } from 'nanoid'
 import { useRef, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 
+import { SystemBrand } from '@/components/layout/components/system-brand'
 import { Button } from '@/components/ui/button'
 import {
   Field,
@@ -142,37 +144,36 @@ export function StudioComposer(props: {
     <>
       <header className='flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6'>
         <div className='flex min-w-0 items-center gap-3'>
-          <span className='bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl'>
-            <HugeiconsIcon
-              icon={Image01Icon}
-              className='size-5'
-              aria-hidden='true'
-            />
-          </span>
-          <div>
-            <h1 className='text-lg font-semibold tracking-tight'>
-              {t('Image generation')}
-            </h1>
-            <p className='text-muted-foreground mt-1 text-xs'>
-              {t('Describe an idea. Create something new.')}
-            </p>
-          </div>
+          <SystemBrand variant='inline' />
+          <h1 className='border-l pl-3 text-lg font-semibold tracking-tight'>
+            {t('Image creation')}
+          </h1>
         </div>
-        <StudioModelSettings
-          keys={props.keys}
-          userGroup={userGroup}
-          image={{ tokenId, model }}
-          text={{ ...text, model: textModel }}
-          imageModels={models}
-          textModels={textModels}
-          disabled={busy}
-          onImageChange={(selection) => {
-            requestKey.current = ''
-            form.setValue('tokenId', String(selection.tokenId))
-            form.setValue('model', selection.model)
-          }}
-          onTextChange={setText}
-        />
+        <div className='flex items-center gap-2'>
+          <StudioModelSettings
+            keys={props.keys}
+            userGroup={userGroup}
+            image={{ tokenId, model }}
+            text={{ ...text, model: textModel }}
+            imageModels={models}
+            textModels={textModels}
+            disabled={busy}
+            onImageChange={(selection) => {
+              requestKey.current = ''
+              form.setValue('tokenId', String(selection.tokenId))
+              form.setValue('model', selection.model)
+            }}
+            onTextChange={setText}
+          />
+          <Button
+            variant='ghost'
+            nativeButton={false}
+            render={<Link to='/dashboard' />}
+            role='link'
+          >
+            {t('Back to Dashboard')}
+          </Button>
+        </div>
       </header>
       <div className='grid shrink-0 items-start gap-3 p-3 sm:p-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[17rem_minmax(0,1fr)_16rem] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[18rem_minmax(0,1fr)_17rem]'>
         <form
@@ -186,7 +187,7 @@ export function StudioComposer(props: {
           <div className='min-h-0 p-3 xl:flex-1 xl:overflow-y-auto'>
             <FieldGroup className='gap-3'>
               <div className='grid gap-1'>
-                <h2 className='font-semibold'>{t('Start with an idea')}</h2>
+                <h2 className='font-semibold'>{t('Prompt')}</h2>
                 <p className='text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs'>
                   <HugeiconsIcon
                     icon={Image01Icon}

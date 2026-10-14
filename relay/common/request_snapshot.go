@@ -29,9 +29,16 @@ type UpstreamRequestRecorder func(c *gin.Context, upstreamBody []byte) error
 
 // RecordVideoTaskUpstreamRequestBody captures the final JSON bytes after all
 // provider conversion, temporary-media materialization, and model mapping.
-// The limit is enforced before the HTTP request is sent so every accepted
-// audited request can be persisted without an oversized database write.
+// External snapshots are durably handed to the node's queue. The legacy
+// database path retains its size limit before the upstream request is sent.
 func RecordVideoTaskUpstreamRequestBody(c *gin.Context, body []byte) error {
+	rootcommon.SetContextKey(c, constant.ContextKeyVideoTaskUpstreamBodySize, int64(len(body)))
+	if rootcommon.GetContextKeyBool(c, constant.ContextKeyVideoTaskExternalSnapshots) {
+		if record, ok := rootcommon.GetContextKeyType[func([]byte)](c, constant.ContextKeyVideoTaskSnapshotRecorder); ok {
+			record(body)
+		}
+		return nil
+	}
 	if len(body) > constant.MaxVideoTaskRequestBodyBytes {
 		rootcommon.SetContextKey(c, constant.ContextKeyVideoTaskUpstreamRequestBody, "")
 		return &upstreamRequestSnapshotTooLargeError{size: len(body)}

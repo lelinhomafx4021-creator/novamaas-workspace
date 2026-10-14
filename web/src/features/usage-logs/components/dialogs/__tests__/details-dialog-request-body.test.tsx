@@ -127,6 +127,54 @@ describe('DetailsDialog request body', () => {
     )
   })
 
+  test('shows a pending archive with no ready bodies and reloads it on demand', async () => {
+    vi.mocked(getLogRequestSnapshots)
+      .mockResolvedValueOnce({ success: true, data: { pending: true } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { original: { prompt: 'ready after upload' } },
+      })
+    renderDialog(true)
+    expect(
+      await screen.findByText('Snapshot archive in progress')
+    ).toBeVisible()
+    expect(screen.queryByTestId('request-json')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reload snapshots' }))
+    expect((await screen.findByTestId('request-json')).textContent).toContain(
+      'ready after upload'
+    )
+    expect(getLogRequestSnapshots).toHaveBeenCalledTimes(2)
+    expect(
+      screen.queryByText('Snapshot archive in progress')
+    ).not.toBeInTheDocument()
+  })
+
+  test.each([true, false])(
+    'historical image snapshots use administrator access (%s) without an image review grant',
+    async (isAdmin) => {
+      vi.mocked(getLogRequestSnapshots).mockResolvedValue({
+        success: true,
+        data: { original: { prompt: 'archived image prompt' } },
+      })
+      renderDialog(isAdmin, {
+        ...videoUsageLog,
+        other: JSON.stringify({
+          request_body_available: true,
+          request_body_resource: 'image_studio',
+        }),
+      })
+
+      if (isAdmin) {
+        expect(
+          (await screen.findByTestId('request-json')).textContent
+        ).toContain('archived image prompt')
+      } else {
+        expect(screen.queryByText('Request Snapshots')).not.toBeInTheDocument()
+        expect(getLogRequestSnapshots).not.toHaveBeenCalled()
+      }
+    }
+  )
+
   test('does not request or show the request body for non-administrators', () => {
     renderDialog(false)
 

@@ -151,6 +151,12 @@ func main() {
 	// schedules and executes them. Master-only execution and the UpdateTask
 	// switch are enforced inside the runner and each handler's Enabled().
 	controller.RegisterScheduledSystemTasks()
+	if err := storageService.StartRequestSnapshotWorkers(); err != nil {
+		common.SysError("request snapshot workers unavailable: " + err.Error())
+	}
+	if err := service.InitRequestSnapshotMaintenance(); err != nil {
+		common.SysError("request snapshot maintenance unavailable: " + err.Error())
+	}
 	service.StartSystemTaskRunner()
 	service.StartBillingStatementWorker()
 	storageService.StartCleanupTask()
@@ -237,6 +243,12 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(fmt.Sprintf("server forced to shutdown: %v", err))
+	}
+	if err := service.StopRequestSnapshotMaintenance(ctx); err != nil {
+		common.SysError("snapshot maintenance shutdown: " + err.Error())
+	}
+	if err := storageService.StopRequestSnapshotWorkers(ctx); err != nil {
+		common.SysError("snapshot workers shutdown: " + err.Error())
 	}
 	if err := assetLibraryService.StopAssetRequestLogWriter(ctx); err != nil {
 		common.SysError(fmt.Sprintf("asset request log writer shutdown: %v", err))
@@ -335,6 +347,9 @@ func InitResources() error {
 	model.InitOptionMap()
 
 	// 清理旧的磁盘缓存文件
+	if err := storageService.ValidateRequestSnapshotSpoolDirectory(); err != nil {
+		return err
+	}
 	common.CleanupOldCacheFiles()
 
 	// Initialize SQL Database

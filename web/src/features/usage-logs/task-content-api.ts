@@ -29,6 +29,9 @@ export interface TaskRequestBodyResponse {
 export interface TaskRequestSnapshots {
   original?: unknown
   upstream?: unknown
+  original_url?: string
+  upstream_url?: string
+  pending?: boolean
 }
 
 export interface TaskRequestSnapshotsResponse {

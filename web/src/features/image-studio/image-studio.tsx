@@ -65,7 +65,7 @@ export function ImageStudio() {
   })
 
   return (
-    <div className='flex min-h-0 flex-1 flex-col overflow-y-auto xl:overflow-hidden'>
+    <div className='flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden'>
       {(settings.isPending || (userId > 0 && keys.isPending)) && (
         <p role='status' className='p-6'>
           {t('Loading...')}

@@ -179,6 +179,20 @@ test('signing out clears the prompt, private generation records and model select
   ).toHaveValue('')
 })
 
+test('desktop windows arrange the editor, output and history in three columns from 1024px', async () => {
+  await openStudio()
+  const editor = screen
+    .getByRole('textbox', { name: 'Describe your image' })
+    .closest('form')
+  expect(editor?.parentElement).toHaveClass(
+    'lg:grid-cols-[17rem_minmax(0,1fr)_16rem]',
+    'lg:min-h-0'
+  )
+  expect(
+    screen.getByRole('region', { name: 'Generation records' })
+  ).toHaveClass('lg:col-start-3')
+})
+
 test.each([
   ['keep', 'Delete generated image only'],
   ['delete', 'Also delete asset library image'],

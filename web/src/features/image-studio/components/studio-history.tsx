@@ -91,7 +91,7 @@ export function StudioHistory(props: {
   return (
     <>
       <section
-        className='bg-card/90 flex min-h-0 min-w-0 flex-col gap-3 rounded-2xl border p-3 shadow-sm xl:col-start-3'
+        className='bg-card/90 flex min-h-0 min-w-0 flex-col gap-3 rounded-2xl border p-3 shadow-sm lg:col-start-3'
         aria-label={t('Generation records')}
       >
         <div className='flex shrink-0 items-center justify-between gap-3'>
@@ -127,7 +127,7 @@ export function StudioHistory(props: {
             {t('No generation records')}
           </p>
         )}
-        <div className='grid max-h-[28rem] min-h-0 grid-cols-2 content-start gap-2 overflow-y-auto xl:max-h-none xl:flex-1 xl:grid-cols-1'>
+        <div className='grid max-h-[28rem] min-h-0 grid-cols-2 content-start gap-2 overflow-y-auto lg:max-h-none lg:flex-1 lg:grid-cols-1'>
           {runs.data?.items.flatMap((run) =>
             (run.results.length ? run.results : [undefined]).map((result) => (
               <article key={result?.id || run.id} className='relative min-w-0'>

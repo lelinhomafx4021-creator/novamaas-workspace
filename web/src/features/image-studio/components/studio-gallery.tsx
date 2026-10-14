@@ -210,7 +210,7 @@ export function StudioGallery(props: {
                       'w-full rounded-lg object-contain',
                       props.compact
                         ? 'h-40'
-                        : 'max-h-[50vh] xl:absolute xl:inset-0 xl:h-full xl:max-h-none'
+                        : 'max-h-[50vh] lg:absolute lg:inset-0 lg:h-full lg:max-h-none'
                     )}
                     onError={(event) => {
                       const url = event.currentTarget.src

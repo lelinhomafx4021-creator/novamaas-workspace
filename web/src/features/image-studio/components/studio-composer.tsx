@@ -189,16 +189,16 @@ export function StudioComposer(props: {
           </Button>
         </div>
       </header>
-      <div className='grid shrink-0 items-start gap-3 p-3 sm:p-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[17rem_minmax(0,1fr)_16rem] xl:grid-rows-[minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[18rem_minmax(0,1fr)_17rem]'>
+      <div className='grid shrink-0 items-start gap-3 p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[17rem_minmax(0,1fr)_16rem] lg:grid-rows-[minmax(0,1fr)] lg:items-stretch 2xl:grid-cols-[18rem_minmax(0,1fr)_17rem]'>
         <form
           noValidate
           onSubmit={submit}
           onChange={() => {
             requestKey.current = ''
           }}
-          className='bg-card/90 flex min-h-0 min-w-0 flex-col rounded-2xl border shadow-sm xl:overflow-hidden'
+          className='bg-card/90 flex min-h-0 min-w-0 flex-col rounded-2xl border shadow-sm lg:overflow-hidden'
         >
-          <div className='min-h-0 p-3 xl:flex-1 xl:overflow-y-auto'>
+          <div className='min-h-0 p-3 lg:flex-1 lg:overflow-y-auto'>
             <FieldGroup className='gap-3'>
               <div className='grid gap-1'>
                 <h2 className='font-semibold'>{t('Prompt')}</h2>

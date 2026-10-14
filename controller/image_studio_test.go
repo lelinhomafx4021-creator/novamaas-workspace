@@ -27,15 +27,14 @@ func studioRequest(handler gin.HandlerFunc, user, role int, path string, params 
 	return recorder
 }
 
-// Studio snapshots contain other users' prompts, so every snapshot reader
-// requires the image review permission in addition to AdminAuth.
-func TestImageStudioSnapshotsRequireReviewPermission(t *testing.T) {
+func TestImageStudioSnapshotsAllowAdminsWithoutImageReviewGrant(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	previousMaster := common.IsMasterNode
 	common.IsMasterNode = true
 	t.Cleanup(func() { common.IsMasterNode = previousMaster })
 	require.NoError(t, authz.Init(db))
-	require.NoError(t, db.AutoMigrate(&model.ImageStudioRun{}, &model.ImageStudioResult{}, &model.TaskRequestBody{}))
+	require.NoError(t, authz.SetUserPermissions(8, authz.PermissionsMap{authz.ResourceImageStudio: {authz.ActionRead: false}}))
+	require.NoError(t, db.AutoMigrate(&model.ImageStudioRun{}, &model.ImageStudioResult{}, &model.TaskRequestBody{}, &model.Task{}))
 	require.NoError(t, db.Create(&model.ImageStudioRun{UserID: 7, IdempotencyKey: "k", Prompt: "private prompt", Status: model.ImageStudioRunStatusCompleted, RequestID: "studio-request"}).Error)
 	require.NoError(t, model.SaveTaskRequestSnapshots("", "studio-request", []byte(`{"prompt":"private prompt"}`), []byte(`{"prompt":"private prompt","model":"upstream"}`)))
 	require.NoError(t, model.SaveTaskRequestSnapshots("", "chat-request", []byte(`{"prompt":"chat"}`), nil))
@@ -56,32 +55,22 @@ func TestImageStudioSnapshotsRequireReviewPermission(t *testing.T) {
 		{"task body by reference", GetTaskRequestBody, "/", gin.Params{{Key: "task_id", Value: "request:studio-request"}}},
 		{"upstream body by archive reference", GetTaskRequestBody, "/", gin.Params{{Key: "task_id", Value: upstreamReference}}},
 		{"upstream log body by archive reference", GetLogRequestBody, "/?task_id=" + upstreamReference, nil},
+		{"log original download", DownloadRequestSnapshot, "/?request_id=studio-request", gin.Params{{Key: "kind", Value: "original"}}},
+		{"log upstream download", DownloadRequestSnapshot, "/?request_id=studio-request", gin.Params{{Key: "kind", Value: "upstream"}}},
+		{"log download by reference", DownloadRequestSnapshot, "/?task_id=request:studio-request", gin.Params{{Key: "kind", Value: "original"}}},
+		{"task original download", DownloadRequestSnapshot, "/", gin.Params{{Key: "task_id", Value: "request:studio-request"}, {Key: "kind", Value: "original"}}},
+		{"task upstream download", DownloadRequestSnapshot, "/", gin.Params{{Key: "task_id", Value: "request:studio-request"}, {Key: "kind", Value: "upstream"}}},
+		{"download by archive reference", DownloadRequestSnapshot, "/", gin.Params{{Key: "task_id", Value: upstreamReference}, {Key: "kind", Value: "original"}}},
 	}
-	for _, tc := range []struct {
-		name    string
-		role    int
-		granted bool
-		allowed bool
-	}{
-		{"ordinary admin", common.RoleAdminUser, false, false},
-		{"granted admin", common.RoleAdminUser, true, true},
-		{"root", common.RoleRootUser, false, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require.NoError(t, authz.SetUserPermissions(8, authz.PermissionsMap{authz.ResourceImageStudio: {authz.ActionRead: tc.granted}}))
-			for _, reader := range readers {
-				response := studioRequest(reader.handler, 8, tc.role, reader.path, reader.params)
-				assert.Equal(t, tc.allowed, response.Code == http.StatusOK, reader.name)
-				assert.Equal(t, tc.allowed, strings.Contains(response.Body.String(), "private prompt"), reader.name)
-			}
-			// Snapshots of other relay requests keep the existing AdminAuth behavior.
-			response := studioRequest(GetLogRequestSnapshots, 8, tc.role, "/?request_id=chat-request", nil)
+	for _, reader := range readers {
+		t.Run(reader.name, func(t *testing.T) {
+			response := studioRequest(reader.handler, 8, common.RoleAdminUser, reader.path, reader.params)
 			assert.Equal(t, http.StatusOK, response.Code)
+			assert.Contains(t, response.Body.String(), "private prompt")
 		})
 	}
-	var audits int64
-	require.NoError(t, db.Model(&model.Log{}).Where("type = ?", model.LogTypeManage).Count(&audits).Error)
-	assert.Positive(t, audits)
+	response := studioRequest(GetLogRequestSnapshots, 8, common.RoleAdminUser, "/?request_id=chat-request", nil)
+	assert.Equal(t, http.StatusOK, response.Code)
 }
 
 // The relay links its request ID to the running run before archiving, so a
@@ -95,9 +84,9 @@ func TestImageStudioRunRequestLinkPrecedesArchive(t *testing.T) {
 	require.NoError(t, model.LinkImageStudioRunRequest(run.ID, "first"))
 	require.NoError(t, model.LinkImageStudioRunRequest(run.ID, "first"), "channel retries reuse the request ID")
 	assert.Error(t, model.LinkImageStudioRunRequest(run.ID, "other"))
-	owner, err := model.ImageStudioSnapshotRequestID("", "first")
-	require.NoError(t, err)
-	assert.Equal(t, "first", owner)
+	var linked model.ImageStudioRun
+	require.NoError(t, db.First(&linked, run.ID).Error)
+	assert.Equal(t, "first", linked.RequestID)
 	require.NoError(t, db.Model(run).Update("status", model.ImageStudioRunStatusCompleted).Error)
 	assert.Error(t, model.LinkImageStudioRunRequest(run.ID, "first"))
 }

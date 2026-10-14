@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -126,41 +125,6 @@ func LinkImageStudioRunRequest(runID int64, requestID string) error {
 		return errors.New("image generation is no longer running")
 	}
 	return nil
-}
-
-// ImageStudioSnapshotRequestID returns the studio request ID owning the
-// snapshot addressed by taskID or requestID, or "" for other snapshots. Every
-// archive reference form (task ID, request:<id>, upstream:<hash>) is resolved
-// through the request ID stored on the archived row, so none of them can
-// bypass the image review permission.
-func ImageStudioSnapshotRequestID(taskID string, requestID string) (string, error) {
-	candidates := make([]string, 0, 3)
-	if requestID != "" {
-		candidates = append(candidates, requestID)
-	}
-	if taskID != "" {
-		if id, found := strings.CutPrefix(taskID, "request:"); found && id != "" {
-			candidates = append(candidates, id)
-		}
-		var records []TaskRequestBody
-		if err := DB.Select("request_id").Where("reference_id = ? AND request_id <> ?", taskID, "").Find(&records).Error; err != nil {
-			return "", err
-		}
-		for _, record := range records {
-			candidates = append(candidates, record.RequestID)
-		}
-	}
-	if len(candidates) == 0 {
-		return "", nil
-	}
-	var runs []ImageStudioRun
-	if err := DB.Select("request_id").Where("request_id IN ?", candidates).Limit(1).Find(&runs).Error; err != nil {
-		return "", err
-	}
-	if len(runs) == 0 {
-		return "", nil
-	}
-	return runs[0].RequestID, nil
 }
 
 // FinishImageStudioRun records the results and the final status of a running

@@ -172,55 +172,14 @@ type billingCorrectionVideoRequest struct {
 }
 
 func billingCorrectionVideoRequestEvidence(body []byte) billingCorrectionVideoRequest {
-	type contentItem struct {
-		Type     string          `json:"type"`
-		VideoURL json.RawMessage `json:"video_url"`
-	}
-	type videoRequest struct {
-		Resolution json.RawMessage `json:"resolution"`
-		Content    *[]contentItem  `json:"content"`
-	}
-	var request struct {
-		videoRequest
-		Metadata *videoRequest `json:"metadata"`
-	}
-	if len(body) == 0 || common.Unmarshal(body, &request) != nil {
-		return billingCorrectionVideoRequest{}
-	}
-	data := request.videoRequest
-	// Generic video requests put provider options under metadata. Native and
-	// materialized upstream requests put them directly at the top level.
-	if data.Content == nil && request.Metadata != nil {
-		data = *request.Metadata
-	}
-	if data.Content == nil || len(*data.Content) == 0 {
-		return billingCorrectionVideoRequest{}
-	}
-	evidence := billingCorrectionVideoRequest{Valid: true}
-	if len(data.Resolution) > 0 {
-		if common.GetJsonType(data.Resolution) != "string" || common.Unmarshal(data.Resolution, &evidence.Resolution) != nil {
-			return billingCorrectionVideoRequest{}
-		}
-		evidence.Resolution = strings.ToLower(strings.TrimSpace(evidence.Resolution))
-		if evidence.Resolution == "" {
-			return billingCorrectionVideoRequest{}
-		}
-	}
-	for _, item := range *data.Content {
-		if item.Type == "video_url" || len(item.VideoURL) > 0 {
-			evidence.HasVideo = true
-			continue
-		}
-		if item.Type != "text" && item.Type != "image_url" && item.Type != "audio_url" {
-			return billingCorrectionVideoRequest{}
-		}
-	}
-	return evidence
+	evidence := ExtractTaskRequestEvidence(body)
+	return billingCorrectionVideoRequest{Resolution: evidence.Resolution, HasVideo: evidence.HasVideoInput, Valid: evidence.Valid}
 }
 
 func billingCorrectionTaskRequests(scope *gorm.DB, tasks []Task) (map[string]billingCorrectionVideoRequest, error) {
 	result := make(map[string]billingCorrectionVideoRequest)
-	references := make([]string, 0, len(tasks)*2)
+	references := make([]string, 0, len(tasks)*4)
+	taskLinkedReferences := make(map[string]bool)
 	originalRefs, upstreamRefs := make(map[string]string), make(map[string]string)
 	for _, task := range tasks {
 		if bc := task.PrivateData.BillingContext; bc == nil {
@@ -229,6 +188,10 @@ func billingCorrectionTaskRequests(scope *gorm.DB, tasks []Task) (map[string]bil
 			continue
 		}
 		result[task.TaskID] = billingCorrectionVideoRequestEvidence(task.Properties.RequestBody)
+		if evidence := task.Properties.RequestEvidence; evidence != nil && evidence.Version == TaskRequestEvidenceVersion {
+			result[task.TaskID] = billingCorrectionVideoRequest{Resolution: evidence.Resolution, HasVideo: evidence.HasVideoInput, Valid: evidence.Valid}
+			continue
+		}
 		original, err := taskRequestBodyReference(task.TaskID, "")
 		if err != nil {
 			return nil, err
@@ -239,16 +202,26 @@ func billingCorrectionTaskRequests(scope *gorm.DB, tasks []Task) (map[string]bil
 		}
 		originalRefs[original], upstreamRefs[upstream] = task.TaskID, task.TaskID
 		references = append(references, original, upstream)
+		taskLinkedReferences[original], taskLinkedReferences[upstream] = true, true
+		if task.Properties.RequestID != "" {
+			requestOriginal, _ := taskRequestBodyReference("", task.Properties.RequestID)
+			requestUpstream, _ := upstreamRequestBodyReference("", task.Properties.RequestID)
+			originalRefs[requestOriginal], upstreamRefs[requestUpstream] = task.TaskID, task.TaskID
+			references = append(references, requestOriginal, requestUpstream)
+		}
 	}
 	if len(references) == 0 {
 		return result, nil
 	}
-	rows, err := scope.Session(&gorm.Session{NewDB: true}).Model(&TaskRequestBody{}).Select("reference_id", "body").Where("reference_id IN ?", references).Rows()
+	// Source precedence is decided below. Keep this query unordered so legacy
+	// JSON bodies do not enter a MySQL filesort and exhaust its sort buffer.
+	rows, err := scope.Session(&gorm.Session{NewDB: true}).Model(&TaskRequestBody{}).Select("reference_id, evidence_version, evidence_valid, resolution, has_video_input, CASE WHEN evidence_version = 1 THEN NULL ELSE body END AS body").Where("reference_id IN ?", references).Rows()
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	originals, upstreams := make(map[string]billingCorrectionVideoRequest), make(map[string]billingCorrectionVideoRequest)
+	originalTaskLinked, upstreamTaskLinked := make(map[string]bool), make(map[string]bool)
 	// Decode one payload at a time so up to 1,000 tasks do not retain several
 	// gigabytes of archived media request JSON during a correction transaction.
 	for rows.Next() {
@@ -257,10 +230,18 @@ func billingCorrectionTaskRequests(scope *gorm.DB, tasks []Task) (map[string]bil
 			return nil, err
 		}
 		evidence := billingCorrectionVideoRequestEvidence(record.Body)
+		if record.EvidenceVersion == TaskRequestEvidenceVersion {
+			evidence = billingCorrectionVideoRequest{Resolution: record.Resolution, HasVideo: record.HasVideoInput, Valid: record.EvidenceValid}
+		}
+		linked := taskLinkedReferences[record.ReferenceID]
 		if id, ok := upstreamRefs[record.ReferenceID]; ok {
-			upstreams[id] = evidence
+			if !upstreamTaskLinked[id] || linked {
+				upstreams[id], upstreamTaskLinked[id] = evidence, linked
+			}
 		} else if id, ok := originalRefs[record.ReferenceID]; ok {
-			originals[id] = evidence
+			if !originalTaskLinked[id] || linked {
+				originals[id], originalTaskLinked[id] = evidence, linked
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {

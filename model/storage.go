@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -28,20 +29,22 @@ const (
 
 	StoragePolicyRelayMediaTemp  = "relay_media_temp"
 	StoragePolicyAssetLibrary    = "asset_library"
+	StoragePolicyRequestSnapshot = "request_snapshot"
 	RelayMediaAllowedMIMETypes   = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
 	AssetLibraryAllowedMIMETypes = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg"
 	legacyRelayMediaMIMETypes    = "image/jpeg,image/png,image/webp"
 
-	StorageObjectPurposeRelayMediaTemp = "relay_media_temp"
-	StorageObjectPurposeAssetLibrary   = "asset_library"
-	StorageObjectPurposeImageStudio    = "image_studio"
-	StorageObjectPurposeBillingArchive = "billing_archive"
-	StorageObjectStatusUploading       = "uploading"
-	StorageObjectStatusUploaded        = "uploaded"
-	StorageObjectStatusDeletePending   = "delete_pending"
-	StorageObjectStatusDeleting        = "deleting"
-	StorageObjectStatusDeleteFailed    = "delete_failed"
-	StorageObjectStatusDeleted         = "deleted"
+	StorageObjectPurposeRelayMediaTemp  = "relay_media_temp"
+	StorageObjectPurposeAssetLibrary    = "asset_library"
+	StorageObjectPurposeImageStudio     = "image_studio"
+	StorageObjectPurposeBillingArchive  = "billing_archive"
+	StorageObjectPurposeRequestSnapshot = "request_snapshot"
+	StorageObjectStatusUploading        = "uploading"
+	StorageObjectStatusUploaded         = "uploaded"
+	StorageObjectStatusDeletePending    = "delete_pending"
+	StorageObjectStatusDeleting         = "deleting"
+	StorageObjectStatusDeleteFailed     = "delete_failed"
+	StorageObjectStatusDeleted          = "deleted"
 )
 
 type StorageProfile struct {
@@ -196,6 +199,22 @@ func DefaultAssetLibraryStoragePolicy() *StoragePolicy {
 	}
 }
 
+func DefaultRequestSnapshotStoragePolicy() *StoragePolicy {
+	return &StoragePolicy{
+		Key:                 StoragePolicyRequestSnapshot,
+		Name:                "Request snapshot permanent storage",
+		Purpose:             StorageObjectPurposeRequestSnapshot,
+		ObjectPrefix:        "snapshots/requests",
+		SignedURLTTLSeconds: 0,
+		RetentionSeconds:    0,
+		MaxFileBytes:        128 * 1024 * 1024,
+		MaxTotalBytes:       2 * 1024 * 1024 * 1024,
+		MaxFiles:            2,
+		AllowedMIMETypes:    "application/json",
+		Enabled:             false,
+	}
+}
+
 func migrateRelayMediaPolicyAllowedMIMETypes() error {
 	return DB.Model(&StoragePolicy{}).
 		Where(map[string]any{"key": StoragePolicyRelayMediaTemp}).
@@ -203,9 +222,13 @@ func migrateRelayMediaPolicyAllowedMIMETypes() error {
 		Update("allowed_mime_types", RelayMediaAllowedMIMETypes).Error
 }
 
-func GetStorageProfileByID(id int) (*StorageProfile, error) {
+func GetStorageProfileByID(id int, contexts ...context.Context) (*StorageProfile, error) {
 	var profile StorageProfile
-	if err := DB.First(&profile, id).Error; err != nil {
+	db := DB
+	if len(contexts) > 0 && contexts[0] != nil {
+		db = db.WithContext(contexts[0])
+	}
+	if err := db.First(&profile, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -220,9 +243,13 @@ func ListStorageProfiles() ([]*StorageProfile, error) {
 	return profiles, err
 }
 
-func GetActiveStorageCredential(profileID int) (*StorageCredential, error) {
+func GetActiveStorageCredential(profileID int, contexts ...context.Context) (*StorageCredential, error) {
 	var credential StorageCredential
-	err := DB.Where("storage_profile_id = ? AND status = ?", profileID, StorageCredentialStatusActive).
+	db := DB
+	if len(contexts) > 0 && contexts[0] != nil {
+		db = db.WithContext(contexts[0])
+	}
+	err := db.Where("storage_profile_id = ? AND status = ?", profileID, StorageCredentialStatusActive).
 		Order("version desc").First(&credential).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -233,9 +260,13 @@ func GetActiveStorageCredential(profileID int) (*StorageCredential, error) {
 	return &credential, nil
 }
 
-func GetStoragePolicyByKey(key string) (*StoragePolicy, error) {
+func GetStoragePolicyByKey(key string, contexts ...context.Context) (*StoragePolicy, error) {
 	var policy StoragePolicy
-	err := DB.Where(map[string]any{"key": key}).First(&policy).Error
+	db := DB
+	if len(contexts) > 0 && contexts[0] != nil {
+		db = db.WithContext(contexts[0])
+	}
+	err := db.Where(map[string]any{"key": key}).First(&policy).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -283,8 +314,12 @@ func ensureStorageObjectUploadMetadataColumns(db *gorm.DB) error {
 	return nil
 }
 
-func MarkStorageObjectUploaded(id int64, etag string, sha256 string) error {
-	return DB.Model(&StorageObject{}).
+func MarkStorageObjectUploaded(id int64, etag string, sha256 string, contexts ...context.Context) error {
+	db := DB
+	if len(contexts) > 0 && contexts[0] != nil {
+		db = db.WithContext(contexts[0])
+	}
+	return db.Model(&StorageObject{}).
 		Where("id = ? AND status = ?", id, StorageObjectStatusUploading).
 		Select("Status", "ETag", "SHA256", "UpdatedAt").
 		Updates(&StorageObject{
@@ -314,7 +349,7 @@ func MarkStorageObjectsForTaskDeletion(taskID string, deleteAfter int64) error {
 		return nil
 	}
 	return DB.Model(&StorageObject{}).
-		Where("purpose <> ?", StorageObjectPurposeBillingArchive).
+		Where("purpose = ?", StorageObjectPurposeRelayMediaTemp).
 		Where("task_id = ? AND status IN ?", taskID, []string{StorageObjectStatusUploaded, StorageObjectStatusDeleteFailed}).
 		Updates(map[string]any{
 			"status":       StorageObjectStatusDeletePending,

@@ -24,6 +24,10 @@
 
 This independently maintained fork starts at exactly the upstream commit above and retains its Git history. Initial changes cover fork documentation, build versioning and GitHub Actions; application source code is unchanged. Future upstream improvements will be reviewed and integrated selectively, with their source commits and validation recorded.
 
+## 公司主分支同步
+
+- 2026-10-14：PC 生图分支合入公司主分支提交 [`ce9e31f1e`](https://github.com/yeruyi1024/novamaas-workspace/commit/ce9e31f1ec17b39562fbd90c4990303a3cc2b86f)，接入 [#72](https://github.com/yeruyi1024/novamaas-workspace/pull/72) 的请求快照异步归档、对象存储读取及历史兼容能力。合并保留生图存储用途和图片巡查权限；请求快照的查看与下载统一沿用主分支 `AdminAuth`，移除生图专属的快照授权限制和对应前端拦截。已通过 Go 全量回归及权限调整后的受影响包回归、根模块 vet/构建、`relaykit` 独立 vet/构建、前端全量测试及 93 项受影响回归、类型检查、受影响文件 lint/格式检查和生产构建。
+
 ## 同步上游
 
 ```bash

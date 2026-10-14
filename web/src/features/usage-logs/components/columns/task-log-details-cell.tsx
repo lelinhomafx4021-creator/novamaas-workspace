@@ -95,7 +95,12 @@ export function TaskLogDetailsCell({
 
   const handleRequestBody = async () => {
     setRequestBodyOpen(true)
-    if (requestSnapshots !== null || requestBodyLoading) return
+    if (
+      (requestSnapshots !== null && !requestSnapshots.pending) ||
+      requestBodyLoading
+    ) {
+      return
+    }
 
     setRequestBodyLoading(true)
     setRequestBodyError(false)
@@ -264,6 +269,7 @@ export function TaskLogDetailsCell({
         open={requestBodyOpen}
         onOpenChange={setRequestBodyOpen}
         snapshots={requestSnapshots}
+        onRefresh={() => void handleRequestBody()}
       />
       <TaskInformationDialog
         error={taskInformationError}

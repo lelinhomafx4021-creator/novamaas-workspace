@@ -12,7 +12,7 @@ func init() {
 			{
 				Action:         ActionRead,
 				LabelKey:       "Review generated images",
-				DescriptionKey: "View prompts, generated images, and request snapshots of image generation across users.",
+				DescriptionKey: "Review generated images across users. Content access is audited.",
 			},
 		},
 	})

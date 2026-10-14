@@ -69,6 +69,13 @@ const (
 	// the dedicated task request-body archive alongside the final upstream body;
 	// hot task/log rows keep only the public task reference and availability
 	// marker.
+	ContextKeyVideoTaskUpstreamCaptured    ContextKey = "video_task_upstream_captured"
+	ContextKeyVideoTaskOriginalRecorder    ContextKey = "video_task_original_recorder"
+	ContextKeyVideoTaskOriginalCaptured    ContextKey = "video_task_original_captured"
+	ContextKeyVideoTaskSnapshotRecorder    ContextKey = "video_task_snapshot_recorder"
+	ContextKeyVideoTaskExternalSnapshots   ContextKey = "video_task_external_snapshots"
+	ContextKeyVideoTaskRequestEvidence     ContextKey = "video_task_request_evidence"
+	ContextKeyVideoTaskUpstreamBodySize    ContextKey = "video_task_upstream_body_size"
 	ContextKeyVideoTaskOriginalRequestBody ContextKey = "video_task_original_request_body"
 	ContextKeyVideoTaskUpstreamRequestBody ContextKey = "video_task_upstream_request_body"
 	ContextKeyVideoTaskRequestBodyStored   ContextKey = "video_task_request_body_stored"

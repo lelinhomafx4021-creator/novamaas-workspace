@@ -85,6 +85,9 @@ func (t *Task) GetData(v any) error {
 }
 
 type Properties struct {
+	SnapshotKinds     []string                      `json:"-"`
+	RequestID         string                        `json:"-"`
+	RequestEvidence   *TaskRequestEvidence          `json:"-"`
 	Input             string                        `json:"input"`
 	UpstreamModelName string                        `json:"upstream_model_name,omitempty"`
 	OriginModelName   string                        `json:"origin_model_name,omitempty"`
@@ -93,6 +96,9 @@ type Properties struct {
 }
 
 type propertiesStorage struct {
+	SnapshotKinds     []string                      `json:"snapshot_kinds,omitempty"`
+	RequestID         string                        `json:"request_id,omitempty"`
+	RequestEvidence   *TaskRequestEvidence          `json:"request_evidence,omitempty"`
 	Input             string                        `json:"input"`
 	UpstreamModelName string                        `json:"upstream_model_name,omitempty"`
 	OriginModelName   string                        `json:"origin_model_name,omitempty"`
@@ -111,6 +117,9 @@ func (m *Properties) Scan(val interface{}) error {
 		return err
 	}
 	*m = Properties{
+		SnapshotKinds:     stored.SnapshotKinds,
+		RequestID:         stored.RequestID,
+		RequestEvidence:   stored.RequestEvidence,
 		Input:             stored.Input,
 		UpstreamModelName: stored.UpstreamModelName,
 		OriginModelName:   stored.OriginModelName,
@@ -121,10 +130,13 @@ func (m *Properties) Scan(val interface{}) error {
 }
 
 func (m Properties) Value() (driver.Value, error) {
-	if m.Input == "" && m.UpstreamModelName == "" && m.OriginModelName == "" && len(m.RequestBody) == 0 && m.RequestMetrics == nil {
+	if len(m.SnapshotKinds) == 0 && m.RequestID == "" && m.RequestEvidence == nil && m.Input == "" && m.UpstreamModelName == "" && m.OriginModelName == "" && len(m.RequestBody) == 0 && m.RequestMetrics == nil {
 		return nil, nil
 	}
 	return common.Marshal(propertiesStorage{
+		SnapshotKinds:     m.SnapshotKinds,
+		RequestID:         m.RequestID,
+		RequestEvidence:   m.RequestEvidence,
 		Input:             m.Input,
 		UpstreamModelName: m.UpstreamModelName,
 		OriginModelName:   m.OriginModelName,
@@ -492,7 +504,7 @@ func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 	won := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var previous Task
-		if err := lockForUpdate(tx).Select("id", "status", "webhook_version").First(&previous, t.ID).Error; err != nil {
+		if err := lockForUpdate(tx).Select("id", "status", "webhook_version", "request_body_available").First(&previous, t.ID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
@@ -506,7 +518,21 @@ func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 		if changed {
 			t.WebhookVersion++
 		}
-		result := tx.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
+		t.RequestBodyAvailable = t.RequestBodyAvailable || previous.RequestBodyAvailable
+		update := tx.Model(t).Where("status = ?", fromStatus).Select("*")
+		if previous.RequestBodyAvailable && len(t.Properties.RequestBody) > 0 {
+			var current Task
+			if err := tx.Select("properties").First(&current, t.ID).Error; err != nil {
+				return err
+			}
+			if len(current.Properties.RequestBody) == 0 {
+				// A poll may have loaded the legacy body before maintenance removed
+				// it. Preserve the current properties, including unknown schema keys.
+				t.Properties = current.Properties
+				update = update.Omit("properties")
+			}
+		}
+		result := update.Updates(t)
 		if result.Error != nil {
 			return result.Error
 		}

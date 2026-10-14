@@ -59,11 +59,9 @@ import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { hasPermission } from '@/lib/admin-permissions'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useAuthStore } from '@/stores/auth-store'
 
 import type { UsageLog } from '../../data/schema'
 import {
@@ -511,7 +509,6 @@ interface DetailsDialogProps {
 }
 
 export function DetailsDialog(props: DetailsDialogProps) {
-  const authUser = useAuthStore((state) => state.auth.user)
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details = props.log.content ?? ''
@@ -643,14 +640,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
     other?.reasoning_effort
   )
   const hasEmbeddedRequestBody = other?.request_body !== undefined
-  // Snapshots guarded by an authz resource (for example image studio) are only
-  // shown to Root and admins granted that resource; the backend enforces it too.
-  const canReadRequestBody =
-    !other?.request_body_resource ||
-    hasPermission(authUser, other.request_body_resource, 'read')
   const showRequestBody =
     props.isAdmin &&
-    canReadRequestBody &&
     (hasEmbeddedRequestBody ||
       (other?.request_body_available === true &&
         Boolean(other.task_id || props.log.request_id)))

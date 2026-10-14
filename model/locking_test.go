@@ -36,3 +36,30 @@ func TestLockForUpdateEmitsRowLock(t *testing.T) {
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	assert.NotContains(t, buildSQL(), "FOR UPDATE")
 }
+
+func TestLockForUpdateUsesIndependentLogDatabaseDialect(t *testing.T) {
+	dummyDB, err := gorm.Open(tests.DummyDialector{}, &gorm.Config{DryRun: true})
+	require.NoError(t, err)
+	mainType, logType := common.MainDatabaseType(), common.LogDatabaseType()
+	t.Cleanup(func() { common.SetDatabaseTypes(mainType, logType) })
+	for _, tc := range []struct {
+		name      string
+		main, log common.DatabaseType
+		lock      bool
+	}{
+		{"mysql_main_sqlite_log", common.DatabaseTypeMySQL, common.DatabaseTypeSQLite, false},
+		{"sqlite_main_mysql_log", common.DatabaseTypeSQLite, common.DatabaseTypeMySQL, true},
+		{"sqlite_main_postgres_log", common.DatabaseTypeSQLite, common.DatabaseTypePostgreSQL, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			common.SetDatabaseTypes(tc.main, tc.log)
+			var rows []Log
+			sql := lockForUpdate(dummyDB, true).Where("id = ?", 1).Find(&rows).Statement.SQL.String()
+			if tc.lock {
+				assert.Contains(t, sql, "FOR UPDATE")
+			} else {
+				assert.NotContains(t, sql, "FOR UPDATE")
+			}
+		})
+	}
+}

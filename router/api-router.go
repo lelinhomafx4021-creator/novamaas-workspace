@@ -319,6 +319,11 @@ func SetApiRouter(router *gin.Engine) {
 			storageRoute.DELETE("/profiles/:id", controller.DeleteStorageProfile)
 			storageRoute.POST("/profiles/test", controller.TestStorageProfileInput)
 			storageRoute.POST("/profiles/:id/test", controller.TestSavedStorageProfile)
+			storageRoute.GET("/policies/request-snapshots", controller.GetRequestSnapshotStoragePolicy)
+			storageRoute.PUT("/policies/request-snapshots", controller.UpdateRequestSnapshotStoragePolicy)
+			storageRoute.GET("/request-snapshots/status", controller.GetRequestSnapshotStatus)
+			storageRoute.POST("/request-snapshots/migrate", controller.StartRequestSnapshotMigration)
+			storageRoute.POST("/request-snapshots/cleanup", controller.StartRequestSnapshotDatabaseCleanup)
 			storageRoute.GET("/policies/relay-media-temp", controller.GetRelayMediaStoragePolicy)
 			storageRoute.PUT("/policies/relay-media-temp", controller.UpdateRelayMediaStoragePolicy)
 			storageRoute.GET("/policies/asset-library", controller.GetAssetLibraryStoragePolicy)
@@ -456,6 +461,7 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
 		logRoute.GET("/request-body", middleware.AdminAuth(), controller.GetLogRequestBody)
 		logRoute.GET("/request-snapshots", middleware.AdminAuth(), controller.GetLogRequestSnapshots)
+		logRoute.GET("/request-snapshots/:kind", middleware.AdminAuth(), controller.DownloadRequestSnapshot)
 
 		systemTaskRoute := apiRouter.Group("/system-task")
 		systemTaskRoute.Use(middleware.RootAuth())
@@ -510,6 +516,7 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 			taskRoute.GET("/:task_id/request-body", middleware.AdminAuth(), controller.GetTaskRequestBody)
 			taskRoute.GET("/:task_id/request-snapshots", middleware.AdminAuth(), controller.GetTaskRequestSnapshots)
+			taskRoute.GET("/:task_id/request-snapshots/:kind", middleware.AdminAuth(), controller.DownloadRequestSnapshot)
 			taskRoute.GET("/:task_id/poll-history", middleware.AdminAuth(), controller.GetTaskPollHistory)
 		}
 

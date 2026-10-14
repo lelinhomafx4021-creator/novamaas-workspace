@@ -91,6 +91,20 @@ func pngResponse(t *testing.T, count int) []byte {
 	return body
 }
 
+func TestGPTImage2IsAvailableForImagesAndExcludedFromPromptAssist(t *testing.T) {
+	db, token := setupImageStudio(t)
+	require.NoError(t, db.Model(&model.Channel{}).Where("name = ?", "image").Update("models", "gpt-image-2-1K").Error)
+	require.NoError(t, db.Model(&model.Ability{}).Where("model = ?", "dall-e-3").Update("model", "gpt-image-2-1K").Error)
+	model.InvalidatePricingCache()
+
+	images, err := ModelsForToken(501, token.Id, constant.EndpointTypeImageGeneration)
+	require.NoError(t, err)
+	assert.Contains(t, images, "gpt-image-2-1K")
+	text, err := ModelsForToken(501, token.Id, constant.EndpointTypeOpenAI)
+	require.NoError(t, err)
+	assert.NotContains(t, text, "gpt-image-2-1K")
+}
+
 func TestCreateRunCallsRelayOncePerIdempotencyKey(t *testing.T) {
 	db, token := setupImageStudio(t)
 	execution := RelayContext{Context: context.Background()}

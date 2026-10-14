@@ -2,11 +2,13 @@ package constant
 
 import "strings"
 
+const VolcNativeTaskSubmitPath = "/api/v3/contents/generations/tasks"
+
 // IsVolcNativeRequestPath matches only the registered native image/task routes.
 func IsVolcNativeRequestPath(path string) bool {
 	return path == "/api/v3/images/generations" ||
-		path == "/api/v3/contents/generations/tasks" ||
-		strings.HasPrefix(path, "/api/v3/contents/generations/tasks/")
+		path == VolcNativeTaskSubmitPath ||
+		strings.HasPrefix(path, VolcNativeTaskSubmitPath+"/")
 }
 
 // VolcNativeChannelMatchesPath isolates native channels in both directions.

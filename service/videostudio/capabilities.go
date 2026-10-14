@@ -9,10 +9,10 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 )
 
-// Protocol names the body shape sent to /v1/video/generations. The route is
-// the same for every model; the selected channel's adaptor reads this shape.
+// Protocol selects the studio request shape and channel route. Seedance uses
+// the native /api/v3 task route; other protocols use /v1/video/generations.
 const (
-	ProtocolSeedance    = model_setting.VideoStudioProtocolSeedance    // doubao-video adaptor: content[] with roles
+	ProtocolSeedance    = model_setting.VideoStudioProtocolSeedance    // Volc Native adaptor: content[] with roles
 	ProtocolWan3        = model_setting.VideoStudioProtocolWan3        // ali adaptor: input.media + parameters
 	ProtocolOpenAIVideo = model_setting.VideoStudioProtocolOpenAIVideo // OpenAI-compatible adaptor: seconds + metadata
 )

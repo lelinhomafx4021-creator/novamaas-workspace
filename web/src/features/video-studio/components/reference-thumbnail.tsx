@@ -44,9 +44,23 @@ export function ReferenceThumbnail(props: ReferenceThumbnailProps) {
           ? await getMediaAssetPreview(props.id, 'thumbnail')
           : await getReferencePreview(props.id)
       if (!response.success) throw new Error(response.message)
-      return response.data.url
+      return response.data
     },
-    staleTime: 10 * 60 * 1000,
+    staleTime: (query) =>
+      Math.max(
+        0,
+        Math.min(
+          10 * 60 * 1000,
+          (query.state.data?.expires_at ?? 0) * 1000 - Date.now() - 30_000
+        )
+      ),
+    refetchInterval: (query) =>
+      query.state.status !== 'error' && query.state.data
+        ? Math.max(
+            30_000,
+            query.state.data.expires_at * 1000 - Date.now() - 60_000
+          )
+        : false,
     retry: false,
   })
 
@@ -57,9 +71,9 @@ export function ReferenceThumbnail(props: ReferenceThumbnailProps) {
         props.className
       )}
     >
-      {preview.data ? (
+      {preview.data && !preview.isError ? (
         <img
-          src={preview.data}
+          src={preview.data.url}
           alt={props.label}
           className='size-full object-cover'
           loading='lazy'

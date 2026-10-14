@@ -114,10 +114,20 @@ export async function uploadReference(file: File) {
   return response.data
 }
 
-export async function listReferences(page: number, pageSize: number) {
+export async function listReferences(
+  page: number,
+  pageSize: number,
+  includeTemporary = false
+) {
   const response = await api.get<VideoStudioResponse<Page<StudioReference>>>(
     '/api/video-studio/references',
-    { params: { p: page, page_size: pageSize } }
+    {
+      params: {
+        p: page,
+        page_size: pageSize,
+        include_temporary: includeTemporary || undefined,
+      },
+    }
   )
   return response.data
 }
@@ -156,12 +166,14 @@ const PROMPT_INSTRUCTION =
 export async function optimizePrompt(
   model: string,
   group: string | undefined,
+  tokenId: number,
   prompt: string,
   signal?: AbortSignal
 ) {
   const response = await sendChatCompletion(
     {
       model,
+      token_id: tokenId,
       stream: false,
       temperature: 0.7,
       group,

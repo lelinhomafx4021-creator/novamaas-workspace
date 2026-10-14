@@ -41,6 +41,7 @@ const FIT_VIEW_OPTIONS = { maxZoom: 1, padding: 0.3 }
 type StudioCanvasProps = {
   nodes: Node[]
   edges: Edge[]
+  docked: boolean
   noModels: boolean
   onAddNode: () => void
 }
@@ -68,7 +69,7 @@ export function StudioCanvas(props: StudioCanvasProps) {
 
   return (
     <div className='relative min-w-0 flex-1'>
-      <ReactFlowProvider>
+      <ReactFlowProvider key={props.docked ? 'wide' : 'narrow'}>
         <Canvas
           nodes={props.nodes}
           edges={props.edges}

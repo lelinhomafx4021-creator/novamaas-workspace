@@ -233,12 +233,18 @@ export function StudioEditor(props: { projectId: string }) {
         >
           <ReferencePanel
             supportsAssets={selectedCapability?.asset_library ?? false}
-            defaultRole={selectedCapability?.roles[0]}
+            defaultRole={
+              selectedCapability?.roles.includes('reference_image')
+                ? 'reference_image'
+                : selectedCapability?.roles[0]
+            }
+            maxReferences={selectedCapability?.max_references ?? 0}
           />
         </StudioDock>
         <StudioCanvas
           nodes={graph.nodes}
           edges={graph.edges}
+          docked={docked}
           noModels={capabilityList?.length === 0}
           onAddNode={() => addNode()}
         />

@@ -38,6 +38,7 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		requestPath := DistributeRequestPath(c)
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
@@ -99,7 +100,7 @@ func Distribute() func(c *gin.Context) {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
+						channelSupportsRequestPath(preferred, requestPath, modelRequest.Model) {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetRequestAutoGroups(c, userGroup)
@@ -130,7 +131,7 @@ func Distribute() func(c *gin.Context) {
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
 						TokenGroup:  usingGroup,
-						RequestPath: PlaygroundRelayRequestPath(c.Request.URL.Path),
+						RequestPath: requestPath,
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
@@ -154,7 +155,7 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 		}
-		if channel != nil && !channelSupportsRequestPath(channel, PlaygroundRelayRequestPath(c.Request.URL.Path), modelRequest.Model) {
+		if channel != nil && !channelSupportsRequestPath(channel, requestPath, modelRequest.Model) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, "the selected channel does not support this request path")
 			return
 		}
@@ -172,7 +173,6 @@ func Distribute() func(c *gin.Context) {
 // are deliberately isolated to Fire Ark's native /api/v3 endpoints, in both
 // directions, so compatible and native routes cannot select each other's channels.
 func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
-	requestPath = PlaygroundRelayRequestPath(requestPath)
 	if channel == nil {
 		return false
 	}
@@ -192,11 +192,22 @@ func PlaygroundRelayRequestPath(path string) string {
 	if strings.HasPrefix(path, "/pg/audio/") {
 		return "/v1" + strings.TrimPrefix(path, "/pg")
 	}
-	// Studio submissions are converted to the generic task request shape.
+	// Other studio protocols use the generic task request shape.
 	if path == "/pg/videos" {
 		return "/v1/video/generations"
 	}
 	return path
+}
+
+// DistributeRequestPath uses the prepared studio protocol for channel selection
+// while the HTTP path remains /pg/videos for playground auth and billing.
+func DistributeRequestPath(c *gin.Context) string {
+	if c.Request.URL.Path == "/pg/videos" {
+		if path := common.GetContextKeyString(c, constant.ContextKeyVideoStudioRequestPath); path != "" {
+			return path
+		}
+	}
+	return PlaygroundRelayRequestPath(c.Request.URL.Path)
 }
 
 // getModelFromRequest 从请求中读取模型信息
@@ -334,7 +345,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			modelRequest.Model = getTaskOriginModelName(c)
 		}
 		c.Set("relay_mode", relayMode)
-	} else if strings.Contains(c.Request.URL.Path, "/v1/video/generations") || c.Request.URL.Path == "/pg/videos" {
+	} else if strings.Contains(c.Request.URL.Path, "/v1/video/generations") {
 		relayMode := relayconstant.RelayModeUnknown
 		if c.Request.Method == http.MethodPost {
 			req, err := getModelFromRequest(c)
@@ -439,6 +450,10 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		modelRequest.Model = req.Model
 		modelRequest.Group = req.Group
+		if c.Request.URL.Path == "/pg/videos" {
+			modelRequest.Group = common.GetContextKeyString(c, constant.ContextKeyVideoStudioGroup)
+			c.Set("relay_mode", relayconstant.RelayModeVideoSubmit)
+		}
 		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
 	}
 	if strings.HasPrefix(c.Request.URL.Path, "/pg/audio/") {

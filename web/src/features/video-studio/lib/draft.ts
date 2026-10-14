@@ -81,12 +81,21 @@ export function draftIssues(
   if (!capability) return ['Select a model']
   const issues: string[] = []
   if (draft.prompt.trim() === '') issues.push('Enter a prompt')
+  if ([...draft.prompt.trim()].length > 4000) {
+    issues.push('Prompt is too long')
+  }
   if (draft.references.length > capability.max_references) {
     issues.push('Too many reference images for this model')
   }
   const roles = draft.references.map((reference) => reference.role)
   if (roles.some((role) => !capability.roles.includes(role))) {
     issues.push('This model does not support some reference roles')
+  }
+  if (
+    roles.filter((role) => role === 'first_frame').length > 1 ||
+    roles.filter((role) => role === 'last_frame').length > 1
+  ) {
+    issues.push('Only one first frame and one last frame are allowed')
   }
   if (
     !capability.asset_library &&
@@ -106,15 +115,34 @@ export function draftIssues(
   if (draft.parameters.generate_audio !== undefined && !capability.audio) {
     issues.push('This model does not support audio generation')
   }
-  if (draft.parameters.seed !== undefined && !capability.seed) {
-    issues.push('This model does not support a fixed seed')
+  const seed = draft.parameters.seed
+  if (seed !== undefined) {
+    if (!capability.seed) {
+      issues.push('This model does not support a fixed seed')
+    } else if (!Number.isInteger(seed) || seed < -1 || seed > 2 ** 31 - 1) {
+      issues.push('Seed is out of range for this model')
+    }
   }
   const duration = draft.parameters.duration
   if (
     duration !== undefined &&
-    (duration < capability.min_duration || duration > capability.max_duration)
+    (!Number.isInteger(duration) ||
+      duration < capability.min_duration ||
+      duration > capability.max_duration)
   ) {
     issues.push('Duration is out of range for this model')
+  }
+  if (
+    draft.parameters.resolution !== undefined &&
+    !capability.resolutions.includes(draft.parameters.resolution)
+  ) {
+    issues.push('Resolution is not available for this model')
+  }
+  if (
+    draft.parameters.ratio !== undefined &&
+    !capability.ratios.includes(draft.parameters.ratio)
+  ) {
+    issues.push('Aspect ratio is not available for this model')
   }
   return issues
 }

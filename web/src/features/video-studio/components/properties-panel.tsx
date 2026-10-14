@@ -58,8 +58,12 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
   )
   const updateNode = useVideoStudioStore((state) => state.updateNode)
   const optimize = useMutation({
-    mutationFn: (input: { model: string; group?: string; prompt: string }) =>
-      optimizePrompt(input.model, input.group, input.prompt),
+    mutationFn: (input: {
+      model: string
+      group?: string
+      tokenId: number
+      prompt: string
+    }) => optimizePrompt(input.model, input.group, input.tokenId, input.prompt),
     onError: (error) => toast.error(studioErrorMessage(error)),
   })
 
@@ -100,6 +104,7 @@ export function PropertiesPanel(props: PropertiesPanelProps) {
                 optimize.mutate(
                   {
                     model: draft.text_model,
+                    tokenId: draft.text_token_id,
                     group:
                       props.keys.find((key) => key.id === draft.text_token_id)
                         ?.group || undefined,

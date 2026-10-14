@@ -65,16 +65,18 @@ export const useVideoStudioStore = create<VideoStudioState>((set) => ({
   canvas: EMPTY_CANVAS,
   selectedNodeId: null,
   saveState: 'saved',
-  load: (project) =>
+  load: (project) => {
+    const draft = parseDraft(project.draft)
     set({
       projectId: project.id,
       name: project.name,
       revision: project.revision,
-      draft: parseDraft(project.draft),
+      draft,
       canvas: parseCanvas(project.canvas),
-      selectedNodeId: null,
+      selectedNodeId: Object.keys(draft.nodes).at(-1) ?? null,
       saveState: 'saved',
-    }),
+    })
+  },
   setName: (name) => set({ name, saveState: 'dirty' }),
   addNode: (nodeId, draft, position) =>
     set((state) => ({

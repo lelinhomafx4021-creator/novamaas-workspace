@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -39,6 +39,7 @@ const LIBRARY_QUERY_KEY = ['video-studio', 'references'] as const
 type ReferencePanelProps = {
   supportsAssets: boolean
   defaultRole: ReferenceRole | undefined
+  maxReferences: number
 }
 
 function formatExpiry(expiresAt: number) {
@@ -55,7 +56,6 @@ export function ReferencePanel(props: ReferencePanelProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [uploads, setUploads] = useState<StudioReference[]>([])
   const selectedNodeId = useVideoStudioStore((state) => state.selectedNodeId)
   const selectedDraft = useVideoStudioStore((state) =>
     state.selectedNodeId ? state.draft.nodes[state.selectedNodeId] : undefined
@@ -65,11 +65,13 @@ export function ReferencePanel(props: ReferencePanelProps) {
   const library = useQuery({
     queryKey: LIBRARY_QUERY_KEY,
     queryFn: async () => {
-      const response = await listReferences(1, 60)
+      const response = await listReferences(1, 100, true)
       if (!response.success) throw new Error(response.message)
       return response.data.items
     },
   })
+  const recent = library.data?.filter((item) => !item.saved)
+  const saved = library.data?.filter((item) => item.saved)
   const assets = useQuery({
     queryKey: ['video-studio', 'seedance-assets'],
     enabled: props.supportsAssets,
@@ -85,18 +87,21 @@ export function ReferencePanel(props: ReferencePanelProps) {
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
       const uploaded: StudioReference[] = []
+      const failures: unknown[] = []
       for (const file of files) {
-        const response = await uploadReference(file)
-        if (!response.success) throw new Error(response.message)
-        uploaded.push(response.data)
+        try {
+          const response = await uploadReference(file)
+          if (!response.success) throw new Error(response.message)
+          uploaded.push(response.data)
+        } catch (error) {
+          failures.push(error)
+        }
       }
-      return uploaded
+      return { uploaded, failures }
     },
-    onSuccess: (uploaded) => {
-      setUploads((current) => [
-        ...uploaded,
-        ...current.filter((item) => !uploaded.some((u) => u.id === item.id)),
-      ])
+    onSuccess: ({ uploaded, failures }) => {
+      void queryClient.invalidateQueries({ queryKey: LIBRARY_QUERY_KEY })
+      if (failures.length > 0) toast.error(studioErrorMessage(failures[0]))
       const expiring = uploaded.find((item) => !item.saved)
       if (expiring) {
         // Remind on every upload: unsaved images are deleted automatically.
@@ -116,7 +121,6 @@ export function ReferencePanel(props: ReferencePanelProps) {
         }
       }
     },
-    onError: (error) => toast.error(studioErrorMessage(error)),
   })
 
   const save = useMutation({
@@ -125,10 +129,7 @@ export function ReferencePanel(props: ReferencePanelProps) {
       if (!response.success) throw new Error(response.message)
       return response.data
     },
-    onSuccess: async (saved) => {
-      setUploads((current) =>
-        current.map((item) => (item.id === saved.id ? saved : item))
-      )
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: LIBRARY_QUERY_KEY })
       toast.success(t('Saved to your library'))
     },
@@ -139,11 +140,23 @@ export function ReferencePanel(props: ReferencePanelProps) {
     const state = useVideoStudioStore.getState()
     const nodeId = state.selectedNodeId
     const draft = nodeId ? state.draft.nodes[nodeId] : undefined
-    if (!nodeId || !draft || !props.defaultRole) {
+    if (!nodeId || !draft) {
       toast.info(t('Select a generation node first'))
       return
     }
+    if (!props.defaultRole) {
+      toast.info(
+        draft.model
+          ? t('Too many reference images for this model')
+          : t('Select a model')
+      )
+      return
+    }
     if (draft.references.some((item) => item.id === reference.id)) return
+    if (draft.references.length >= props.maxReferences) {
+      toast.error(t('Too many reference images for this model'))
+      return
+    }
     updateNode(nodeId, {
       references: [
         ...draft.references,
@@ -197,7 +210,7 @@ export function ReferencePanel(props: ReferencePanelProps) {
   )
 
   return (
-    <aside className='bg-background flex w-64 shrink-0 flex-col border-r'>
+    <aside className='bg-background flex w-72 shrink-0 flex-col border-r'>
       <div className='flex items-center justify-between gap-2 border-b p-3'>
         <span className='font-mono text-xs tracking-wider uppercase'>
           {t('References')}
@@ -224,6 +237,13 @@ export function ReferencePanel(props: ReferencePanelProps) {
         type='button'
         disabled={upload.isPending}
         onClick={() => inputRef.current?.click()}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault()
+          if (!upload.isPending && event.dataTransfer.files.length > 0) {
+            upload.mutate([...event.dataTransfer.files])
+          }
+        }}
         className='border-border text-muted-foreground hover:border-primary/60 hover:text-primary focus-visible:ring-ring mx-3 mt-3 flex flex-col items-center gap-1 rounded-lg border border-dashed px-3 py-5 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50'
       >
         <Upload className='size-5' />
@@ -244,23 +264,33 @@ export function ReferencePanel(props: ReferencePanelProps) {
           )}
         </TabsList>
         <ScrollArea className='min-h-0 flex-1'>
+          {library.isPending && (
+            <p className='text-muted-foreground py-3 text-xs'>
+              {t('Loading...')}
+            </p>
+          )}
+          {library.isError && (
+            <p className='text-destructive py-3 text-xs'>
+              {studioErrorMessage(library.error)}
+            </p>
+          )}
           <TabsContent value='uploads' className='grid grid-cols-2 gap-2 pt-2'>
-            {uploads.length === 0 && (
+            {recent?.length === 0 && (
               <p className='text-muted-foreground col-span-2 text-xs'>
                 {t(
                   'Uploaded images are deleted automatically after a while. Save the ones you want to keep.'
                 )}
               </p>
             )}
-            {uploads.map(renderReference)}
+            {recent?.map(renderReference)}
           </TabsContent>
           <TabsContent value='library' className='grid grid-cols-2 gap-2 pt-2'>
-            {library.data?.length === 0 && (
+            {saved?.length === 0 && (
               <p className='text-muted-foreground col-span-2 text-xs'>
                 {t('No saved references yet.')}
               </p>
             )}
-            {library.data?.map(renderReference)}
+            {saved?.map(renderReference)}
           </TabsContent>
           {props.supportsAssets && (
             <TabsContent value='assets' className='grid grid-cols-2 gap-2 pt-2'>

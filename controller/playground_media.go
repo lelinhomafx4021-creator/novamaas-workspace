@@ -83,6 +83,8 @@ func GetPlaygroundMedia(c *gin.Context) {
 func ValidatePlaygroundChat(c *gin.Context) {
 	var request struct {
 		Model    string `json:"model"`
+		Group    string `json:"group"`
+		TokenID  int    `json:"token_id"`
 		Messages []struct {
 			Role    string `json:"role"`
 			Content any    `json:"content"`
@@ -91,6 +93,30 @@ func ValidatePlaygroundChat(c *gin.Context) {
 	if err := common.UnmarshalBodyReusable(c, &request); err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid chat request"})
 		return
+	}
+	if request.TokenID != 0 {
+		key, err := videoStudioKey(c.GetInt("id"), request.TokenID)
+		if err != nil {
+			abortVideoStudio(c, err)
+			return
+		}
+		if request.Group != key.Group {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "selected key group does not match request group"})
+			return
+		}
+		available, ok := playgroundAvailableModels(c, key.Group)
+		if !ok {
+			return
+		}
+		if !availableForKey(available, key)[request.Model] {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "selected key cannot use this model"})
+			return
+		}
+		if err := setupPlaygroundToken(c, key.Group, key); err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "selected key could not be initialized"})
+			return
+		}
+		c.Set("playground_key_selected", true)
 	}
 	settings := model_setting.GetMiniAppPlaygroundMedia()
 	imageCount := 0
@@ -189,7 +215,7 @@ func PlaygroundAudio(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := setupPlaygroundToken(c, relayInfo.UsingGroup); err != nil {
+	if err := setupPlaygroundToken(c, relayInfo.UsingGroup, nil); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "user unavailable"})
 		return
 	}

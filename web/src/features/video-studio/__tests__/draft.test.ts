@@ -104,6 +104,31 @@ describe('draftIssues', () => {
       )
     ).toContain('Seedance assets only work with Seedance models')
   })
+
+  test('blocks duplicate frames and unsupported model parameters before submit', () => {
+    const issues = draftIssues(
+      draftWith({
+        references: [
+          { source: 'storage', id: 'ref_1', role: 'first_frame', label: 'a' },
+          { source: 'storage', id: 'ref_2', role: 'first_frame', label: 'b' },
+        ],
+        parameters: {
+          duration: 2.5,
+          resolution: '1080P',
+          ratio: '4:3',
+          seed: 2 ** 31,
+        },
+      }),
+      wan3
+    )
+    expect(issues).toEqual([
+      'Only one first frame and one last frame are allowed',
+      'Seed is out of range for this model',
+      'Duration is out of range for this model',
+      'Resolution is not available for this model',
+      'Aspect ratio is not available for this model',
+    ])
+  })
 })
 
 describe('submission and history', () => {

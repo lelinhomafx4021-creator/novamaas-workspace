@@ -267,7 +267,7 @@ export function RelayMediaPolicyForm({
               name='max_files'
               label={
                 isVideoStudio
-                  ? t('Maximum references per generation')
+                  ? t('Maximum stored references per user')
                   : t('Maximum files per request')
               }
             />

@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service/videostudio"
@@ -32,6 +33,7 @@ type studioFixture struct {
 	upstream  *httptest.Server
 	calls     *atomic.Int32
 	lastBody  *atomic.Value
+	lastPath  *atomic.Value
 	statusFor func() int
 }
 
@@ -78,9 +80,10 @@ func setupVideoStudioSubmit(t *testing.T) *studioFixture {
 	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"MiniMax-H3":0.1}`))
 	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(savedPrices)) })
 
-	fixture := &studioFixture{calls: &atomic.Int32{}, lastBody: &atomic.Value{}, statusFor: func() int { return http.StatusOK }}
+	fixture := &studioFixture{calls: &atomic.Int32{}, lastBody: &atomic.Value{}, lastPath: &atomic.Value{}, statusFor: func() int { return http.StatusOK }}
 	fixture.upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fixture.calls.Add(1)
+		fixture.lastPath.Store(r.URL.Path)
 		body, _ := io.ReadAll(r.Body)
 		fixture.lastBody.Store(string(body))
 		w.Header().Set("Content-Type", "application/json")
@@ -126,12 +129,12 @@ func (fixture *studioFixture) submit(t *testing.T, body string) *httptest.Respon
 	if c.IsAborted() {
 		return recorder
 	}
-	common.SetContextKey(c, constant.ContextKeyOriginalModel, "MiniMax-H3")
+	common.SetContextKey(c, constant.ContextKeyOriginalModel, gjson.Get(body, "model").String())
 	common.SetContextKey(c, constant.ContextKeyChannelId, fixture.channel.Id)
-	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeOpenAI)
+	common.SetContextKey(c, constant.ContextKeyChannelType, fixture.channel.Type)
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, fixture.upstream.URL)
 	common.SetContextKey(c, constant.ContextKeyChannelKey, "upstream-key")
-	c.Set("channel_type", constant.ChannelTypeOpenAI)
+	c.Set("channel_type", fixture.channel.Type)
 	c.Set("relay_mode", 0)
 	PlaygroundVideo(c)
 	return recorder
@@ -161,6 +164,70 @@ func TestPlaygroundVideoLinksRunToTaskAndReturnsStudioShape(t *testing.T) {
 	require.True(t, exists, "the run's reserved task ID must be the persisted task ID")
 	assert.Equal(t, "upstream-video-1", task.GetUpstreamTaskID())
 	assert.Positive(t, task.Quota)
+}
+
+func TestPlaygroundSeedanceSubmitsNativeV3Request(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"MiniMax-H3":0.1,"doubao-seedance-2-0":0.1}`))
+	baseURL := fixture.upstream.URL
+	channel := &model.Channel{Type: constant.ChannelTypeVolcNative, Key: "upstream-key", BaseURL: &baseURL, Status: common.ChannelStatusEnabled}
+	require.NoError(t, model.DB.Create(channel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "doubao-seedance-2-0", ChannelId: channel.Id, Enabled: true}).Error)
+	fixture.channel = channel
+	body := `{"project_id":"` + fixture.project.PublicID + `","node_id":"n1","client_request_id":"seedance-v3",` +
+		`"model":"doubao-seedance-2-0","prompt":"city at night","parameters":{"duration":5,"generate_audio":false,"seed":0}}`
+
+	recorder := fixture.submit(t, body)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Equal(t, "/api/v3/contents/generations/tasks", fixture.lastPath.Load())
+	assert.JSONEq(t, `{"model":"doubao-seedance-2-0","content":[{"type":"text","text":"city at night"}],`+
+		`"duration":5,"resolution":"720p","ratio":"16:9","generate_audio":false,"seed":0}`, fixture.lastBody.Load().(string))
+	assert.Equal(t, int32(1), fixture.calls.Load())
+	taskID := gjson.Get(recorder.Body.String(), "data.task_id").String()
+	task, exists, err := model.GetByTaskId(fixture.user.Id, taskID)
+	require.NoError(t, err)
+	require.True(t, exists)
+	assert.Equal(t, "upstream-video-1", task.GetUpstreamTaskID())
+	assert.Positive(t, task.Quota)
+}
+
+func TestPlaygroundSeedanceDistributionExcludesCompatibleChannels(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"MiniMax-H3":0.1,"doubao-seedance-2-0":0.1}`))
+	wasMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() { common.MemoryCacheEnabled = wasMemoryCacheEnabled })
+	baseURL := fixture.upstream.URL
+	compatible := &model.Channel{Type: constant.ChannelTypeDoubaoVideo, Key: "upstream-key", BaseURL: &baseURL, Status: common.ChannelStatusEnabled}
+	native := &model.Channel{Type: constant.ChannelTypeVolcNative, Key: "upstream-key", BaseURL: &baseURL, Status: common.ChannelStatusEnabled}
+	require.NoError(t, model.DB.Create(compatible).Error)
+	require.NoError(t, model.DB.Create(native).Error)
+	for _, channel := range []*model.Channel{compatible, native} {
+		require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "doubao-seedance-2-0", ChannelId: channel.Id, Enabled: true}).Error)
+	}
+	engine := gin.New()
+	engine.POST("/pg/videos", func(c *gin.Context) {
+		c.Set("id", fixture.user.Id)
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, fixture.user.Group)
+		common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only"})
+		c.Next()
+	}, ValidatePlaygroundVideo, middleware.Distribute(), PlaygroundVideo)
+	body := `{"project_id":"` + fixture.project.PublicID + `","node_id":"n1","client_request_id":"seedance-distribution",` +
+		`"model":"doubao-seedance-2-0","prompt":"city at night","parameters":{"duration":5}}`
+	request := httptest.NewRequest(http.MethodPost, "/pg/videos", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	engine.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Equal(t, "/api/v3/contents/generations/tasks", fixture.lastPath.Load())
+	taskID := gjson.Get(recorder.Body.String(), "data.task_id").String()
+	task, exists, err := model.GetByTaskId(fixture.user.Id, taskID)
+	require.NoError(t, err)
+	require.True(t, exists)
+	assert.Equal(t, native.Id, task.ChannelId)
 }
 
 func TestPlaygroundVideoRetryWithSameClientRequestDoesNotResubmit(t *testing.T) {
@@ -310,6 +377,144 @@ func TestVideoStudioKeyScopesModelsAndOwnership(t *testing.T) {
 	_, err = videoStudioKey(fixture.user.Id, disabled.Id)
 	require.ErrorAs(t, err, &requestErr)
 	assert.Equal(t, http.StatusForbidden, requestErr.StatusCode)
+}
+
+func TestPlaygroundVideoUsesSelectedKeyForQuotaAndModelLimits(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	key := &model.Token{
+		UserId: fixture.user.Id, Name: "video", Key: "video-key", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, Group: "default", RemainQuota: 1234, ModelLimitsEnabled: true, ModelLimits: "MiniMax-H3",
+	}
+	require.NoError(t, model.DB.Create(key).Error)
+	body := `{"project_id":"` + fixture.project.PublicID + `","node_id":"n1","client_request_id":"key-request","model":"MiniMax-H3","token_id":` + strconv.Itoa(key.Id) + `,"prompt":"city at night"}`
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/pg/videos", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("id", fixture.user.Id)
+
+	ValidatePlaygroundVideo(c)
+
+	require.False(t, c.IsAborted(), recorder.Body.String())
+	assert.Equal(t, key.Id, c.GetInt("token_id"))
+	assert.Equal(t, key.RemainQuota, c.GetInt("token_quota"))
+	assert.True(t, c.GetBool("token_model_limit_enabled"))
+	limits, exists := c.Get("token_model_limit")
+	require.True(t, exists)
+	assert.Equal(t, map[string]bool{"MiniMax-H3": true}, limits)
+	common.CleanupBodyStorage(c)
+}
+
+func TestPlaygroundVideoChargesSelectedKeyAndRejectsInsufficientKeyQuota(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	key := &model.Token{
+		UserId: fixture.user.Id, Name: "video", Key: "video-quota-key", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, Group: "default", RemainQuota: 1_000_000,
+	}
+	require.NoError(t, model.DB.Create(key).Error)
+	body := func(requestID string, tokenID int) string {
+		return `{"project_id":"` + fixture.project.PublicID + `","node_id":"n1","client_request_id":"` + requestID +
+			`","model":"MiniMax-H3","token_id":` + strconv.Itoa(tokenID) + `,"prompt":"city at night","parameters":{"duration":5}}`
+	}
+
+	success := fixture.submit(t, body("charged-key", key.Id))
+	require.Equal(t, http.StatusOK, success.Code, success.Body.String())
+	charged, err := model.GetTokenByIds(key.Id, fixture.user.Id)
+	require.NoError(t, err)
+	assert.Less(t, charged.RemainQuota, 1_000_000)
+	assert.Equal(t, int32(1), fixture.calls.Load())
+
+	limited := &model.Token{
+		UserId: fixture.user.Id, Name: "limited", Key: "limited-video-key", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, Group: "default", RemainQuota: 1,
+	}
+	require.NoError(t, model.DB.Create(limited).Error)
+	denied := fixture.submit(t, body("insufficient-key", limited.Id))
+	assert.Equal(t, http.StatusForbidden, denied.Code)
+	assert.Equal(t, int32(1), fixture.calls.Load(), "insufficient key quota must stop before the upstream call")
+}
+
+func TestPlaygroundChatChecksSelectedTextKeyBeforeDistribution(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "gpt-4o-mini", ChannelId: fixture.channel.Id, Enabled: true}).Error)
+	key := &model.Token{
+		UserId: fixture.user.Id, Name: "text", Key: "text-key", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, Group: "default", RemainQuota: 4321, ModelLimitsEnabled: true, ModelLimits: "gpt-4o-mini",
+	}
+	require.NoError(t, model.DB.Create(key).Error)
+	validate := func(group string, modelName string) (*gin.Context, *httptest.ResponseRecorder) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		body, err := common.Marshal(gin.H{
+			"model": modelName, "group": group, "token_id": key.Id,
+			"messages": []any{gin.H{"role": "user", "content": "rewrite this prompt"}},
+		})
+		require.NoError(t, err)
+		c.Request = httptest.NewRequest(http.MethodPost, "/pg/chat/completions", strings.NewReader(string(body)))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("id", fixture.user.Id)
+		ValidatePlaygroundChat(c)
+		common.CleanupBodyStorage(c)
+		return c, recorder
+	}
+
+	allowed, response := validate("default", "gpt-4o-mini")
+	require.False(t, allowed.IsAborted(), response.Body.String())
+	assert.True(t, allowed.GetBool("playground_key_selected"))
+	assert.Equal(t, key.Id, allowed.GetInt("token_id"))
+	assert.Equal(t, key.RemainQuota, allowed.GetInt("token_quota"))
+	_, response = validate("other", "gpt-4o-mini")
+	assert.Equal(t, http.StatusForbidden, response.Code)
+	_, response = validate("default", "MiniMax-H3")
+	assert.Equal(t, http.StatusForbidden, response.Code)
+}
+
+func TestPlaygroundChatUsesSelectedTextKeyForPromptOptimization(t *testing.T) {
+	fixture := setupVideoStudioSubmit(t)
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"MiniMax-H3":0.1,"gpt-4o-mini":0.1}`))
+	require.NoError(t, model.DB.Create(&model.Ability{Group: "default", Model: "gpt-4o-mini", ChannelId: fixture.channel.Id, Enabled: true}).Error)
+	key := &model.Token{
+		UserId: fixture.user.Id, Name: "text", Key: "prompt-text-key", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, Group: "default", RemainQuota: 1_000_000, ModelLimitsEnabled: true, ModelLimits: "gpt-4o-mini",
+	}
+	require.NoError(t, model.DB.Create(key).Error)
+	var upstreamBody atomic.Value
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		upstreamBody.Store(string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"improved prompt"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`))
+	}))
+	t.Cleanup(upstream.Close)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := `{"model":"gpt-4o-mini","group":"default","token_id":` + strconv.Itoa(key.Id) + `,"stream":false,"messages":[{"role":"user","content":"rewrite this prompt"}]}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/pg/chat/completions", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("id", fixture.user.Id)
+	common.SetContextKey(c, constant.ContextKeyUserId, fixture.user.Id)
+	common.SetContextKey(c, constant.ContextKeyUserQuota, fixture.user.Quota)
+	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only"})
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+	ValidatePlaygroundChat(c)
+	require.False(t, c.IsAborted(), recorder.Body.String())
+	common.SetContextKey(c, constant.ContextKeyOriginalModel, "gpt-4o-mini")
+	common.SetContextKey(c, constant.ContextKeyChannelId, fixture.channel.Id)
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeOpenAI)
+	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, upstream.URL)
+	common.SetContextKey(c, constant.ContextKeyChannelKey, "upstream-key")
+	c.Set("channel_type", constant.ChannelTypeOpenAI)
+	c.Set("relay_mode", 0)
+	Playground(c)
+	common.CleanupBodyStorage(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Contains(t, recorder.Body.String(), "improved prompt")
+	assert.NotContains(t, upstreamBody.Load().(string), "token_id")
+	charged, err := model.GetTokenByIds(key.Id, fixture.user.Id)
+	require.NoError(t, err)
+	assert.Less(t, charged.RemainQuota, 1_000_000)
 }
 
 func TestListVideoStudioModelsSplitsVideoAndTextByKey(t *testing.T) {

@@ -103,9 +103,8 @@ func TestSubmitValidationKeepsExplicitFalseAndZero(t *testing.T) {
 
 	body, err := BuildTaskRequest(capability, &input, nil)
 	require.NoError(t, err)
-	metadata := body["metadata"].(map[string]any)
-	assert.Equal(t, false, metadata["generate_audio"])
-	assert.Equal(t, 0, metadata["seed"])
+	assert.Equal(t, false, body["generate_audio"])
+	assert.Equal(t, 0, body["seed"])
 }
 
 func TestBuildTaskRequestMatchesProviderContracts(t *testing.T) {
@@ -121,11 +120,11 @@ func TestBuildTaskRequestMatchesProviderContracts(t *testing.T) {
 	require.NoError(t, err)
 	data, err := common.Marshal(body)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"model":"doubao-seedance-2-0","prompt":"city at night","metadata":{
+	assert.JSONEq(t, `{"model":"doubao-seedance-2-0",
 		"content":[{"type":"text","text":"city at night"},
 			{"type":"image_url","image_url":{"url":"https://oss.test/first.png"},"role":"first_frame"},
 			{"type":"image_url","image_url":{"url":"asset://asset-1"},"role":"last_frame"}],
-		"duration":5,"resolution":"720p","ratio":"16:9"}}`, string(data))
+		"duration":5,"resolution":"720p","ratio":"16:9"}`, string(data))
 
 	wan, _ := CapabilityFor("wan3.0-video")
 	input = validInput("wan3.0-video")

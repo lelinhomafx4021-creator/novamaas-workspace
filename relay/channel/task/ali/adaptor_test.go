@@ -363,6 +363,21 @@ func TestWan3RequestCompatibility(t *testing.T) {
 	}
 }
 
+func TestStudioWanProtocolConvertsBeyondTheWan30Name(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/pg/videos", strings.NewReader(`{"model":"wan3.1-video","input":{"prompt":"animate"},"parameters":{"duration":5,"resolution":"720P","ratio":"16:9"}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	common.SetContextKey(c, constant.ContextKeyVideoStudioWan3Request, true)
+	t.Cleanup(func() { common.CleanupBodyStorage(c) })
+	info := testRelayInfo()
+	adaptor := &TaskAdaptor{}
+
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+	require.NotNil(t, adaptor.wan3Request)
+	assert.Equal(t, "wan3.1-video", adaptor.wan3Request.Model)
+	assert.Equal(t, 5, *adaptor.wan3Request.Parameters.Duration)
+}
+
 func TestWan3RejectsInvalidParametersBeforeBilling(t *testing.T) {
 	for _, parameters := range []string{
 		`{"audio":"invalid"}`, `{"ratio":"2:1"}`, `{"resolution":"4K"}`,

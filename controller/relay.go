@@ -574,7 +574,7 @@ func submitVideoTask(c *gin.Context, publicTaskID string, skipClientResponse boo
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
-		RequestPath: middleware.PlaygroundRelayRequestPath(c.Request.URL.Path),
+		RequestPath: middleware.DistributeRequestPath(c),
 		Retry:       common.GetPointer(0),
 	}
 

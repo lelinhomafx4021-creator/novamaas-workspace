@@ -146,6 +146,7 @@ export function ModelConfig(props: ModelConfigProps) {
                 type='number'
                 min={capability.min_duration}
                 max={capability.max_duration}
+                step={1}
                 value={parameters.duration ?? ''}
                 onChange={(event) =>
                   setParameter({
@@ -178,6 +179,9 @@ export function ModelConfig(props: ModelConfigProps) {
                 <Input
                   id='studio-seed'
                   type='number'
+                  min={-1}
+                  max={2 ** 31 - 1}
+                  step={1}
                   placeholder={t('Random')}
                   value={parameters.seed ?? ''}
                   onChange={(event) =>

@@ -113,6 +113,13 @@ func UploadVideoStudioReference(ctx context.Context, ownerUserID int, fileName s
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
+	var usedFiles int64
+	if err = liveVideoStudioObjects(model.DB, ownerUserID, now).Count(&usedFiles).Error; err != nil {
+		return nil, err
+	}
+	if usedFiles >= int64(policy.MaxFiles) {
+		return nil, &RequestError{StatusCode: http.StatusInsufficientStorage, Err: errors.New("video studio file limit is reached; delete saved references first")}
+	}
 	var usedBytes int64
 	if err = liveVideoStudioObjects(model.DB, ownerUserID, now).Select("COALESCE(SUM(size), 0)").Scan(&usedBytes).Error; err != nil {
 		return nil, err

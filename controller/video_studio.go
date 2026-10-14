@@ -251,8 +251,8 @@ func ListVideoStudioRuns(c *gin.Context) {
 }
 
 // ValidatePlaygroundVideo checks a studio submission and replaces the body with
-// the standard /v1/video/generations task request before channel selection,
-// so Distribute, retries, billing, and provider adaptors run unchanged. It
+// its provider task request before channel selection, so Distribute, retries,
+// billing, and provider adaptors use the matching route and request shape. It
 // writes nothing: a submission rejected before a channel is chosen leaves no
 // run behind.
 func ValidatePlaygroundVideo(c *gin.Context) {
@@ -311,14 +311,14 @@ func ValidatePlaygroundVideo(c *gin.Context) {
 	c.Request.ContentLength = int64(len(data))
 	c.Request.Header.Set("Content-Type", "application/json")
 	common.SetContextKey(c, constant.ContextKeyVideoStudioSubmission, prepared)
-	if err = setupPlaygroundToken(c, input.Group); err != nil {
+	common.SetContextKey(c, constant.ContextKeyVideoStudioWan3Request, prepared.Protocol == videostudio.ProtocolWan3)
+	common.SetContextKey(c, constant.ContextKeyVideoStudioGroup, input.Group)
+	if prepared.Protocol == videostudio.ProtocolSeedance {
+		common.SetContextKey(c, constant.ContextKeyVideoStudioRequestPath, constant.VolcNativeTaskSubmitPath)
+	}
+	if err = setupPlaygroundToken(c, input.Group, key); err != nil {
 		abortVideoStudio(c, err)
 		return
-	}
-	if key != nil && key.ModelLimitsEnabled {
-		// Keep the key's whitelist so Distribute enforces it on the real channel pick.
-		c.Set("token_model_limit_enabled", true)
-		c.Set("token_model_limit", key.GetModelLimitsMap())
 	}
 }
 

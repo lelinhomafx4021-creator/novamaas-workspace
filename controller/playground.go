@@ -35,21 +35,26 @@ func Playground(c *gin.Context) {
 		return
 	}
 
-	if err := setupPlaygroundToken(c, relayInfo.UsingGroup); err != nil {
-		newAPIError = types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
-		return
+	if !c.GetBool("playground_key_selected") {
+		if err := setupPlaygroundToken(c, relayInfo.UsingGroup, nil); err != nil {
+			newAPIError = types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+			return
+		}
 	}
 
 	Relay(c, types.RelayFormatOpenAI)
 }
 
-func setupPlaygroundToken(c *gin.Context, group string) error {
+func setupPlaygroundToken(c *gin.Context, group string, selected *model.Token) error {
 	userId := c.GetInt("id")
 	userCache, err := model.GetUserCache(userId)
 	if err != nil {
 		return err
 	}
 	userCache.WriteContext(c)
+	if selected != nil {
+		return middleware.SetupContextForToken(c, selected)
+	}
 	tempToken := &model.Token{
 		UserId: userId,
 		Name:   fmt.Sprintf("playground-%s", group),

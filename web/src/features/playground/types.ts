@@ -68,6 +68,7 @@ export interface ContentPart {
 export interface ChatCompletionRequest {
   model: string
   group?: string
+  token_id?: number
   messages: ChatCompletionMessage[]
   stream: boolean
   temperature?: number

@@ -158,7 +158,7 @@ type resolvedReference struct {
 }
 
 // ResolveReferences checks ownership and turns references into URLs the
-// upstream can fetch. Seedance assets stay as asset:// handles; the doubao
+// upstream can fetch. Seedance assets stay as asset:// handles; the Volc Native
 // adaptor maps them to the selected channel's replica.
 func ResolveReferences(ctx context.Context, ownerUserID int, references []Reference) ([]resolvedReference, error) {
 	resolved := make([]resolvedReference, 0, len(references))
@@ -183,14 +183,11 @@ func ResolveReferences(ctx context.Context, ownerUserID int, references []Refere
 	return resolved, nil
 }
 
-// BuildTaskRequest converts a validated submission into the JSON body the
-// existing /v1/video/generations task adaptor for the protocol accepts.
+// BuildTaskRequest converts a validated submission into the JSON body for its
+// protocol's task adaptor. Seedance uses the native /api/v3 request shape.
 func BuildTaskRequest(capability Capability, input *SubmitInput, references []resolvedReference) (map[string]any, error) {
 	parameters := input.Parameters
-	body := map[string]any{"model": input.Model, "prompt": input.Prompt}
-	if input.Group != "" {
-		body["group"] = input.Group
-	}
+	body := map[string]any{"model": input.Model}
 	switch capability.Protocol {
 	case ProtocolSeedance:
 		content := []map[string]any{{"type": "text", "text": input.Prompt}}
@@ -199,20 +196,18 @@ func BuildTaskRequest(capability Capability, input *SubmitInput, references []re
 				"type": "image_url", "image_url": map[string]any{"url": reference.URL}, "role": reference.Role,
 			})
 		}
-		metadata := map[string]any{
-			"content":    content,
-			"duration":   *parameters.Duration,
-			"resolution": *parameters.Resolution,
-			"ratio":      *parameters.Ratio,
-		}
+		body["content"] = content
+		body["duration"] = *parameters.Duration
+		body["resolution"] = *parameters.Resolution
+		body["ratio"] = *parameters.Ratio
 		if parameters.GenerateAudio != nil {
-			metadata["generate_audio"] = *parameters.GenerateAudio
+			body["generate_audio"] = *parameters.GenerateAudio
 		}
 		if parameters.Seed != nil {
-			metadata["seed"] = *parameters.Seed
+			body["seed"] = *parameters.Seed
 		}
-		body["metadata"] = metadata
 	case ProtocolWan3:
+		body["prompt"] = input.Prompt
 		// Official DashScope shape; the ali adaptor merges input/parameters.
 		input := map[string]any{"prompt": input.Prompt}
 		if len(references) > 0 {
@@ -236,6 +231,7 @@ func BuildTaskRequest(capability Capability, input *SubmitInput, references []re
 		body["input"] = input
 		body["parameters"] = wanParameters
 	case ProtocolOpenAIVideo:
+		body["prompt"] = input.Prompt
 		if len(references) > 0 {
 			return nil, badRequest("%s does not accept reference images in the studio yet", capability.Model)
 		}
@@ -252,6 +248,7 @@ func BuildTaskRequest(capability Capability, input *SubmitInput, references []re
 type PreparedSubmission struct {
 	Project     *model.VideoProject
 	Input       *SubmitInput
+	Protocol    string
 	RequestHash string
 	Snapshot    string
 	TaskBody    map[string]any
@@ -293,5 +290,5 @@ func PrepareSubmission(ctx context.Context, ownerUserID int, input *SubmitInput,
 	if err != nil {
 		return nil, err
 	}
-	return &PreparedSubmission{Project: project, Input: input, RequestHash: hash, Snapshot: string(snapshot), TaskBody: taskBody}, nil
+	return &PreparedSubmission{Project: project, Input: input, Protocol: capability.Protocol, RequestHash: hash, Snapshot: string(snapshot), TaskBody: taskBody}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -17,7 +18,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type memoryObjectDriver struct{ puts *int }
+type memoryObjectDriver struct {
+	puts    *int
+	deletes *int
+}
 
 func (driver memoryObjectDriver) PutObject(_ context.Context, _ string, _ string, _ int64, body io.Reader) (string, error) {
 	*driver.puts++
@@ -29,7 +33,12 @@ func (driver memoryObjectDriver) PresignGet(_ context.Context, objectKey string,
 	return "https://oss.test/" + objectKey, nil
 }
 
-func (driver memoryObjectDriver) DeleteObject(context.Context, string) error { return nil }
+func (driver memoryObjectDriver) DeleteObject(context.Context, string) error {
+	if driver.deletes != nil {
+		*driver.deletes++
+	}
+	return nil
+}
 
 func setupVideoStudioStorage(t *testing.T, maxTotalBytes int64) *int {
 	t.Helper()
@@ -87,6 +96,10 @@ func TestVideoStudioReferenceIsTemporaryAndDeduplicatedPerUser(t *testing.T) {
 	library, err := ListVideoStudioReferences(7, false, 1, 20)
 	require.NoError(t, err)
 	assert.Empty(t, library.Items, "temporary uploads stay out of the library")
+	recent, err := ListVideoStudioReferences(7, true, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, recent.Items, 1, "temporary uploads remain discoverable after a page reload")
+	assert.Equal(t, first.ID, recent.Items[0].ID)
 
 	_, err = FindVideoStudioReference(8, first.ID)
 	require.Error(t, err, "references are owner scoped")
@@ -121,6 +134,84 @@ func TestVideoStudioReferenceQuotaCountsLiveFilesOnly(t *testing.T) {
 	require.Error(t, err, "expired temporary files are not addressable before cleanup runs")
 	_, err = UploadVideoStudioReference(context.Background(), 7, "b.png", bytes.NewReader(pngBytes(t, 64)))
 	require.NoError(t, err, "expired files no longer count toward the quota")
+}
+
+func TestVideoStudioReferenceFileLimitReusesAndExpiresFiles(t *testing.T) {
+	puts := setupVideoStudioStorage(t, 512*1024*1024)
+	policy, err := GetVideoStudioPolicy()
+	require.NoError(t, err)
+	policy.MaxFiles = 1
+	require.NoError(t, model.SaveStoragePolicy(policy))
+
+	firstBytes := pngBytes(t, 4)
+	first, err := UploadVideoStudioReference(context.Background(), 7, "first.png", bytes.NewReader(firstBytes))
+	require.NoError(t, err)
+	reused, err := UploadVideoStudioReference(context.Background(), 7, "again.png", bytes.NewReader(firstBytes))
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, reused.ID)
+	assert.Equal(t, 1, *puts)
+
+	_, err = UploadVideoStudioReference(context.Background(), 7, "second.png", bytes.NewReader(pngBytes(t, 64)))
+	var requestErr *RequestError
+	require.ErrorAs(t, err, &requestErr)
+	assert.Equal(t, http.StatusInsufficientStorage, requestErr.StatusCode)
+	assert.Equal(t, 1, *puts, "rejected files must not reach OSS")
+
+	require.NoError(t, model.DB.Model(&model.StorageObject{}).Where("object_id = ?", first.ID).
+		Update("delete_after", common.GetTimestamp()-1).Error)
+	_, err = UploadVideoStudioReference(context.Background(), 7, "second.png", bytes.NewReader(pngBytes(t, 64)))
+	require.NoError(t, err)
+	assert.Equal(t, 2, *puts)
+}
+
+func TestVideoStudioPresignUsesOSSParametersAndReferenceExpiry(t *testing.T) {
+	setupVideoStudioStorage(t, 512*1024*1024)
+	reference, err := UploadVideoStudioReference(context.Background(), 7, "photo.png", bytes.NewReader(pngBytes(t, 4)))
+	require.NoError(t, err)
+	// Presigning with the real SDK is offline, so this checks the OSS URL shape
+	// without requiring network access or production credentials.
+	driverForProfile = newObjectDriver
+	deadline := common.GetTimestamp() + 60
+	require.NoError(t, model.DB.Model(&model.StorageObject{}).Where("object_id = ?", reference.ID).
+		Update("delete_after", deadline).Error)
+	signed, expiresAt, err := PresignVideoStudioReference(context.Background(), 7, reference.ID, true)
+	require.NoError(t, err)
+	parsed, err := url.Parse(signed)
+	require.NoError(t, err)
+	assert.Equal(t, "image/resize,m_lfit,w_640,h_360", parsed.Query().Get("x-oss-process"))
+	assert.NotEmpty(t, parsed.Query().Get("x-oss-signature"))
+	assert.LessOrEqual(t, expiresAt, deadline)
+
+	_, _, err = PresignVideoStudioReference(context.Background(), 8, reference.ID, false)
+	require.Error(t, err, "another user cannot sign this object")
+	require.NoError(t, model.DB.Model(&model.StorageObject{}).Where("object_id = ?", reference.ID).
+		Update("delete_after", common.GetTimestamp()-1).Error)
+	_, _, err = PresignVideoStudioReference(context.Background(), 7, reference.ID, false)
+	require.Error(t, err, "expired temporary objects cannot be signed")
+}
+
+func TestVideoStudioDeleteQueuesAndPhysicallyRemovesOSSObject(t *testing.T) {
+	puts := setupVideoStudioStorage(t, 512*1024*1024)
+	deletes := 0
+	driverForProfile = func(*model.StorageProfile, *model.StorageCredential) (ObjectDriver, error) {
+		return memoryObjectDriver{puts: puts, deletes: &deletes}, nil
+	}
+	reference, err := UploadVideoStudioReference(context.Background(), 7, "photo.png", bytes.NewReader(pngBytes(t, 4)))
+	require.NoError(t, err)
+	require.NoError(t, DeleteVideoStudioReference(7, reference.ID))
+	_, err = FindVideoStudioReference(7, reference.ID)
+	require.Error(t, err, "deleted references must immediately lose access")
+
+	now := common.GetTimestamp()
+	claimed, err := model.ClaimStorageObjectsForDeletion(now, now+120, "video-studio-test", 10)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	deleteStorageObject("video-studio-test", claimed[0])
+	assert.Equal(t, 1, deletes)
+	var object model.StorageObject
+	require.NoError(t, model.DB.Where("object_id = ?", reference.ID).First(&object).Error)
+	assert.Equal(t, model.StorageObjectStatusDeleted, object.Status)
+	assert.Positive(t, object.DeletedAt)
 }
 
 func TestSavedVideoStudioReferenceSurvivesTaskAndAssetCleanup(t *testing.T) {

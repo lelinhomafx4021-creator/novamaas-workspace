@@ -155,7 +155,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if platform == "" {
 		platform = GetTaskPlatform(c)
 	}
-	if constant.IsVolcNativeRequestPath(c.Request.URL.Path) && info.ChannelType != constant.ChannelTypeVolcNative {
+	requestPath := c.Request.URL.Path
+	if requestPath == "/pg/videos" {
+		if studioPath := common.GetContextKeyString(c, constant.ContextKeyVideoStudioRequestPath); studioPath != "" {
+			requestPath = studioPath
+		}
+	}
+	if constant.IsVolcNativeRequestPath(requestPath) && info.ChannelType != constant.ChannelTypeVolcNative {
 		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("this endpoint requires a Volc Native channel"), "invalid_channel_type", http.StatusBadRequest)
 	}
 	adaptor := GetTaskAdaptor(platform)

@@ -148,7 +148,8 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if err := helper.ModelMappedHelper(c, &mappedInfo, nil); err != nil {
 		return service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 	}
-	if !strings.HasPrefix(mappedInfo.UpstreamModelName, "wan3.0") {
+	if !strings.HasPrefix(mappedInfo.UpstreamModelName, "wan3.0") &&
+		!common.GetContextKeyBool(c, constant.ContextKeyVideoStudioWan3Request) {
 		return relaycommon.ValidateMultipartDirect(c, info)
 	}
 	var fields map[string]any

@@ -400,11 +400,17 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	})
 }
 
+// Playground requests use a virtual token unless the user selected a real key.
+// A selected key must follow the same quota lifecycle as an API request.
+func usesTokenQuota(relayInfo *relaycommon.RelayInfo) bool {
+	return !relayInfo.IsPlayground || relayInfo.TokenId > 0
+}
+
 func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
-	if relayInfo.IsPlayground {
+	if !usesTokenQuota(relayInfo) {
 		return nil
 	}
 	// 原子预扣：检查与扣减在同一操作中完成，并发请求不可能同时通过检查后超扣。
@@ -459,7 +465,7 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
 	}
 	result.FundingApplied = true
 
-	if !relayInfo.IsPlayground {
+	if usesTokenQuota(relayInfo) {
 		if quota > 0 {
 			err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
 		} else {

@@ -211,7 +211,7 @@ func DefaultVideoStudioStoragePolicy() *StoragePolicy {
 		RetentionSeconds:    72 * 60 * 60,
 		MaxFileBytes:        10 * 1024 * 1024,
 		MaxTotalBytes:       512 * 1024 * 1024,
-		MaxFiles:            9,
+		MaxFiles:            100,
 		AllowedMIMETypes:    VideoStudioAllowedMIMETypes,
 		Enabled:             false,
 	}

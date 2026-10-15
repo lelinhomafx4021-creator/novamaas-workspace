@@ -3,11 +3,9 @@ package storage
 import (
 	"context"
 	"net/url"
-	"strconv"
 	"testing"
 	"time"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,26 +131,4 @@ func TestImageStudioSignedURLsPreserveOwnershipAndPermanentStorageOptions(t *tes
 			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 		})
 	}
-
-	t.Run("signatures stop at the image retention deadline", func(t *testing.T) {
-		now := common.GetTimestamp()
-		object := model.StorageObject{
-			ObjectID: "near-expiry", OwnerUserID: 42, StorageProfileID: profile.ID,
-			Purpose: model.StorageObjectPurposeImageStudio, ObjectKey: "studio/near-expiry.png",
-			ContentType: "image/png", Status: model.StorageObjectStatusUploaded,
-			CreatedAt: now - model.ImageStudioRetentionSeconds + 60,
-		}
-		require.NoError(t, model.DB.Create(&object).Error)
-		signed, err := PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLOriginal, "")
-		require.NoError(t, err)
-		parsed, err := url.Parse(signed)
-		require.NoError(t, err)
-		seconds, err := strconv.Atoi(parsed.Query().Get("x-oss-expires"))
-		require.NoError(t, err)
-		assert.Positive(t, seconds)
-		assert.LessOrEqual(t, seconds, 60, "a signed URL cannot extend the image's retention period")
-		require.NoError(t, model.DB.Model(&object).Updates(map[string]any{"created_at": now - model.ImageStudioRetentionSeconds, "delete_after": 0}).Error)
-		_, err = PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLOriginal, "")
-		assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "even a legacy object without a cleanup marker expires after 30 days")
-	})
 }

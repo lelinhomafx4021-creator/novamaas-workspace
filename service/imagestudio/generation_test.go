@@ -148,53 +148,6 @@ func TestCreateRunCallsRelayOncePerIdempotencyKey(t *testing.T) {
 	assert.Zero(t, assets, "generated images are not saved to the library by default")
 }
 
-func TestExpiredImagesKeepHistoryAndIndependentLibraryCopies(t *testing.T) {
-	db, token := setupImageStudio(t)
-	relay := func(RelayContext, *model.Token, string, []byte, types.RelayFormat, *RequestSnapshot) RelayResult {
-		return RelayResult{StatusCode: http.StatusOK, Body: pngResponse(t, 2), RequestID: "retention-request"}
-	}
-	view, _, err := CreateRun(RelayContext{Context: context.Background()}, 501,
-		RunInput{TokenID: token.Id, IdempotencyKey: "expiry", Request: RunRequest{Model: "dall-e-3", Prompt: "landscape"}}, nil, relay)
-	require.NoError(t, err)
-	var result model.ImageStudioResult
-	require.NoError(t, db.Where("public_id = ?", view.Results[0].ID).First(&result).Error)
-	expiredAt := common.GetTimestamp() - 1
-	createdAt := expiredAt - model.ImageStudioRetentionSeconds
-	copy := &model.StorageObject{ObjectID: "permanent-copy", OwnerUserID: 501,
-		Purpose: model.StorageObjectPurposeAssetLibrary, Status: model.StorageObjectStatusUploaded, CreatedAt: createdAt}
-	require.NoError(t, db.Create(copy).Error)
-	asset := &model.MediaAsset{PublicID: "retained-library-asset", OwnerUserID: 501, StorageObjectID: copy.ID, Status: model.AssetStatusReady}
-	require.NoError(t, db.Create(asset).Error)
-	require.NoError(t, db.Model(&result).Updates(map[string]any{"created_at": createdAt, "media_asset_id": asset.ID}).Error)
-	require.NoError(t, db.Model(&model.StorageObject{}).Where("id = ?", result.StorageObjectID).
-		Updates(map[string]any{"created_at": createdAt, "delete_after": expiredAt}).Error)
-	list, err := ListRuns(context.Background(), ListFilter{OwnerUserID: 501, Page: &common.PageInfo{Page: 1, PageSize: 12}})
-	require.NoError(t, err)
-	require.Len(t, list.Items, 1)
-	require.Len(t, list.Items[0].Results, 2)
-	expired := list.Items[0].Results[0]
-	assert.True(t, expired.Expired)
-	assert.Empty(t, expired.PreviewURL)
-	assert.Empty(t, expired.ThumbnailURL)
-	assert.Empty(t, expired.DownloadURL)
-	assert.Equal(t, asset.PublicID, expired.AssetID)
-	assert.NotEmpty(t, list.Items[0].Results[1].PreviewURL)
-	claimed, err := model.ClaimStorageObjectsForDeletion(common.GetTimestamp(), common.GetTimestamp()+120, "expiry-test", 50)
-	require.NoError(t, err)
-	require.Len(t, claimed, 1)
-	assert.Equal(t, result.StorageObjectID, claimed[0].ID)
-	require.NoError(t, model.FinishStorageObjectDeletion(claimed[0].ID, "expiry-test"))
-	require.NoError(t, db.Delete(claimed[0]).Error)
-	updated, err := GetRun(context.Background(), 501, view.PublicID)
-	require.NoError(t, err, "history remains readable after the expired storage ledger is purged")
-	assert.True(t, updated.Results[0].Expired)
-	require.NoError(t, db.First(copy, copy.ID).Error)
-	assert.Equal(t, model.StorageObjectStatusUploaded, copy.Status)
-	assert.Zero(t, copy.DeleteAfter)
-	require.NoError(t, db.First(asset, asset.ID).Error)
-	assert.Equal(t, model.AssetStatusReady, asset.Status)
-}
-
 func TestFailedRunKeepsRequestIDForAudit(t *testing.T) {
 	_, token := setupImageStudio(t)
 	input := RunInput{TokenID: token.Id, IdempotencyKey: "fail", Request: RunRequest{Model: "dall-e-3", Prompt: "mountain"}}

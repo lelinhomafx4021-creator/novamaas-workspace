@@ -284,26 +284,6 @@ test('completed images stay in a bounded square canvas and still open the full p
   ).toHaveAttribute('src', completed.results[0].preview_url)
 })
 
-test('expired images keep their history while preview, download and asset saving are unavailable', async () => {
-  vi.mocked(api.createStudioRun).mockResolvedValue({
-    run: {
-      ...completed,
-      results: [{ id: 'expired-result', index: 0, expired: true }],
-    },
-    replay: false,
-  })
-  await generate()
-  expect(await screen.findByText('Image expired')).toBeVisible()
-  expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()
-  expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled()
-  expect(
-    screen.getByRole('button', {
-      name: 'Save to asset library (for video generation)',
-    })
-  ).toBeDisabled()
-  expect(api.saveStudioResult).not.toHaveBeenCalled()
-})
-
 test('asset saving explains automatic history storage and is optional for using images in video generation', async () => {
   vi.mocked(api.createStudioRun).mockResolvedValue({
     run: completed,

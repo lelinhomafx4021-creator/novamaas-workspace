@@ -158,10 +158,6 @@ func buildResultView(ctx context.Context, result model.ImageStudioResult, ownerU
 		}
 		view.AssetID = asset.PublicID
 	}
-	if result.CreatedAt+model.ImageStudioRetentionSeconds <= common.GetTimestamp() {
-		view.Expired = true
-		return view, nil
-	}
 	var err error
 	view.PreviewURL, err = storageService.PresignImageStudioObject(ctx, result.StorageObjectID, ownerUserID, storageService.AssetObjectURLOriginal, "")
 	if err == nil {

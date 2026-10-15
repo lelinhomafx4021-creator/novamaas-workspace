@@ -191,7 +191,6 @@ func uploadImages(ctx context.Context, run *model.ImageStudioRun, result RelayRe
 			continue
 		}
 		record.StorageObjectID = object.ID
-		record.CreatedAt = object.CreatedAt
 		records = append(records, record)
 	}
 	if len(records) < len(response.Data) && lastErr != nil {

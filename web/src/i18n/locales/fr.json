@@ -3114,6 +3114,7 @@
     "Image Role": "Rôle de l'image (role)",
     "Image to Video": "Image vers vidéo",
     "Image Tokens": "Tokens image",
+    "Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.": "Les images sont automatiquement enregistrées dans l’historique des générations à droite, où vous pouvez les consulter et les télécharger. Ajoutez une image à la bibliothèque de ressources uniquement pour l’utiliser directement comme entrée lors de la génération vidéo.",
     "Images are kept until you delete them.": "Les images sont conservées jusqu’à leur suppression par vos soins.",
     "Images are saved here automatically.": "Les images sont enregistrées ici automatiquement.",
     "Images, videos, and audio files are supported": "Images, vidéos et fichiers audio acceptés",

@@ -269,6 +269,11 @@ export function StudioGallery(props: {
                     type='button'
                     size='sm'
                     variant='outline'
+                    aria-describedby={
+                      props.compact
+                        ? undefined
+                        : `${result.id}-asset-library-help`
+                    }
                     disabled={props.saving}
                     onClick={() => props.onSave?.(result)}
                   >
@@ -278,9 +283,12 @@ export function StudioGallery(props: {
                 )}
               </div>
               {!props.compact && props.onSave && !result.asset_id && (
-                <p className='text-muted-foreground shrink-0 text-[11px] leading-relaxed'>
+                <p
+                  id={`${result.id}-asset-library-help`}
+                  className='text-muted-foreground shrink-0 text-xs leading-relaxed'
+                >
                   {t(
-                    'Only add images to an asset group when you need them in the asset library for video generation or other workflows.'
+                    'Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.'
                   )}
                 </p>
               )}

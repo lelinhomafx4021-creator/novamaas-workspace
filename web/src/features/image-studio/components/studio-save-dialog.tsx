@@ -70,7 +70,7 @@ export function StudioSaveDialog(props: {
           </DialogTitle>
           <DialogDescription>
             {t(
-              'Only add images to an asset group when you need them in the asset library for video generation or other workflows.'
+              'Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.'
             )}
           </DialogDescription>
         </DialogHeader>

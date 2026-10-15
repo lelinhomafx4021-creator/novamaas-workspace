@@ -3114,6 +3114,7 @@
     "Image Role": "Роль изображения (role)",
     "Image to Video": "Изображение в видео",
     "Image Tokens": "Токены изображений",
+    "Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.": "Изображения автоматически сохраняются в истории генераций справа, где их можно просмотреть и скачать. Добавляйте изображение в библиотеку ресурсов только для непосредственного использования в качестве входного материала при генерации видео.",
     "Images are kept until you delete them.": "Изображения хранятся, пока вы их не удалите.",
     "Images are saved here automatically.": "Изображения сохраняются здесь автоматически.",
     "Images, videos, and audio files are supported": "Поддерживаются изображения, видео и аудиофайлы",

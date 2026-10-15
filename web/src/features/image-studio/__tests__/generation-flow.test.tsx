@@ -282,6 +282,29 @@ test('completed images stay in a bounded square canvas and still open the full p
   ).toHaveAttribute('src', completed.results[0].preview_url)
 })
 
+test('asset saving explains automatic history storage and is optional for using images in video generation', async () => {
+  vi.mocked(api.createStudioRun).mockResolvedValue({
+    run: completed,
+    replay: false,
+  })
+  const user = await generate()
+  const explanation =
+    'Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.'
+  const save = await screen.findByRole('button', {
+    name: 'Save to asset library (for video generation)',
+  })
+  expect(save).toHaveAccessibleDescription(explanation)
+  expect(screen.getByText(explanation)).toBeVisible()
+  expect(api.saveStudioResult).not.toHaveBeenCalled()
+  await user.click(save)
+  const dialog = screen.getByRole('dialog', {
+    name: 'Save to asset library (for video generation)',
+  })
+  expect(dialog).toHaveAccessibleDescription(explanation)
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  expect(api.saveStudioResult).not.toHaveBeenCalled()
+})
+
 test('prompt optimization identifies and calls the chosen text model separately from image generation', async () => {
   vi.mocked(api.listStudioModels).mockImplementation(async (_id, kind) =>
     kind === 'text' ? ['text-model', 'chosen-text-model'] : ['dall-e-3']

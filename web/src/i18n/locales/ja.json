@@ -3114,6 +3114,7 @@
     "Image Role": "画像ロール (role)",
     "Image to Video": "画像から動画",
     "Image Tokens": "画像トークン",
+    "Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.": "画像は右側の「生成履歴」に自動保存され、いつでも表示・ダウンロードできます。動画生成の入力素材として直接使う場合にのみ、素材ライブラリに保存してください。",
     "Images are kept until you delete them.": "画像は手動で削除するまで保存されます。",
     "Images are saved here automatically.": "画像は自動でここに保存されます。",
     "Images, videos, and audio files are supported": "画像、動画、音声ファイルに対応しています",

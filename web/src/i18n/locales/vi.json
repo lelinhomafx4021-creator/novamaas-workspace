@@ -3114,6 +3114,7 @@
     "Image Role": "Vai trò hình ảnh (role)",
     "Image to Video": "Ảnh sang video",
     "Image Tokens": "Token hình ảnh",
+    "Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.": "Ảnh được tự động lưu trong lịch sử tạo ảnh bên phải để xem và tải xuống. Chỉ lưu ảnh vào thư viện tài nguyên khi cần dùng trực tiếp làm đầu vào để tạo video.",
     "Images are kept until you delete them.": "Ảnh được lưu cho đến khi bạn tự xóa.",
     "Images are saved here automatically.": "Hình ảnh được lưu tự động ở đây.",
     "Images, videos, and audio files are supported": "Hỗ trợ hình ảnh, video và tệp âm thanh",

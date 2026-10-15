@@ -3114,6 +3114,7 @@
     "Image Role": "圖片角色 (role)",
     "Image to Video": "圖生影片",
     "Image Tokens": "圖像 Token",
+    "Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.": "圖片會自動儲存在右側「生成紀錄」，可隨時檢視與下載。只有需要在影片生成中直接使用這張圖片作為素材時，才存入素材庫。",
     "Images are kept until you delete them.": "圖片長期保留，直到你手動刪除。",
     "Images are saved here automatically.": "圖片預設儲存在這裡。",
     "Images, videos, and audio files are supported": "支援圖片、影片和音訊檔案",

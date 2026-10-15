@@ -220,7 +220,11 @@ export function StudioGallery(props: {
                   }
                 >
                   <EmptyHeader>
-                    <EmptyTitle>{t('Preview unavailable')}</EmptyTitle>
+                    <EmptyTitle>
+                      {result.expired
+                        ? t('Image expired')
+                        : t('Preview unavailable')}
+                    </EmptyTitle>
                   </EmptyHeader>
                 </Empty>
               )}
@@ -274,7 +278,7 @@ export function StudioGallery(props: {
                         ? undefined
                         : `${result.id}-asset-library-help`
                     }
-                    disabled={props.saving}
+                    disabled={props.saving || result.expired}
                     onClick={() => props.onSave?.(result)}
                   >
                     <HugeiconsIcon icon={FolderAddIcon} aria-hidden='true' />
@@ -288,7 +292,7 @@ export function StudioGallery(props: {
                   className='text-muted-foreground shrink-0 text-xs leading-relaxed'
                 >
                   {t(
-                    'Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.'
+                    'Images are saved in the generation records on the right for 30 days. Download them before expiry. Save to the asset library only for direct use in video generation; library copies are kept separately.'
                   )}
                 </p>
               )}

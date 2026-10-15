@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	ImageStudioRetentionSeconds int64 = 30 * 24 * 60 * 60
+
 	ImageStudioRunStatusRunning   = "running"
 	ImageStudioRunStatusCompleted = "completed"
 	ImageStudioRunStatusFailed    = "failed"
@@ -22,6 +24,15 @@ const (
 	// A save claim older than this many seconds may be taken over by a retry.
 	ImageStudioSaveStaleSeconds = 300
 )
+
+// InitializeImageStudioRetention schedules existing generated images without
+// changing explicit deletion requests or permanent asset library copies.
+func InitializeImageStudioRetention(db *gorm.DB) error {
+	return db.Model(&StorageObject{}).
+		Where("purpose = ? AND delete_after = 0 AND status IN ?", StorageObjectPurposeImageStudio,
+			[]string{StorageObjectStatusUploading, StorageObjectStatusUploaded}).
+		Update("delete_after", gorm.Expr("created_at + ?", ImageStudioRetentionSeconds)).Error
+}
 
 var (
 	ErrImageStudioSaveInProgress = errors.New("image is already being saved")

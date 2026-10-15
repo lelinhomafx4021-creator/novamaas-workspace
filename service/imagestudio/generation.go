@@ -30,7 +30,7 @@ import (
 
 const maxStudioImageBytes = 64 << 20
 
-// uploadImage is replaced in tests; production stores images in permanent OSS.
+// uploadImage is replaced in tests; production stores images in private OSS.
 var uploadImage = storageService.UploadImageStudioObject
 
 type RunRequest struct {
@@ -154,7 +154,7 @@ func replayRun(ctx context.Context, run *model.ImageStudioRun) (*RunView, bool, 
 	return view, true, err
 }
 
-// uploadImages copies every returned image into permanent storage and returns
+// uploadImages copies every returned image into private OSS storage and returns
 // the result records to commit with the run. Partial success keeps the
 // uploaded images; the error describes the images that were lost.
 func uploadImages(ctx context.Context, run *model.ImageStudioRun, result RelayResult) ([]*model.ImageStudioResult, error) {
@@ -191,6 +191,7 @@ func uploadImages(ctx context.Context, run *model.ImageStudioRun, result RelayRe
 			continue
 		}
 		record.StorageObjectID = object.ID
+		record.CreatedAt = object.CreatedAt
 		records = append(records, record)
 	}
 	if len(records) < len(response.Data) && lastErr != nil {

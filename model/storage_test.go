@@ -135,3 +135,37 @@ func TestTaskDeletionPreservesPermanentStorageObjects(t *testing.T) {
 		assert.Zero(t, object.DeleteAfter, object.Purpose)
 	}
 }
+
+func TestImageStudioRetentionSchedulesImagesAndPreservesLibraryCopies(t *testing.T) {
+	db := setupTaskRequestBodyTestDB(t)
+	require.NoError(t, db.AutoMigrate(&StorageObject{}))
+	const now int64 = 1800000000
+	objects := []StorageObject{
+		{ObjectID: "new-image", Purpose: StorageObjectPurposeImageStudio, Status: StorageObjectStatusUploaded, CreatedAt: now},
+		{ObjectID: "expired-image", Purpose: StorageObjectPurposeImageStudio, Status: StorageObjectStatusUploaded, CreatedAt: now - ImageStudioRetentionSeconds},
+		{ObjectID: "legacy-image", Purpose: StorageObjectPurposeImageStudio, Status: StorageObjectStatusUploaded, CreatedAt: now - 60},
+		{ObjectID: "library-copy", Purpose: StorageObjectPurposeAssetLibrary, Status: StorageObjectStatusUploaded, CreatedAt: now - ImageStudioRetentionSeconds},
+		{ObjectID: "manual-delete", Purpose: StorageObjectPurposeImageStudio, Status: StorageObjectStatusDeletePending, CreatedAt: now, DeleteAfter: now + 60},
+	}
+	require.NoError(t, db.Create(&objects).Error)
+	assert.Equal(t, now+ImageStudioRetentionSeconds, objects[0].DeleteAfter)
+	assert.Equal(t, now, objects[1].DeleteAfter)
+	require.NoError(t, db.Model(&objects[2]).Update("delete_after", 0).Error)
+	for range 2 {
+		require.NoError(t, InitializeImageStudioRetention(db))
+	}
+	var stored []StorageObject
+	require.NoError(t, db.Order("id asc").Find(&stored).Error)
+	require.Len(t, stored, 5)
+	assert.Equal(t, now-60+ImageStudioRetentionSeconds, stored[2].DeleteAfter)
+	assert.Zero(t, stored[3].DeleteAfter, "asset library copies keep their independent permanent storage")
+	assert.Equal(t, now+60, stored[4].DeleteAfter, "migration preserves an explicit delete request")
+	claimed, err := ClaimStorageObjectsForDeletion(now, now+120, "retention-test", 50)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	assert.Equal(t, objects[1].ID, claimed[0].ID)
+	require.NoError(t, FinishStorageObjectDeletion(claimed[0].ID, "retention-test"))
+	var expired StorageObject
+	require.NoError(t, db.First(&expired, objects[1].ID).Error)
+	assert.Equal(t, StorageObjectStatusDeleted, expired.Status)
+}

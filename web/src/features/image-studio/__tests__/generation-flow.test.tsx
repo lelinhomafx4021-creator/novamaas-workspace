@@ -133,7 +133,9 @@ test('guests can browse the editor and examples without fetching keys, models or
     'w-full',
     'overflow-hidden'
   )
-  const retention = screen.getByText('Images are kept until you delete them.')
+  const retention = screen.getByText(
+    'Generated images are kept for 30 days, then automatically deleted. Please download them in time.'
+  )
   expect(retention).toBeVisible()
   expect(retention.closest('header')).toHaveClass('sticky', 'top-0')
   await user.click(
@@ -282,6 +284,26 @@ test('completed images stay in a bounded square canvas and still open the full p
   ).toHaveAttribute('src', completed.results[0].preview_url)
 })
 
+test('expired images keep their history while preview, download and asset saving are unavailable', async () => {
+  vi.mocked(api.createStudioRun).mockResolvedValue({
+    run: {
+      ...completed,
+      results: [{ id: 'expired-result', index: 0, expired: true }],
+    },
+    replay: false,
+  })
+  await generate()
+  expect(await screen.findByText('Image expired')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled()
+  expect(
+    screen.getByRole('button', {
+      name: 'Save to asset library (for video generation)',
+    })
+  ).toBeDisabled()
+  expect(api.saveStudioResult).not.toHaveBeenCalled()
+})
+
 test('asset saving explains automatic history storage and is optional for using images in video generation', async () => {
   vi.mocked(api.createStudioRun).mockResolvedValue({
     run: completed,
@@ -289,7 +311,7 @@ test('asset saving explains automatic history storage and is optional for using 
   })
   const user = await generate()
   const explanation =
-    'Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.'
+    'Images are saved in the generation records on the right for 30 days. Download them before expiry. Save to the asset library only for direct use in video generation; library copies are kept separately.'
   const save = await screen.findByRole('button', {
     name: 'Save to asset library (for video generation)',
   })

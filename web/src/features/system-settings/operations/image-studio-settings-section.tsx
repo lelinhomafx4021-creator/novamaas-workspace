@@ -59,7 +59,7 @@ export function ImageStudioSettingsSection(props: { defaultEnabled: boolean }) {
     <SettingsSection title={t('Image generation')}>
       <p className='text-muted-foreground text-sm'>
         {t(
-          'Image generation stores results in permanent OSS storage. Enable the asset library storage policy before turning it on.'
+          'Generated images are stored in OSS for 30 days, then automatically deleted. Enable the asset library storage policy before turning it on.'
         )}{' '}
         <Link
           className='text-primary underline underline-offset-4'

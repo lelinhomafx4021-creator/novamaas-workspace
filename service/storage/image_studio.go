@@ -13,8 +13,8 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-// UploadImageStudioObject stores a generated image under the asset library
-// permanent storage policy without creating a library asset.
+// UploadImageStudioObject uses the asset library's storage connection for a
+// generated image, with a separate 30-day lifetime and no library asset.
 func UploadImageStudioObject(ctx context.Context, ownerUserID int, runID string, resultID string, contentType string, data []byte) (*model.StorageObject, error) {
 	policy, profile, credential, err := ResolveEnabledPolicy(model.StoragePolicyAssetLibrary)
 	if err != nil {
@@ -73,8 +73,13 @@ func UploadImageStudioObject(ctx context.Context, ownerUserID int, runID string,
 func PresignImageStudioObject(ctx context.Context, objectID int64, ownerUserID int, mode AssetObjectURLMode, downloadName string) (string, error) {
 	var object model.StorageObject
 	if err := model.DB.Where("id = ? AND owner_user_id = ? AND purpose = ? AND status = ?",
-		objectID, ownerUserID, model.StorageObjectPurposeImageStudio, model.StorageObjectStatusUploaded).First(&object).Error; err != nil {
+		objectID, ownerUserID, model.StorageObjectPurposeImageStudio, model.StorageObjectStatusUploaded).
+		Where("created_at > ?", common.GetTimestamp()-model.ImageStudioRetentionSeconds).First(&object).Error; err != nil {
 		return "", err
+	}
+	expiresAt := object.CreatedAt + model.ImageStudioRetentionSeconds
+	if object.DeleteAfter == 0 || object.DeleteAfter > expiresAt {
+		object.DeleteAfter = expiresAt
 	}
 	if mode == AssetObjectURLDownload && assetExtension(object.ContentType) == "" {
 		return "", errors.New("invalid image download type")

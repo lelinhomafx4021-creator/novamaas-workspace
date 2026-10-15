@@ -155,7 +155,9 @@ export function StudioComposer(props: {
               {t('Image creation')}
             </h1>
             <p className='text-muted-foreground text-xs leading-relaxed'>
-              {t('Images are kept until you delete them.')}
+              {t(
+                'Generated images are kept for 30 days, then automatically deleted. Please download them in time.'
+              )}
             </p>
           </div>
         </div>

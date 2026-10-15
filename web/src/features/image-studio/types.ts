@@ -33,6 +33,7 @@ export type StudioResult = {
   download_url?: string
   description?: string
   asset_id?: string
+  expired?: boolean
 }
 
 export type StudioRun = {

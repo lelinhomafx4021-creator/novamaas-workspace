@@ -8,7 +8,7 @@ const (
 )
 
 // ImageStudioSetting controls the PC image generation studio. Generated images
-// require the asset library permanent storage policy to be enabled.
+// require the asset library storage policy to be enabled; their lifetime is 30 days.
 type ImageStudioSetting struct {
 	Enabled bool `json:"enabled"`
 }

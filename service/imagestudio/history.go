@@ -24,6 +24,7 @@ type ResultView struct {
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
 	DownloadURL  string `json:"download_url,omitempty"`
 	AssetID      string `json:"asset_id,omitempty"`
+	Expired      bool   `json:"expired,omitempty"`
 }
 
 // RunView is the owner and reviewer view of a run. RequestID links to the
@@ -157,14 +158,23 @@ func buildResultView(ctx context.Context, result model.ImageStudioResult, ownerU
 		}
 		view.AssetID = asset.PublicID
 	}
+	if result.CreatedAt+model.ImageStudioRetentionSeconds <= common.GetTimestamp() {
+		view.Expired = true
+		return view, nil
+	}
 	var err error
-	if view.PreviewURL, err = storageService.PresignImageStudioObject(ctx, result.StorageObjectID, ownerUserID, storageService.AssetObjectURLOriginal, ""); err != nil {
-		return view, err
+	view.PreviewURL, err = storageService.PresignImageStudioObject(ctx, result.StorageObjectID, ownerUserID, storageService.AssetObjectURLOriginal, "")
+	if err == nil {
+		view.ThumbnailURL, err = storageService.PresignImageStudioObject(ctx, result.StorageObjectID, ownerUserID, storageService.AssetObjectURLThumbnail, "")
 	}
-	if view.ThumbnailURL, err = storageService.PresignImageStudioObject(ctx, result.StorageObjectID, ownerUserID, storageService.AssetObjectURLThumbnail, ""); err != nil {
-		return view, err
+	if err == nil {
+		view.DownloadURL, err = storageService.PresignImageStudioObject(ctx, result.StorageObjectID, ownerUserID, storageService.AssetObjectURLDownload, result.PublicID)
 	}
-	view.DownloadURL, err = storageService.PresignImageStudioObject(ctx, result.StorageObjectID, ownerUserID, storageService.AssetObjectURLDownload, result.PublicID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		view.PreviewURL, view.ThumbnailURL, view.DownloadURL = "", "", ""
+		view.Expired = true
+		return view, nil
+	}
 	return view, err
 }
 

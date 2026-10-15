@@ -14,6 +14,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"gorm.io/gorm"
 )
 
 func UploadAssetObject(ctx context.Context, ownerUserID int, groupPublicID string, assetPublicID string, fileName string, contentType string, size int64, body io.Reader) (*model.StorageObject, error) {
@@ -122,6 +123,13 @@ func presignPermanentObject(ctx context.Context, object *model.StorageObject, tt
 			return "", fmt.Errorf("asset storage policy is unavailable")
 		}
 		ttl = policySignedURLTTL(policy)
+	}
+	if object.DeleteAfter > 0 {
+		remaining := time.Duration(object.DeleteAfter-common.GetTimestamp()) * time.Second
+		if remaining <= 0 {
+			return "", gorm.ErrRecordNotFound
+		}
+		ttl = min(ttl, remaining)
 	}
 	options := ObjectGetOptions{}
 	switch mode {

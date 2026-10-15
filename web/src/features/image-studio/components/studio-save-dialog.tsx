@@ -70,7 +70,7 @@ export function StudioSaveDialog(props: {
           </DialogTitle>
           <DialogDescription>
             {t(
-              'Images are automatically saved in the generation records on the right for viewing and downloading. Save to the asset library only to use an image directly as an input for video generation.'
+              'Images are saved in the generation records on the right for 30 days. Download them before expiry. Save to the asset library only for direct use in video generation; library copies are kept separately.'
             )}
           </DialogDescription>
         </DialogHeader>

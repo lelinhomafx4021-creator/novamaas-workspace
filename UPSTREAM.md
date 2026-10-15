@@ -24,6 +24,12 @@
 
 This independently maintained fork starts at exactly the upstream commit above and retains its Git history. Initial changes cover fork documentation, build versioning and GitHub Actions; application source code is unchanged. Future upstream improvements will be reviewed and integrated selectively, with their source commits and validation recorded.
 
+## 公司主分支同步
+
+- 2026-10-15：重新获取并核对公司 `main`，最新提交仍为 [`ce9e31f1e`](https://github.com/yeruyi1024/novamaas-workspace/commit/ce9e31f1ec17b39562fbd90c4990303a3cc2b86f)，PC 生图分支已完整包含该提交，无需重复合并。架构复核确认继续复用主分支 Relay、计费、请求快照、素材库及对象清理；合并生图与素材库重复的 OSS 签名实现，保留图片归属和存储用途校验，JPEG/WebP 缩略图沿用素材库压缩规则。存储、生图、controller、router 和 common 的无缓存回归、根模块全量 Go 测试及 vet/构建、`relaykit` 独立构建通过。MySQL 环境下浏览器验证模型读取、历史恢复、OSS 原图预览和直连下载通过，下载 PNG 为 1254 × 1254、2,173,905 字节。
+
+- 2026-10-14：PC 生图分支合入公司主分支提交 [`ce9e31f1e`](https://github.com/yeruyi1024/novamaas-workspace/commit/ce9e31f1ec17b39562fbd90c4990303a3cc2b86f)，接入 [#72](https://github.com/yeruyi1024/novamaas-workspace/pull/72) 的请求快照异步归档、对象存储读取及历史兼容能力。合并保留生图存储用途和图片巡查权限；请求快照的查看与下载统一沿用主分支 `AdminAuth`，移除生图专属的快照授权限制和对应前端拦截。已通过 Go 全量回归及权限调整后的受影响包回归、根模块 vet/构建、`relaykit` 独立 vet/构建、前端全量测试及 93 项受影响回归、类型检查、受影响文件 lint/格式检查和生产构建。
+
 ## 同步上游
 
 ```bash

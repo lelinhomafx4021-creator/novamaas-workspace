@@ -76,35 +76,8 @@ func PresignImageStudioObject(ctx context.Context, objectID int64, ownerUserID i
 		objectID, ownerUserID, model.StorageObjectPurposeImageStudio, model.StorageObjectStatusUploaded).First(&object).Error; err != nil {
 		return "", err
 	}
-	profile, err := model.GetStorageProfileByID(object.StorageProfileID)
-	if err != nil || profile == nil {
-		return "", errors.New("image storage profile is unavailable")
+	if mode == AssetObjectURLDownload && assetExtension(object.ContentType) == "" {
+		return "", errors.New("invalid image download type")
 	}
-	credential, err := model.GetActiveStorageCredential(profile.ID)
-	if err != nil || credential == nil {
-		return "", errors.New("image storage credential is unavailable")
-	}
-	policy, err := model.GetStoragePolicyByKey(model.StoragePolicyAssetLibrary)
-	if err != nil || policy == nil {
-		return "", errors.New("image storage policy is unavailable")
-	}
-	driver, err := driverForProfile(profile, credential)
-	if err != nil {
-		return "", err
-	}
-	options := ObjectGetOptions{}
-	switch mode {
-	case AssetObjectURLOriginal:
-	case AssetObjectURLThumbnail:
-		options.Process = "image/resize,m_lfit,w_640,h_360"
-	case AssetObjectURLDownload:
-		extension := assetExtension(object.ContentType)
-		if downloadName == "" || extension == "" || strings.ContainsAny(downloadName, "\"\\\r\n/") {
-			return "", errors.New("invalid image download name")
-		}
-		options.ResponseContentDisposition = fmt.Sprintf("attachment; filename=\"%s.%s\"", downloadName, extension)
-	default:
-		return "", errors.New("invalid image URL mode")
-	}
-	return driver.PresignGet(ctx, object.ObjectKey, policySignedURLTTL(policy), options)
+	return presignPermanentObject(ctx, &object, 0, mode, downloadName)
 }

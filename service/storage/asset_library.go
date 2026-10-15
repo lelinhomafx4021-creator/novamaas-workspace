@@ -98,6 +98,12 @@ func PresignAssetObject(ctx context.Context, objectID int64, ttl time.Duration, 
 	if err := model.DB.Where("id = ? AND purpose = ? AND status = ?", objectID, model.StorageObjectPurposeAssetLibrary, model.StorageObjectStatusUploaded).First(&object).Error; err != nil {
 		return "", err
 	}
+	return presignPermanentObject(ctx, &object, ttl, mode, downloadName)
+}
+
+// presignPermanentObject signs an already authorized asset or generated image
+// using the same storage credentials, thumbnail options and download naming.
+func presignPermanentObject(ctx context.Context, object *model.StorageObject, ttl time.Duration, mode AssetObjectURLMode, downloadName string) (string, error) {
 	profile, err := model.GetStorageProfileByID(object.StorageProfileID)
 	if err != nil || profile == nil {
 		return "", fmt.Errorf("asset storage profile is unavailable")

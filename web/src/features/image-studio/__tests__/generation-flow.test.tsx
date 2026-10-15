@@ -133,9 +133,9 @@ test('guests can browse the editor and examples without fetching keys, models or
     'w-full',
     'overflow-hidden'
   )
-  expect(
-    screen.getByText('Images are kept until you delete them.')
-  ).toBeVisible()
+  const retention = screen.getByText('Images are kept until you delete them.')
+  expect(retention).toBeVisible()
+  expect(retention.closest('header')).toHaveClass('sticky', 'top-0')
   await user.click(
     screen.getByRole('button', { name: 'Cinematic photography' })
   )

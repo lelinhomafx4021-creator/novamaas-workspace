@@ -147,12 +147,17 @@ export function StudioComposer(props: {
   })
   return (
     <>
-      <header className='flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6'>
+      <header className='bg-background sticky top-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6'>
         <div className='flex min-w-0 items-center gap-3'>
           <SystemBrand variant='inline' />
-          <h1 className='border-l pl-3 text-lg font-semibold tracking-tight'>
-            {t('Image creation')}
-          </h1>
+          <div className='min-w-0 border-l pl-3'>
+            <h1 className='text-lg font-semibold tracking-tight'>
+              {t('Image creation')}
+            </h1>
+            <p className='text-muted-foreground text-xs leading-relaxed'>
+              {t('Images are kept until you delete them.')}
+            </p>
+          </div>
         </div>
         <div className='flex items-center gap-2'>
           <StudioModelSettings

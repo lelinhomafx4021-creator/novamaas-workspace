@@ -106,9 +106,6 @@ export function StudioHistory(props: {
             </Button>
           )}
         </div>
-        <p className='text-muted-foreground text-xs'>
-          {t('Images are kept until you delete them.')}
-        </p>
         {!props.authenticated && (
           <Link
             to='/sign-in'

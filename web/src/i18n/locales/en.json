@@ -7210,6 +7210,17 @@
     "List cache read price / 1M": "List cache read price / 1M",
     "Extra charge at list price": "Extra charge at list price",
     "Extra charge at customer price": "Extra charge at customer price",
-    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* This model had more than one historical price in the period; the first is shown and amounts are summed per request."
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.",
+    "Usage and amount by model": "Usage and amount by model",
+    "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.": "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.",
+    "Priced {{priced}} / {{total}} records.": "Priced {{priced}} / {{total}} records.",
+    "Billing rate": "Billing rate",
+    "Tokens to correct (cache counted as input)": "Tokens to correct (cache counted as input)",
+    "{{count}} affected requests": "{{count}} affected requests",
+    "Plus up to {{count}} tokens that need review": "Plus up to {{count}} tokens that need review",
+    "Platform charge": "Platform charge",
+    "Price difference": "Price difference",
+    "Token type": "Token type",
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache."
   }
 }

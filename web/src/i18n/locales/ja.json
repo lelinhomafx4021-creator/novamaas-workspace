@@ -7210,6 +7210,17 @@
     "List cache read price / 1M": "定価 キャッシュ読み取り単価 / 100万",
     "Extra charge at list price": "過大請求額（定価）",
     "Extra charge at customer price": "過大請求額（顧客価格）",
-    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* このモデルは期間中に複数の価格がありました。最初の価格を表示し、金額はリクエストごとの価格で合算しています。"
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* このモデルは期間中に複数の価格がありました。最初の価格を表示し、金額はリクエストごとの価格で合算しています。",
+    "Usage and amount by model": "モデル別の使用量と金額",
+    "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.": "各セルはトークン数、定価の金額（グレー）、グループ価格の金額の順です。モデル名の下は全リクエスト数 / 価格計算可能数で、金額は計算可能なリクエストのみ集計します。",
+    "Priced {{priced}} / {{total}} records.": "価格確認済み {{priced}} / {{total}} 件。",
+    "Billing rate": "課金倍率",
+    "Tokens to correct (cache counted as input)": "補正が必要なトークン（入力として計上されたキャッシュ）",
+    "{{count}} affected requests": "影響リクエスト {{count}} 件",
+    "Plus up to {{count}} tokens that need review": "さらに最大 {{count}} トークンが要確認",
+    "Platform charge": "プラットフォーム料金",
+    "Price difference": "差額",
+    "Token type": "トークン種別",
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表のプラットフォーム料金は当時のグループ価格で再計算した値で、上部は確定済みの請求額です。強調行は顧客側の過大請求分で、これらのトークンはキャッシュとして請求済みです。"
   }
 }

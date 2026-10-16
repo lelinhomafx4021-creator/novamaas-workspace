@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -137,9 +138,15 @@ type CacheUsageAuditTotals struct {
 	InputPricePerMillion     string `json:"input_price_per_million,omitempty"`
 	CacheReadPricePerMillion string `json:"cache_read_price_per_million,omitempty"`
 	PriceMixed               bool   `json:"price_mixed,omitempty"`
-	ActualAmount             string `json:"actual_amount"`
-	ListAmount               string `json:"list_amount"`       // priced requests only
-	DiscountedAmount         string `json:"discounted_amount"` // priced requests only
+	// Per-component amounts over priced requests: uncached input, cache
+	// read, cache write and output, at list price and at group price.
+	ListCost       CacheUsageCost `json:"list_cost"`
+	DiscountedCost CacheUsageCost `json:"discounted_cost"`
+	// Distinct "group x ratio" labels seen in the group, at most 10.
+	Rates            []string `json:"rates"`
+	ActualAmount     string   `json:"actual_amount"`
+	ListAmount       string   `json:"list_amount"`       // priced requests only
+	DiscountedAmount string   `json:"discounted_amount"` // priced requests only
 
 	Compensation CacheUsageCompensation `json:"compensation"`
 	// Duplicate tokens on rows without a historical input price; they need a
@@ -149,6 +156,7 @@ type CacheUsageAuditTotals struct {
 	actual, list, discounted                       decimal.Decimal
 	compList, compGroup, compListMax, compGroupMax decimal.Decimal // quota
 	compDown, compDownMax                          decimal.Decimal // currency
+	listParts, discountedParts                     cacheAuditQuota
 	hasDownstream                                  bool
 }
 
@@ -300,6 +308,10 @@ type cacheAuditQuota struct {
 
 func (q cacheAuditQuota) total() decimal.Decimal {
 	return q.input.Add(q.cacheRead).Add(q.cacheWrite).Add(q.output)
+}
+
+func (q cacheAuditQuota) add(other cacheAuditQuota) cacheAuditQuota {
+	return cacheAuditQuota{q.input.Add(other.input), q.cacheRead.Add(other.cacheRead), q.cacheWrite.Add(other.cacheWrite), q.output.Add(other.output)}
 }
 
 func (q cacheAuditQuota) scale(ratio decimal.Decimal) cacheAuditQuota {
@@ -463,6 +475,12 @@ func (t *CacheUsageAuditTotals) add(row CacheUsageAuditRow, list, discounted cac
 		return
 	}
 	t.Requests++
+	if row.GroupRatio != "" {
+		rate := row.Group + " × " + row.GroupRatio
+		if len(t.Rates) < 10 && !slices.Contains(t.Rates, rate) {
+			t.Rates = append(t.Rates, rate)
+		}
+	}
 	switch row.Status {
 	case CacheAuditAffected:
 		t.AffectedRequests++
@@ -515,6 +533,8 @@ func (t *CacheUsageAuditTotals) add(row CacheUsageAuditRow, list, discounted cac
 		t.PricedRequests++
 		t.list = t.list.Add(list.total())
 		t.discounted = t.discounted.Add(discounted.total())
+		t.listParts = t.listParts.add(list)
+		t.discountedParts = t.discountedParts.add(discounted)
 	}
 }
 
@@ -522,6 +542,7 @@ func (t *CacheUsageAuditTotals) finish(money cacheAuditMoney) {
 	t.ActualAmount = money.amount(t.actual)
 	t.ListAmount = money.amount(t.list)
 	t.DiscountedAmount = money.amount(t.discounted)
+	t.ListCost, t.DiscountedCost = *money.cost(t.listParts), *money.cost(t.discountedParts)
 	// Compensation sums are already in currency; round once at the end.
 	t.Compensation = CacheUsageCompensation{
 		List: t.compList.StringFixed(6), Group: t.compGroup.StringFixed(6),

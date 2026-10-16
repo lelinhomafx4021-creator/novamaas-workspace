@@ -7210,6 +7210,17 @@
     "List cache read price / 1M": "官价缓存读取单价 / 百万",
     "Extra charge at list price": "多算金额（按官价）",
     "Extra charge at customer price": "多算金额（按客户价）",
-    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* 该模型在此期间有多个历史价格，表中显示第一个，金额按每笔请求的实际价格累加。"
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* 该模型在此期间有多个历史价格，表中显示第一个，金额按每笔请求的实际价格累加。",
+    "Usage and amount by model": "各模型用量与金额",
+    "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.": "每格依次是：token 数、官价金额（灰色）、分组倍率价金额。模型下方是 全部请求数 / 可计价请求数，金额只统计可计价的请求。",
+    "Priced {{priced}} / {{total}} records.": "已核价 {{priced}} / {{total}} 条记录。",
+    "Billing rate": "计费倍率",
+    "Tokens to correct (cache counted as input)": "需补差的 token（缓存被算作输入）",
+    "{{count}} affected requests": "{{count}} 笔受影响请求",
+    "Plus up to {{count}} tokens that need review": "另有最多 {{count}} 个 token 待核对",
+    "Platform charge": "平台费用",
+    "Price difference": "费用差额",
+    "Token type": "Token 分类",
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表格中的平台费用按当时的分组倍率价重算；上方的平台费用是实际结算金额。高亮行是客户多收的部分：这些 token 已经按缓存计过费，又被当作普通输入收了一次。"
   }
 }

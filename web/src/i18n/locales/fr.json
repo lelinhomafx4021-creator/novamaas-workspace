@@ -7210,6 +7210,17 @@
     "List cache read price / 1M": "Prix catalogue lecture cache / 1M",
     "Extra charge at list price": "Surfacturation au prix catalogue",
     "Extra charge at customer price": "Surfacturation au prix client",
-    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* Ce modèle a eu plusieurs prix sur la période ; le premier est affiché et les montants sont additionnés par requête."
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* Ce modèle a eu plusieurs prix sur la période ; le premier est affiché et les montants sont additionnés par requête.",
+    "Usage and amount by model": "Utilisation et montants par modèle",
+    "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.": "Chaque cellule affiche les jetons, puis le montant au prix catalogue (gris), puis au prix du groupe. Requêtes : toutes / tarifées ; seules les requêtes tarifées comptent dans les montants.",
+    "Priced {{priced}} / {{total}} records.": "{{priced}} / {{total}} enregistrements tarifés.",
+    "Billing rate": "Taux de facturation",
+    "Tokens to correct (cache counted as input)": "Jetons à corriger (cache compté comme entrée)",
+    "{{count}} affected requests": "{{count}} requêtes concernées",
+    "Plus up to {{count}} tokens that need review": "Plus jusqu'à {{count}} jetons à vérifier",
+    "Platform charge": "Frais de la plateforme",
+    "Price difference": "Écart",
+    "Token type": "Type de jeton",
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Les frais du tableau sont recalculés au prix historique du groupe ; le montant en tête est le montant réglé. La ligne surlignée correspond à la surfacturation du client : ces jetons étaient déjà facturés comme cache."
   }
 }

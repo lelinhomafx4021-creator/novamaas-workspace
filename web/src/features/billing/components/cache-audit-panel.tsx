@@ -54,6 +54,7 @@ import {
 } from '../lib/cache-audit'
 import { CacheAuditCompensation } from './cache-audit-compensation'
 import { CacheAuditDetails } from './cache-audit-details'
+import { CacheAuditModelUsage } from './cache-audit-model-usage'
 import { CacheAuditSummary } from './cache-audit-summary'
 import { CacheAuditTokens } from './cache-audit-tokens'
 
@@ -224,6 +225,7 @@ export function CacheAuditPanel(props: { userId: number }) {
       {result && (
         <>
           <CacheAuditTokens report={result.report} />
+          <CacheAuditModelUsage report={result.report} />
           <CacheAuditCompensation
             report={result.report}
             prices={prices}

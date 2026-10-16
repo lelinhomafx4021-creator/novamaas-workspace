@@ -7210,6 +7210,17 @@
     "List cache read price / 1M": "官價快取讀取單價 / 百萬",
     "Extra charge at list price": "多算金額（按官價）",
     "Extra charge at customer price": "多算金額（按客戶價）",
-    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* 該模型在此期間有多個歷史價格，表中顯示第一個，金額按每筆請求的實際價格累加。"
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* 該模型在此期間有多個歷史價格，表中顯示第一個，金額按每筆請求的實際價格累加。",
+    "Usage and amount by model": "各模型用量與金額",
+    "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.": "每格依次是：token 數、官價金額（灰色）、分組倍率價金額。模型下方是 全部請求數 / 可計價請求數，金額只統計可計價的請求。",
+    "Priced {{priced}} / {{total}} records.": "已核價 {{priced}} / {{total}} 筆記錄。",
+    "Billing rate": "計費倍率",
+    "Tokens to correct (cache counted as input)": "需補差的 token（快取被算作輸入）",
+    "{{count}} affected requests": "{{count}} 筆受影響請求",
+    "Plus up to {{count}} tokens that need review": "另有最多 {{count}} 個 token 待核對",
+    "Platform charge": "平台費用",
+    "Price difference": "費用差額",
+    "Token type": "Token 分類",
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表格中的平台費用按當時的分組倍率價重算；上方的平台費用是實際結算金額。高亮行是客戶多收的部分：這些 token 已經按快取計過費，又被當作普通輸入收了一次。"
   }
 }

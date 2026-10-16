@@ -232,6 +232,10 @@ func TestRunCacheUsageAuditTotalsCompensationAndUsers(t *testing.T) {
 	assert.Equal(t, "20.000000", report.ByModel[0].InputPricePerMillion)
 	assert.Equal(t, "2.000000", report.ByModel[0].CacheReadPricePerMillion)
 	assert.False(t, report.ByModel[0].PriceMixed)
+	// gpt-5: input 96+0, cache read 6000 x 0.1, output 0, model ratio 10.
+	assert.Equal(t, CacheUsageCost{Input: "0.001920", CacheRead: "0.012000", CacheWrite: "0.000000", Output: "0.000000", Total: "0.013920"}, report.ByModel[0].ListCost)
+	assert.Equal(t, "0.006960", report.ByModel[0].DiscountedCost.Total)
+	assert.Equal(t, []string{" × 0.5"}, report.ByModel[0].Rates)
 	assert.Equal(t, int64(6000), report.ByModel[0].DuplicateTokens)
 	assert.Equal(t, "0.120000", report.Total.Compensation.List) // 6000 x $20/M
 	assert.Equal(t, "0.060000", report.Total.Compensation.Group)

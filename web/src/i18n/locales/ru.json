@@ -7210,6 +7210,17 @@
     "List cache read price / 1M": "Базовая цена чтения кэша / 1M",
     "Extra charge at list price": "Переплата по базовой цене",
     "Extra charge at customer price": "Переплата по цене клиента",
-    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* У модели было несколько цен за период; показана первая, суммы считаются по каждому запросу."
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* У модели было несколько цен за период; показана первая, суммы считаются по каждому запросу.",
+    "Usage and amount by model": "Использование и суммы по моделям",
+    "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.": "В каждой ячейке: токены, сумма по базовой цене (серым), сумма по цене группы. Запросы: все / с ценой; суммы считаются только по запросам с ценой.",
+    "Priced {{priced}} / {{total}} records.": "Оценено {{priced}} / {{total}} записей.",
+    "Billing rate": "Коэффициент",
+    "Tokens to correct (cache counted as input)": "Токены к исправлению (кэш учтён как ввод)",
+    "{{count}} affected requests": "Затронуто запросов: {{count}}",
+    "Plus up to {{count}} tokens that need review": "Ещё до {{count}} токенов на проверке",
+    "Platform charge": "Списание платформы",
+    "Price difference": "Разница",
+    "Token type": "Тип токенов",
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "В таблице списание пересчитано по исторической цене группы; вверху — фактическое списание. Выделенная строка — переплата клиента: эти токены уже оплачены как кэш."
   }
 }

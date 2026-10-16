@@ -7210,6 +7210,17 @@
     "List cache read price / 1M": "Giá niêm yết đọc cache / 1M",
     "Extra charge at list price": "Tiền tính thừa (giá niêm yết)",
     "Extra charge at customer price": "Tiền tính thừa (giá khách)",
-    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* Mô hình này có nhiều mức giá trong kỳ; hiển thị mức đầu tiên, số tiền được cộng theo từng yêu cầu."
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* Mô hình này có nhiều mức giá trong kỳ; hiển thị mức đầu tiên, số tiền được cộng theo từng yêu cầu.",
+    "Usage and amount by model": "Mức dùng và số tiền theo mô hình",
+    "Each cell shows tokens, then the list price amount (grey), then the group price amount. Requests are shown as all / priced; only priced requests contribute amounts.": "Mỗi ô gồm: số token, số tiền theo giá niêm yết (màu xám), số tiền theo giá nhóm. Yêu cầu hiển thị là tất cả / có giá; chỉ yêu cầu có giá mới được tính tiền.",
+    "Priced {{priced}} / {{total}} records.": "Đã định giá {{priced}} / {{total}} bản ghi.",
+    "Billing rate": "Hệ số tính phí",
+    "Tokens to correct (cache counted as input)": "Token cần bù (cache bị tính là đầu vào)",
+    "{{count}} affected requests": "{{count}} yêu cầu bị ảnh hưởng",
+    "Plus up to {{count}} tokens that need review": "Thêm tối đa {{count}} token cần xem xét",
+    "Platform charge": "Phí nền tảng",
+    "Price difference": "Chênh lệch",
+    "Token type": "Loại token",
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Phí trong bảng được tính lại theo giá nhóm lịch sử; số phía trên là số đã quyết toán. Dòng tô sáng là phần khách tính thừa: các token này đã được tính như cache."
   }
 }

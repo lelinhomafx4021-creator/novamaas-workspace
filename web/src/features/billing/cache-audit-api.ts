@@ -109,6 +109,9 @@ export interface CacheAuditTotals {
   input_price_per_million?: string
   cache_read_price_per_million?: string
   price_mixed?: boolean
+  list_cost: CacheAuditCost
+  discounted_cost: CacheAuditCost
+  rates: string[]
   actual_amount: string
   list_amount: string
   discounted_amount: string

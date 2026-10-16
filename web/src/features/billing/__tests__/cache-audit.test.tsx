@@ -73,6 +73,21 @@ const totals: CacheAuditTotals = {
     group_max: '0.048250',
   },
   unpriced_duplicate_tokens: 0,
+  rates: ['default × 0.5'],
+  list_cost: {
+    input: '0.001920',
+    cache_read: '0.009650',
+    cache_write: '0.000000',
+    output: '0.008600',
+    total: '0.020170',
+  },
+  discounted_cost: {
+    input: '0.000960',
+    cache_read: '0.004825',
+    cache_write: '0.000000',
+    output: '0.004300',
+    total: '0.010085',
+  },
 }
 const report: CacheAuditReport = {
   request: {
@@ -191,6 +206,12 @@ test('runs the audit for the selected customer and shows duplicated cache tokens
     screen.getByText('Returned input_tokens 4,921 → correct 96')
   ).toBeInTheDocument()
   expect(screen.getByText('How much to compensate')).toBeInTheDocument()
+  expect(screen.getByText('Usage and amount by model')).toBeInTheDocument()
+  expect(screen.getAllByText('$0.008600').length).toBeGreaterThan(0)
+  expect(screen.getByText('Priced 1 / 1 records.')).toBeInTheDocument()
+  expect(
+    screen.getByText('Tokens to correct (cache counted as input)')
+  ).toBeInTheDocument()
   expect(
     screen.getByText('Cache reads were also reported in input_tokens')
   ).toBeInTheDocument()

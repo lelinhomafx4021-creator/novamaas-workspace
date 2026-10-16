@@ -38,6 +38,8 @@ jobs:
             echo "Expected a non-UTC timestamp to fail." >&2
             exit 1
           fi
+      - name: Test upstream synchronization tooling
+        run: python3 -m unittest discover -s .github/scripts -p 'test_upstream_sync*.py' -v
           if bash .github/scripts/resolve-build-tag.sh 2026-09-06T08:11:40Z s390x; then
             echo "Expected an unsupported architecture to fail." >&2
             exit 1

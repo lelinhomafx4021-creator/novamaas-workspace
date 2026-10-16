@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
@@ -82,13 +83,13 @@ func newProtectedFetchHTTPClientWithProxy(resolver ssrfResolver, dialContext fun
 	}
 
 	client := &http.Client{
-		Transport: &ssrfProtectedRoundTripper{
+		Transport: runtimewatch.WrapTransport(&ssrfProtectedRoundTripper{
 			resolver:      resolver,
 			dialContext:   dialContext,
 			getProtection: getProtection,
 			proxy:         proxy,
 			transports:    make(map[string]*http.Transport),
-		},
+		}, ""),
 		CheckRedirect: checkProtectedFetchRedirect,
 	}
 	if common.RelayTimeout != 0 {
@@ -164,6 +165,7 @@ func (t *ssrfProtectedRoundTripper) newTransport(proxyURL *url.URL) *http.Transp
 	if common.TLSInsecureSkipVerify {
 		transport.TLSClientConfig = common.InsecureTLSConfig
 	}
+	runtimewatch.ObserveHTTPConnections(transport)
 	return transport
 }
 

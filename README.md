@@ -62,6 +62,7 @@ docker run -d --name novamaas --restart unless-stopped \
 | 素材与存储 | 私有素材库、下游 Action API、渠道副本同步、Base64 媒体暂存和请求快照异步归档。 |
 | 计费与对账 | 渠道成本快照、利润视图、正式消费账本和月度凭证。 |
 | 用户与客户端 | 手机号身份、微信小程序登录、多媒体对话及受控模型能力。 |
+| 运行观测 | 当前节点资源、分类流量、活跃请求与连接数；有界纯内存历史及低开销采集。 |
 
 <details>
 <summary>查看完整的长期运行时差异台账</summary>
@@ -78,6 +79,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | 关键差异 PR | 日期 | 类型 | 领域 | 关键变化 | 与上游关系 |
 | --- | --- | --- | --- | --- | --- |
 | [#79](https://github.com/yeruyi1024/novamaas-workspace/pull/79) | 2026-10-17 | `fix/feat` | Anthropic 用量 / 历史 Token 核算 | OpenAI → Anthropic 输出普通输入与缓存读写分离，保留原始计费快照；管理员可按客户、Key、模型、协议及时间只读核算历史 Token 与两种历史价格，在明确的旧版原生缓存写入字段假设下，仅重算无写入请求的读取重叠，导出记录依据且不自动调整钱包。 | 协议规则选择性同步上游提交 `0ed497f066`；管理员历史核算为 NovaMaaS 下游专属，上游同步时须保留协议语义与内部计费分离、未知历史凭证不猜测及只读核算边界。 |
+| [#74](https://github.com/yeruyi1024/novamaas-workspace/pull/74) | 2026-10-16 | `feat/perf` | 节点资源 / 分类流量 / 系统信息 | Root 面板展示 CPU、内存、网卡、请求与连接历史，按 HTTP 入站/出站、SQL、Redis 及固定业务类别统计；流式分片计数即时可见，默认 24 小时有界内存历史，重启清空，启动时可完整旁路采集。 | NovaMaaS 下游专属；上游无等价的分类流量与纯内存历史组合实现，同步时须保留实际读写字节、Root 权限、无监控持久化、关闭旁路及原有性能保护边界。 |
 | [#72](https://github.com/yeruyi1024/novamaas-workspace/pull/72) | 2026-10-14 | `feat/fix` | 请求快照 / 对象存储 / 历史兼容 | Ali、DoubaoVideo、VolcNative 原始与上游 JSON 经节点持久暂存和有限 Worker 异步归档，数据库保留对象索引及冻结计费证据；独立存储生命周期、管理员永久读取入口、历史双读与核验后 CAS 清理，有界并发迁移及轻量无大正文排序查询。 | 既有视频任务审计、存储与计费修正能力的 NovaMaaS 下游扩展；上游无等价实现，同步时须保留节点交接恢复、独立快照生命周期、鉴权读取、证据优先级及验证后清理边界。 |
 | [#61](https://github.com/yeruyi1024/novamaas-workspace/pull/61) | 2026-10-09 | `fix` | 任务计价日志 / 历史数据兼容 | 提交、结算、退款和调账日志统一保存并展示精确分档倍率；历史提交日志仅在用户、任务与计价身份一致时读取原任务证据补充返回值，空倍率快照覆盖旧值，保持原日志、账目和余额不变。 | #57 的 NovaMaaS 下游扩展；上游无等价有效调账投影及旧任务计价证据恢复，同步时须保留基础倍率与分档倍率分离、空快照优先级及只读恢复边界。 |
 | [#60](https://github.com/yeruyi1024/novamaas-workspace/pull/60) | 2026-10-09 | `fix` | SQLite / 历史成本迁移 | 旧成本调整表先新增可空事件列，再创建唯一索引；保留历史数据并支持重复启动，避免 SQLite 添加唯一列导致启动失败。 | #59 的 NovaMaaS 下游兼容修复；上游无等价成本调整表，同步时须保留旧库升级与事件唯一性约束。 |
@@ -128,7 +130,9 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | 文档 | 用途 |
 | --- | --- |
 | [平台能力与路线图](docs/PLATFORM_OVERVIEW.zh_CN.md) | 已交付能力、详细边界、路线图与上游维护方式 |
+| [节点资源与分类流量监控](docs/design/RUNTIME_MONITORING.zh_CN.md) | 分类定义、内存窗口、采样与关闭配置、性能数据及验收截图 |
 | [UPSTREAM.md](UPSTREAM.md) | 上游基线、同步记录、来源提交与维护策略 |
+| [上游版本选择性同步](docs/UPSTREAM_SYNC.zh_CN.md) | GitHub Actions 创建 WIP PR、人工启动 AI 接管、确认计划后适配与 CI 验证 |
 | [docs/BUILD.zh_CN.md](docs/BUILD.zh_CN.md) | 本地构建、CI、安装包、GHCR 与腾讯云 CCR 发布说明 |
 | [docs/VOLC_NATIVE.zh_CN.md](docs/VOLC_NATIVE.zh_CN.md) | 火山方舟原生 API 渠道、任务接口和兼容性边界 |
 | [docs/ASSET_LIBRARY_API.zh_CN.md](docs/ASSET_LIBRARY_API.zh_CN.md) | 素材库、下游 AK/SK、火山 Action API 兼容与大列表性能边界 |

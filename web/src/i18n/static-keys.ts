@@ -19,6 +19,23 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  // Node resource monitoring periods, scopes and traffic categories
+  '1 hour',
+  '6 hours',
+  '24 hours',
+  '7 days',
+  'Inbound HTTP',
+  'Outbound HTTP',
+  'Database',
+  'Cache',
+  'Relay',
+  'Video',
+  'Assets',
+  'Storage',
+  'Webhook',
+  'Administration',
+  'Other',
+
   // Billing document branding errors
   'Unable to prepare PDF branding. Check the system Logo URL and Footer settings, then try again.',
 

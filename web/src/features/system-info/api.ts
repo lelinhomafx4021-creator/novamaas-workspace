@@ -19,9 +19,33 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  ResourceMonitorPeriod,
+  ResourceMonitorReport,
   SystemInstanceDeleteResponse,
   SystemInstanceListResponse,
 } from './types'
+
+export async function getResourceMonitor(
+  minutes: ResourceMonitorPeriod,
+  signal?: AbortSignal
+): Promise<ResourceMonitorReport> {
+  const res = await api.get<{
+    success: boolean
+    message?: string
+    data?: ResourceMonitorReport
+  }>('/api/system-info/monitor', {
+    params: { minutes },
+    signal,
+    // React Query owns observer cancellation and request deduplication here.
+    disableDuplicate: true,
+    skipErrorHandler: true,
+    skipBusinessError: true,
+  })
+  if (!res.data.success || !res.data.data) {
+    throw new Error(res.data.message || 'Unable to load resource monitoring')
+  }
+  return res.data.data
+}
 
 export async function listSystemInstances() {
   const res = await api.get<SystemInstanceListResponse>(

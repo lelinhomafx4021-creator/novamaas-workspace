@@ -11,11 +11,13 @@ import (
 	"path"
 	"strings"
 
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	coreService "github.com/QuantumNous/new-api/service"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 )
 
 func CreateAssetFromURL(ctx context.Context, ownerUserID int, groupPublicID string, name string, assetType string, sourceURL string) (*AssetView, error) {
+	ctx = runtimewatch.WithCategory(ctx, "assets")
 	parsedURL, err := url.Parse(strings.TrimSpace(sourceURL))
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
 		return nil, &RequestError{StatusCode: http.StatusBadRequest, Err: errors.New("asset URL must be an absolute HTTP or HTTPS URL")}

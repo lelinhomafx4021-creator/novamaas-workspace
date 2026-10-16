@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/require"
 )
@@ -303,7 +304,7 @@ func TestProtectedFetchRoundTripperNoProxyUsesProtectedDialer(t *testing.T) {
 
 func TestProtectedFetchRoundTripperReusesTransportPerProxy(t *testing.T) {
 	client := newProtectedFetchHTTPClientWithDialer(nil, nil, nil)
-	roundTripper, ok := client.Transport.(*ssrfProtectedRoundTripper)
+	roundTripper, ok := runtimewatch.UnwrapTransport(client.Transport).(*ssrfProtectedRoundTripper)
 	require.True(t, ok)
 
 	direct := roundTripper.transportFor(nil)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/QuantumNous/new-api/relay"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/QuantumNous/new-api/router"
@@ -185,6 +187,9 @@ func main() {
 
 	// Initialize HTTP server
 	server := gin.New()
+	if runtimewatch.Enabled() {
+		server.Use(middleware.RuntimeTraffic())
+	}
 	if err := middleware.ConfigureTrustedProxies(server); err != nil {
 		common.FatalLog("failed to configure trusted proxies: " + err.Error())
 		return
@@ -221,6 +226,16 @@ func main() {
 		Addr:    ":" + port,
 		Handler: server,
 	}
+	if runtimewatch.Enabled() {
+		srv.ConnState = func(_ net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				runtimewatch.TrackConnection("inbound", 1)
+			case http.StateClosed, http.StateHijacked:
+				runtimewatch.TrackConnection("inbound", -1)
+			}
+		}
+	}
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -256,6 +271,9 @@ func main() {
 	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
 	if common.DataExportEnabled {
 		model.SaveQuotaDataCache()
+	}
+	if err := service.StopRuntimeMonitoring(ctx); err != nil {
+		common.SysError("runtime monitoring shutdown: " + err.Error())
 	}
 	common.SysLog("server exited")
 }
@@ -315,6 +333,7 @@ func InitResources() error {
 
 	// 加载环境变量
 	common.InitEnv()
+	runtimewatch.SetEnabled(common.GetEnvOrDefaultBool("RUNTIME_MONITOR_ENABLED", true))
 
 	logger.SetupLogger()
 
@@ -367,7 +386,7 @@ func InitResources() error {
 	perfmetrics.Init()
 
 	// 启动系统监控
-	common.StartSystemMonitor()
+	service.StartRuntimeMonitoring()
 
 	// Initialize i18n
 	err = i18n.Init()

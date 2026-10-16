@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 )
@@ -37,7 +38,13 @@ func InitRedisClient() (err error) {
 		FatalLog("failed to parse Redis connection string: " + err.Error())
 	}
 	opt.PoolSize = GetEnvOrDefault("REDIS_POOL_SIZE", 10)
+	if runtimewatch.Enabled() {
+		observeRedisOptions(opt)
+	}
 	RDB = redis.NewClient(opt)
+	if runtimewatch.Enabled() {
+		RDB.AddHook(runtimeRedisHook{})
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

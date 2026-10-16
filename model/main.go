@@ -14,8 +14,6 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/clickhouse"
-	"gorm.io/driver/mysql"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -138,10 +136,11 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 		if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 			// Use PostgreSQL
 			common.SysLog("using PostgreSQL as database")
-			db, err := gorm.Open(postgres.New(postgres.Config{
-				DSN:                  dsn,
-				PreferSimpleProtocol: true, // disables implicit prepared statement usage
-			}), newGormConfig(true))
+			dialector, err := observedPostgresDialector(dsn)
+			if err != nil {
+				return nil, common.DatabaseTypePostgreSQL, err
+			}
+			db, err := gorm.Open(dialector, newGormConfig(true))
 			return db, common.DatabaseTypePostgreSQL, err
 		}
 		if strings.HasPrefix(dsn, "local") {
@@ -159,7 +158,11 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 				dsn += "?parseTime=true"
 			}
 		}
-		db, err := gorm.Open(mysql.Open(dsn), newGormConfig(true))
+		dialector, err := observedMySQLDialector(dsn)
+		if err != nil {
+			return nil, common.DatabaseTypeMySQL, err
+		}
+		db, err := gorm.Open(dialector, newGormConfig(true))
 		return db, common.DatabaseTypeMySQL, err
 	}
 	// Use SQLite

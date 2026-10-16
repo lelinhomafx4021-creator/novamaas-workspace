@@ -131,6 +131,7 @@ CI/CD、镜像发布、构建环境、首页展示、文档整理、测试补充
 | [平台能力与路线图](docs/PLATFORM_OVERVIEW.zh_CN.md) | 已交付能力、详细边界、路线图与上游维护方式 |
 | [节点资源与分类流量监控](docs/design/RUNTIME_MONITORING.zh_CN.md) | 分类定义、内存窗口、采样与关闭配置、性能数据及验收截图 |
 | [UPSTREAM.md](UPSTREAM.md) | 上游基线、同步记录、来源提交与维护策略 |
+| [上游版本选择性同步](docs/UPSTREAM_SYNC.zh_CN.md) | GitHub Actions 创建 WIP PR、人工启动 AI 接管、确认计划后适配与 CI 验证 |
 | [docs/BUILD.zh_CN.md](docs/BUILD.zh_CN.md) | 本地构建、CI、安装包、GHCR 与腾讯云 CCR 发布说明 |
 | [docs/VOLC_NATIVE.zh_CN.md](docs/VOLC_NATIVE.zh_CN.md) | 火山方舟原生 API 渠道、任务接口和兼容性边界 |
 | [docs/ASSET_LIBRARY_API.zh_CN.md](docs/ASSET_LIBRARY_API.zh_CN.md) | 素材库、下游 AK/SK、火山 Action API 兼容与大列表性能边界 |

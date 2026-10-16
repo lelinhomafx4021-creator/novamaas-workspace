@@ -7221,6 +7221,8 @@
     "Platform charge": "プラットフォーム料金",
     "Price difference": "差額",
     "Token type": "トークン種別",
-    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表のプラットフォーム料金は当時のグループ価格で再計算した値で、上部は確定済みの請求額です。強調行は顧客側の過大請求分で、これらのトークンはキャッシュとして請求済みです。"
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表のプラットフォーム料金は当時のグループ価格で再計算した値で、上部は確定済みの請求額です。強調行は顧客側の過大請求分で、これらのトークンはキャッシュとして請求済みです。",
+    "Protocol": "プロトコル",
+    "All protocols": "すべてのプロトコル"
   }
 }

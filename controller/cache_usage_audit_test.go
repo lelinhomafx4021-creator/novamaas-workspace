@@ -99,6 +99,7 @@ func TestCacheUsageAuditExportsCSVAndJSON(t *testing.T) {
 	assert.Equal(t, "96", column("正确input_tokens"))
 	assert.Equal(t, "4825", column("多算token(缓存当输入)"))
 	assert.Equal(t, "affected", column("核对状态"))
+	assert.Equal(t, "messages", column("协议"))
 	assert.Equal(t, "0.096500", column("应补-按官价"))
 	assert.Equal(t, "0.048250", column("应补-按分组价"))
 	assert.Equal(t, "", column("应补-按下游价"))

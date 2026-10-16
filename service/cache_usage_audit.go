@@ -36,6 +36,33 @@ const (
 	CacheUsageWireVersion    = 2
 )
 
+// Entry protocols, derived from the request path (or the first conversion
+// step for logs without one).
+const (
+	CacheAuditProtocolMessages  = "messages"         // /v1/messages
+	CacheAuditProtocolChat      = "chat_completions" // /v1/chat/completions
+	CacheAuditProtocolResponses = "responses"        // /v1/responses
+	CacheAuditProtocolOther     = "other"
+)
+
+func cacheAuditProtocol(path string, chain []string) string {
+	switch {
+	case strings.HasSuffix(path, "/v1/messages"):
+		return CacheAuditProtocolMessages
+	case strings.HasSuffix(path, "/v1/chat/completions"):
+		return CacheAuditProtocolChat
+	case strings.HasSuffix(path, "/v1/responses"):
+		return CacheAuditProtocolResponses
+	case path == "" && len(chain) > 0 && chain[0] == "Claude Messages":
+		return CacheAuditProtocolMessages
+	case path == "" && len(chain) > 0 && chain[0] == "OpenAI Compatible":
+		return CacheAuditProtocolChat
+	case path == "" && len(chain) > 0 && chain[0] == "OpenAI Responses":
+		return CacheAuditProtocolResponses
+	}
+	return CacheAuditProtocolOther
+}
+
 var ErrCacheUsageAuditPeriod = errors.New("cache usage audit period must be between 1 second and 93 days")
 
 type CacheUsageAuditRequest struct {
@@ -48,6 +75,8 @@ type CacheUsageAuditRequest struct {
 	// treated as unaffected even without the version stamp. Zero disables it.
 	FixedAt int64  `json:"fixed_at"`
 	Status  string `json:"status"` // optional row filter for the returned detail
+	// Protocol limits the whole report, totals included, to one entry protocol.
+	Protocol string `json:"protocol"`
 	// DownstreamInputPrices maps model -> the customer's own uncached input
 	// price per 1M tokens, in the report currency. Used only to estimate how
 	// much the customer over-billed their users.
@@ -95,6 +124,7 @@ type CacheUsageAuditRow struct {
 	Group         string `json:"group"`
 	IsStream      bool   `json:"is_stream"`
 	RequestPath   string `json:"request_path"`
+	Protocol      string `json:"protocol"`
 	UsageSemantic string `json:"usage_semantic"`
 	Status        string `json:"status"`
 	Reason        string `json:"reason,omitempty"`
@@ -274,14 +304,14 @@ func classifyCacheAudit(row *CacheUsageAuditRow, log *model.Log, meta cacheAudit
 		set(CacheAuditRefund, "")
 	case meta.tokens(CacheUsageWireVersionKey) >= CacheUsageWireVersion || (fixedAt > 0 && log.CreatedAt >= fixedAt):
 		set(CacheAuditNotAffected, "fixed_converter")
-	case meta.estimatedUsage():
-		set(CacheAuditNoEvidence, "estimated_usage")
 	case path == "" && len(chain) == 0:
 		set(CacheAuditNoEvidence, "missing_request_path")
 	case !messages:
 		set(CacheAuditNotAffected, "not_messages_endpoint")
 	case len(chain) == 0:
 		set(CacheAuditNoEvidence, "missing_conversion_chain")
+	case meta.estimatedUsage():
+		set(CacheAuditNoEvidence, "estimated_usage")
 	case chain[len(chain)-1] == "Claude Messages":
 		set(CacheAuditNotAffected, "native_claude_upstream")
 	case meta.anthropicUsage():
@@ -370,35 +400,50 @@ func cacheAuditListQuota(meta cacheAuditMeta, tokens CacheUsageTokens) (cacheAud
 	return quota.scale(decimal.NewFromFloat(modelRatio)), ""
 }
 
+// cacheAuditComp keeps compensation exact until totals are rounded once.
+type cacheAuditComp struct {
+	priced, downstream             bool
+	list, group, listMax, groupMax decimal.Decimal // quota
+	down, downMax                  decimal.Decimal // currency
+}
+
 // Compensation only needs the uncached input price, so it is available even
-// when other parts of the request (tiered, surcharges) cannot be repriced.
-func attachCacheAuditCompensation(row *CacheUsageAuditRow, meta cacheAuditMeta, money cacheAuditMoney, prices map[string]decimal.Decimal) {
+// when other parts of the request (surcharges) cannot be repriced.
+func attachCacheAuditCompensation(row *CacheUsageAuditRow, meta cacheAuditMeta, money cacheAuditMoney, prices map[string]decimal.Decimal) cacheAuditComp {
+	var comp cacheAuditComp
 	if row.DuplicateTokensMax == 0 {
-		return
+		return comp
 	}
-	downstream, hasDownstream := prices[row.Model]
+	perMillion := decimal.NewFromInt(1000000)
+	duplicate, duplicateMax := decimal.NewFromInt(row.DuplicateTokens), decimal.NewFromInt(row.DuplicateTokensMax)
 	modelRatio, okModel := meta.number("model_ratio")
 	groupRatio, okGroup := meta.number("group_ratio")
-	perMillion := decimal.NewFromInt(1000000)
-	comp := &CacheUsageCompensation{}
 	if okModel && okGroup && meta.text("billing_mode") != "tiered_expr" {
-		model := decimal.NewFromFloat(modelRatio)
-		group := decimal.NewFromFloat(groupRatio)
-		duplicate, duplicateMax := decimal.NewFromInt(row.DuplicateTokens), decimal.NewFromInt(row.DuplicateTokensMax)
+		model, group := decimal.NewFromFloat(modelRatio), decimal.NewFromFloat(groupRatio)
+		comp.priced = true
+		comp.list, comp.listMax = duplicate.Mul(model), duplicateMax.Mul(model)
+		comp.group, comp.groupMax = comp.list.Mul(group), comp.listMax.Mul(group)
 		row.InputPricePerMillion = money.amount(model.Mul(perMillion))
 		if cacheRatio, ok := meta.number("cache_ratio"); ok {
 			row.CacheReadPricePerMillion = money.amount(model.Mul(perMillion).Mul(decimal.NewFromFloat(cacheRatio)))
 		}
-		comp.List, comp.ListMax = money.amount(duplicate.Mul(model)), money.amount(duplicateMax.Mul(model))
-		comp.Group, comp.GroupMax = money.amount(duplicate.Mul(model).Mul(group)), money.amount(duplicateMax.Mul(model).Mul(group))
-	} else if !hasDownstream {
-		return
 	}
-	if hasDownstream {
-		comp.Downstream = decimal.NewFromInt(row.DuplicateTokens).Mul(downstream).Div(perMillion).StringFixed(6)
-		comp.DownstreamMax = decimal.NewFromInt(row.DuplicateTokensMax).Mul(downstream).Div(perMillion).StringFixed(6)
+	if price, ok := prices[row.Model]; ok {
+		comp.downstream = true
+		comp.down, comp.downMax = duplicate.Mul(price).Div(perMillion), duplicateMax.Mul(price).Div(perMillion)
 	}
-	row.Compensation = comp
+	if !comp.priced && !comp.downstream {
+		return comp
+	}
+	row.Compensation = &CacheUsageCompensation{}
+	if comp.priced {
+		row.Compensation.List, row.Compensation.ListMax = money.amount(comp.list), money.amount(comp.listMax)
+		row.Compensation.Group, row.Compensation.GroupMax = money.amount(comp.group), money.amount(comp.groupMax)
+	}
+	if comp.downstream {
+		row.Compensation.Downstream, row.Compensation.DownstreamMax = comp.down.StringFixed(6), comp.downMax.StringFixed(6)
+	}
+	return comp
 }
 
 type cacheAuditMoney struct{ rate, unit decimal.Decimal }
@@ -424,7 +469,13 @@ func (m cacheAuditMoney) cost(q cacheAuditQuota) *CacheUsageCost {
 		CacheWrite: m.amount(q.cacheWrite), Output: m.amount(q.output), Total: m.amount(q.total())}
 }
 
-func buildCacheUsageAuditRow(log *model.Log, money cacheAuditMoney, fixedAt int64, prices map[string]decimal.Decimal) (CacheUsageAuditRow, cacheAuditQuota, cacheAuditQuota) {
+// cacheAuditAmounts carries a row's exact quota amounts into the totals.
+type cacheAuditAmounts struct {
+	list, discounted cacheAuditQuota
+	comp             cacheAuditComp
+}
+
+func buildCacheUsageAuditRow(log *model.Log, money cacheAuditMoney, fixedAt int64, prices map[string]decimal.Decimal) (CacheUsageAuditRow, cacheAuditAmounts) {
 	row := CacheUsageAuditRow{
 		LogID: log.Id, RequestID: log.RequestId, CreatedAt: log.CreatedAt, Type: log.Type,
 		UserID: log.UserId, Username: log.Username, TokenID: log.TokenId, TokenName: log.TokenName,
@@ -438,9 +489,10 @@ func buildCacheUsageAuditRow(log *model.Log, money cacheAuditMoney, fixedAt int6
 	meta := cacheAuditMeta{}
 	if log.Other != "" && common.UnmarshalJsonStr(log.Other, &meta) != nil {
 		row.Status, row.Reason, row.PriceIssue = CacheAuditNoEvidence, "invalid_metadata", "missing_price"
-		return row, cacheAuditQuota{}, cacheAuditQuota{}
+		return row, cacheAuditAmounts{}
 	}
 	row.RequestPath = meta.text("request_path")
+	row.Protocol = cacheAuditProtocol(row.RequestPath, meta.chain())
 	row.UsageSemantic = meta.text("usage_semantic")
 	if row.UsageSemantic == "" {
 		row.UsageSemantic = "openai"
@@ -453,23 +505,24 @@ func buildCacheUsageAuditRow(log *model.Log, money cacheAuditMoney, fixedAt int6
 	}
 	classifyCacheAudit(&row, log, meta, fixedAt)
 	if log.Type == model.LogTypeRefund {
-		return row, cacheAuditQuota{}, cacheAuditQuota{}
+		return row, cacheAuditAmounts{}
 	}
 	groupRatio, _ := meta.number("group_ratio")
 	row.GroupRatio = decimal.NewFromFloat(groupRatio).String()
-	attachCacheAuditCompensation(&row, meta, money, prices)
+	amounts := cacheAuditAmounts{comp: attachCacheAuditCompensation(&row, meta, money, prices)}
 	list, issue := cacheAuditListQuota(meta, row.Tokens)
 	if issue != "" {
 		row.PriceIssue = issue
-		return row, cacheAuditQuota{}, cacheAuditQuota{}
+		return row, amounts
 	}
-	discounted := list.scale(decimal.NewFromFloat(groupRatio))
-	row.ListCost, row.DiscountedCost = money.cost(list), money.cost(discounted)
+	amounts.list, amounts.discounted = list, list.scale(decimal.NewFromFloat(groupRatio))
+	row.ListCost, row.DiscountedCost = money.cost(amounts.list), money.cost(amounts.discounted)
 	// Settlement rounds once and bills at least 1 quota for non-free usage.
-	row.PriceMismatch = discounted.total().Round(0).Sub(decimal.NewFromInt(row.ActualQuota)).Abs().GreaterThan(decimal.NewFromInt(1))
-	return row, list, discounted
+	row.PriceMismatch = amounts.discounted.total().Round(0).Sub(decimal.NewFromInt(row.ActualQuota)).Abs().GreaterThan(decimal.NewFromInt(1))
+	return row, amounts
 }
-func (t *CacheUsageAuditTotals) add(row CacheUsageAuditRow, list, discounted cacheAuditQuota) {
+
+func (t *CacheUsageAuditTotals) add(row CacheUsageAuditRow, amounts cacheAuditAmounts) {
 	t.actual = t.actual.Add(decimal.NewFromInt(row.ActualQuota))
 	if row.Type == model.LogTypeRefund {
 		return
@@ -507,34 +560,23 @@ func (t *CacheUsageAuditTotals) add(row CacheUsageAuditRow, list, discounted cac
 		t.AffectedReportedInput += row.ReportedInputTokens
 		t.AffectedCorrectInput += row.CorrectInputTokens
 	}
-	if comp := row.Compensation; comp != nil {
-		add := func(target *decimal.Decimal, value string) {
-			if value != "" {
-				*target = target.Add(decimal.RequireFromString(value))
-			}
-		}
-		if comp.List != "" {
-			add(&t.compList, comp.List)
-			add(&t.compListMax, comp.ListMax)
-			add(&t.compGroup, comp.Group)
-			add(&t.compGroupMax, comp.GroupMax)
-		} else {
-			t.UnpricedDuplicateTokens += row.DuplicateTokensMax
-		}
-		if comp.Downstream != "" {
-			t.hasDownstream = true
-			add(&t.compDown, comp.Downstream)
-			add(&t.compDownMax, comp.DownstreamMax)
-		}
+	comp := amounts.comp
+	if comp.priced {
+		t.compList, t.compListMax = t.compList.Add(comp.list), t.compListMax.Add(comp.listMax)
+		t.compGroup, t.compGroupMax = t.compGroup.Add(comp.group), t.compGroupMax.Add(comp.groupMax)
 	} else {
 		t.UnpricedDuplicateTokens += row.DuplicateTokensMax
 	}
+	if comp.downstream {
+		t.hasDownstream = true
+		t.compDown, t.compDownMax = t.compDown.Add(comp.down), t.compDownMax.Add(comp.downMax)
+	}
 	if row.ListCost != nil {
 		t.PricedRequests++
-		t.list = t.list.Add(list.total())
-		t.discounted = t.discounted.Add(discounted.total())
-		t.listParts = t.listParts.add(list)
-		t.discountedParts = t.discountedParts.add(discounted)
+		t.list = t.list.Add(amounts.list.total())
+		t.discounted = t.discounted.Add(amounts.discounted.total())
+		t.listParts = t.listParts.add(amounts.list)
+		t.discountedParts = t.discountedParts.add(amounts.discounted)
 	}
 }
 
@@ -543,10 +585,10 @@ func (t *CacheUsageAuditTotals) finish(money cacheAuditMoney) {
 	t.ListAmount = money.amount(t.list)
 	t.DiscountedAmount = money.amount(t.discounted)
 	t.ListCost, t.DiscountedCost = *money.cost(t.listParts), *money.cost(t.discountedParts)
-	// Compensation sums are already in currency; round once at the end.
+	// Exact sums are rounded once here, not per request.
 	t.Compensation = CacheUsageCompensation{
-		List: t.compList.StringFixed(6), Group: t.compGroup.StringFixed(6),
-		ListMax: t.compListMax.StringFixed(6), GroupMax: t.compGroupMax.StringFixed(6),
+		List: money.amount(t.compList), Group: money.amount(t.compGroup),
+		ListMax: money.amount(t.compListMax), GroupMax: money.amount(t.compGroupMax),
 	}
 	if t.hasDownstream {
 		t.Compensation.Downstream, t.Compensation.DownstreamMax = t.compDown.StringFixed(6), t.compDownMax.StringFixed(6)
@@ -555,11 +597,11 @@ func (t *CacheUsageAuditTotals) finish(money cacheAuditMoney) {
 
 type cacheAuditGroups map[string]*CacheUsageAuditTotals
 
-func (g cacheAuditGroups) add(key string, row CacheUsageAuditRow, list, discounted cacheAuditQuota) {
+func (g cacheAuditGroups) add(key string, row CacheUsageAuditRow, amounts cacheAuditAmounts) {
 	if g[key] == nil {
 		g[key] = &CacheUsageAuditTotals{Key: key}
 	}
-	g[key].add(row, list, discounted)
+	g[key].add(row, amounts)
 }
 
 func (g cacheAuditGroups) sorted(money cacheAuditMoney) []CacheUsageAuditTotals {
@@ -581,6 +623,11 @@ func normalizeCacheUsageAuditRequest(req CacheUsageAuditRequest) (CacheUsageAudi
 	case "", CacheAuditAffected, CacheAuditReview, CacheAuditNoEvidence, CacheAuditNotAffected, CacheAuditRefund:
 	default:
 		return req, errors.New("invalid cache usage audit status")
+	}
+	switch req.Protocol {
+	case "", CacheAuditProtocolMessages, CacheAuditProtocolChat, CacheAuditProtocolResponses, CacheAuditProtocolOther:
+	default:
+		return req, errors.New("invalid cache usage audit protocol")
 	}
 	if req.UserID < 0 || req.TokenID < 0 || req.FixedAt < 0 {
 		return req, errors.New("invalid cache usage audit filter")
@@ -612,12 +659,15 @@ func RunCacheUsageAudit(ctx context.Context, req CacheUsageAuditRequest, visit f
 	filter := model.CacheUsageAuditFilter{UserID: req.UserID, TokenID: req.TokenID, StartAt: req.StartAt, EndAt: req.EndAt, Model: req.Model}
 	err = model.ScanCacheUsageAuditLogs(ctx, filter, func(logs []*model.Log) error {
 		for _, log := range logs {
-			row, list, discounted := buildCacheUsageAuditRow(log, money, req.FixedAt, prices)
-			report.Total.add(row, list, discounted)
-			byDay.add(time.Unix(row.CreatedAt, 0).In(billingLocation).Format("2006-01-02"), row, list, discounted)
-			byModel.add(row.Model, row, list, discounted)
-			byToken.add(cacheAuditTokenKey(row), row, list, discounted)
-			byUser.add(row.Username+" (#"+strconv.Itoa(row.UserID)+")", row, list, discounted)
+			row, amounts := buildCacheUsageAuditRow(log, money, req.FixedAt, prices)
+			if req.Protocol != "" && row.Protocol != req.Protocol {
+				continue
+			}
+			report.Total.add(row, amounts)
+			byDay.add(time.Unix(row.CreatedAt, 0).In(billingLocation).Format("2006-01-02"), row, amounts)
+			byModel.add(row.Model, row, amounts)
+			byToken.add(cacheAuditTokenKey(row), row, amounts)
+			byUser.add(row.Username+" (#"+strconv.Itoa(row.UserID)+")", row, amounts)
 			if req.Status != "" && row.Status != req.Status {
 				continue
 			}

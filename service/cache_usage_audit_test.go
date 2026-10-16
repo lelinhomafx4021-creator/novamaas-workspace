@@ -21,7 +21,7 @@ func auditRow(t *testing.T, log model.Log) CacheUsageAuditRow {
 	if log.Type == 0 {
 		log.Type = model.LogTypeConsume
 	}
-	row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 0, nil)
+	row, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 0, nil)
 	return row
 }
 
@@ -62,7 +62,7 @@ func TestCacheUsageAuditClassification(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			log := model.Log{Type: model.LogTypeConsume, CreatedAt: tc.createdAt, PromptTokens: 1000, Other: tc.other}
-			row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 1500, nil)
+			row, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 1500, nil)
 			assert.Equal(t, tc.status, row.Status)
 			assert.Equal(t, tc.reason, row.Reason)
 			assert.Equal(t, tc.duplicate, row.DuplicateTokens)
@@ -182,7 +182,7 @@ func TestCacheUsageAuditCompensationPricesDuplicatedInputOnly(t *testing.T) {
 	prices := map[string]decimal.Decimal{"gpt-5": decimal.NewFromInt(3)}
 	build := func(other string) CacheUsageAuditRow {
 		log := model.Log{Type: model.LogTypeConsume, ModelName: "gpt-5", PromptTokens: 4921, CompletionTokens: 86, Other: other}
-		row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 0, prices)
+		row, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 0, prices)
 		return row
 	}
 	ratios := `"model_ratio":10,"completion_ratio":5,"group_ratio":0.5,"cache_ratio":0.1`
@@ -246,5 +246,53 @@ func TestRunCacheUsageAuditTotalsCompensationAndUsers(t *testing.T) {
 
 	_, err = RunCacheUsageAudit(context.Background(), CacheUsageAuditRequest{StartAt: day, EndAt: day + 60,
 		DownstreamInputPrices: map[string]string{"gpt-5": "-1"}}, nil)
+	assert.Error(t, err)
+}
+
+func TestCacheUsageAuditProtocol(t *testing.T) {
+	for _, tc := range []struct {
+		path  string
+		chain []string
+		want  string
+	}{
+		{"/v1/messages", nil, CacheAuditProtocolMessages},
+		{"/v1/chat/completions", nil, CacheAuditProtocolChat},
+		{"/v1/responses", nil, CacheAuditProtocolResponses},
+		{"", []string{"Claude Messages", "OpenAI Compatible"}, CacheAuditProtocolMessages},
+		{"", nil, CacheAuditProtocolOther},
+		{"/v1/embeddings", nil, CacheAuditProtocolOther},
+	} {
+		assert.Equal(t, tc.want, cacheAuditProtocol(tc.path, tc.chain), tc.path)
+	}
+}
+
+func TestRunCacheUsageAuditFiltersWholeReportByProtocol(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { model.LOG_DB.Exec("DELETE FROM logs") })
+	day := int64(1_760_000_000)
+	ratios := `"model_ratio":1,"completion_ratio":1,"group_ratio":1,"cache_ratio":0.1`
+	require.NoError(t, model.LOG_DB.Create(&[]model.Log{
+		{UserId: 7, ModelName: "a", CreatedAt: day, Type: model.LogTypeConsume, PromptTokens: 1000, Quota: 1, Other: `{` + convertedMessages + `,"cache_tokens":800,` + ratios + `}`},
+		{UserId: 7, ModelName: "b", CreatedAt: day, Type: model.LogTypeConsume, PromptTokens: 500, Quota: 1, Other: `{"request_path":"/v1/chat/completions","request_conversion":["OpenAI Compatible"],"cache_tokens":100,` + ratios + `}`},
+		// Estimated usage outside /v1/messages is simply not affected.
+		{UserId: 7, ModelName: "b", CreatedAt: day, Type: model.LogTypeConsume, PromptTokens: 500, Quota: 1, Other: `{"request_path":"/v1/chat/completions","request_conversion":["OpenAI Compatible"],"admin_info":{"local_count_tokens":true},` + ratios + `}`},
+	}).Error)
+	req := CacheUsageAuditRequest{StartAt: day, EndAt: day + 60, Protocol: CacheAuditProtocolMessages}
+	report, err := RunCacheUsageAudit(context.Background(), req, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), report.Total.Requests)
+	assert.Equal(t, int64(800), report.Total.DuplicateTokens)
+	require.Len(t, report.ByModel, 1)
+	assert.Equal(t, "a", report.ByModel[0].Key)
+
+	req.Protocol = CacheAuditProtocolChat
+	report, err = RunCacheUsageAudit(context.Background(), req, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), report.Total.Requests)
+	assert.Zero(t, report.Total.NoEvidenceRequests)
+	assert.Zero(t, report.Total.DuplicateTokens)
+
+	req.Protocol = "grpc"
+	_, err = RunCacheUsageAudit(context.Background(), req, nil)
 	assert.Error(t, err)
 }

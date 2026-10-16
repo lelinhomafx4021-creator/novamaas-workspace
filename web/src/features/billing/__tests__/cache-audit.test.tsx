@@ -98,6 +98,7 @@ const report: CacheAuditReport = {
     model: '',
     fixed_at: 0,
     status: '',
+    protocol: 'messages',
   },
   currency: { code: 'USD', symbol: '$' },
   total: totals,
@@ -119,6 +120,7 @@ const report: CacheAuditReport = {
       group: 'default',
       is_stream: false,
       request_path: '/v1/messages',
+      protocol: 'messages',
       usage_semantic: 'openai',
       status: 'affected',
       reason: 'cache_read_in_input',
@@ -157,6 +159,7 @@ test('audit periods use Asia/Shanghai calendar days and reject over 93 days', ()
     model: ' gpt-5 ',
     fixedAt: '2026-10-16T22:00',
     status: 'affected' as const,
+    protocol: 'messages' as const,
   }
   expect(cacheAuditRequest(4, value)).toEqual({
     user_id: 4,
@@ -166,6 +169,7 @@ test('audit periods use Asia/Shanghai calendar days and reject over 93 days', ()
     model: 'gpt-5',
     fixed_at: Date.parse('2026-10-16T22:00:00+08:00') / 1000,
     status: 'affected',
+    protocol: 'messages',
   })
   expect(cacheAuditSchema.safeParse(value).success).toBe(true)
   expect(
@@ -197,6 +201,7 @@ test('runs the audit for the selected customer and shows duplicated cache tokens
   expect(vi.mocked(runCacheAudit).mock.calls[0][0]).toMatchObject({
     user_id: 4,
     token_id: 3,
+    protocol: 'messages',
   })
   expect(await screen.findByText('req-cache-1')).toBeInTheDocument()
   expect(screen.getAllByText('4,825').length).toBeGreaterThan(0)

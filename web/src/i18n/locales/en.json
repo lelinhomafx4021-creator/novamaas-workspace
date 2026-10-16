@@ -7221,6 +7221,8 @@
     "Platform charge": "Platform charge",
     "Price difference": "Price difference",
     "Token type": "Token type",
-    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache."
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.",
+    "Protocol": "Protocol",
+    "All protocols": "All protocols"
   }
 }

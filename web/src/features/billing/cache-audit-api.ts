@@ -25,6 +25,12 @@ export type CacheAuditStatus =
   | 'not_affected'
   | 'refund'
 
+export type CacheAuditProtocol =
+  | 'messages'
+  | 'chat_completions'
+  | 'responses'
+  | 'other'
+
 export interface CacheAuditRequest {
   user_id: number
   token_id: number
@@ -33,6 +39,7 @@ export interface CacheAuditRequest {
   model: string
   fixed_at: number
   status: CacheAuditStatus | ''
+  protocol: CacheAuditProtocol | ''
   downstream_input_prices?: Record<string, string>
 }
 
@@ -74,6 +81,7 @@ export interface CacheAuditRow {
   group: string
   is_stream: boolean
   request_path: string
+  protocol: CacheAuditProtocol
   usage_semantic: string
   status: CacheAuditStatus
   reason?: string

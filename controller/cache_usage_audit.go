@@ -63,7 +63,7 @@ func SearchCacheUsageAuditKeys(c *gin.Context) {
 }
 
 var cacheUsageAuditCSVHeader = []string{
-	"日志ID", "请求ID", "时间", "类型", "用户ID", "用户名", "令牌ID", "令牌名", "模型", "分组", "流式", "请求路径", "用量口径",
+	"日志ID", "请求ID", "时间", "类型", "用户ID", "用户名", "令牌ID", "令牌名", "模型", "分组", "流式", "请求路径", "协议", "用量口径",
 	"核对状态", "原因", "平台总输入(含缓存)", "普通输入", "缓存读取", "缓存写入", "输出",
 	"旧返回input_tokens", "正确input_tokens", "多算token(缓存当输入)", "多算token上限",
 	"分组倍率", "实际扣费", "官价-普通输入", "官价-缓存读取", "官价-缓存写入", "官价-输出", "官价合计",
@@ -90,7 +90,7 @@ func cacheUsageAuditCSVRow(row service.CacheUsageAuditRow) []string {
 	out := []string{
 		strconv.Itoa(row.LogID), row.RequestID, time.Unix(row.CreatedAt, 0).In(cacheUsageAuditLocation).Format("2006-01-02 15:04:05"), kind,
 		strconv.Itoa(row.UserID), row.Username, strconv.Itoa(row.TokenID), row.TokenName, row.Model, row.Group,
-		strconv.FormatBool(row.IsStream), row.RequestPath, row.UsageSemantic, row.Status, row.Reason,
+		strconv.FormatBool(row.IsStream), row.RequestPath, row.Protocol, row.UsageSemantic, row.Status, row.Reason,
 		i64(row.Tokens.TotalInput), i64(row.Tokens.Input), i64(row.Tokens.CacheRead), i64(row.Tokens.CacheWrite), i64(row.Tokens.Output),
 		i64(row.ReportedInputTokens), i64(row.CorrectInputTokens), i64(row.DuplicateTokens), i64(row.DuplicateTokensMax),
 		row.GroupRatio, row.ActualAmount,

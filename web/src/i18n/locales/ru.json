@@ -7221,6 +7221,8 @@
     "Platform charge": "Списание платформы",
     "Price difference": "Разница",
     "Token type": "Тип токенов",
-    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "В таблице списание пересчитано по исторической цене группы; вверху — фактическое списание. Выделенная строка — переплата клиента: эти токены уже оплачены как кэш."
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "В таблице списание пересчитано по исторической цене группы; вверху — фактическое списание. Выделенная строка — переплата клиента: эти токены уже оплачены как кэш.",
+    "Protocol": "Протокол",
+    "All protocols": "Все протоколы"
   }
 }

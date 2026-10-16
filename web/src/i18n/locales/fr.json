@@ -7221,6 +7221,8 @@
     "Platform charge": "Frais de la plateforme",
     "Price difference": "Écart",
     "Token type": "Type de jeton",
-    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Les frais du tableau sont recalculés au prix historique du groupe ; le montant en tête est le montant réglé. La ligne surlignée correspond à la surfacturation du client : ces jetons étaient déjà facturés comme cache."
+    "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Les frais du tableau sont recalculés au prix historique du groupe ; le montant en tête est le montant réglé. La ligne surlignée correspond à la surfacturation du client : ces jetons étaient déjà facturés comme cache.",
+    "Protocol": "Protocole",
+    "All protocols": "Tous les protocoles"
   }
 }

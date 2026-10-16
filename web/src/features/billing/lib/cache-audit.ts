@@ -34,6 +34,13 @@ export const cacheAuditSchema = z
     tokenId: z.number().int().min(0),
     model: z.string().trim().max(200),
     fixedAt: z.string(),
+    protocol: z.enum([
+      '',
+      'messages',
+      'chat_completions',
+      'responses',
+      'other',
+    ]),
     status: z.enum([
       '',
       'affected',
@@ -81,8 +88,17 @@ export function cacheAuditRequest(
       ? Date.parse(`${value.fixedAt}:00+08:00`) / 1000
       : 0,
     status: value.status,
+    protocol: value.protocol,
   }
 }
+
+// Protocol paths are literal API names and are not translated.
+export const CACHE_AUDIT_PROTOCOL_OPTIONS: { value: string; label: string }[] =
+  [
+    { value: 'messages', label: '/v1/messages' },
+    { value: 'chat_completions', label: '/v1/chat/completions' },
+    { value: 'responses', label: '/v1/responses' },
+  ]
 
 export const CACHE_AUDIT_STATUS_LABELS: Record<CacheAuditStatus, string> = {
   affected: 'Cache counted as input',

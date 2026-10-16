@@ -47,6 +47,7 @@ import {
   type CacheAuditRequest,
 } from '../cache-audit-api'
 import {
+  CACHE_AUDIT_PROTOCOL_OPTIONS,
   CACHE_AUDIT_STATUS_LABELS,
   cacheAuditRequest,
   cacheAuditSchema,
@@ -70,6 +71,7 @@ export function CacheAuditPanel(props: { userId: number }) {
       tokenId: 0,
       model: '',
       fixedAt: '',
+      protocol: 'messages',
       status: '',
     },
   })
@@ -154,6 +156,27 @@ export function CacheAuditPanel(props: { userId: number }) {
                   {key.deleted ? ` ${t('(deleted)')}` : ''}
                 </NativeSelectOption>
               ))}
+            </NativeSelect>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${id}-protocol`}>{t('Protocol')}</FieldLabel>
+            <NativeSelect
+              id={`${id}-protocol`}
+              className='w-full'
+              disabled={pending}
+              {...form.register('protocol')}
+            >
+              {CACHE_AUDIT_PROTOCOL_OPTIONS.map((option) => (
+                <NativeSelectOption key={option.value} value={option.value}>
+                  {option.label}
+                </NativeSelectOption>
+              ))}
+              <NativeSelectOption value='other'>
+                {t('Other')}
+              </NativeSelectOption>
+              <NativeSelectOption value=''>
+                {t('All protocols')}
+              </NativeSelectOption>
             </NativeSelect>
           </Field>
           <Field>

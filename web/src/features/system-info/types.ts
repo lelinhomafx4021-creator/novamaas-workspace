@@ -85,3 +85,104 @@ export type SystemInstanceDeleteResponse = {
     deleted_count: number
   }
 }
+
+export type ResourceMonitorPeriod = 60 | 360 | 1440 | 10080
+export type ResourceTrafficScope = 'inbound' | 'outbound' | 'database' | 'cache'
+export type ResourceTrafficCategory =
+  | 'relay'
+  | 'video'
+  | 'assets'
+  | 'storage'
+  | 'webhook'
+  | 'admin'
+  | 'other'
+
+export type ResourcePoint = {
+  timestamp: number
+  activity?: {
+    available: boolean
+    active_requests: number
+    connections: number
+  }
+  process: {
+    available: boolean
+    cpu_available: boolean
+    memory_available: boolean
+    error?: string
+    cpu_percent: number
+    rss_bytes: number
+  }
+  host: {
+    available: boolean
+    cpu_available: boolean
+    memory_available: boolean
+    error?: string
+    cpu_percent: number
+    memory_total_bytes: number
+    memory_used_bytes: number
+    memory_percent: number
+    disk_available?: boolean
+    disk_total_bytes?: number
+    disk_used_bytes?: number
+    disk_percent?: number
+  }
+  network: {
+    available: boolean
+    error?: string
+    received_bytes_per_second: number
+    sent_bytes_per_second: number
+    received_packets_per_second: number
+    sent_packets_per_second: number
+    receive_errors_per_second: number
+    send_errors_per_second: number
+    receive_drops_per_second: number
+    send_drops_per_second: number
+  }
+}
+
+export type ResourceHistoryPoint = {
+  timestamp: number
+  resources: ResourcePoint
+}
+
+export type ResourceTrafficRow = {
+  scope: ResourceTrafficScope
+  category: ResourceTrafficCategory
+  requests: number
+  completed: number
+  errors: number
+  active: number
+  received_bytes: number
+  sent_bytes: number
+  redirects: number
+  duration_ms: number
+  avg_duration_ms: number
+  connections: number
+}
+
+export type ResourceMonitorReport = {
+  meta: {
+    started: boolean
+    node_name: string
+    hostname: string
+    os: string
+    arch: string
+    cpu_cores: number
+    network_interfaces?: string[]
+    started_at: number
+    sampled_at: number
+    requested_minutes: number
+    window_start: number
+    window_end: number
+    sample_interval_seconds: number
+    aggregation_interval_seconds: number
+    retention_hours: number
+    storage: {
+      mode: 'memory'
+      capacity_points: number
+    }
+  }
+  current: ResourcePoint
+  traffic: ResourceTrafficRow[]
+  history: ResourceHistoryPoint[]
+}

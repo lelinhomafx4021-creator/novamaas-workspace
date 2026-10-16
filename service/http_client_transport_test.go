@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -198,7 +199,7 @@ func TestForcedHTTP1AgainstHTTP2Server(t *testing.T) {
 	drainClose(t, resp)
 	assert.Equal(t, uint32(0), nonHTTP1Count.Load())
 
-	transport, ok := client.Transport.(*http.Transport)
+	transport, ok := runtimewatch.UnwrapTransport(client.Transport).(*http.Transport)
 	require.True(t, ok)
 	assert.False(t, transport.DisableKeepAlives)
 	assert.False(t, transport.ForceAttemptHTTP2)

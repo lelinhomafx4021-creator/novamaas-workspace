@@ -18,6 +18,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 )
 
 const (
@@ -49,6 +50,18 @@ var channelRateState = struct {
 	next map[int]time.Time
 }{next: make(map[int]time.Time)}
 
+// Share the transport just as the default HTTP client did, including across
+// ephemeral provider clients created for individual asset operations.
+var assetProviderTransport = sync.OnceValue(func() http.RoundTripper {
+	transport := http.DefaultTransport
+	if original, ok := runtimewatch.UnwrapTransport(transport).(*http.Transport); ok {
+		clone := original.Clone()
+		runtimewatch.ObserveHTTPConnections(clone)
+		transport = clone
+	}
+	return runtimewatch.WrapTransport(transport, "assets")
+})
+
 type providerResult struct {
 	ID      string
 	Status  string
@@ -64,17 +77,16 @@ func newProviderClient(config *model.AssetChannelConfig) (assetProvider, error) 
 	if err != nil {
 		return nil, err
 	}
-	base := volcActionClient{
-		config: config,
-		secret: secret,
-		httpClient: &http.Client{
-			Timeout: 45 * time.Second,
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				return errors.New("asset provider redirects are not allowed")
-			},
+	httpClient := &http.Client{
+		Timeout: 45 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return errors.New("asset provider redirects are not allowed")
 		},
-		now: time.Now,
 	}
+	if runtimewatch.Enabled() {
+		httpClient.Transport = assetProviderTransport()
+	}
+	base := volcActionClient{config: config, secret: secret, httpClient: httpClient, now: time.Now}
 	switch normalizeProtocol(config.Protocol) {
 	case model.AssetChannelProtocolVolcAction:
 		return &base, nil

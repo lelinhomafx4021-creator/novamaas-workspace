@@ -79,3 +79,8 @@ func updateSystemStatus() {
 func GetSystemStatus() SystemStatus {
 	return latestSystemStatus.Load().(SystemStatus)
 }
+
+// SetSystemStatus shares the resource sampler with the admission-control checks.
+func SetSystemStatus(status SystemStatus) {
+	latestSystemStatus.Store(status)
+}

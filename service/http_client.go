@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
@@ -81,7 +82,7 @@ func ValidateSSRFProtectedFetchURLWithContext(ctx context.Context, urlStr string
 
 func newRelayHTTPTransport() *http.Transport {
 	var transport *http.Transport
-	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok && defaultTransport != nil {
+	if defaultTransport, ok := runtimewatch.UnwrapTransport(http.DefaultTransport).(*http.Transport); ok && defaultTransport != nil {
 		transport = defaultTransport.Clone()
 	} else {
 		dialer := &net.Dialer{
@@ -108,7 +109,7 @@ func newRelayHTTPTransport() *http.Transport {
 
 func newRelayHTTPClient(transport http.RoundTripper) *http.Client {
 	client := &http.Client{
-		Transport:     transport,
+		Transport:     runtimewatch.WrapTransport(transport, ""),
 		CheckRedirect: checkRedirect,
 	}
 	if common.RelayTimeout != 0 {
@@ -332,11 +333,13 @@ func newHTTPClientFromTransportFactory(policy HTTPTransportPolicy, factory func(
 	if policy.Protocol == dto.HTTPProtocolHTTP1 || policy.Shards == 1 {
 		transport := factory()
 		applyHTTPTransportPolicy(transport, policy)
+		runtimewatch.ObserveHTTPConnections(transport)
 		return newRelayHTTPClient(transport)
 	}
 	shardedFactory := func() *http.Transport {
 		transport := factory()
 		applyHTTPTransportPolicy(transport, policy)
+		runtimewatch.ObserveHTTPConnections(transport)
 		return transport
 	}
 	return newRelayHTTPClient(newShardedRoundTripper(policy, shardedFactory))
@@ -348,6 +351,7 @@ func newDirectHTTPClient(policy HTTPTransportPolicy, tlsConfig *tls.Config) *htt
 		// Direct clients cannot fail proxy configuration.
 		transport := newRelayHTTPTransport()
 		applyHTTPTransportPolicy(transport, policy)
+		runtimewatch.ObserveHTTPConnections(transport)
 		return newRelayHTTPClient(transport)
 	}
 	return client

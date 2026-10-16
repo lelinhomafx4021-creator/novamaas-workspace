@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss/credentials"
@@ -58,6 +59,17 @@ func newAliyunOSSDriver(profile *model.StorageProfile, credential *model.Storage
 		WithRetryMaxAttempts(3)
 	driver := &aliyunOSSDriver{bucket: profile.Bucket}
 	driver.client = oss.NewClient(config, func(options *oss.Options) {
+		if client, ok := options.HttpClient.(*http.Client); ok && runtimewatch.Enabled() {
+			observed := *client
+			transport := client.Transport
+			if original, ok := runtimewatch.UnwrapTransport(transport).(*http.Transport); ok {
+				clone := original.Clone()
+				runtimewatch.ObserveHTTPConnections(clone)
+				transport = clone
+			}
+			observed.Transport = runtimewatch.WrapTransport(transport, "storage")
+			options.HttpClient = &observed
+		}
 		driver.idleConnections, _ = options.HttpClient.(interface{ CloseIdleConnections() })
 	})
 	return driver, nil

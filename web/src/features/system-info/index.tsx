@@ -16,16 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { SystemInstancesPanel } from './components/system-instances-panel'
+import { SystemResourceMonitor } from './components/system-resource-monitor'
 import { SystemTasksPanel } from './components/system-tasks-panel'
 
 export function SystemInfo() {
   const { t } = useTranslation()
+  const [tab, setTab] = useState('monitor')
 
   return (
     <SectionPageLayout>
@@ -38,10 +42,28 @@ export function SystemInfo() {
         </span>
       </SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='space-y-4'>
-          <SystemInstancesPanel />
-          <SystemTasksPanel />
-        </div>
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(String(value))}
+          className='gap-5'
+        >
+          <TabsList variant='line' aria-label={t('System Info')}>
+            <TabsTrigger value='monitor'>
+              {t('Resource monitoring')}
+            </TabsTrigger>
+            <TabsTrigger value='instances'>{t('Instances')}</TabsTrigger>
+            <TabsTrigger value='tasks'>{t('Background tasks')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value='monitor' keepMounted>
+            <SystemResourceMonitor active={tab === 'monitor'} />
+          </TabsContent>
+          <TabsContent value='instances'>
+            <SystemInstancesPanel />
+          </TabsContent>
+          <TabsContent value='tasks'>
+            <SystemTasksPanel />
+          </TabsContent>
+        </Tabs>
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUsageAuditPDFPreservesModelCategoryCostsAndExistingLetterhead(t *testing.T) {
+func TestUsageAuditPDFFocusesOnTokenOverlapAndPreservesLetterhead(t *testing.T) {
 	statement, branding := frozenBillingExportFixture(t)
 	branding.Issuer = "new-api 聚合平台"
 	branding.CompanyTitle = "示例客户有限公司"
@@ -36,21 +36,19 @@ func TestUsageAuditPDFPreservesModelCategoryCostsAndExistingLetterhead(t *testin
 	body, err := RenderUsageAuditPDF(report, branding)
 	require.NoError(t, err)
 	cover := billingPDFPageText(t, body, 0)
-	for _, text := range []string{"new-api 聚合平台", "Token 用量与费用核对单", "示例客户有限公司", "平台费用 / PLATFORM", "官价费用 / LIST PRICE", "费用差额 / DIFFERENCE", "0.018984", "0.031514", "0.012530", "全部模型分类汇总"} {
+
+	for _, text := range []string{"new-api 聚合平台", "Token 用量与重复输入核算单", "示例客户有限公司", "需重算的缓存读取 Token", "额外费用参考 / 平台输入价", "额外费用参考 / 历史基准价", "4825", "cache_write_tokens", "有缓存写入的请求排除", "旧 input_tokens - 正确普通输入", "正常缓存读取费用保留"} {
 		assert.Contains(t, cover, text)
 	}
-	assert.Contains(t, cover, "缓存读取重算：1 笔 / 4825 Token")
-	assert.Contains(t, cover, "cache_write_tokens")
-	assert.Contains(t, cover, "有缓存写入的请求排除")
-	assert.NotContains(t, cover, "实际记账金额")
-	assert.NotContains(t, cover, "客户确认（盖章）")
-	assert.Less(t, strings.Index(cover, "缓存读取"), strings.Index(cover, "平台费用 / PLATFORM"))
-	assert.Contains(t, cover, "0.0026672")
+	assert.NotContains(t, cover, "费用差额 / DIFFERENCE")
+	assert.NotContains(t, cover, "0.018984")
+	assert.Less(t, strings.Index(cover, "需重算的缓存读取 Token"), strings.Index(cover, "额外费用参考"))
 	models := billingPDFPageText(t, body, 1)
-	for _, text := range []string{"kimi-k3", "claude-test", "kimi × 0.66", "standard × 0.5", "4825", "800", "100", "普通输入（不含缓存）", "缓存读取", "缓存写入", "输出"} {
+	for _, text := range []string{"kimi-k3", "claude-test", "4825", "800", "100", "输入（不含缓存）", "缓存", "输出", "正常用量 Token", "额外计入输入 Token"} {
 		assert.Contains(t, models, text)
 	}
-	assert.Contains(t, models, "0.0012672")
+	assert.NotContains(t, models, "平台费用")
+	assert.NotContains(t, models, "官价费用")
 	if output := os.Getenv("USAGE_AUDIT_PREVIEW_DIR"); output != "" {
 		require.NoError(t, os.MkdirAll(output, 0700))
 		require.NoError(t, os.WriteFile(filepath.Join(output, "usage-audit-preview.pdf"), body, 0600))
@@ -74,10 +72,11 @@ func TestUsageAuditPDFPaginatesModelDetailsAndDoesNotInventUnknownPrices(t *test
 	assert.Contains(t, first, labels[0])
 	assert.Contains(t, first, labels[1])
 	last := billingPDFPageText(t, body, 2)
-	assert.Contains(t, strings.ReplaceAll(last, "\n", ""), labels[2])
+	assert.Contains(t, strings.ReplaceAll(last, "\n", ""), labels[len(labels)-1])
 	assert.Contains(t, last, "03 / 03")
 	assert.Contains(t, last, "缓存读取")
-	assert.Contains(t, last, "未核价")
+	assert.Contains(t, last, "缺少可信用量 1")
+	assert.NotContains(t, last, "平台费用")
 }
 
 func TestUsageAuditExportRejectsChangedEvidenceInsteadOfExportingDifferentAmounts(t *testing.T) {

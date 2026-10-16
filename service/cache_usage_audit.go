@@ -22,7 +22,7 @@ import (
 
 const (
 	CacheAuditAffected    = "affected"     // cache tokens were duplicated into input_tokens
-	CacheAuditReview      = "review"       // converted path, but logs cannot pin the old value
+	CacheAuditReview      = "review"       // legacy split usage; logs cannot pin the old value
 	CacheAuditNoEvidence  = "no_evidence"  // log predates request path / conversion metadata
 	CacheAuditNotAffected = "not_affected" // native Claude, other protocol, no cache, or after the fix
 	CacheAuditRefund      = "refund"       // refund ledger rows carry amounts only
@@ -288,9 +288,12 @@ func cacheAuditTokens(log *model.Log, meta cacheAuditMeta) CacheUsageTokens {
 }
 
 // classifyCacheAudit reproduces what the pre-fix converter returned as
-// input_tokens. Before the fix it subtracted cache tokens only when the
-// upstream reported OpenAI cache_write_tokens; logs keep a normalized cache
-// write total, so requests with any cache write are left for review.
+// input_tokens. Before the fix it subtracted cache reads and writes only when
+// the upstream reported OpenAI cache_write_tokens. Logs keep a normalized
+// cache write total, but OpenAI-compatible upstreams that report cache writes
+// use cache_write_tokens (verified against production on 2026-10-16), so a
+// request with a cache write was returned correctly and only cache-read-only
+// requests duplicated their cache reads.
 func classifyCacheAudit(row *CacheUsageAuditRow, log *model.Log, meta cacheAuditMeta, fixedAt int64) {
 	tokens := row.Tokens
 	row.CorrectInputTokens = tokens.Input
@@ -322,8 +325,7 @@ func classifyCacheAudit(row *CacheUsageAuditRow, log *model.Log, meta cacheAudit
 		set(CacheAuditReview, "legacy_cache_split")
 		row.DuplicateTokensMax = tokens.CacheRead + tokens.CacheWrite
 	case tokens.CacheWrite > 0:
-		set(CacheAuditReview, "cache_write_present")
-		row.DuplicateTokensMax = tokens.CacheRead + tokens.CacheWrite
+		set(CacheAuditNotAffected, "cache_write_subtracted")
 	default:
 		set(CacheAuditAffected, "cache_read_in_input")
 		row.ReportedInputTokens = int64(max(log.PromptTokens, 0))

@@ -7137,7 +7137,6 @@
     "Cache read": "Đọc cache",
     "Cache reads were also reported in input_tokens": "Lượt đọc cache cũng bị tính vào input_tokens",
     "Cache usage audit": "Đối soát sử dụng cache",
-    "Cache writes present; logs cannot tell whether they were duplicated": "Có ghi cache; nhật ký không xác định được có bị tính trùng hay không",
     "Detail filter": "Lọc chi tiết",
     "End date must not be earlier than start date": "Ngày kết thúc không được trước ngày bắt đầu",
     "Export CSV": "Xuất CSV",
@@ -7223,6 +7222,7 @@
     "Token type": "Loại token",
     "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Phí trong bảng được tính lại theo giá nhóm lịch sử; số phía trên là số đã quyết toán. Dòng tô sáng là phần khách tính thừa: các token này đã được tính như cache.",
     "Protocol": "Giao thức",
-    "All protocols": "Tất cả giao thức"
+    "All protocols": "Tất cả giao thức",
+    "Cache writes present; input_tokens already excluded cache": "Có ghi cache; input_tokens đã loại trừ cache"
   }
 }

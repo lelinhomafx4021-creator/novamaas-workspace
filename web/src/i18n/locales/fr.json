@@ -7137,7 +7137,6 @@
     "Cache read": "Lecture du cache",
     "Cache reads were also reported in input_tokens": "Les lectures du cache figuraient aussi dans input_tokens",
     "Cache usage audit": "Audit d'utilisation du cache",
-    "Cache writes present; logs cannot tell whether they were duplicated": "Écritures de cache présentes ; les journaux ne permettent pas de savoir si elles ont été comptées deux fois",
     "Detail filter": "Filtre des détails",
     "End date must not be earlier than start date": "La date de fin ne peut pas précéder la date de début",
     "Export CSV": "Exporter en CSV",
@@ -7223,6 +7222,7 @@
     "Token type": "Type de jeton",
     "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Les frais du tableau sont recalculés au prix historique du groupe ; le montant en tête est le montant réglé. La ligne surlignée correspond à la surfacturation du client : ces jetons étaient déjà facturés comme cache.",
     "Protocol": "Protocole",
-    "All protocols": "Tous les protocoles"
+    "All protocols": "Tous les protocoles",
+    "Cache writes present; input_tokens already excluded cache": "Écritures de cache présentes ; input_tokens excluait déjà le cache"
   }
 }

@@ -110,8 +110,8 @@ export const CACHE_AUDIT_STATUS_LABELS: Record<CacheAuditStatus, string> = {
 
 export const CACHE_AUDIT_REASON_LABELS: Record<string, string> = {
   cache_read_in_input: 'Cache reads were also reported in input_tokens',
-  cache_write_present:
-    'Cache writes present; logs cannot tell whether they were duplicated',
+  cache_write_subtracted:
+    'Cache writes present; input_tokens already excluded cache',
   legacy_cache_split:
     'Legacy cache split usage; compare with the original response',
   missing_request_path: 'Log has no request path',

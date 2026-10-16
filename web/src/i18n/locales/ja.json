@@ -7137,7 +7137,6 @@
     "Cache read": "キャッシュ読み取り",
     "Cache reads were also reported in input_tokens": "キャッシュ読み取りが input_tokens にも含まれていました",
     "Cache usage audit": "キャッシュ使用量の監査",
-    "Cache writes present; logs cannot tell whether they were duplicated": "キャッシュ書き込みあり。重複計上かどうかはログから判断できません",
     "Detail filter": "明細フィルター",
     "End date must not be earlier than start date": "終了日は開始日より前にできません",
     "Export CSV": "CSV をエクスポート",
@@ -7223,6 +7222,7 @@
     "Token type": "トークン種別",
     "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表のプラットフォーム料金は当時のグループ価格で再計算した値で、上部は確定済みの請求額です。強調行は顧客側の過大請求分で、これらのトークンはキャッシュとして請求済みです。",
     "Protocol": "プロトコル",
-    "All protocols": "すべてのプロトコル"
+    "All protocols": "すべてのプロトコル",
+    "Cache writes present; input_tokens already excluded cache": "キャッシュ書き込みあり。input_tokens はキャッシュを除外済み"
   }
 }

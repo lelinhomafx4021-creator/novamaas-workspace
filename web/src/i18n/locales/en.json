@@ -7137,7 +7137,6 @@
     "Cache read": "Cache read",
     "Cache reads were also reported in input_tokens": "Cache reads were also reported in input_tokens",
     "Cache usage audit": "Cache usage audit",
-    "Cache writes present; logs cannot tell whether they were duplicated": "Cache writes present; logs cannot tell whether they were duplicated",
     "Detail filter": "Detail filter",
     "End date must not be earlier than start date": "End date must not be earlier than start date",
     "Export CSV": "Export CSV",
@@ -7223,6 +7222,7 @@
     "Token type": "Token type",
     "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.",
     "Protocol": "Protocol",
-    "All protocols": "All protocols"
+    "All protocols": "All protocols",
+    "Cache writes present; input_tokens already excluded cache": "Cache writes present; input_tokens already excluded cache"
   }
 }

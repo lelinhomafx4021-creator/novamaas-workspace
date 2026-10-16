@@ -7137,7 +7137,6 @@
     "Cache read": "快取讀取",
     "Cache reads were also reported in input_tokens": "快取讀取同時計入了 input_tokens",
     "Cache usage audit": "快取用量核對",
-    "Cache writes present; logs cannot tell whether they were duplicated": "含快取寫入，日誌無法判斷是否重複計入",
     "Detail filter": "明細篩選",
     "End date must not be earlier than start date": "結束日期不能早於開始日期",
     "Export CSV": "匯出 CSV",
@@ -7223,6 +7222,7 @@
     "Token type": "Token 分類",
     "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表格中的平台費用按當時的分組倍率價重算；上方的平台費用是實際結算金額。高亮行是客戶多收的部分：這些 token 已經按快取計過費，又被當作普通輸入收了一次。",
     "Protocol": "協定",
-    "All protocols": "全部協定"
+    "All protocols": "全部協定",
+    "Cache writes present; input_tokens already excluded cache": "含快取寫入，input_tokens 已扣除快取"
   }
 }

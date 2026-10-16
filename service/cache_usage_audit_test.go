@@ -53,7 +53,9 @@ func TestCacheUsageAuditClassification(t *testing.T) {
 		{"anthropic usage preserved", `{` + convertedMessages + `,"claude":true,"usage_semantic":"anthropic","cache_tokens":800,` + prices + `}`, CacheAuditNotAffected, "anthropic_usage_preserved", 0, 0, 0},
 		{"OpenAI endpoint", `{"request_path":"/v1/chat/completions","request_conversion":["OpenAI Compatible"],"cache_tokens":800,` + prices + `}`, CacheAuditNotAffected, "not_messages_endpoint", 0, 0, 0},
 		{"no cache", `{` + convertedMessages + `,` + prices + `}`, CacheAuditNotAffected, "no_cache", 0, 0, 0},
-		{"cache write needs review", `{` + convertedMessages + `,"cache_tokens":800,"cache_creation_tokens":100,"cache_write_tokens":100,` + prices + `}`, CacheAuditReview, "cache_write_present", 0, 0, 900},
+		// The pre-fix converter subtracted reads and writes once cache_write_tokens was reported.
+		{"cache write was subtracted", `{` + convertedMessages + `,"cache_tokens":800,"cache_creation_tokens":100,"cache_write_tokens":100,` + prices + `}`, CacheAuditNotAffected, "cache_write_subtracted", 0, 0, 0},
+		{"legacy cache split needs review", `{` + convertedMessages + `,"cache_tokens":800,"cache_creation_tokens":100,"cache_creation_tokens_5m":100,` + prices + `}`, CacheAuditReview, "legacy_cache_split", 0, 0, 900},
 		{"old log without metadata", `{` + prices + `,"cache_tokens":800}`, CacheAuditNoEvidence, "missing_request_path", 0, 0, 0},
 		{"path but no chain", `{"request_path":"/v1/messages","cache_tokens":800,` + prices + `}`, CacheAuditNoEvidence, "missing_conversion_chain", 0, 0, 0},
 		{"stamped by fixed converter", `{` + convertedMessages + `,"claude_wire_usage_version":2,"cache_tokens":800,` + prices + `}`, CacheAuditNotAffected, "fixed_converter", 0, 0, 0},
@@ -194,7 +196,7 @@ func TestCacheUsageAuditCompensationPricesDuplicatedInputOnly(t *testing.T) {
 		ListMax: "0.096500", GroupMax: "0.048250", DownstreamMax: "0.014475"}, *row.Compensation)
 
 	// Review rows: nothing confirmed, compensation upper bound covers read + write.
-	row = build(`{` + convertedMessages + `,"cache_tokens":4000,"cache_write_tokens":825,"cache_creation_ratio":1.25,` + ratios + `}`)
+	row = build(`{` + convertedMessages + `,"cache_tokens":4000,"cache_creation_tokens":825,"cache_creation_tokens_5m":825,"cache_creation_ratio":1.25,"cache_creation_ratio_5m":1.25,` + ratios + `}`)
 	assert.Equal(t, CacheAuditReview, row.Status)
 	assert.Equal(t, "0.000000", row.Compensation.List)
 	assert.Equal(t, "0.096500", row.Compensation.ListMax)

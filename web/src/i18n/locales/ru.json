@@ -7137,7 +7137,6 @@
     "Cache read": "Чтение кэша",
     "Cache reads were also reported in input_tokens": "Чтение кэша также учитывалось в input_tokens",
     "Cache usage audit": "Аудит использования кэша",
-    "Cache writes present; logs cannot tell whether they were duplicated": "Есть запись в кэш; по логам нельзя определить, была ли она учтена дважды",
     "Detail filter": "Фильтр деталей",
     "End date must not be earlier than start date": "Дата окончания не может быть раньше даты начала",
     "Export CSV": "Экспорт CSV",
@@ -7223,6 +7222,7 @@
     "Token type": "Тип токенов",
     "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "В таблице списание пересчитано по исторической цене группы; вверху — фактическое списание. Выделенная строка — переплата клиента: эти токены уже оплачены как кэш.",
     "Protocol": "Протокол",
-    "All protocols": "Все протоколы"
+    "All protocols": "Все протоколы",
+    "Cache writes present; input_tokens already excluded cache": "Есть запись в кэш; input_tokens уже без кэша"
   }
 }

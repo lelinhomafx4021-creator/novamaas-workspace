@@ -7137,7 +7137,6 @@
     "Cache read": "缓存读取",
     "Cache reads were also reported in input_tokens": "缓存读取同时计入了 input_tokens",
     "Cache usage audit": "缓存用量核对",
-    "Cache writes present; logs cannot tell whether they were duplicated": "含缓存写入，日志无法判断是否重复计入",
     "Detail filter": "明细筛选",
     "End date must not be earlier than start date": "结束日期不能早于开始日期",
     "Export CSV": "导出 CSV",
@@ -7223,6 +7222,7 @@
     "Token type": "Token 分类",
     "Platform charge in the table is rebuilt at the historical group price; the headline platform charge is the settled amount. The highlighted row is what customers over-billed: those tokens were already billed as cache.": "表格中的平台费用按当时的分组倍率价重算；上方的平台费用是实际结算金额。高亮行是客户多收的部分：这些 token 已经按缓存计过费，又被当作普通输入收了一次。",
     "Protocol": "协议",
-    "All protocols": "全部协议"
+    "All protocols": "全部协议",
+    "Cache writes present; input_tokens already excluded cache": "含缓存写入，input_tokens 已扣除缓存"
   }
 }

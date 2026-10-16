@@ -10,6 +10,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	sqlitedriver "github.com/glebarez/go-sqlite"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -23,10 +24,14 @@ const (
 )
 
 func newGormConfig(prepareStmt bool) *gorm.Config {
-	return &gorm.Config{
+	config := &gorm.Config{
 		PrepareStmt: prepareStmt,
 		Logger:      newGormLogger(os.Stdout),
 	}
+	if runtimewatch.Enabled() {
+		config.Plugins = map[string]gorm.Plugin{"runtimewatch": runtimeDatabasePlugin{}}
+	}
+	return config
 }
 
 func newGormLogger(w io.Writer) logger.Interface {

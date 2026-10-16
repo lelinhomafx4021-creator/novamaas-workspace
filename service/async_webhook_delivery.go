@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"gorm.io/gorm"
@@ -135,6 +136,7 @@ func deliverWebhook(runnerID string, delivery *model.AssetWebhookDelivery) {
 // SendWebhookRequest applies the same timeout-independent transport policy to
 // durable deliveries and caller-bounded connectivity probes.
 func SendWebhookRequest(ctx context.Context, callbackURL, payload, webhookID string) (int, error) {
+	ctx = runtimewatch.WithCategory(ctx, "webhook")
 	headers := map[string]string{
 		"Content-Type": "application/json", "User-Agent": "New-API/1.0",
 		"webhook-id": webhookID, "webhook-timestamp": strconv.FormatInt(time.Now().Unix(), 10),

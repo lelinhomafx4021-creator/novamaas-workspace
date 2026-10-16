@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	channelsettings "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -135,6 +136,9 @@ func GetVideoContentInfo(c *gin.Context) {
 }
 
 func VideoProxy(c *gin.Context) {
+	if runtimewatch.Enabled() {
+		c.Request = c.Request.WithContext(runtimewatch.WithCategory(c.Request.Context(), "video"))
+	}
 	taskID := c.Param("task_id")
 	task, channel, ok := getAuthorizedVideoTask(c)
 	if !ok {

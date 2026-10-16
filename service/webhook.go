@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/runtimewatch"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
@@ -107,6 +108,9 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		}
 
 		// 发送请求
+		if runtimewatch.Enabled() {
+			req = req.WithContext(runtimewatch.WithCategory(req.Context(), "webhook"))
+		}
 		client := GetSSRFProtectedHTTPClient()
 		resp, err = client.Do(req)
 		if err != nil {

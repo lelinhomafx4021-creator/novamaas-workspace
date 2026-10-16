@@ -7174,6 +7174,24 @@
     "Uncached input": "Entrée hors cache",
     "Up to {{count}} more tokens may have been duplicated in requests that need review. Compare them with the original responses.": "Jusqu'à {{count}} jetons supplémentaires ont pu être comptés deux fois dans les requêtes à vérifier. Comparez-les avec les réponses d'origine.",
     "Upstream usage already followed Anthropic": "L'utilisation du fournisseur suivait déjà Anthropic",
-    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} requêtes n'ont pas pu être recalculées avec les prix historiques ; elles ne figurent que dans le montant facturé."
+    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} requêtes n'ont pas pu être recalculées avec les prix historiques ; elles ne figurent que dans le montant facturé.",
+    "How much to compensate": "Montant à compenser",
+    "Compensation = duplicated tokens × uncached input price. Cache tokens were already billed at the cache price, so only the extra uncached input charge needs to be returned.": "Compensation = jetons dupliqués × prix d'entrée hors cache. Le cache a déjà été facturé au prix du cache ; seule la facturation d'entrée en double doit être remboursée.",
+    "Price basis": "Base de prix",
+    "Confirmed ({{count}} tokens)": "Confirmé ({{count}} jetons)",
+    "Including review upper bound": "Y compris le plafond à vérifier",
+    "Customer input price (entered below)": "Prix d'entrée du client (saisi ci-dessous)",
+    "Platform list price": "Prix catalogue de la plateforme",
+    "Platform group price": "Prix du groupe de la plateforme",
+    "Use the customer input price for the actual refund. Platform prices are reference values only, because the customer resells at their own price.": "Utilisez le prix d'entrée du client pour le remboursement réel. Les prix de la plateforme ne sont que des références, car le client revend à son propre prix.",
+    "{{count}} tokens are in requests that need review. Compare them with the original responses before compensating.": "{{count}} jetons concernent des requêtes à vérifier. Comparez-les avec les réponses d'origine avant de compenser.",
+    "{{count}} duplicated tokens have no historical input price. Enter the customer price for those models to include them.": "{{count}} jetons dupliqués n'ont pas de prix d'entrée historique. Saisissez le prix client de ces modèles pour les inclure.",
+    "Insufficient-evidence requests are excluded. Deduct any refunds already issued before settlement.": "Les requêtes aux preuves insuffisantes sont exclues. Déduisez les remboursements déjà effectués avant le règlement.",
+    "Customer uncached input price per 1M tokens ({{code}})": "Prix d'entrée hors cache du client par million de jetons ({{code}})",
+    "Recalculate compensation": "Recalculer la compensation",
+    "By user": "Par utilisateur",
+    "Compensation (list)": "Compensation (catalogue)",
+    "Compensation (customer)": "Compensation (client)",
+    "Usage was estimated locally, not reported by upstream": "Utilisation estimée localement, non fournie par le fournisseur"
   }
 }

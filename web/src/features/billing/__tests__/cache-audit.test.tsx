@@ -58,6 +58,13 @@ const totals: CacheAuditTotals = {
   actual_amount: '0.010086',
   list_amount: '0.020170',
   discounted_amount: '0.010085',
+  compensation: {
+    list: '0.096500',
+    group: '0.048250',
+    list_max: '0.096500',
+    group_max: '0.048250',
+  },
+  unpriced_duplicate_tokens: 0,
 }
 const report: CacheAuditReport = {
   request: {
@@ -74,6 +81,7 @@ const report: CacheAuditReport = {
   by_day: [{ ...totals, key: '2026-10-16' }],
   by_model: [{ ...totals, key: 'gpt-5' }],
   by_token: [{ ...totals, key: 'prod (#3)' }],
+  by_user: [{ ...totals, key: 'customer (#4)' }],
   rows: [
     {
       log_id: 1,
@@ -173,6 +181,31 @@ test('runs the audit for the selected customer and shows duplicated cache tokens
   expect(
     screen.getByText('Cache reads were also reported in input_tokens')
   ).toBeInTheDocument()
+
+  expect(screen.getByText('How much to compensate')).toBeInTheDocument()
+  vi.mocked(runCacheAudit).mockResolvedValue({
+    ...report,
+    total: {
+      ...totals,
+      compensation: {
+        ...totals.compensation,
+        downstream: '0.014475',
+        downstream_max: '0.014475',
+      },
+    },
+  })
+  fireEvent.change(screen.getByPlaceholderText('0.00'), {
+    target: { value: '3' },
+  })
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Recalculate compensation' })
+  )
+  await waitFor(() => expect(runCacheAudit).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(runCacheAudit).mock.calls[1][0]).toMatchObject({
+    token_id: 3,
+    downstream_input_prices: { 'gpt-5': '3' },
+  })
+  expect((await screen.findAllByText('$0.014475')).length).toBeGreaterThan(0)
 
   fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
   await waitFor(() =>

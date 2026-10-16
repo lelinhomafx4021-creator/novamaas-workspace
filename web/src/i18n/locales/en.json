@@ -7174,6 +7174,24 @@
     "Uncached input": "Uncached input",
     "Up to {{count}} more tokens may have been duplicated in requests that need review. Compare them with the original responses.": "Up to {{count}} more tokens may have been duplicated in requests that need review. Compare them with the original responses.",
     "Upstream usage already followed Anthropic": "Upstream usage already followed Anthropic",
-    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} requests could not be repriced from history; they are included in the actual charge only."
+    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} requests could not be repriced from history; they are included in the actual charge only.",
+    "How much to compensate": "How much to compensate",
+    "Compensation = duplicated tokens × uncached input price. Cache tokens were already billed at the cache price, so only the extra uncached input charge needs to be returned.": "Compensation = duplicated tokens × uncached input price. Cache tokens were already billed at the cache price, so only the extra uncached input charge needs to be returned.",
+    "Price basis": "Price basis",
+    "Confirmed ({{count}} tokens)": "Confirmed ({{count}} tokens)",
+    "Including review upper bound": "Including review upper bound",
+    "Customer input price (entered below)": "Customer input price (entered below)",
+    "Platform list price": "Platform list price",
+    "Platform group price": "Platform group price",
+    "Use the customer input price for the actual refund. Platform prices are reference values only, because the customer resells at their own price.": "Use the customer input price for the actual refund. Platform prices are reference values only, because the customer resells at their own price.",
+    "{{count}} tokens are in requests that need review. Compare them with the original responses before compensating.": "{{count}} tokens are in requests that need review. Compare them with the original responses before compensating.",
+    "{{count}} duplicated tokens have no historical input price. Enter the customer price for those models to include them.": "{{count}} duplicated tokens have no historical input price. Enter the customer price for those models to include them.",
+    "Insufficient-evidence requests are excluded. Deduct any refunds already issued before settlement.": "Insufficient-evidence requests are excluded. Deduct any refunds already issued before settlement.",
+    "Customer uncached input price per 1M tokens ({{code}})": "Customer uncached input price per 1M tokens ({{code}})",
+    "Recalculate compensation": "Recalculate compensation",
+    "By user": "By user",
+    "Compensation (list)": "Compensation (list)",
+    "Compensation (customer)": "Compensation (customer)",
+    "Usage was estimated locally, not reported by upstream": "Usage was estimated locally, not reported by upstream"
   }
 }

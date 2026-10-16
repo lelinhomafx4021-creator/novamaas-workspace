@@ -7174,6 +7174,24 @@
     "Uncached input": "通常入力",
     "Up to {{count}} more tokens may have been duplicated in requests that need review. Compare them with the original responses.": "要確認のリクエストでは、さらに最大 {{count}} トークンが重複計上された可能性があります。元のレスポンスと照合してください。",
     "Upstream usage already followed Anthropic": "アップストリームの使用量は Anthropic 形式でした",
-    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} 件のリクエストは当時の価格で再計算できないため、実際の請求額にのみ含めています。"
+    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} 件のリクエストは当時の価格で再計算できないため、実際の請求額にのみ含めています。",
+    "How much to compensate": "補填すべき金額",
+    "Compensation = duplicated tokens × uncached input price. Cache tokens were already billed at the cache price, so only the extra uncached input charge needs to be returned.": "補填額 = 重複トークン × 通常入力単価。キャッシュ分はキャッシュ価格で別途請求済みのため、通常入力として二重に請求された分だけを返金します。",
+    "Price basis": "価格基準",
+    "Confirmed ({{count}} tokens)": "確定（{{count}} トークン）",
+    "Including review upper bound": "要確認分の上限を含む",
+    "Customer input price (entered below)": "顧客の入力単価（下で入力）",
+    "Platform list price": "プラットフォーム定価",
+    "Platform group price": "プラットフォームのグループ価格",
+    "Use the customer input price for the actual refund. Platform prices are reference values only, because the customer resells at their own price.": "実際の返金は顧客自身の入力単価を使用してください。顧客は独自価格で再販しているため、プラットフォーム価格は参考値です。",
+    "{{count}} tokens are in requests that need review. Compare them with the original responses before compensating.": "{{count}} トークンは要確認のリクエストです。補填前に元のレスポンスと照合してください。",
+    "{{count}} duplicated tokens have no historical input price. Enter the customer price for those models to include them.": "{{count}} の重複トークンに当時の入力単価がありません。該当モデルの顧客価格を入力すると含まれます。",
+    "Insufficient-evidence requests are excluded. Deduct any refunds already issued before settlement.": "根拠不足のリクエストは含みません。精算前に返金済みの金額を差し引いてください。",
+    "Customer uncached input price per 1M tokens ({{code}})": "顧客の通常入力単価（100万トークンあたり、{{code}}）",
+    "Recalculate compensation": "補填額を再計算",
+    "By user": "ユーザー別",
+    "Compensation (list)": "補填額（定価）",
+    "Compensation (customer)": "補填額（顧客価格）",
+    "Usage was estimated locally, not reported by upstream": "使用量はローカル推定で、アップストリームの報告ではありません"
   }
 }

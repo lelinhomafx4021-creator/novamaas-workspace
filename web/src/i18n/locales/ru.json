@@ -7174,6 +7174,24 @@
     "Uncached input": "Ввод без кэша",
     "Up to {{count}} more tokens may have been duplicated in requests that need review. Compare them with the original responses.": "В запросах, требующих проверки, могло быть учтено дважды ещё до {{count}} токенов. Сверьте их с исходными ответами.",
     "Upstream usage already followed Anthropic": "Провайдер уже возвращал usage в формате Anthropic",
-    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} запросов нельзя пересчитать по историческим ценам; они учтены только в фактическом списании."
+    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} запросов нельзя пересчитать по историческим ценам; они учтены только в фактическом списании.",
+    "How much to compensate": "Сумма компенсации",
+    "Compensation = duplicated tokens × uncached input price. Cache tokens were already billed at the cache price, so only the extra uncached input charge needs to be returned.": "Компенсация = дублированные токены × цена ввода без кэша. Кэш уже оплачен по цене кэша, поэтому возвращается только лишняя плата за ввод.",
+    "Price basis": "Основа цены",
+    "Confirmed ({{count}} tokens)": "Подтверждено ({{count}} токенов)",
+    "Including review upper bound": "С верхней границей на проверке",
+    "Customer input price (entered below)": "Цена ввода клиента (введите ниже)",
+    "Platform list price": "Базовая цена платформы",
+    "Platform group price": "Цена группы платформы",
+    "Use the customer input price for the actual refund. Platform prices are reference values only, because the customer resells at their own price.": "Для фактического возврата используйте цену ввода клиента. Цены платформы справочные, так как клиент перепродаёт по своей цене.",
+    "{{count}} tokens are in requests that need review. Compare them with the original responses before compensating.": "{{count}} токенов относятся к запросам на проверке. Сверьте их с исходными ответами до компенсации.",
+    "{{count}} duplicated tokens have no historical input price. Enter the customer price for those models to include them.": "У {{count}} дублированных токенов нет исторической цены ввода. Укажите цену клиента для этих моделей.",
+    "Insufficient-evidence requests are excluded. Deduct any refunds already issued before settlement.": "Запросы с недостаточными данными исключены. Перед расчётом вычтите уже выданные возвраты.",
+    "Customer uncached input price per 1M tokens ({{code}})": "Цена ввода без кэша у клиента за 1M токенов ({{code}})",
+    "Recalculate compensation": "Пересчитать компенсацию",
+    "By user": "По пользователям",
+    "Compensation (list)": "Компенсация (база)",
+    "Compensation (customer)": "Компенсация (клиент)",
+    "Usage was estimated locally, not reported by upstream": "Usage оценён локально, а не получен от провайдера"
   }
 }

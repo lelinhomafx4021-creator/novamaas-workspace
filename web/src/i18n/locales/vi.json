@@ -7174,6 +7174,24 @@
     "Uncached input": "Đầu vào thường",
     "Up to {{count}} more tokens may have been duplicated in requests that need review. Compare them with the original responses.": "Trong các yêu cầu cần xem xét, có thể có thêm tối đa {{count}} token bị tính trùng. Hãy đối chiếu với phản hồi gốc.",
     "Upstream usage already followed Anthropic": "Usage của upstream đã theo chuẩn Anthropic",
-    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} yêu cầu không thể tính lại theo giá lịch sử; chúng chỉ được tính vào phí thực tế."
+    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} yêu cầu không thể tính lại theo giá lịch sử; chúng chỉ được tính vào phí thực tế.",
+    "How much to compensate": "Số tiền cần bù",
+    "Compensation = duplicated tokens × uncached input price. Cache tokens were already billed at the cache price, so only the extra uncached input charge needs to be returned.": "Tiền bù = token bị tính trùng × đơn giá đầu vào thường. Cache đã được tính theo giá cache, nên chỉ cần hoàn phần phí đầu vào bị tính thêm.",
+    "Price basis": "Cơ sở giá",
+    "Confirmed ({{count}} tokens)": "Đã xác nhận ({{count}} token)",
+    "Including review upper bound": "Gồm mức tối đa cần xem xét",
+    "Customer input price (entered below)": "Giá đầu vào của khách (nhập bên dưới)",
+    "Platform list price": "Giá niêm yết nền tảng",
+    "Platform group price": "Giá nhóm của nền tảng",
+    "Use the customer input price for the actual refund. Platform prices are reference values only, because the customer resells at their own price.": "Hãy dùng giá đầu vào của khách để hoàn tiền thực tế. Giá của nền tảng chỉ để tham khảo vì khách bán lại theo giá riêng.",
+    "{{count}} tokens are in requests that need review. Compare them with the original responses before compensating.": "{{count}} token thuộc các yêu cầu cần xem xét. Hãy đối chiếu với phản hồi gốc trước khi bù.",
+    "{{count}} duplicated tokens have no historical input price. Enter the customer price for those models to include them.": "{{count}} token bị tính trùng không có giá đầu vào lịch sử. Nhập giá của khách cho các mô hình đó để tính vào.",
+    "Insufficient-evidence requests are excluded. Deduct any refunds already issued before settlement.": "Các yêu cầu không đủ bằng chứng không được tính. Hãy trừ các khoản đã hoàn trước khi quyết toán.",
+    "Customer uncached input price per 1M tokens ({{code}})": "Đơn giá đầu vào thường của khách mỗi 1M token ({{code}})",
+    "Recalculate compensation": "Tính lại tiền bù",
+    "By user": "Theo người dùng",
+    "Compensation (list)": "Tiền bù (niêm yết)",
+    "Compensation (customer)": "Tiền bù (giá khách)",
+    "Usage was estimated locally, not reported by upstream": "Usage được ước tính cục bộ, không do upstream trả về"
   }
 }

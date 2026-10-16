@@ -68,7 +68,13 @@ var cacheUsageAuditCSVHeader = []string{
 	"旧返回input_tokens", "正确input_tokens", "多算token(缓存当输入)", "多算token上限",
 	"分组倍率", "实际扣费", "官价-普通输入", "官价-缓存读取", "官价-缓存写入", "官价-输出", "官价合计",
 	"分组价-普通输入", "分组价-缓存读取", "分组价-缓存写入", "分组价-输出", "分组价合计", "价格说明", "分组价与实扣不一致",
+	"官价普通输入单价(每百万)", "应补-按官价", "应补-按分组价", "应补-按下游价", "应补上限-按官价", "应补上限-按分组价", "应补上限-按下游价",
 }
+
+// CacheUsageAuditCompensationNote explains the compensation basis in exports.
+const CacheUsageAuditCompensationNote = "应补金额 = 多算token × 普通输入单价。缓存部分客户已按缓存价另行计费，" +
+	"多算的只是缓存 token 又被当作普通输入收了一次，所以只需退还这部分普通输入费用。" +
+	"\"已确认\"行可直接补；\"待核对\"行给出上限，需对照原始响应确认；\"证据不足\"行不计入。"
 
 func cacheUsageAuditCSVRow(row service.CacheUsageAuditRow) []string {
 	cost := func(value *service.CacheUsageCost) []string {
@@ -91,7 +97,11 @@ func cacheUsageAuditCSVRow(row service.CacheUsageAuditRow) []string {
 	}
 	out = append(out, cost(row.ListCost)...)
 	out = append(out, cost(row.DiscountedCost)...)
-	return append(out, row.PriceIssue, strconv.FormatBool(row.PriceMismatch))
+	out = append(out, row.PriceIssue, strconv.FormatBool(row.PriceMismatch), row.InputPricePerMillion)
+	if comp := row.Compensation; comp != nil {
+		return append(out, comp.List, comp.Group, comp.Downstream, comp.ListMax, comp.GroupMax, comp.DownstreamMax)
+	}
+	return append(out, "", "", "", "", "", "")
 }
 
 // Billing documents use Asia/Shanghai regardless of the server timezone.
@@ -125,7 +135,8 @@ func ExportCacheUsageAudit(c *gin.Context) {
 			_, _ = c.Writer.Write([]byte("\xef\xbb\xbf")) // Excel needs the BOM for UTF-8
 		} else {
 			c.Header("Content-Type", "application/json; charset=utf-8")
-			_, _ = c.Writer.Write([]byte(`{"rows":[`))
+			note, _ := common.Marshal(CacheUsageAuditCompensationNote)
+			_, _ = c.Writer.Write([]byte(`{"compensation_note":` + string(note) + `,"rows":[`))
 		}
 	}
 	writer := csv.NewWriter(c.Writer)
@@ -134,6 +145,9 @@ func ExportCacheUsageAudit(c *gin.Context) {
 		start()
 		if format == "csv" {
 			if first {
+				if err := writer.Write([]string{CacheUsageAuditCompensationNote}); err != nil {
+					return err
+				}
 				if err := writer.Write(cacheUsageAuditCSVHeader); err != nil {
 					return err
 				}
@@ -166,6 +180,7 @@ func ExportCacheUsageAudit(c *gin.Context) {
 	start()
 	if format == "csv" {
 		if first {
+			_ = writer.Write([]string{CacheUsageAuditCompensationNote})
 			_ = writer.Write(cacheUsageAuditCSVHeader)
 		}
 		writer.Flush()

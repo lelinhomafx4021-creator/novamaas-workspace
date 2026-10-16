@@ -102,6 +102,7 @@ export const CACHE_AUDIT_REASON_LABELS: Record<string, string> = {
   anthropic_usage_preserved: 'Upstream usage already followed Anthropic',
   no_cache: 'No cache usage',
   fixed_converter: 'After the fix went live',
+  estimated_usage: 'Usage was estimated locally, not reported by upstream',
 }
 
 export const CACHE_AUDIT_PRICE_ISSUE_LABELS: Record<string, string> = {

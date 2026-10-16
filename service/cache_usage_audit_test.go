@@ -21,7 +21,7 @@ func auditRow(t *testing.T, log model.Log) CacheUsageAuditRow {
 	if log.Type == 0 {
 		log.Type = model.LogTypeConsume
 	}
-	row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 0)
+	row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 0, nil)
 	return row
 }
 
@@ -62,7 +62,7 @@ func TestCacheUsageAuditClassification(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			log := model.Log{Type: model.LogTypeConsume, CreatedAt: tc.createdAt, PromptTokens: 1000, Other: tc.other}
-			row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 1500)
+			row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 1500, nil)
 			assert.Equal(t, tc.status, row.Status)
 			assert.Equal(t, tc.reason, row.Reason)
 			assert.Equal(t, tc.duplicate, row.DuplicateTokens)
@@ -176,4 +176,63 @@ func TestConvertsToClaudeResponseStampsOnlyConvertedMessages(t *testing.T) {
 		info := &relaycommon.RelayInfo{RequestConversionChain: tc.chain}
 		assert.Equal(t, tc.want, convertsToClaudeResponse(info), "%v", tc.chain)
 	}
+}
+
+func TestCacheUsageAuditCompensationPricesDuplicatedInputOnly(t *testing.T) {
+	prices := map[string]decimal.Decimal{"gpt-5": decimal.NewFromInt(3)}
+	build := func(other string) CacheUsageAuditRow {
+		log := model.Log{Type: model.LogTypeConsume, ModelName: "gpt-5", PromptTokens: 4921, CompletionTokens: 86, Other: other}
+		row, _, _ := buildCacheUsageAuditRow(&log, testCacheAuditMoney, 0, prices)
+		return row
+	}
+	ratios := `"model_ratio":10,"completion_ratio":5,"group_ratio":0.5,"cache_ratio":0.1`
+	row := build(`{` + convertedMessages + `,"cache_tokens":4825,` + ratios + `}`)
+	require.NotNil(t, row.Compensation)
+	// 4825 tokens x ratio 10 = 48250 quota = $0.0965 at the base input price ($20/M).
+	assert.Equal(t, "20.000000", row.InputPricePerMillion)
+	assert.Equal(t, CacheUsageCompensation{List: "0.096500", Group: "0.048250", Downstream: "0.014475",
+		ListMax: "0.096500", GroupMax: "0.048250", DownstreamMax: "0.014475"}, *row.Compensation)
+
+	// Review rows: nothing confirmed, compensation upper bound covers read + write.
+	row = build(`{` + convertedMessages + `,"cache_tokens":4000,"cache_write_tokens":825,"cache_creation_ratio":1.25,` + ratios + `}`)
+	assert.Equal(t, CacheAuditReview, row.Status)
+	assert.Equal(t, "0.000000", row.Compensation.List)
+	assert.Equal(t, "0.096500", row.Compensation.ListMax)
+
+	// Tiered rows cannot use the base input ratio but still get the downstream estimate.
+	row = build(`{` + convertedMessages + `,"cache_tokens":4825,"billing_mode":"tiered_expr",` + ratios + `}`)
+	assert.Empty(t, row.Compensation.List)
+	assert.Equal(t, "0.014475", row.Compensation.Downstream)
+
+	// Estimated usage is not evidence of a duplicate.
+	row = build(`{` + convertedMessages + `,"cache_tokens":4825,"admin_info":{"usage_billing_path":"billing-usage-openai-estimated"},` + ratios + `}`)
+	assert.Equal(t, CacheAuditNoEvidence, row.Status)
+	assert.Equal(t, "estimated_usage", row.Reason)
+	assert.Nil(t, row.Compensation)
+}
+
+func TestRunCacheUsageAuditTotalsCompensationAndUsers(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { model.LOG_DB.Exec("DELETE FROM logs") })
+	day := int64(1_760_000_000)
+	ratios := `"model_ratio":10,"completion_ratio":5,"group_ratio":0.5,"cache_ratio":0.1`
+	require.NoError(t, model.LOG_DB.Create(&[]model.Log{
+		{UserId: 7, Username: "acme", ModelName: "gpt-5", CreatedAt: day, Type: model.LogTypeConsume, PromptTokens: 4921, Quota: 1, Other: `{` + convertedMessages + `,"cache_tokens":4825,` + ratios + `}`},
+		{UserId: 7, Username: "acme", ModelName: "gpt-5", CreatedAt: day + 1, Type: model.LogTypeConsume, PromptTokens: 1175, Quota: 1, Other: `{` + convertedMessages + `,"cache_tokens":1175,` + ratios + `}`},
+		{UserId: 7, Username: "acme", ModelName: "other", CreatedAt: day + 2, Type: model.LogTypeConsume, PromptTokens: 600, Quota: 1, Other: `{` + convertedMessages + `,"cache_tokens":500}`},
+	}).Error)
+	report, err := RunCacheUsageAudit(context.Background(), CacheUsageAuditRequest{StartAt: day, EndAt: day + 60,
+		DownstreamInputPrices: map[string]string{"gpt-5": "3"}}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(6500), report.Total.DuplicateTokens)
+	assert.Equal(t, "0.120000", report.Total.Compensation.List) // 6000 x $20/M
+	assert.Equal(t, "0.060000", report.Total.Compensation.Group)
+	assert.Equal(t, "0.018000", report.Total.Compensation.Downstream)
+	assert.Equal(t, int64(500), report.Total.UnpricedDuplicateTokens)
+	require.Len(t, report.ByUser, 1)
+	assert.Equal(t, "acme (#7)", report.ByUser[0].Key)
+
+	_, err = RunCacheUsageAudit(context.Background(), CacheUsageAuditRequest{StartAt: day, EndAt: day + 60,
+		DownstreamInputPrices: map[string]string{"gpt-5": "-1"}}, nil)
+	assert.Error(t, err)
 }

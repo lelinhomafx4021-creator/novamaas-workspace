@@ -47,6 +47,7 @@ import {
   cacheAuditSchema,
   type CacheAuditValues,
 } from '../lib/cache-audit'
+import { CacheAuditCompensation } from './cache-audit-compensation'
 import { CacheAuditDetails } from './cache-audit-details'
 import { CacheAuditSummary } from './cache-audit-summary'
 
@@ -69,6 +70,7 @@ export function CacheAuditPanel(props: { userId: number }) {
     report: CacheAuditReport
     request: CacheAuditRequest
   } | null>(null)
+  const [prices, setPrices] = useState<Record<string, string>>({})
   const keys = useQuery({
     queryKey: ['billing', 'cache-audit-keys', props.userId],
     queryFn: () => searchCacheAuditKeys(props.userId, ''),
@@ -98,7 +100,10 @@ export function CacheAuditPanel(props: { userId: number }) {
       <form
         className='flex flex-col gap-4'
         onSubmit={form.handleSubmit((value) =>
-          audit.mutate(cacheAuditRequest(props.userId, value))
+          audit.mutate({
+            ...cacheAuditRequest(props.userId, value),
+            downstream_input_prices: prices,
+          })
         )}
       >
         <FieldGroup className='grid gap-4 sm:grid-cols-3'>
@@ -204,6 +209,20 @@ export function CacheAuditPanel(props: { userId: number }) {
       </form>
       {result && (
         <>
+          <CacheAuditCompensation
+            report={result.report}
+            prices={prices}
+            pending={pending}
+            onPriceChange={(model, value) =>
+              setPrices((current) => ({ ...current, [model]: value }))
+            }
+            onRecalculate={() =>
+              audit.mutate({
+                ...result.request,
+                downstream_input_prices: prices,
+              })
+            }
+          />
           <CacheAuditSummary report={result.report} />
           <CacheAuditDetails report={result.report} />
         </>

@@ -76,9 +76,13 @@ func TestCacheUsageAuditExportsCSVAndJSON(t *testing.T) {
 	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "cache-usage-audit-20251009-20251009.csv")
 	body := recorder.Body.String()
 	require.True(t, strings.HasPrefix(body, "\xef\xbb\xbf"))
-	records, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(body, "\xef\xbb\xbf"))).ReadAll()
+	reader := csv.NewReader(strings.NewReader(strings.TrimPrefix(body, "\xef\xbb\xbf")))
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
 	require.NoError(t, err)
-	require.Len(t, records, 2)
+	require.Len(t, records, 3)
+	assert.Equal(t, []string{CacheUsageAuditCompensationNote}, records[0])
+	records = records[1:]
 	assert.Equal(t, len(cacheUsageAuditCSVHeader), len(records[1]))
 	column := func(name string) string {
 		for i, header := range records[0] {
@@ -95,6 +99,9 @@ func TestCacheUsageAuditExportsCSVAndJSON(t *testing.T) {
 	assert.Equal(t, "96", column("正确input_tokens"))
 	assert.Equal(t, "4825", column("多算token(缓存当输入)"))
 	assert.Equal(t, "affected", column("核对状态"))
+	assert.Equal(t, "0.096500", column("应补-按官价"))
+	assert.Equal(t, "0.048250", column("应补-按分组价"))
+	assert.Equal(t, "", column("应补-按下游价"))
 
 	recorder, ctx = cacheUsageAuditRequest(common.RoleRootUser, "/api/billing/admin/cache-usage-audit/export?format=json", cacheUsageAuditBody)
 	ExportCacheUsageAudit(ctx)

@@ -102,6 +102,12 @@ export function CacheAuditDetails(props: { report: CacheAuditReport }) {
               <TableHead className='text-right'>{t('Actual charge')}</TableHead>
               <TableHead className='text-right'>{t('Group price')}</TableHead>
               <TableHead className='text-right'>{t('List price')}</TableHead>
+              <TableHead className='text-right'>
+                {t('Compensation (list)')}
+              </TableHead>
+              <TableHead className='text-right'>
+                {t('Compensation (customer)')}
+              </TableHead>
               <TableHead>{t('Note')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -162,6 +168,16 @@ export function CacheAuditDetails(props: { report: CacheAuditReport }) {
                 </TableCell>
                 <TableCell className='text-right'>
                   {row.list_cost ? `${symbol}${row.list_cost.total}` : '-'}
+                </TableCell>
+                <TableCell className='text-right'>
+                  {row.compensation?.list_max
+                    ? `${symbol}${row.compensation.list_max}`
+                    : '-'}
+                </TableCell>
+                <TableCell className='text-right'>
+                  {row.compensation?.downstream_max
+                    ? `${symbol}${row.compensation.downstream_max}`
+                    : '-'}
                 </TableCell>
                 <TableCell className='text-xs'>{priceNote(row)}</TableCell>
               </TableRow>

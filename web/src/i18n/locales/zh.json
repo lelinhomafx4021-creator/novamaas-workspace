@@ -7174,6 +7174,24 @@
     "Uncached input": "普通输入",
     "Up to {{count}} more tokens may have been duplicated in requests that need review. Compare them with the original responses.": "待核对的请求中，最多还可能有 {{count}} 个 token 被重复计入，请对照原始响应确认。",
     "Upstream usage already followed Anthropic": "上游用量已是 Anthropic 口径",
-    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} 笔请求无法按历史价格重算，只计入实际扣费。"
+    "{{count}} requests could not be repriced from history; they are included in the actual charge only.": "{{count}} 笔请求无法按历史价格重算，只计入实际扣费。",
+    "How much to compensate": "应补多少",
+    "Compensation = duplicated tokens × uncached input price. Cache tokens were already billed at the cache price, so only the extra uncached input charge needs to be returned.": "应补金额 = 多算 token × 普通输入单价。缓存部分已按缓存价另行计费，多算的只是缓存 token 又被当作普通输入收了一次，所以只需退还这部分普通输入费用。",
+    "Price basis": "计价依据",
+    "Confirmed ({{count}} tokens)": "已确认（{{count}} token）",
+    "Including review upper bound": "含待核对上限",
+    "Customer input price (entered below)": "客户自己的输入价（下方填写）",
+    "Platform list price": "按平台官价",
+    "Platform group price": "按平台分组价",
+    "Use the customer input price for the actual refund. Platform prices are reference values only, because the customer resells at their own price.": "实际补偿请以客户自己的输入价为准。客户按自己的价格转售，平台官价和分组价仅供参考。",
+    "{{count}} tokens are in requests that need review. Compare them with the original responses before compensating.": "有 {{count}} 个 token 属于待核对请求，补偿前请对照原始响应确认。",
+    "{{count}} duplicated tokens have no historical input price. Enter the customer price for those models to include them.": "有 {{count}} 个多算 token 缺少历史输入价，填写对应模型的客户价格后才会计入。",
+    "Insufficient-evidence requests are excluded. Deduct any refunds already issued before settlement.": "证据不足的请求不计入。结算前请扣除已经退过的金额。",
+    "Customer uncached input price per 1M tokens ({{code}})": "客户普通输入单价（每百万 token，{{code}}）",
+    "Recalculate compensation": "重新计算补偿",
+    "By user": "按用户",
+    "Compensation (list)": "应补（官价）",
+    "Compensation (customer)": "应补（客户价）",
+    "Usage was estimated locally, not reported by upstream": "用量为本地估算，不是上游返回"
   }
 }

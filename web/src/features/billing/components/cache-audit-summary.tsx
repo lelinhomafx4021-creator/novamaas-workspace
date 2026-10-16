@@ -72,6 +72,12 @@ function GroupTable(props: {
           <TableHead className='text-right'>{t('Actual charge')}</TableHead>
           <TableHead className='text-right'>{t('Group price')}</TableHead>
           <TableHead className='text-right'>{t('List price')}</TableHead>
+          <TableHead className='text-right'>
+            {t('Compensation (list)')}
+          </TableHead>
+          <TableHead className='text-right'>
+            {t('Compensation (customer)')}
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -109,6 +115,15 @@ function GroupTable(props: {
             <TableCell className='text-right'>
               {props.symbol}
               {row.list_amount}
+            </TableCell>
+            <TableCell className='text-right'>
+              {props.symbol}
+              {row.compensation.list}
+            </TableCell>
+            <TableCell className='text-right'>
+              {row.compensation.downstream
+                ? `${props.symbol}${row.compensation.downstream}`
+                : '-'}
             </TableCell>
           </TableRow>
         ))}
@@ -195,6 +210,7 @@ export function CacheAuditSummary(props: { report: CacheAuditReport }) {
           <TabsTrigger value='day'>{t('By day')}</TabsTrigger>
           <TabsTrigger value='model'>{t('By model')}</TabsTrigger>
           <TabsTrigger value='key'>{t('By key')}</TabsTrigger>
+          <TabsTrigger value='user'>{t('By user')}</TabsTrigger>
         </TabsList>
         <TabsContent value='day' className='overflow-x-auto'>
           <GroupTable rows={props.report.by_day} label={t('Date')} symbol={symbol} />
@@ -204,6 +220,9 @@ export function CacheAuditSummary(props: { report: CacheAuditReport }) {
         </TabsContent>
         <TabsContent value='key' className='overflow-x-auto'>
           <GroupTable rows={props.report.by_token} label={t('API key')} symbol={symbol} />
+        </TabsContent>
+        <TabsContent value='user' className='overflow-x-auto'>
+          <GroupTable rows={props.report.by_user} label={t('User')} symbol={symbol} />
         </TabsContent>
       </Tabs>
     </section>

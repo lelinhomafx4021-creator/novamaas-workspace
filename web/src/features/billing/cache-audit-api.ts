@@ -33,6 +33,16 @@ export interface CacheAuditRequest {
   model: string
   fixed_at: number
   status: CacheAuditStatus | ''
+  downstream_input_prices?: Record<string, string>
+}
+
+export interface CacheAuditCompensation {
+  list: string
+  group: string
+  downstream?: string
+  list_max: string
+  group_max: string
+  downstream_max?: string
 }
 
 export interface CacheAuditTokens {
@@ -79,6 +89,8 @@ export interface CacheAuditRow {
   tokens: CacheAuditTokens
   list_cost?: CacheAuditCost
   discounted_cost?: CacheAuditCost
+  input_price_per_million?: string
+  compensation?: CacheAuditCompensation
 }
 
 export interface CacheAuditTotals {
@@ -94,6 +106,8 @@ export interface CacheAuditTotals {
   actual_amount: string
   list_amount: string
   discounted_amount: string
+  compensation: CacheAuditCompensation
+  unpriced_duplicate_tokens: number
 }
 
 export interface CacheAuditReport {
@@ -103,6 +117,7 @@ export interface CacheAuditReport {
   by_day: CacheAuditTotals[]
   by_model: CacheAuditTotals[]
   by_token: CacheAuditTotals[]
+  by_user: CacheAuditTotals[]
   rows: CacheAuditRow[]
   truncated: boolean
 }

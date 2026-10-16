@@ -41,8 +41,13 @@ func handleClaudeFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 		return err
 	}
 
-	if streamResponse.Usage != nil {
+	if service.ValidUsage(streamResponse.Usage) {
+		applyUsagePostProcessing(info, streamResponse.Usage, common.StringToByteSlice(data))
 		info.ClaudeConvertInfo.Usage = streamResponse.Usage
+	} else {
+		// Empty usage placeholders must not replace a previously reported usage
+		// or make the converter emit terminal events with zero token counts.
+		streamResponse.Usage = nil
 	}
 	result, err := relayconvert.ConvertStreamResponse(c, info, types.RelayFormatClaude, &streamResponse)
 	if err != nil {
@@ -181,6 +186,7 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 		}
 
 		info.ClaudeConvertInfo.Usage = usage
+		streamResponse.Usage = usage
 
 		result, err := relayconvert.ConvertStreamResponse(c, info, types.RelayFormatClaude, &streamResponse)
 		if err != nil {

@@ -35,8 +35,6 @@ export function ApplicationCenter(props: { onNavigate?: () => void }) {
   const { t } = useTranslation()
   const { status } = useStatus()
 
-  if (status?.ImageStudioEnabled === false) return null
-
   return (
     <NavigationMenu render={<div />} className='flex-none'>
       <NavigationMenuList>
@@ -52,12 +50,14 @@ export function ApplicationCenter(props: { onNavigate?: () => void }) {
             </span>
           </NavigationMenuTrigger>
           <NavigationMenuContent className='w-48'>
-            <NavigationMenuLink
-              render={<Link to='/image-studio' onClick={props.onNavigate} />}
-            >
-              <HugeiconsIcon icon={Image01Icon} aria-hidden='true' />
-              {t('Image creation')}
-            </NavigationMenuLink>
+            {status?.ImageStudioEnabled !== false && (
+              <NavigationMenuLink
+                render={<Link to='/image-studio' onClick={props.onNavigate} />}
+              >
+                <HugeiconsIcon icon={Image01Icon} aria-hidden='true' />
+                {t('Image creation')}
+              </NavigationMenuLink>
+            )}
           </NavigationMenuContent>
         </NavigationMenuItem>
       </NavigationMenuList>

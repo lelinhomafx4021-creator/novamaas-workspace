@@ -5683,6 +5683,7 @@
     "Show All": "顯示全部",
     "Show all providers including unbound": "顯示所有供應商（包括未連結）",
     "Show details": "檢視詳情",
+    "Show image creation in the application center. Disabling it also stops access and generation.": "在應用中心顯示圖片創作；關閉後將無法開啟頁面或生成圖片。",
     "Show only bound providers": "僅顯示已連結的供應商",
     "Show or hide flow columns": "顯示或隱藏分流列",
     "Show preview": "顯示預覽",

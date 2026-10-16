@@ -5683,6 +5683,7 @@
     "Show All": "Show All",
     "Show all providers including unbound": "Show all providers including unbound",
     "Show details": "Show details",
+    "Show image creation in the application center. Disabling it also stops access and generation.": "Show image creation in the application center. Disabling it also stops access and generation.",
     "Show only bound providers": "Show only bound providers",
     "Show or hide flow columns": "Show or hide flow columns",
     "Show preview": "Show preview",

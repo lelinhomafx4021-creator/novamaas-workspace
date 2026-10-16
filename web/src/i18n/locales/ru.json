@@ -5683,6 +5683,7 @@
     "Show All": "Показать все",
     "Show all providers including unbound": "Показать всех провайдеров (включая непривязанные)",
     "Show details": "Показать детали",
+    "Show image creation in the application center. Disabling it also stops access and generation.": "Показывать создание изображений в центре приложений. При отключении доступ и генерация недоступны.",
     "Show only bound providers": "Показать только привязанных провайдеров",
     "Show or hide flow columns": "Показать или скрыть столбцы потока",
     "Show preview": "Показать предпросмотр",

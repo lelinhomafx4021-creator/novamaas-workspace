@@ -78,9 +78,12 @@ test('keyboard users can open application center and dismiss it with Escape', as
   expect(trigger).toHaveFocus()
 })
 
-test('disabling image creation hides the application center entry', async () => {
-  await renderMenu(false)
+test('disabling image creation keeps application center but removes its image creation link', async () => {
+  const user = await renderMenu(false)
+  const trigger = screen.getByRole('button', { name: 'Application center' })
+  expect(trigger).toBeVisible()
+  await user.click(trigger)
   expect(
-    screen.queryByRole('button', { name: 'Application center' })
+    screen.queryByRole('link', { name: 'Image creation' })
   ).not.toBeInTheDocument()
 })

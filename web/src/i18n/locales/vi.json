@@ -5683,6 +5683,7 @@
     "Show All": "Hiển thị tất cả",
     "Show all providers including unbound": "Hiển thị tất cả nhà cung cấp (bao gồm chưa liên kết)",
     "Show details": "Xem chi tiết",
+    "Show image creation in the application center. Disabling it also stops access and generation.": "Hiển thị tính năng tạo ảnh trong trung tâm ứng dụng. Tắt sẽ chặn truy cập và tạo ảnh.",
     "Show only bound providers": "Chỉ hiển thị nhà cung cấp đã liên kết",
     "Show or hide flow columns": "Hiện hoặc ẩn các cột luồng",
     "Show preview": "Hiển thị bản xem trước",

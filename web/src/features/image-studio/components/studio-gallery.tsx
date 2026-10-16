@@ -53,6 +53,9 @@ import {
 } from '../studio-utils'
 import type { StudioResult, StudioRun } from '../types'
 
+const canvasClassName =
+  'mx-auto aspect-[4/3] min-h-48 w-full max-w-[48rem] flex-none'
+
 export function StudioGallery(props: {
   run?: StudioRun
   resultId?: string
@@ -91,7 +94,10 @@ export function StudioGallery(props: {
       <Empty
         role='region'
         aria-label={t('Generation results')}
-        className='bg-muted/30 relative mx-auto aspect-square max-h-[32rem] min-h-64 max-w-[32rem] flex-none overflow-hidden rounded-2xl border'
+        className={cn(
+          canvasClassName,
+          'bg-muted/30 relative overflow-hidden rounded-2xl border'
+        )}
       >
         <p className='text-muted-foreground absolute top-5 left-5 text-xs font-medium'>
           {t('Generation results')}
@@ -123,7 +129,9 @@ export function StudioGallery(props: {
     <section className={layout} aria-label={t('Generation results')}>
       {!props.compact && (
         <div className='flex shrink-0 flex-wrap items-center justify-between gap-2'>
-          <StudioRunSummary run={run} ownerName={props.ownerName} />
+          <p className='text-muted-foreground mr-auto text-xs font-medium'>
+            {t('Generation results')}
+          </p>
           {props.onReusePrompt && run.prompt ? (
             <Button
               type='button'
@@ -152,12 +160,7 @@ export function StudioGallery(props: {
       )}
       {run.results.length === 0 && (
         <Empty
-          className={cn(
-            'border',
-            props.compact
-              ? 'min-h-24'
-              : 'mx-auto aspect-square min-h-64 max-h-[32rem] max-w-[32rem] flex-none'
-          )}
+          className={cn('border', props.compact ? 'min-h-24' : canvasClassName)}
         >
           <EmptyHeader>
             <EmptyTitle>{t(studioStatusLabelKey(run.status))}</EmptyTitle>
@@ -192,7 +195,10 @@ export function StudioGallery(props: {
                     'bg-muted/30 focus-visible:outline-ring rounded-xl focus-visible:outline-2',
                     props.compact
                       ? ''
-                      : 'relative mx-auto flex aspect-square min-h-48 w-full max-w-[32rem] flex-none items-center justify-center overflow-hidden border'
+                      : cn(
+                          canvasClassName,
+                          'relative flex items-center justify-center overflow-hidden border'
+                        )
                   )}
                 >
                   <img
@@ -212,13 +218,7 @@ export function StudioGallery(props: {
                   />
                 </button>
               ) : (
-                <Empty
-                  className={
-                    props.compact
-                      ? 'h-40'
-                      : 'mx-auto aspect-square max-h-[32rem] min-h-64 max-w-[32rem] flex-none'
-                  }
-                >
+                <Empty className={props.compact ? 'h-40' : canvasClassName}>
                   <EmptyHeader>
                     <EmptyTitle>
                       {result.expired

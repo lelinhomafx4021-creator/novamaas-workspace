@@ -5683,6 +5683,7 @@
     "Show All": "すべて表示",
     "Show all providers including unbound": "未バインドを含むすべてのプロバイダーを表示",
     "Show details": "詳細を表示",
+    "Show image creation in the application center. Disabling it also stops access and generation.": "アプリセンターに画像作成を表示します。無効にすると、ページへのアクセスと画像生成が停止します。",
     "Show only bound providers": "バインド済みのプロバイダーのみ表示",
     "Show or hide flow columns": "フロー列の表示・非表示",
     "Show preview": "プレビューを表示",

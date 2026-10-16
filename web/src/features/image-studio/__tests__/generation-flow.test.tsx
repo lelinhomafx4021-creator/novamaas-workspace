@@ -181,18 +181,18 @@ test('signing out clears the prompt, private generation records and model select
   ).toHaveValue('')
 })
 
-test('desktop windows balance three columns and keep the empty canvas square instead of stretching to screen height', async () => {
+test('desktop windows give the landscape canvas more width without stretching it to screen height', async () => {
   await openStudio()
   const editor = screen
     .getByRole('textbox', { name: 'Describe your image' })
     .closest('form')
   expect(editor?.parentElement).toHaveClass(
-    'lg:grid-cols-[minmax(18rem,1fr)_minmax(0,1.35fr)_minmax(16rem,0.85fr)]',
+    'lg:grid-cols-[minmax(18rem,0.9fr)_minmax(0,1.6fr)_minmax(16rem,0.85fr)]',
     'lg:min-h-0'
   )
   expect(
     screen.getByRole('region', { name: 'Generation results' })
-  ).toHaveClass('aspect-square', 'max-h-[32rem]', 'flex-none')
+  ).toHaveClass('aspect-[4/3]', 'w-full', 'max-w-[48rem]', 'flex-none')
   expect(
     screen.getByRole('region', { name: 'Generation records' })
   ).toHaveClass('lg:col-start-3')
@@ -264,17 +264,26 @@ async function generate() {
   return user
 }
 
-test('completed images stay in a bounded square canvas and still open the full preview', async () => {
+test('completed images fit a landscape canvas with the prompt only below it and still open the full preview', async () => {
   vi.mocked(api.createStudioRun).mockResolvedValue({
     run: completed,
     replay: false,
   })
   const user = await generate()
   const preview = await screen.findByRole('button', { name: 'Preview' })
-  expect(preview).toHaveClass('aspect-square', 'max-w-[32rem]', 'flex-none')
+  expect(preview).toHaveClass('aspect-[4/3]', 'max-w-[48rem]', 'flex-none')
   expect(within(preview).getByRole('img', { name: 'A mountain' })).toHaveClass(
     'object-contain'
   )
+  const gallery = within(
+    screen.getByRole('region', { name: 'Generation results' })
+  )
+  expect(gallery.getAllByText('A mountain', { exact: true })).toHaveLength(1)
+  expect(
+    preview.compareDocumentPosition(
+      gallery.getByText('A mountain', { exact: true })
+    ) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy()
   await user.click(preview)
   expect(
     within(screen.getByRole('dialog', { name: 'Generated image' })).getByRole(

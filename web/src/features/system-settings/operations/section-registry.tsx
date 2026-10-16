@@ -26,7 +26,6 @@ import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
-import { ImageStudioSettingsSection } from './image-studio-settings-section'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -63,15 +62,6 @@ const OPERATIONS_SECTIONS = [
           'perf_metrics_setting.retention_days':
             settings['perf_metrics_setting.retention_days'] ?? 0,
         }}
-      />
-    ),
-  },
-  {
-    id: 'image-studio',
-    titleKey: 'Image generation',
-    build: (settings: OperationsSettings) => (
-      <ImageStudioSettingsSection
-        defaultEnabled={settings['image_studio_setting.enabled'] ?? true}
       />
     ),
   },

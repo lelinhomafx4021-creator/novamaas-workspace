@@ -26,7 +26,7 @@ This independently maintained fork starts at exactly the upstream commit above a
 
 ## 同步上游
 
-推荐使用 GitHub Actions 的版本评估与计划执行流程，操作步骤见 [上游版本选择性同步](docs/UPSTREAM_SYNC.zh_CN.md)。该机制固定目标版本和来源提交，保存功能处理计划，在验证后创建实施 PR；不会自动合并主分支。评估目标与实际纳入内容分别记录，选择性同步不会覆盖上方初始 fork 基线。
+推荐使用 GitHub Actions 创建 Draft/WIP PR，再由维护者启动 AI 分析、确认计划并在同一 PR 中实施，操作步骤见 [上游版本选择性同步](docs/UPSTREAM_SYNC.zh_CN.md)。该机制固定目标版本和来源提交，保存功能处理计划、适配记录与最新提交的 CI 证据；不会自动合并主分支。评估目标与实际纳入内容分别记录，选择性同步不会覆盖上方初始 fork 基线。
 
 以下命令保留为人工检查和迁入的基础操作：
 

@@ -5,10 +5,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import unittest
 from unittest import mock
 
 import test_upstream_sync as fixtures
+import test_upstream_sync_handoff as handoff_fixtures
 import upstream_sync_ci as ci
 
 
@@ -23,7 +25,8 @@ class UpstreamSyncPublicationTests(unittest.TestCase):
             GIT_COMMITTER_NAME="Fixture Bot", GIT_COMMITTER_EMAIL="bot@example.invalid"))
         self.env.start()
         self.addCleanup(self.env.stop)
-        f.write(".github/scripts/upstream_sync.py", fixtures.SCRIPT.read_text())
+        for name in ("upstream_sync.py", "upstream_sync_handoff.py", "upstream_sync_handoff_context.py"):
+            f.write(".github/scripts/" + name, Path(__file__).with_name(name).read_text())
         f.commit("Add trusted sync executor")
         f.base = f.git("rev-parse", "HEAD").strip()
         f.git("remote", "add", "origin", str(f.repo))
@@ -110,7 +113,8 @@ class UpstreamSyncPublicationTests(unittest.TestCase):
         ci.publish(argparse.Namespace(source=publisher, output=self.output, dry_run=True))
         names = f.git("diff", "--cached", "--name-only", repo=publisher).splitlines()
         self.assertEqual(set(names), {"docs/upstream-sync/plans/fresh-assessment/plan.json",
-                                     "docs/upstream-sync/plans/fresh-assessment/report.md"})
+                                     "docs/upstream-sync/plans/fresh-assessment/report.md",
+                                     "docs/upstream-sync/plans/fresh-assessment/AI_HANDOFF.md"})
         self.assertEqual(f.git("rev-parse", "HEAD", repo=publisher).strip(), f.base)
         self.assertFalse((publisher / "docs/upstream-sync/plans/fresh-assessment").exists())
 
@@ -128,6 +132,62 @@ class UpstreamSyncPublicationTests(unittest.TestCase):
         os.environ.update(PR_BASE_SHA=f.base, PR_HEAD_SHA=f.base, PR_HEAD_REF="codex/upstream-apply-fixture")
         with self.assertRaisesRegex(ValueError, "retain its synchronization history"):
             ci.revalidate(argparse.Namespace(candidate=f.repo, trusted=f.repo, output=self.output))
+
+    def manual_pr(self):
+        handoff = handoff_fixtures.UpstreamSyncHandoffTests()
+        handoff.setUp()
+        self.addCleanup(handoff.doCleanups)
+        os.environ.update(PR_BASE_SHA=handoff.fixture.base, PR_HEAD_SHA=handoff.head(),
+                          PR_HEAD_REF="codex/upstream-plan-fixture", PR_DRAFT="true")
+        return handoff
+
+    def test_planning_draft_retains_pending_state_and_skips_candidate_builds(self):
+        handoff = self.manual_pr()
+        with mock.patch.object(ci, "fetch_upstream"), mock.patch.object(ci, "verify_candidate") as verify:
+            ci.revalidate(argparse.Namespace(candidate=handoff.fixture.repo, trusted=self.fixture.repo,
+                                             output=self.output))
+            verify.assert_not_called()
+        evidence = json.loads((self.output / "verification.json").read_text())
+        self.assertEqual(evidence["status"], "planning")
+        self.assertEqual(evidence["validated_head"], handoff.head())
+        self.assertEqual(evidence["checks"], [])
+        self.assertFalse(handoff.history_path.exists())
+
+    def test_planning_only_pr_cannot_become_ready_without_implementation(self):
+        handoff = self.manual_pr()
+        os.environ["PR_DRAFT"] = "false"
+        with mock.patch.object(ci, "fetch_upstream"), mock.patch.object(ci, "verify_candidate") as verify:
+            with self.assertRaisesRegex(ValueError, "must remain Draft"):
+                ci.revalidate(argparse.Namespace(candidate=handoff.fixture.repo, trusted=self.fixture.repo,
+                                                 output=self.output))
+            verify.assert_not_called()
+        self.assertFalse((self.output / "verification.json").exists())
+
+    def test_manual_handoff_pr_revalidates_actual_current_head_after_source_proof(self):
+        handoff = self.manual_pr()
+        handoff.approve_plan()
+        handoff.write_runtime()
+        handoff.finalize()
+        os.environ.update(PR_HEAD_SHA=handoff.head(), PR_DRAFT="false")
+        with mock.patch.object(ci, "fetch_upstream"), mock.patch.object(ci, "verify_candidate") as verify:
+            ci.revalidate(argparse.Namespace(candidate=handoff.fixture.repo, trusted=self.fixture.repo,
+                                             output=self.output))
+            verify.assert_called_once_with(handoff.fixture.repo.resolve(), self.output.resolve() / "verification.json")
+        self.assertEqual(json.loads(handoff.history_path.read_text())["state"], "ready_for_ci")
+
+    def test_stale_manual_handoff_record_cannot_reach_builds_or_claim_passing_checks(self):
+        handoff = self.manual_pr()
+        handoff.approve_plan()
+        handoff.write_runtime()
+        handoff.finalize()
+        handoff.write_runtime("Appended regression fix has not been recorded for CI yet\n")
+        os.environ["PR_HEAD_SHA"] = handoff.head()
+        with mock.patch.object(ci, "fetch_upstream"), mock.patch.object(ci, "verify_candidate") as verify:
+            with self.assertRaises(subprocess.CalledProcessError):
+                ci.revalidate(argparse.Namespace(candidate=handoff.fixture.repo, trusted=self.fixture.repo,
+                                                 output=self.output))
+            verify.assert_not_called()
+        self.assertFalse((self.output / "verification.json").exists())
 
     def test_private_origin_auth_is_temporary_and_excluded_from_upstream_fetch(self):
         f = self.fixture

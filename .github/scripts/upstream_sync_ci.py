@@ -139,6 +139,8 @@ def analyze(args):
     core(trusted, "analyze", "--repo", source, "--source-repo", UPSTREAM,
          "--target", target, "--range-base", range_base, "--batch", batch,
          "--version", os.environ["NEXT_VERSION"], "--output-dir", destination)
+    run([sys.executable, str(trusted / ".github/scripts/upstream_sync_handoff_context.py"),
+         "--plan", str(destination / "plan.json"), "--output", str(destination / "AI_HANDOFF.md")])
     git(source, "add", "--", str(destination.relative_to(source)), capture=False)
     bundle(source, out, "analysis", batch, base, target)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -229,7 +231,8 @@ def bundle(repo, output, mode, batch, base, target):
 def allowed_path(value, mode, batch):
     path = safe_path(value)
     if mode == "analysis":
-        return str(path) in {f"docs/upstream-sync/plans/{batch}/plan.json", f"docs/upstream-sync/plans/{batch}/report.md"}
+        return str(path) in {f"docs/upstream-sync/plans/{batch}/{name}"
+                             for name in ("plan.json", "report.md", "AI_HANDOFF.md")}
     # Source changes to the executor, policy, attribution or git control files require a separate reviewed PR.
     return not any(part in CONTROL_PARTS for part in path.parts) and path.name not in CONTROL_FILES
 
@@ -337,7 +340,7 @@ def publish(args):
     assisted = f"{identity_name} <{identity_email}>" not in core_authors
     kind = "plan" if mode == "analysis" else "apply"
     branch = f"codex/upstream-{kind}-{batch}-{manifest['run_id']}-{manifest['run_attempt']}"
-    title = f"chore(upstream): {'assess' if mode == 'analysis' else 'sync'} {batch}"
+    title = f"chore(upstream): {'WIP' if mode == 'analysis' else 'sync'} {batch}"
     if args.dry_run:
         print(json.dumps({"status": "validated", "mode": mode, "batch_id": batch, "tree": tree, "candidate_head": candidate_head}))
         return
@@ -357,8 +360,10 @@ def publish(args):
         origin(repo, "push", "origin", commit + ":refs/heads/" + branch, capture=False)
     template = (repo / ".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{manifest['run_id']}"
-    description = (f"Assessment only for upstream `{manifest['target']}`. Edit the plan, run Apply plan, then close this draft PR without merging it. "
-                   "Merging planning-only changes would invoke the existing main-branch release workflow." if mode == "analysis" else
+    description = (f"Start upstream `{manifest['target']}` synchronization in this Draft/WIP PR. "
+                   "The maintainer manually asks an AI agent to analyze the differences, confirms the selected plan, then asks the agent to implement on this same branch. "
+                   "Keep this PR in draft until implementation, source/version records and current-HEAD CI checks are complete. "
+                   "CI does not call an AI model; Ready for review and merge remain explicit maintainer actions." if mode == "analysis" else
                    f"Apply the selected upstream items from batch `{batch}`. The candidate passed frontend type checks, tests and production build, root Go tests/build and independent relaykit tests/build before publication. Review the plan, source mappings and history before merging manually.")
     template = template.replace("(简述：做了什么？为什么这样改能生效？请基于你对代码逻辑的理解来写，避免粘贴未经整理的内容)", description)
     template = template.replace("- [ ] 📝 文档更新 (Documentation)", "- [x] 📝 文档更新 (Documentation)")
@@ -371,6 +376,18 @@ def publish(args):
                  "Human confirmation checkboxes are intentionally unchecked. No automatic merge is configured.\n")
     repository = os.environ["GITHUB_REPOSITORY"]
     owner = repository.split("/", 1)[0]
+    if mode == "analysis":
+        handoff_url = (f"{os.environ['GITHUB_SERVER_URL']}/{repository}/blob/{branch}/"
+                       f"docs/upstream-sync/plans/{batch}/AI_HANDOFF.md")
+        template += (f"\n## AI 接管与进度\n\n接管说明：[AI_HANDOFF.md]({handoff_url})\n\n"
+                     "- [ ] AI 已分析差异并给出功能建议\n"
+                     "- [ ] 维护者已确认计划与允许修改的范围，并记录确认提交 SHA\n"
+                     "- [ ] AI 已在本 PR 分支完成适配、测试及来源和版本记录\n"
+                     "- [ ] 当前 PR HEAD 的 CI 已通过\n"
+                     "- [ ] 维护者已完成审查，可转为 Ready for review\n\n"
+                     f"AI 接管第一步：检出本 PR 分支，先阅读 AGENTS.md、UPSTREAM.md 和 "
+                     f"docs/upstream-sync/plans/{batch}/AI_HANDOFF.md，分析并更新建议；"
+                     "保持 decision=pending，等待我确认。后续继续在本 PR 提交，禁止自动合并 main。\n")
     existing = api("GET", f"/repos/{repository}/pulls?state=open&head=" + urllib.parse.quote(owner + ":" + branch, safe=""))
     pull = existing[0] if existing else api("POST", f"/repos/{repository}/pulls", {"title": title, "body": template, "head": branch,
                                                                                  "base": default_branch, "draft": True})
@@ -386,6 +403,31 @@ def revalidate(args):
     head = require_sha(os.environ["PR_HEAD_SHA"])
     if git(candidate, "rev-parse", "HEAD") != head:
         raise ValueError("PR HEAD does not match the checked-out commit")
+    if os.environ.get("PR_HEAD_REF", "").startswith("codex/upstream-plan-"):
+        plans = git(candidate, "diff", "--name-only", "--diff-filter=AM", base, head,
+                    "--", "docs/upstream-sync/plans").splitlines()
+        plans = [name for name in plans if re.fullmatch(r"docs/upstream-sync/plans/[a-z0-9-]+/plan\.json", name)]
+        if len(plans) != 1:
+            raise ValueError("WIP PR must retain exactly one synchronization plan")
+        plan_path = plan_file(candidate, plans[0])
+        plan = read_json(plan_path)
+        if plan.get("source", {}).get("repository") != UPSTREAM:
+            raise ValueError("WIP plan uses an unexpected source repository")
+        fetch_upstream(candidate, plan["source"]["tag"], plan["source"]["range_base_sha"])
+        verdict = json.loads(run([sys.executable, str(trusted / ".github/scripts/upstream_sync_handoff.py"),
+                                  "verify", "--repo", str(candidate), "--plan", str(plan_path),
+                                  "--base", base, "--head", head], capture=True))
+        if verdict["state"] == "planning":
+            if os.environ.get("PR_DRAFT") != "true":
+                raise ValueError("Planning-only PR must remain Draft; complete AI implementation and records before Ready for review")
+            write_json(args.output.resolve() / "verification.json",
+                       {"status": "planning", "validated_head": head, "checks": [],
+                        "message": "Waiting for maintainer-confirmed AI implementation; not merge-ready."})
+            return
+        if verdict["state"] != "ready_for_ci":
+            raise ValueError("Unexpected WIP handoff state")
+        verify_candidate(candidate, args.output.resolve() / "verification.json")
+        return
     names = git(candidate, "diff", "--name-only", base, head, "--", "docs/upstream-sync/history").splitlines()
     records = [name for name in names if re.fullmatch(r"docs/upstream-sync/history/[a-z0-9-]+\.json", name)]
     if not records and os.environ.get("PR_HEAD_REF", "").startswith("codex/upstream-apply-"):

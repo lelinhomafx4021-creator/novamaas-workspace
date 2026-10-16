@@ -15,7 +15,7 @@ concurrency:
 jobs:
   validate:
     name: Validate current sync PR HEAD
-    if: startsWith(github.event.pull_request.head.ref, 'codex/upstream-apply-')
+    if: startsWith(github.event.pull_request.head.ref, 'codex/upstream-plan-') || startsWith(github.event.pull_request.head.ref, 'codex/upstream-apply-')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -24,6 +24,7 @@ jobs:
       PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      PR_DRAFT: ${{ github.event.pull_request.draft }}
     steps:
       - name: Check out trusted base-branch tooling
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -49,7 +50,7 @@ jobs:
         with:
           go-version: '1.26.1'
           cache: false
-      - name: Revalidate the current implementation and retain provenance records
+      - name: Validate WIP handoff state or current implementation and source records
         run: python3 trusted/.github/scripts/upstream_sync_ci.py revalidate --trusted trusted --candidate candidate --output verification
       - name: Preserve current-HEAD evidence
         if: always()

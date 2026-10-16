@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   assess:
-    name: Read upstream and generate editable plan
+    name: Read upstream and generate plan with AI handoff instructions
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -64,7 +64,7 @@ jobs:
           persist-credentials: false
       - name: Generate assessment and publication patch
         run: python3 trusted/.github/scripts/upstream_sync_ci.py analyze --trusted trusted --source source --output publication
-      - name: Preserve report and editable plan
+      - name: Preserve report, editable plan and AI handoff instructions
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -84,7 +84,7 @@ jobs:
           retention-days: 7
 
   publish-plan:
-    name: Open draft planning PR
+    name: Open WIP PR for manual AI takeover
     needs: assess
     runs-on: ubuntu-24.04
     timeout-minutes: 10

@@ -190,7 +190,7 @@ def historical_evidence(records, evaluated_shas):
                                              ("batch_id", "decision", "selected_scope", "reason")})
             latest[sha] = evidence
     follow_up = [entry for sha, entry in sorted(latest.items()) if sha not in evaluated_shas
-                 and (entry["decision"] in {"skip", "defer"} or entry["selected_scope"] == "reviewed_patch")]
+                 and (entry["decision"] in {"skip", "defer"} or entry["selected_scope"] in {"reviewed_patch", "ai_adaptation"})]
     return prior, follow_up
 
 
@@ -199,7 +199,7 @@ def render_report(plan):
     downstream = plan["downstream"]
     lines = [
         f"# Upstream synchronization assessment: {plan['batch_id']}", "",
-        "This report contains mechanical evidence and review prompts. It does not establish semantic compatibility.", "",
+        "This report contains mechanical evidence, any recorded AI advice and review prompts. Advice does not establish semantic compatibility or authorize implementation.", "",
         f"- Source: {source['repository']}",
         f"- Target release: `{source['tag']}` (`{source['sha']}`)",
         f"- Evaluated range: `{source['range_base_sha']}..{source['sha']}`",
@@ -208,7 +208,7 @@ def render_report(plan):
         f"- Proposed downstream version: `{downstream['proposed_version']}`", "",
         "Each source commit is a review item, not a proven feature boundary. Use feature/group names and dependencies to describe cross-commit work.",
         "All decisions need a reason. `covered` also needs evidence; patch equivalence and old source references are evidence only.",
-        "`merge` and `upgrade` cherry-pick non-merge commits. `migrate` applies a reviewed, hash-pinned local patch; no commands run from the plan.",
+        "`merge` and `upgrade` use source commits; approved AI scopes permit conflict adaptation. `migrate` uses a reviewed patch or an explicitly approved AI scope; no commands run from the plan.",
         "Sensitive CI/policy/license/provenance/version paths, symlinks, submodules and changes to existing attribution lines cannot be applied automatically.", "",
         "## Historical follow-up outside this evaluated range", "",
         "Previous skipped/deferred sources and partial migrations stay visible here. These are review evidence, not selected work; a later full adoption or documented coverage supersedes them.", "",
@@ -252,6 +252,18 @@ def render_report(plan):
                   "- Review behavior, protocol/billing/auth boundaries, all database dialects, dependencies and regression coverage."]
         if item.get("evidence"):
             lines.append("- Decision evidence: " + "; ".join(item["evidence"]))
+        if item.get("ai_scope"):
+            lines.append("- Approved AI paths: " + ", ".join(item["ai_scope"]["paths"]))
+            lines.append("- Approved AI instructions: " + item["ai_scope"]["instructions"])
+        if item.get("ai_analysis"):
+            assessment = item["ai_analysis"]
+            lines += [f"- AI feature/group: {assessment['feature']}",
+                      f"- AI recommendation: `{assessment['recommendation']}` — {assessment['reason']}",
+                      "- AI risks: " + "; ".join(assessment["risks"]),
+                      "- AI dependencies: " + (", ".join(assessment["dependencies"]) or "none identified"),
+                      "- AI suggested paths (not approval): " + ", ".join(assessment["suggested_allowed_paths"])]
+            for evidence in assessment["evidence"]:
+                lines.append(f"- AI evidence: `{evidence['revision']}:{evidence['path']}:{evidence['line']}` — {evidence['detail']}")
         for previous in analysis.get("prior_decisions", []):
             lines.append(f"- Prior batch `{previous['batch_id']}`: `{previous['decision']}` / `{previous['selected_scope']}` — {previous['reason']}")
     return "\n".join(lines) + "\n"
@@ -399,13 +411,30 @@ def validate_plan(repo, plan_path, plan_root=None, require_base=True, check_clea
             require(dependency in previous, f"{item['id']}: dependencies must refer to an earlier item.")
             if decision in ADOPTED or decision == "covered":
                 require(previous[dependency] in ADOPTED | {"covered"}, f"{item['id']}: dependency {dependency} is not selected or covered.")
+        scope = item.get("ai_scope")
+        if scope is not None:
+            require(decision in ADOPTED and isinstance(scope, dict) and set(scope) == {"paths", "instructions"},
+                    "ai_scope must specify exact paths and instructions for a selected item.")
+            paths = scope["paths"]
+            require(isinstance(paths, list) and paths and all(isinstance(path, str) and path for path in paths)
+                    and len(paths) == len(set(paths)), "AI scope paths must be a nonempty list of distinct exact file paths.")
+            require(isinstance(scope["instructions"], str) and scope["instructions"].strip(),
+                    "AI scope requires human-approved migration instructions.")
+            for path in paths:
+                require(not protected_path(path), "AI scope cannot include protected paths.")
+                repository_path(repo, path)
         if decision in {"merge", "upgrade"}:
             require(len(item["parents"]) == 1, "Merge commits require a reviewed migration patch; no implicit mainline selection.")
             check_patch_safety(repo, item["parents"][0], item["source_sha"])
         if decision == "migrate":
-            require(item.get("selected_scope") == "reviewed_patch" and item["evidence"],
-                    "migrate requires selected_scope=reviewed_patch and evidence describing the implemented scope.")
-            migration_safety(repo, migration_patch(item, plan_root or repo))
+            require(item.get("selected_scope") in {"reviewed_patch", "ai_adaptation"} and item["evidence"],
+                    "migrate requires an explicit reviewed_patch or ai_adaptation scope and implementation evidence.")
+            if item["selected_scope"] == "ai_adaptation":
+                require(scope is not None and item.get("patch") is None,
+                        "AI migration requires an approved ai_scope and cannot replace a reviewed patch.")
+            else:
+                require(scope is None, "Reviewed migration patches cannot also request AI adaptation.")
+                migration_safety(repo, migration_patch(item, plan_root or repo))
         else:
             require(item.get("selected_scope") == "full_commit", "Non-migration items must retain selected_scope=full_commit.")
             require(item.get("patch") is None, "Only migrate may specify a patch.")
@@ -446,6 +475,8 @@ def verify_candidate_mapping(repo, plan, mappings, head, plan_root):
 def apply(args):
     repo = Path(args.repo).resolve()
     plan = validate_plan(repo, args.plan, args.plan_root)
+    require(not any(item.get("selected_scope") == "ai_adaptation" for item in plan["items"]),
+            "Use upstream_sync_handoff.py finalize for manual AI adaptations; deterministic apply cannot generate code.")
     require(any(item["decision"] in ADOPTED for item in plan["items"]),
             "No items selected for adoption; keep the assessment without applying or advancing VERSION.")
     candidate = Path(args.candidate).resolve()

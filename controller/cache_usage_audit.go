@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -104,13 +105,66 @@ func cacheUsageAuditCSVRow(row service.CacheUsageAuditRow) []string {
 	return append(out, "", "", "", "", "", "")
 }
 
+var cacheUsageAuditSummaryHeader = []string{
+	"模型", "请求数", "受影响请求数", "旧返回input_tokens", "正确input_tokens", "多算token(缓存被当作输入)", "待核对上限",
+	"普通输入", "缓存读取", "缓存写入", "输出", "官价普通输入单价(每百万)", "官价缓存读取单价(每百万)",
+	"多算金额-按官价", "多算金额-按分组价", "多算金额-按客户价", "实际扣费",
+}
+
+var cacheUsageAuditProtocolLabels = map[string]string{
+	"": "全部协议", service.CacheAuditProtocolMessages: "/v1/messages", service.CacheAuditProtocolChat: "/v1/chat/completions",
+	service.CacheAuditProtocolResponses: "/v1/responses", service.CacheAuditProtocolOther: "其他",
+}
+
+func cacheUsageAuditSummaryRow(label string, totals service.CacheUsageAuditTotals) []string {
+	price := totals.InputPricePerMillion
+	cachePrice := totals.CacheReadPricePerMillion
+	if totals.PriceMixed {
+		price, cachePrice = price+"(多个价格)", cachePrice+"(多个价格)"
+	}
+	return []string{
+		label, i64(totals.Requests), i64(totals.AffectedRequests), i64(totals.AffectedReportedInput), i64(totals.AffectedCorrectInput),
+		i64(totals.DuplicateTokens), i64(totals.DuplicateTokensMax - totals.DuplicateTokens),
+		i64(totals.Tokens.Input), i64(totals.Tokens.CacheRead), i64(totals.Tokens.CacheWrite), i64(totals.Tokens.Output),
+		price, cachePrice, totals.Compensation.List, totals.Compensation.Group, totals.Compensation.Downstream, totals.ActualAmount,
+	}
+}
+
+// writeCacheUsageAuditCSVSummary puts the per-model answer, how many tokens
+// each model over-reported, ahead of the per-request evidence.
+func writeCacheUsageAuditCSVSummary(writer *csv.Writer, report *service.CacheUsageAuditReport) error {
+	period := time.Unix(report.Request.StartAt, 0).In(cacheUsageAuditLocation).Format("2006-01-02") + " 至 " +
+		time.Unix(max(report.Request.EndAt-1, report.Request.StartAt), 0).In(cacheUsageAuditLocation).Format("2006-01-02")
+	rows := [][]string{
+		{"缓存用量核对 - 各模型汇总", "时间段", period, "协议", cacheUsageAuditProtocolLabels[report.Request.Protocol], "币种", report.Currency.Code},
+		cacheUsageAuditSummaryHeader,
+	}
+	for _, totals := range report.ByModel {
+		rows = append(rows, cacheUsageAuditSummaryRow(totals.Key, totals))
+	}
+	total := cacheUsageAuditSummaryRow("合计", report.Total)
+	// Unit prices differ by model; a total row has none.
+	total[slices.Index(cacheUsageAuditSummaryHeader, "官价普通输入单价(每百万)")] = ""
+	total[slices.Index(cacheUsageAuditSummaryHeader, "官价缓存读取单价(每百万)")] = ""
+	rows = append(rows, total, nil, []string{CacheUsageAuditCompensationNote}, nil,
+		[]string{"逐笔明细"}, cacheUsageAuditCSVHeader)
+	for _, row := range rows {
+		if err := writer.Write(row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Billing documents use Asia/Shanghai regardless of the server timezone.
 var cacheUsageAuditLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 func i64(value int64) string { return strconv.FormatInt(value, 10) }
 
-// ExportCacheUsageAudit streams every matching row. Once the first byte is
-// written the status cannot change, so a later failure aborts the download.
+// ExportCacheUsageAudit streams every matching row. CSV runs the audit twice:
+// once for the per-model summary that leads the file, then again to stream
+// rows, so memory stays flat. Once the first byte is written the status
+// cannot change, so a later failure aborts the download.
 func ExportCacheUsageAudit(c *gin.Context) {
 	req, ok := bindCacheUsageAudit(c)
 	if !ok {
@@ -140,19 +194,23 @@ func ExportCacheUsageAudit(c *gin.Context) {
 		}
 	}
 	writer := csv.NewWriter(c.Writer)
+	if format == "csv" {
+		summary, err := service.RunCacheUsageAudit(c.Request.Context(), req, nil)
+		if err != nil {
+			cacheUsageAuditError(c, err)
+			return
+		}
+		start()
+		if err := writeCacheUsageAuditCSVSummary(writer, summary); err != nil {
+			_ = c.Error(err)
+			c.Abort()
+			return
+		}
+	}
 	first := true
 	visit := func(row service.CacheUsageAuditRow) error {
 		start()
 		if format == "csv" {
-			if first {
-				if err := writer.Write([]string{CacheUsageAuditCompensationNote}); err != nil {
-					return err
-				}
-				if err := writer.Write(cacheUsageAuditCSVHeader); err != nil {
-					return err
-				}
-			}
-			first = false
 			return writer.Write(cacheUsageAuditCSVRow(row))
 		}
 		body, err := common.Marshal(row)
@@ -179,10 +237,6 @@ func ExportCacheUsageAudit(c *gin.Context) {
 	}
 	start()
 	if format == "csv" {
-		if first {
-			_ = writer.Write([]string{CacheUsageAuditCompensationNote})
-			_ = writer.Write(cacheUsageAuditCSVHeader)
-		}
 		writer.Flush()
 		return
 	}

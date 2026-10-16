@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -80,18 +81,34 @@ func TestCacheUsageAuditExportsCSVAndJSON(t *testing.T) {
 	reader.FieldsPerRecord = -1
 	records, err := reader.ReadAll()
 	require.NoError(t, err)
-	require.Len(t, records, 3)
-	assert.Equal(t, []string{CacheUsageAuditCompensationNote}, records[0])
-	records = records[1:]
+	// Summary first: title, header, one row per model, total. Blank spacer
+	// lines are skipped by the CSV reader.
+	require.Len(t, records, 8)
+	assert.Equal(t, "缓存用量核对 - 各模型汇总", records[0][0])
+	assert.Equal(t, "2025-10-09 至 2025-10-09", records[0][2])
+	assert.Equal(t, cacheUsageAuditSummaryHeader, records[1])
+	summary := func(row []string, name string) string {
+		return row[slices.Index(cacheUsageAuditSummaryHeader, name)]
+	}
+	assert.Equal(t, "gpt-5", records[2][0])
+	assert.Equal(t, "4825", summary(records[2], "多算token(缓存被当作输入)"))
+	assert.Equal(t, "4921", summary(records[2], "旧返回input_tokens"))
+	assert.Equal(t, "96", summary(records[2], "正确input_tokens"))
+	assert.Equal(t, "20.000000", summary(records[2], "官价普通输入单价(每百万)"))
+	assert.Equal(t, "0.096500", summary(records[2], "多算金额-按官价"))
+	assert.Equal(t, "合计", records[3][0])
+	assert.Equal(t, "4825", summary(records[3], "多算token(缓存被当作输入)"))
+	assert.Empty(t, summary(records[3], "官价普通输入单价(每百万)"))
+	assert.Equal(t, []string{CacheUsageAuditCompensationNote}, records[4])
+	assert.Equal(t, []string{"逐笔明细"}, records[5])
+	// Then the per-request detail.
+	detail := slices.IndexFunc(records, func(row []string) bool { return slices.Equal(row, cacheUsageAuditCSVHeader) })
+	require.Positive(t, detail)
+	records = records[detail:]
+	require.Len(t, records, 2)
 	assert.Equal(t, len(cacheUsageAuditCSVHeader), len(records[1]))
 	column := func(name string) string {
-		for i, header := range records[0] {
-			if header == name {
-				return records[1][i]
-			}
-		}
-		t.Fatalf("missing column %s", name)
-		return ""
+		return records[1][slices.Index(records[0], name)]
 	}
 	assert.Equal(t, "req-cache-1", column("请求ID"))
 	assert.Equal(t, "2025-10-09 16:53:20", column("时间"))

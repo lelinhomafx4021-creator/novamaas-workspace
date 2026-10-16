@@ -7192,6 +7192,24 @@
     "By user": "Par utilisateur",
     "Compensation (list)": "Compensation (catalogue)",
     "Compensation (customer)": "Compensation (client)",
-    "Usage was estimated locally, not reported by upstream": "Utilisation estimée localement, non fournie par le fournisseur"
+    "Usage was estimated locally, not reported by upstream": "Utilisation estimée localement, non fournie par le fournisseur",
+    "Duplicated tokens by model": "Jetons dupliqués par modèle",
+    "Cache tokens counted again as input (confirmed)": "Jetons de cache comptés en plus comme entrée (confirmé)",
+    "Returned input_tokens {{reported}} → correct {{correct}}": "input_tokens renvoyé {{reported}} → correct {{correct}}",
+    "Needs review (upper bound)": "À vérifier (plafond)",
+    "Affected requests / models": "Requêtes / modèles concernés",
+    "No duplicated tokens in this period.": "Aucun jeton dupliqué sur cette période.",
+    "Correct input_tokens": "input_tokens correct",
+    "How customers correct their users": "Comment les clients corrigent leurs utilisateurs",
+    "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.": "Pour chaque requête, input_tokens correct = input_tokens renvoyé − jetons dupliqués. Les lectures et écritures de cache étaient déjà correctes.",
+    "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).": "Si le cache était facturé séparément, remboursez jetons dupliqués × prix d'entrée du modèle. Si seul input_tokens était facturé, remboursez jetons dupliqués × (prix d'entrée − prix de lecture du cache).",
+    "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.": "Rapprochez les ID de requête exportés de leurs propres enregistrements pour répartir la correction par utilisateur final. Vérifiez d'abord les requêtes à vérifier avec les réponses d'origine.",
+    "Export tokens by model": "Exporter les jetons par modèle",
+    "By day, key and user, with amounts": "Par jour, clé et utilisateur, avec montants",
+    "List input price / 1M": "Prix catalogue entrée / 1M",
+    "List cache read price / 1M": "Prix catalogue lecture cache / 1M",
+    "Extra charge at list price": "Surfacturation au prix catalogue",
+    "Extra charge at customer price": "Surfacturation au prix client",
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* Ce modèle a eu plusieurs prix sur la période ; le premier est affiché et les montants sont additionnés par requête."
   }
 }

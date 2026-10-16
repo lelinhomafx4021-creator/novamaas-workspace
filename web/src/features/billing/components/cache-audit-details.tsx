@@ -64,7 +64,9 @@ export function CacheAuditDetails(props: { report: CacheAuditReport }) {
   const symbol = props.report.currency.symbol
   const priceNote = (row: CacheAuditRow) => {
     if (row.price_issue) {
-      return t(CACHE_AUDIT_PRICE_ISSUE_LABELS[row.price_issue] ?? row.price_issue)
+      return t(
+        CACHE_AUDIT_PRICE_ISSUE_LABELS[row.price_issue] ?? row.price_issue
+      )
     }
     if (row.price_mismatch) return t('Group price differs from actual charge')
     return ''
@@ -89,7 +91,9 @@ export function CacheAuditDetails(props: { report: CacheAuditReport }) {
               <TableHead>{t('Model')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
               <TableHead className='text-right'>{t('Total input')}</TableHead>
-              <TableHead className='text-right'>{t('Uncached input')}</TableHead>
+              <TableHead className='text-right'>
+                {t('Uncached input')}
+              </TableHead>
               <TableHead className='text-right'>{t('Cache read')}</TableHead>
               <TableHead className='text-right'>{t('Cache write')}</TableHead>
               <TableHead className='text-right'>{t('Output')}</TableHead>
@@ -113,7 +117,9 @@ export function CacheAuditDetails(props: { report: CacheAuditReport }) {
           </TableHeader>
           <TableBody>
             {props.report.rows.map((row) => (
-              <TableRow key={`${row.log_id}-${row.request_id}-${row.created_at}`}>
+              <TableRow
+                key={`${row.log_id}-${row.request_id}-${row.created_at}`}
+              >
                 <TableCell className='whitespace-nowrap'>
                   {billingTimestamp(row.created_at)}
                 </TableCell>

@@ -85,7 +85,9 @@ function GroupTable(props: {
           <TableRow key={row.key}>
             <TableCell className='break-all'>{row.key || '-'}</TableCell>
             <TableCell className='text-right'>{row.requests}</TableCell>
-            <TableCell className='text-right'>{row.affected_requests}</TableCell>
+            <TableCell className='text-right'>
+              {row.affected_requests}
+            </TableCell>
             <TableCell className='text-right'>
               {formatTokens(row.tokens.total_input)}
             </TableCell>
@@ -159,7 +161,10 @@ export function CacheAuditSummary(props: { report: CacheAuditReport }) {
           label={t('Group price')}
           value={`${symbol}${total.discounted_amount}`}
         />
-        <Metric label={t('List price')} value={`${symbol}${total.list_amount}`} />
+        <Metric
+          label={t('List price')}
+          value={`${symbol}${total.list_amount}`}
+        />
         <Metric
           label={t('Total input')}
           value={formatTokens(total.tokens.total_input)}
@@ -213,16 +218,32 @@ export function CacheAuditSummary(props: { report: CacheAuditReport }) {
           <TabsTrigger value='user'>{t('By user')}</TabsTrigger>
         </TabsList>
         <TabsContent value='day' className='overflow-x-auto'>
-          <GroupTable rows={props.report.by_day} label={t('Date')} symbol={symbol} />
+          <GroupTable
+            rows={props.report.by_day}
+            label={t('Date')}
+            symbol={symbol}
+          />
         </TabsContent>
         <TabsContent value='model' className='overflow-x-auto'>
-          <GroupTable rows={props.report.by_model} label={t('Model')} symbol={symbol} />
+          <GroupTable
+            rows={props.report.by_model}
+            label={t('Model')}
+            symbol={symbol}
+          />
         </TabsContent>
         <TabsContent value='key' className='overflow-x-auto'>
-          <GroupTable rows={props.report.by_token} label={t('API key')} symbol={symbol} />
+          <GroupTable
+            rows={props.report.by_token}
+            label={t('API key')}
+            symbol={symbol}
+          />
         </TabsContent>
         <TabsContent value='user' className='overflow-x-auto'>
-          <GroupTable rows={props.report.by_user} label={t('User')} symbol={symbol} />
+          <GroupTable
+            rows={props.report.by_user}
+            label={t('User')}
+            symbol={symbol}
+          />
         </TabsContent>
       </Tabs>
     </section>

@@ -28,7 +28,11 @@ import {
   type CacheAuditTotals,
 } from '../cache-audit-api'
 import { CacheAuditPanel } from '../components/cache-audit-panel'
-import { cacheAuditRequest, cacheAuditSchema } from '../lib/cache-audit'
+import {
+  cacheAuditModelTokenCsv,
+  cacheAuditRequest,
+  cacheAuditSchema,
+} from '../lib/cache-audit'
 
 vi.mock('../cache-audit-api', () => ({
   runCacheAudit: vi.fn(),
@@ -55,6 +59,10 @@ const totals: CacheAuditTotals = {
   tokens,
   duplicate_tokens: 4825,
   duplicate_tokens_max: 4825,
+  affected_reported_input: 4921,
+  affected_correct_input: 96,
+  input_price_per_million: '20.000000',
+  cache_read_price_per_million: '2.000000',
   actual_amount: '0.010086',
   list_amount: '0.020170',
   discounted_amount: '0.010085',
@@ -177,7 +185,12 @@ test('runs the audit for the selected customer and shows duplicated cache tokens
   })
   expect(await screen.findByText('req-cache-1')).toBeInTheDocument()
   expect(screen.getAllByText('4,825').length).toBeGreaterThan(0)
-  expect(screen.getByText('$0.020170', { selector: 'p' })).toBeInTheDocument()
+  // Duplicated tokens lead the report; amounts are folded away.
+  expect(screen.getByText('Duplicated tokens by model')).toBeInTheDocument()
+  expect(
+    screen.getByText('Returned input_tokens 4,921 → correct 96')
+  ).toBeInTheDocument()
+  expect(screen.getByText('How much to compensate')).toBeInTheDocument()
   expect(
     screen.getByText('Cache reads were also reported in input_tokens')
   ).toBeInTheDocument()
@@ -214,4 +227,14 @@ test('runs the audit for the selected customer and shows duplicated cache tokens
       'csv'
     )
   )
+})
+
+test('per-model token export lists duplicated tokens and a total row', () => {
+  const csv = cacheAuditModelTokenCsv(report).split('\r\n')
+  expect(csv).toHaveLength(3)
+  expect(csv[0]).toContain('"多算token(缓存被当作输入)"')
+  expect(csv[1]).toBe(
+    '"gpt-5","1","4921","96","4825","0","96","4825","0","86","20.000000","2.000000","0.096500",""'
+  )
+  expect(csv[2].startsWith('"合计"')).toBe(true)
 })

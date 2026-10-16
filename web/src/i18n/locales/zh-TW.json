@@ -7192,6 +7192,24 @@
     "By user": "按使用者",
     "Compensation (list)": "應補（官價）",
     "Compensation (customer)": "應補（客戶價）",
-    "Usage was estimated locally, not reported by upstream": "用量為本地估算，不是上游回傳"
+    "Usage was estimated locally, not reported by upstream": "用量為本地估算，不是上游回傳",
+    "Duplicated tokens by model": "各模型多算的 token",
+    "Cache tokens counted again as input (confirmed)": "快取被重複算作輸入的 token（已確認）",
+    "Returned input_tokens {{reported}} → correct {{correct}}": "回傳的 input_tokens {{reported}} → 正確應為 {{correct}}",
+    "Needs review (upper bound)": "待核對（上限）",
+    "Affected requests / models": "受影響請求 / 模型數",
+    "No duplicated tokens in this period.": "該時間段沒有多算的 token。",
+    "Correct input_tokens": "正確的 input_tokens",
+    "How customers correct their users": "客戶怎麼給他們的用戶更正",
+    "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.": "每筆請求：正確的 input_tokens = 回傳的 input_tokens − 多算 token。快取讀取和快取寫入的數值本來就是對的，不用改。",
+    "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).": "如果客戶對快取 token 單獨計了費：應退 = 多算 token × 該模型普通輸入價。如果只按 input_tokens 計費：應退 = 多算 token × (輸入價 − 快取讀取價)。",
+    "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.": "用匯出的請求 ID 對上客戶自己的記錄，再分發到每個終端用戶。待核對的請求先對照原始回應確認。",
+    "Export tokens by model": "匯出各模型 token 表",
+    "By day, key and user, with amounts": "按天 / Key / 用戶明細及金額參考",
+    "List input price / 1M": "官價輸入單價 / 百萬",
+    "List cache read price / 1M": "官價快取讀取單價 / 百萬",
+    "Extra charge at list price": "多算金額（按官價）",
+    "Extra charge at customer price": "多算金額（按客戶價）",
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* 該模型在此期間有多個歷史價格，表中顯示第一個，金額按每筆請求的實際價格累加。"
   }
 }

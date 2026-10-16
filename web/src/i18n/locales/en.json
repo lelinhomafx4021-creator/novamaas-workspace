@@ -7192,6 +7192,24 @@
     "By user": "By user",
     "Compensation (list)": "Compensation (list)",
     "Compensation (customer)": "Compensation (customer)",
-    "Usage was estimated locally, not reported by upstream": "Usage was estimated locally, not reported by upstream"
+    "Usage was estimated locally, not reported by upstream": "Usage was estimated locally, not reported by upstream",
+    "Duplicated tokens by model": "Duplicated tokens by model",
+    "Cache tokens counted again as input (confirmed)": "Cache tokens counted again as input (confirmed)",
+    "Returned input_tokens {{reported}} → correct {{correct}}": "Returned input_tokens {{reported}} → correct {{correct}}",
+    "Needs review (upper bound)": "Needs review (upper bound)",
+    "Affected requests / models": "Affected requests / models",
+    "No duplicated tokens in this period.": "No duplicated tokens in this period.",
+    "Correct input_tokens": "Correct input_tokens",
+    "How customers correct their users": "How customers correct their users",
+    "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.": "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.",
+    "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).": "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).",
+    "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.": "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.",
+    "Export tokens by model": "Export tokens by model",
+    "By day, key and user, with amounts": "By day, key and user, with amounts",
+    "List input price / 1M": "List input price / 1M",
+    "List cache read price / 1M": "List cache read price / 1M",
+    "Extra charge at list price": "Extra charge at list price",
+    "Extra charge at customer price": "Extra charge at customer price",
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* This model had more than one historical price in the period; the first is shown and amounts are summed per request."
   }
 }

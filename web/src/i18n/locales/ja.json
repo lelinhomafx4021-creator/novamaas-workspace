@@ -7192,6 +7192,24 @@
     "By user": "ユーザー別",
     "Compensation (list)": "補填額（定価）",
     "Compensation (customer)": "補填額（顧客価格）",
-    "Usage was estimated locally, not reported by upstream": "使用量はローカル推定で、アップストリームの報告ではありません"
+    "Usage was estimated locally, not reported by upstream": "使用量はローカル推定で、アップストリームの報告ではありません",
+    "Duplicated tokens by model": "モデル別の重複トークン",
+    "Cache tokens counted again as input (confirmed)": "入力として重複計上されたキャッシュトークン（確定）",
+    "Returned input_tokens {{reported}} → correct {{correct}}": "返された input_tokens {{reported}} → 正しくは {{correct}}",
+    "Needs review (upper bound)": "要確認（上限）",
+    "Affected requests / models": "影響リクエスト / モデル数",
+    "No duplicated tokens in this period.": "この期間に重複トークンはありません。",
+    "Correct input_tokens": "正しい input_tokens",
+    "How customers correct their users": "顧客側でのユーザー訂正方法",
+    "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.": "各リクエストで、正しい input_tokens = 返された input_tokens − 重複トークン。キャッシュ読み取り・書き込みの値はもともと正しいです。",
+    "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).": "キャッシュトークンを別途請求していた場合、返金 = 重複トークン × そのモデルの通常入力単価。input_tokens のみ請求していた場合、返金 = 重複トークン × (入力単価 − キャッシュ読み取り単価)。",
+    "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.": "エクスポートしたリクエスト ID を顧客側の記録と照合し、各エンドユーザーへ配分します。要確認のリクエストは先に元のレスポンスと照合してください。",
+    "Export tokens by model": "モデル別トークンをエクスポート",
+    "By day, key and user, with amounts": "日・キー・ユーザー別と金額参考",
+    "List input price / 1M": "定価 入力単価 / 100万",
+    "List cache read price / 1M": "定価 キャッシュ読み取り単価 / 100万",
+    "Extra charge at list price": "過大請求額（定価）",
+    "Extra charge at customer price": "過大請求額（顧客価格）",
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* このモデルは期間中に複数の価格がありました。最初の価格を表示し、金額はリクエストごとの価格で合算しています。"
   }
 }

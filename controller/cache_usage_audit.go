@@ -68,7 +68,7 @@ var cacheUsageAuditCSVHeader = []string{
 	"旧返回input_tokens", "正确input_tokens", "多算token(缓存当输入)", "多算token上限",
 	"分组倍率", "实际扣费", "官价-普通输入", "官价-缓存读取", "官价-缓存写入", "官价-输出", "官价合计",
 	"分组价-普通输入", "分组价-缓存读取", "分组价-缓存写入", "分组价-输出", "分组价合计", "价格说明", "分组价与实扣不一致",
-	"官价普通输入单价(每百万)", "应补-按官价", "应补-按分组价", "应补-按下游价", "应补上限-按官价", "应补上限-按分组价", "应补上限-按下游价",
+	"官价普通输入单价(每百万)", "官价缓存读取单价(每百万)", "应补-按官价", "应补-按分组价", "应补-按下游价", "应补上限-按官价", "应补上限-按分组价", "应补上限-按下游价",
 }
 
 // CacheUsageAuditCompensationNote explains the compensation basis in exports.
@@ -97,7 +97,7 @@ func cacheUsageAuditCSVRow(row service.CacheUsageAuditRow) []string {
 	}
 	out = append(out, cost(row.ListCost)...)
 	out = append(out, cost(row.DiscountedCost)...)
-	out = append(out, row.PriceIssue, strconv.FormatBool(row.PriceMismatch), row.InputPricePerMillion)
+	out = append(out, row.PriceIssue, strconv.FormatBool(row.PriceMismatch), row.InputPricePerMillion, row.CacheReadPricePerMillion)
 	if comp := row.Compensation; comp != nil {
 		return append(out, comp.List, comp.Group, comp.Downstream, comp.ListMax, comp.GroupMax, comp.DownstreamMax)
 	}

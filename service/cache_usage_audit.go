@@ -112,8 +112,9 @@ type CacheUsageAuditRow struct {
 	ListCost       *CacheUsageCost  `json:"list_cost,omitempty"`       // base model price, no group ratio
 	DiscountedCost *CacheUsageCost  `json:"discounted_cost,omitempty"` // list price x historical group ratio
 	// InputPricePerMillion is the historical uncached input list price.
-	InputPricePerMillion string                  `json:"input_price_per_million,omitempty"`
-	Compensation         *CacheUsageCompensation `json:"compensation,omitempty"`
+	InputPricePerMillion     string                  `json:"input_price_per_million,omitempty"`
+	CacheReadPricePerMillion string                  `json:"cache_read_price_per_million,omitempty"`
+	Compensation             *CacheUsageCompensation `json:"compensation,omitempty"`
 }
 
 type CacheUsageAuditTotals struct {
@@ -126,9 +127,19 @@ type CacheUsageAuditTotals struct {
 	Tokens             CacheUsageTokens `json:"tokens"`
 	DuplicateTokens    int64            `json:"duplicate_tokens"`
 	DuplicateTokensMax int64            `json:"duplicate_tokens_max"`
-	ActualAmount       string           `json:"actual_amount"`
-	ListAmount         string           `json:"list_amount"`       // priced requests only
-	DiscountedAmount   string           `json:"discounted_amount"` // priced requests only
+	// input_tokens across affected requests only: what /v1/messages returned
+	// versus the Anthropic-standard value. Their difference is DuplicateTokens.
+	AffectedReportedInput int64 `json:"affected_reported_input"`
+	AffectedCorrectInput  int64 `json:"affected_correct_input"`
+	// Historical list prices per 1M tokens of the duplicated requests. When a
+	// group mixes several prices (price changes, groups), PriceMixed is set and
+	// the first price is shown; compensation is still summed per request.
+	InputPricePerMillion     string `json:"input_price_per_million,omitempty"`
+	CacheReadPricePerMillion string `json:"cache_read_price_per_million,omitempty"`
+	PriceMixed               bool   `json:"price_mixed,omitempty"`
+	ActualAmount             string `json:"actual_amount"`
+	ListAmount               string `json:"list_amount"`       // priced requests only
+	DiscountedAmount         string `json:"discounted_amount"` // priced requests only
 
 	Compensation CacheUsageCompensation `json:"compensation"`
 	// Duplicate tokens on rows without a historical input price; they need a
@@ -363,6 +374,9 @@ func attachCacheAuditCompensation(row *CacheUsageAuditRow, meta cacheAuditMeta, 
 		group := decimal.NewFromFloat(groupRatio)
 		duplicate, duplicateMax := decimal.NewFromInt(row.DuplicateTokens), decimal.NewFromInt(row.DuplicateTokensMax)
 		row.InputPricePerMillion = money.amount(model.Mul(perMillion))
+		if cacheRatio, ok := meta.number("cache_ratio"); ok {
+			row.CacheReadPricePerMillion = money.amount(model.Mul(perMillion).Mul(decimal.NewFromFloat(cacheRatio)))
+		}
 		comp.List, comp.ListMax = money.amount(duplicate.Mul(model)), money.amount(duplicateMax.Mul(model))
 		comp.Group, comp.GroupMax = money.amount(duplicate.Mul(model).Mul(group)), money.amount(duplicateMax.Mul(model).Mul(group))
 	} else if !hasDownstream {
@@ -464,6 +478,17 @@ func (t *CacheUsageAuditTotals) add(row CacheUsageAuditRow, list, discounted cac
 	t.Tokens.Output += row.Tokens.Output
 	t.DuplicateTokens += row.DuplicateTokens
 	t.DuplicateTokensMax += row.DuplicateTokensMax
+	if row.InputPricePerMillion != "" {
+		if t.InputPricePerMillion == "" {
+			t.InputPricePerMillion, t.CacheReadPricePerMillion = row.InputPricePerMillion, row.CacheReadPricePerMillion
+		} else if t.InputPricePerMillion != row.InputPricePerMillion || t.CacheReadPricePerMillion != row.CacheReadPricePerMillion {
+			t.PriceMixed = true
+		}
+	}
+	if row.Status == CacheAuditAffected {
+		t.AffectedReportedInput += row.ReportedInputTokens
+		t.AffectedCorrectInput += row.CorrectInputTokens
+	}
 	if comp := row.Compensation; comp != nil {
 		add := func(target *decimal.Decimal, value string) {
 			if value != "" {
@@ -593,6 +618,10 @@ func RunCacheUsageAudit(ctx context.Context, req CacheUsageAuditRequest, visit f
 	}
 	report.Total.finish(money)
 	report.ByDay, report.ByModel, report.ByToken, report.ByUser = byDay.sorted(money), byModel.sorted(money), byToken.sorted(money), byUser.sorted(money)
+	// Models are ranked by duplicated tokens: that is what customers act on.
+	sort.SliceStable(report.ByModel, func(i, j int) bool {
+		return report.ByModel[i].DuplicateTokensMax > report.ByModel[j].DuplicateTokensMax
+	})
 	return report, nil
 }
 

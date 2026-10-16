@@ -24,6 +24,11 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import {
   Field,
   FieldError,
   FieldGroup,
@@ -50,6 +55,7 @@ import {
 import { CacheAuditCompensation } from './cache-audit-compensation'
 import { CacheAuditDetails } from './cache-audit-details'
 import { CacheAuditSummary } from './cache-audit-summary'
+import { CacheAuditTokens } from './cache-audit-tokens'
 
 export function CacheAuditPanel(props: { userId: number }) {
   const { t } = useTranslation()
@@ -128,7 +134,9 @@ export function CacheAuditPanel(props: { userId: number }) {
               disabled={pending}
               {...form.register('end')}
             />
-            <FieldError>{errors.end?.message && t(errors.end.message)}</FieldError>
+            <FieldError>
+              {errors.end?.message && t(errors.end.message)}
+            </FieldError>
           </Field>
           <Field>
             <FieldLabel htmlFor={`${id}-key`}>{t('API key')}</FieldLabel>
@@ -168,19 +176,25 @@ export function CacheAuditPanel(props: { userId: number }) {
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor={`${id}-status`}>{t('Detail filter')}</FieldLabel>
+            <FieldLabel htmlFor={`${id}-status`}>
+              {t('Detail filter')}
+            </FieldLabel>
             <NativeSelect
               id={`${id}-status`}
               className='w-full'
               disabled={pending}
               {...form.register('status')}
             >
-              <NativeSelectOption value=''>{t('All records')}</NativeSelectOption>
-              {Object.entries(CACHE_AUDIT_STATUS_LABELS).map(([value, label]) => (
-                <NativeSelectOption key={value} value={value}>
-                  {t(label)}
-                </NativeSelectOption>
-              ))}
+              <NativeSelectOption value=''>
+                {t('All records')}
+              </NativeSelectOption>
+              {Object.entries(CACHE_AUDIT_STATUS_LABELS).map(
+                ([value, label]) => (
+                  <NativeSelectOption key={value} value={value}>
+                    {t(label)}
+                  </NativeSelectOption>
+                )
+              )}
             </NativeSelect>
           </Field>
         </FieldGroup>
@@ -209,6 +223,7 @@ export function CacheAuditPanel(props: { userId: number }) {
       </form>
       {result && (
         <>
+          <CacheAuditTokens report={result.report} />
           <CacheAuditCompensation
             report={result.report}
             prices={prices}
@@ -223,8 +238,19 @@ export function CacheAuditPanel(props: { userId: number }) {
               })
             }
           />
-          <CacheAuditSummary report={result.report} />
           <CacheAuditDetails report={result.report} />
+          <Collapsible className='flex flex-col gap-4 rounded-md border p-4'>
+            <CollapsibleTrigger
+              render={
+                <Button type='button' variant='ghost' className='self-start' />
+              }
+            >
+              {t('By day, key and user, with amounts')}
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CacheAuditSummary report={result.report} />
+            </CollapsibleContent>
+          </Collapsible>
         </>
       )}
     </div>

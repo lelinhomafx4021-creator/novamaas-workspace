@@ -7192,6 +7192,24 @@
     "By user": "По пользователям",
     "Compensation (list)": "Компенсация (база)",
     "Compensation (customer)": "Компенсация (клиент)",
-    "Usage was estimated locally, not reported by upstream": "Usage оценён локально, а не получен от провайдера"
+    "Usage was estimated locally, not reported by upstream": "Usage оценён локально, а не получен от провайдера",
+    "Duplicated tokens by model": "Дублированные токены по моделям",
+    "Cache tokens counted again as input (confirmed)": "Токены кэша, повторно учтённые как ввод (подтверждено)",
+    "Returned input_tokens {{reported}} → correct {{correct}}": "Возвращено input_tokens {{reported}} → верно {{correct}}",
+    "Needs review (upper bound)": "На проверке (максимум)",
+    "Affected requests / models": "Затронутые запросы / модели",
+    "No duplicated tokens in this period.": "За этот период дублированных токенов нет.",
+    "Correct input_tokens": "Верный input_tokens",
+    "How customers correct their users": "Как клиентам исправить начисления своим пользователям",
+    "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.": "Для каждого запроса верный input_tokens = возвращённый input_tokens − дублированные токены. Чтение и запись кэша были верными.",
+    "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).": "Если кэш оплачивался отдельно, вернуть дублированные токены × цену ввода модели. Если оплачивался только input_tokens — дублированные токены × (цена ввода − цена чтения кэша).",
+    "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.": "Сопоставьте экспортированные ID запросов со своими записями, чтобы распределить исправление по конечным пользователям. Запросы на проверке сначала сверьте с исходными ответами.",
+    "Export tokens by model": "Экспорт токенов по моделям",
+    "By day, key and user, with amounts": "По дням, ключам и пользователям, с суммами",
+    "List input price / 1M": "Базовая цена ввода / 1M",
+    "List cache read price / 1M": "Базовая цена чтения кэша / 1M",
+    "Extra charge at list price": "Переплата по базовой цене",
+    "Extra charge at customer price": "Переплата по цене клиента",
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* У модели было несколько цен за период; показана первая, суммы считаются по каждому запросу."
   }
 }

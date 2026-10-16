@@ -7192,6 +7192,24 @@
     "By user": "Theo người dùng",
     "Compensation (list)": "Tiền bù (niêm yết)",
     "Compensation (customer)": "Tiền bù (giá khách)",
-    "Usage was estimated locally, not reported by upstream": "Usage được ước tính cục bộ, không do upstream trả về"
+    "Usage was estimated locally, not reported by upstream": "Usage được ước tính cục bộ, không do upstream trả về",
+    "Duplicated tokens by model": "Token bị tính trùng theo mô hình",
+    "Cache tokens counted again as input (confirmed)": "Token cache bị tính thêm thành đầu vào (đã xác nhận)",
+    "Returned input_tokens {{reported}} → correct {{correct}}": "input_tokens đã trả {{reported}} → đúng là {{correct}}",
+    "Needs review (upper bound)": "Cần xem xét (tối đa)",
+    "Affected requests / models": "Yêu cầu / mô hình bị ảnh hưởng",
+    "No duplicated tokens in this period.": "Không có token bị tính trùng trong kỳ này.",
+    "Correct input_tokens": "input_tokens đúng",
+    "How customers correct their users": "Cách khách hàng điều chỉnh cho người dùng của họ",
+    "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.": "Với mỗi yêu cầu, input_tokens đúng = input_tokens đã trả − token bị tính trùng. Số đọc và ghi cache vốn đã đúng.",
+    "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).": "Nếu đã tính phí cache riêng: hoàn = token trùng × giá đầu vào của mô hình. Nếu chỉ tính input_tokens: hoàn = token trùng × (giá đầu vào − giá đọc cache).",
+    "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.": "Đối chiếu ID yêu cầu đã xuất với bản ghi của khách để phân bổ điều chỉnh cho từng người dùng cuối. Các yêu cầu cần xem xét hãy đối chiếu phản hồi gốc trước.",
+    "Export tokens by model": "Xuất token theo mô hình",
+    "By day, key and user, with amounts": "Theo ngày, key, người dùng và số tiền",
+    "List input price / 1M": "Giá niêm yết đầu vào / 1M",
+    "List cache read price / 1M": "Giá niêm yết đọc cache / 1M",
+    "Extra charge at list price": "Tiền tính thừa (giá niêm yết)",
+    "Extra charge at customer price": "Tiền tính thừa (giá khách)",
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* Mô hình này có nhiều mức giá trong kỳ; hiển thị mức đầu tiên, số tiền được cộng theo từng yêu cầu."
   }
 }

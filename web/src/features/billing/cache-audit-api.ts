@@ -90,6 +90,7 @@ export interface CacheAuditRow {
   list_cost?: CacheAuditCost
   discounted_cost?: CacheAuditCost
   input_price_per_million?: string
+  cache_read_price_per_million?: string
   compensation?: CacheAuditCompensation
 }
 
@@ -103,6 +104,11 @@ export interface CacheAuditTotals {
   tokens: CacheAuditTokens
   duplicate_tokens: number
   duplicate_tokens_max: number
+  affected_reported_input: number
+  affected_correct_input: number
+  input_price_per_million?: string
+  cache_read_price_per_million?: string
+  price_mixed?: boolean
   actual_amount: string
   list_amount: string
   discounted_amount: string

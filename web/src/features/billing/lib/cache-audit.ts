@@ -18,7 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
-import type { CacheAuditRequest, CacheAuditStatus } from '../cache-audit-api'
+import type {
+  CacheAuditReport,
+  CacheAuditRequest,
+  CacheAuditStatus,
+} from '../cache-audit-api'
 
 const DAY = 86400
 export const CACHE_AUDIT_MAX_DAYS = 93
@@ -111,6 +115,51 @@ export const CACHE_AUDIT_PRICE_ISSUE_LABELS: Record<string, string> = {
   tiered_billing: 'Tiered billing expression',
   per_call_price: 'Per-call pricing',
   unsupported_surcharge: 'Includes image, audio or tool surcharges',
+}
+
+// Per-model token report for customers; the column names stay in Chinese
+// like the server export because the file is sent to customers as-is.
+export function cacheAuditModelTokenCsv(report: CacheAuditReport) {
+  const header = [
+    '模型',
+    '受影响请求数',
+    '旧返回input_tokens',
+    '正确input_tokens',
+    '多算token(缓存被当作输入)',
+    '待核对上限',
+    '普通输入',
+    '缓存读取',
+    '缓存写入',
+    '输出',
+    '官价普通输入单价(每百万)',
+    '官价缓存读取单价(每百万)',
+    '多算金额-按官价',
+    '多算金额-按客户价',
+  ]
+  const rows = [
+    ...report.by_model.filter((row) => row.duplicate_tokens_max > 0),
+    { ...report.total, key: '合计' },
+  ].map((row) => [
+    row.key,
+    row.affected_requests,
+    row.affected_reported_input,
+    row.affected_correct_input,
+    row.duplicate_tokens,
+    row.duplicate_tokens_max - row.duplicate_tokens,
+    row.tokens.input,
+    row.tokens.cache_read,
+    row.tokens.cache_write,
+    row.tokens.output,
+    row.input_price_per_million ?? '',
+    row.cache_read_price_per_million ?? '',
+    row.compensation.list,
+    row.compensation.downstream ?? '',
+  ])
+  return [header, ...rows]
+    .map((cells) =>
+      cells.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')
+    )
+    .join('\r\n')
 }
 
 export function formatTokens(value: number) {

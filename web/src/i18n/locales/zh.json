@@ -7192,6 +7192,24 @@
     "By user": "按用户",
     "Compensation (list)": "应补（官价）",
     "Compensation (customer)": "应补（客户价）",
-    "Usage was estimated locally, not reported by upstream": "用量为本地估算，不是上游返回"
+    "Usage was estimated locally, not reported by upstream": "用量为本地估算，不是上游返回",
+    "Duplicated tokens by model": "各模型多算的 token",
+    "Cache tokens counted again as input (confirmed)": "缓存被重复算作输入的 token（已确认）",
+    "Returned input_tokens {{reported}} → correct {{correct}}": "返回的 input_tokens {{reported}} → 正确应为 {{correct}}",
+    "Needs review (upper bound)": "待核对（上限）",
+    "Affected requests / models": "受影响请求 / 模型数",
+    "No duplicated tokens in this period.": "该时间段没有多算的 token。",
+    "Correct input_tokens": "正确的 input_tokens",
+    "How customers correct their users": "客户怎么给他们的用户更正",
+    "For each request, the correct input_tokens = returned input_tokens − duplicated tokens. Cache read and cache write tokens were already correct.": "每笔请求：正确的 input_tokens = 返回的 input_tokens − 多算 token。缓存读取和缓存写入的数值本来就是对的，不用改。",
+    "If cache tokens were billed separately, refund duplicated tokens × that model’s uncached input price. If only input_tokens was billed, refund duplicated tokens × (input price − cache read price).": "如果客户对缓存 token 单独计了费：应退 = 多算 token × 该模型普通输入价。如果只按 input_tokens 计费：应退 = 多算 token × (输入价 − 缓存读取价)。",
+    "Match exported request IDs to their own records to distribute the correction to each end user. Confirm review requests against the original responses first.": "用导出的请求 ID 对上客户自己的记录，再分发到每个终端用户。待核对的请求先对照原始响应确认。",
+    "Export tokens by model": "导出各模型 token 表",
+    "By day, key and user, with amounts": "按天 / Key / 用户明细及金额参考",
+    "List input price / 1M": "官价输入单价 / 百万",
+    "List cache read price / 1M": "官价缓存读取单价 / 百万",
+    "Extra charge at list price": "多算金额（按官价）",
+    "Extra charge at customer price": "多算金额（按客户价）",
+    "* This model had more than one historical price in the period; the first is shown and amounts are summed per request.": "* 该模型在此期间有多个历史价格，表中显示第一个，金额按每笔请求的实际价格累加。"
   }
 }

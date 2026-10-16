@@ -43,6 +43,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { billingToday, getBillingAccount, searchBillingAccounts } from './api'
 import { BillingProfileCard } from './components/billing-profile-card'
+import { CacheAuditPanel } from './components/cache-audit-panel'
 import { ConsumptionPanel } from './components/consumption-panel'
 import { CorrectionPanel } from './components/correction-panel'
 import { StatementsPanel } from './components/statements-panel'
@@ -172,6 +173,11 @@ export function Billing() {
                   {t('Billing adjustments')}
                 </TabsTrigger>
               )}
+              {financialAccounting && (
+                <TabsTrigger value='cache-audit'>
+                  {t('Cache usage audit')}
+                </TabsTrigger>
+              )}
             </TabsList>
             <TabsContent value='daily'>
               <ConsumptionPanel
@@ -205,6 +211,11 @@ export function Billing() {
                   actorId={user?.id ?? 0}
                   canManage={user?.role === ROLE.SUPER_ADMIN}
                 />
+              </TabsContent>
+            )}
+            {financialAccounting && (
+              <TabsContent value='cache-audit'>
+                <CacheAuditPanel key={userId} userId={userId} />
               </TabsContent>
             )}
           </Tabs>

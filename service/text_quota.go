@@ -384,6 +384,11 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	return summary
 }
 
+func convertsToClaudeResponse(relayInfo *relaycommon.RelayInfo) bool {
+	chain := relayInfo.RequestConversionChain
+	return len(chain) > 1 && chain[0] == types.RelayFormatClaude && relayInfo.GetFinalRequestRelayFormat() != types.RelayFormatClaude
+}
+
 func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {
 	if usage != nil && usage.UsageSemantic != "" {
 		return usage.UsageSemantic
@@ -516,6 +521,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		// reliable total input value and tagged the usage source. Do not infer it from
 		// prompt/cache fields here, otherwise old upstream payloads may be double-counted.
 		other["input_tokens_total"] = billingUsage.InputTokens
+	}
+	if convertsToClaudeResponse(relayInfo) {
+		// Claude responses converted from other upstreams now exclude cache
+		// tokens from input_tokens; cache usage audits rely on this stamp.
+		other[CacheUsageWireVersionKey] = CacheUsageWireVersion
 	}
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)

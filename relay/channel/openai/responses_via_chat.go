@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -77,6 +78,8 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 	}
 	streamErr := (*types.NewAPIError)(nil)
+	finishSeen := false
+	var sequenceNumber int64
 
 	sendEvent := func(event relayconvert.ChatToResponsesStreamEvent) bool {
 		data, err := common.Marshal(event.Payload)
@@ -84,7 +87,11 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
 			return false
 		}
-		helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: event.Type}, string(data))
+		if err := helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: event.Type}, string(data)); err != nil {
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+			return false
+		}
+		sequenceNumber++
 		return true
 	}
 
@@ -106,7 +113,8 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		var chunk dto.ChatCompletionsStreamResponse
 		if err := common.UnmarshalJsonStr(data, &chunk); err != nil {
 			logger.LogError(c, "failed to unmarshal chat stream response: "+err.Error())
-			sr.Error(err)
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(streamErr)
 			return
 		}
 
@@ -115,6 +123,11 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 			sr.Stop(streamErr)
 			return
+		}
+		for _, choice := range chunk.Choices {
+			if choice.FinishReason != nil && strings.TrimSpace(*choice.FinishReason) != "" {
+				finishSeen = true
+			}
 		}
 		for _, result := range results {
 			event, ok := result.Value.(relayconvert.ChatToResponsesStreamEvent)
@@ -128,21 +141,48 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				return
 			}
 		}
+		if finishSeen {
+			// Keep reading usage-only tail frames after the semantic finish.
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+		}
 	})
-
-	if streamErr != nil {
-		return nil, streamErr
-	}
 
 	usage := state.Usage()
 	if usage == nil || usage.TotalTokens == 0 {
 		usage = service.ResponseText2Usage(c, state.UsageText(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		state.SetUsage(usage)
 	}
+	if c.Request.Context().Err() != nil {
+		return usage, nil
+	}
+	completed := finishSeen || info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone
+	switch info.StreamStatus.EndReason {
+	case relaycommon.StreamEndReasonTimeout, relaycommon.StreamEndReasonClientGone,
+		relaycommon.StreamEndReasonPanic, relaycommon.StreamEndReasonPingFail:
+		completed = false
+	}
+	if streamErr != nil || !completed {
+		if !info.StreamStatus.HasErrors() {
+			info.StreamStatus.RecordError("upstream chat stream ended before completion")
+		}
+		if !c.Writer.Written() {
+			helper.ResetEventStreamHeaders(c)
+			if streamErr != nil {
+				return nil, streamErr
+			}
+			return nil, types.NewOpenAIError(fmt.Errorf("upstream chat stream ended before completion"), types.ErrorCodeBadResponse, http.StatusBadGateway)
+		}
+		if err := helper.WriteResponsesStreamError(c, "upstream_stream_incomplete", "The upstream stream ended before the response was complete.", sequenceNumber); err != nil {
+			logger.LogError(c, "failed to write converted Responses stream error: "+err.Error())
+		}
+		return usage, nil
+	}
 
 	finalResults, err := relayconvert.FinalizeStreamResponse(c, info, state)
 	if err != nil {
-		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+		info.StreamStatus.RecordError(err.Error())
+		_ = helper.WriteResponsesStreamError(c, "upstream_stream_incomplete", "The upstream stream ended before the response was complete.", sequenceNumber)
+		return usage, nil
 	}
 	for _, result := range finalResults {
 		event, ok := result.Value.(relayconvert.ChatToResponsesStreamEvent)
@@ -150,7 +190,8 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			return nil, types.NewOpenAIError(fmt.Errorf("expected OAI responses stream event, got %T", result.Value), types.ErrorCodeBadResponse, http.StatusInternalServerError)
 		}
 		if !sendEvent(event) {
-			return nil, streamErr
+			info.StreamStatus.RecordError(streamErr.Error())
+			return usage, nil
 		}
 	}
 

@@ -59,6 +59,18 @@ func SetEventStreamHeaders(c *gin.Context) {
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 }
 
+// ResetEventStreamHeaders restores an unstarted stream for a safe retry or a
+// regular JSON error response. Committed responses must retain their SSE headers.
+func ResetEventStreamHeaders(c *gin.Context) {
+	if c == nil || c.Writer == nil || c.Writer.Written() {
+		return
+	}
+	delete(c.Keys, "event_stream_headers_set")
+	for _, name := range []string{"Content-Type", "Cache-Control", "Connection", "Transfer-Encoding", "X-Accel-Buffering"} {
+		c.Writer.Header().Del(name)
+	}
+}
+
 func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	if requestContextDone(c) {
 		return nil
@@ -95,6 +107,9 @@ func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 }
 
 func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data string) error {
+	if c == nil || c.Writer == nil {
+		return errors.New("context or writer is nil")
+	}
 	if requestContextDone(c) {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
@@ -104,9 +119,24 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 	if err != nil {
 		return err
 	}
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
-	return FlushWriter(c)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	if _, exists := c.Writer.Header()["Cache-Control"]; !exists {
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+	}
+	// CustomEvent and gin.Context.Render do not propagate socket write errors.
+	// Write the whole SSE event directly so callers can stop a disconnected stream.
+	if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", resp.Type, data); err != nil {
+		return err
+	}
+	if err := FlushWriter(c); err != nil {
+		return err
+	}
+	// http.Flusher has no error return. A buffered socket error discovered by
+	// Flush cancels the request, so check again before accepting this event.
+	if requestContextDone(c) {
+		return fmt.Errorf("request context done after flush: %w", c.Request.Context().Err())
+	}
+	return nil
 }
 
 func StringData(c *gin.Context, str string) error {

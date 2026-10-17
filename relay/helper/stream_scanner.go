@@ -172,6 +172,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					func() {
 						writeMutex.Lock()
 						defer writeMutex.Unlock()
+						if ctx.Err() != nil || c.Request.Context().Err() != nil {
+							return
+						}
 						ExtendWriteDeadline(c)
 						err = PingData(c)
 					}()
@@ -197,6 +200,11 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	dataChan := make(chan string, 10)
+	scannerFinished := make(chan struct{})
+	// Closing dataChan publishes the transport result. The handler applies it
+	// after buffered events, which may contain a protocol terminal, are consumed.
+	scannerEndReason := relaycommon.StreamEndReasonEOF
+	var scannerEndError error
 
 	wg.Add(1)
 	gopool.Go(func() {
@@ -214,25 +222,38 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			func() {
 				writeMutex.Lock()
 				defer writeMutex.Unlock()
+				// A closed channel can still contain buffered events. Abort them
+				// when the client leaves instead of forwarding abandoned output.
+				if ctx.Err() != nil || c.Request.Context().Err() != nil {
+					return
+				}
 				ExtendWriteDeadline(c)
 				dataHandler(data, sr)
 			}()
-			if sr.IsStopped() {
+			if sr.IsStopped() || ctx.Err() != nil || c.Request.Context().Err() != nil {
 				return
 			}
 		}
+		if ctx.Err() != nil || c.Request.Context().Err() != nil {
+			return
+		}
+		if scannerEndReason == relaycommon.StreamEndReasonScannerErr {
+			logger.LogError(c, "scanner error: "+scannerEndError.Error())
+		}
+		info.StreamStatus.SetEndReason(scannerEndReason, scannerEndError)
 	})
 
 	// Scanner goroutine with improved error handling
 	wg.Add(1)
 	common.RelayCtxGo(ctx, func() {
 		defer func() {
-			close(dataChan)
 			if r := recover(); r != nil {
 				logger.LogError(c, fmt.Sprintf("scanner goroutine panic: %v", r))
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("scanner panic: %v", r))
+				scannerEndReason = relaycommon.StreamEndReasonPanic
+				scannerEndError = fmt.Errorf("scanner panic: %v", r)
 			}
-			stop()
+			close(dataChan)
+			close(scannerFinished)
 			logger.LogDebug(c, "scanner goroutine exited")
 			wg.Done()
 		}()
@@ -274,7 +295,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					return
 				}
 			} else {
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+				scannerEndReason = relaycommon.StreamEndReasonDone
 				logger.LogDebug(c, "received [DONE], stopping scanner")
 				return
 			}
@@ -282,29 +303,58 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 		if err := scanner.Err(); err != nil {
 			if err != io.EOF {
-				logger.LogError(c, "scanner error: "+err.Error())
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+				scannerEndReason = relaycommon.StreamEndReasonScannerErr
+				scannerEndError = err
 			}
 		}
-		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
 	})
 
-	// 主循环等待完成或超时
-	select {
-	case <-ticker.C:
-		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, nil)
-	case <-stopChan:
-		// EndReason already set by the goroutine that triggered stopChan
-	case <-c.Request.Context().Done():
-		// 客户端断开：立即 cleanup 关闭上游 resp.Body，解除 scanner 阻塞并让上游停止生成，
-		// 避免为已放弃的请求继续消费上游 token。
-		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Request.Context().Err())
-	}
+	endReason, endError := waitForStreamEnd(c.Request.Context(), ticker, scannerFinished, stopChan)
 
+	// Close the upstream immediately, then let any in-flight callback finish.
+	// A terminal event already forwarded by that callback must win over a
+	// concurrent disconnect or idle timeout before its Done/Stop is recorded.
 	cleanup()
+	if endReason == relaycommon.StreamEndReasonNone && c.Request.Context().Err() != nil {
+		endReason = relaycommon.StreamEndReasonClientGone
+		endError = c.Request.Context().Err()
+	}
+	if endReason != relaycommon.StreamEndReasonNone {
+		info.StreamStatus.SetEndReason(endReason, endError)
+	}
 	if info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s", info.StreamStatus.Summary()))
 	} else {
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
+	}
+}
+
+// waitForStreamEnd distinguishes upstream idleness from buffered output still
+// being delivered. A finished reader no longer needs the upstream idle watchdog,
+// while handler completion and client cancellation remain active.
+func waitForStreamEnd(requestContext context.Context, ticker *time.Ticker, scannerFinished <-chan struct{}, handlerStopped <-chan bool) (relaycommon.StreamEndReason, error) {
+	idleTimeout := ticker.C
+	upstreamFinished := scannerFinished
+	for {
+		select {
+		case <-upstreamFinished:
+			// Closing scannerFinished guarantees no further scanner Reset calls.
+			ticker.Stop()
+			idleTimeout = nil
+			upstreamFinished = nil
+		case <-idleTimeout:
+			// Both notifications may be ready; completed upstream reads take
+			// precedence over their now-irrelevant idle deadline.
+			select {
+			case <-scannerFinished:
+				continue
+			default:
+			}
+			return relaycommon.StreamEndReasonTimeout, nil
+		case <-handlerStopped:
+			return relaycommon.StreamEndReasonNone, nil
+		case <-requestContext.Done():
+			return relaycommon.StreamEndReasonClientGone, requestContext.Err()
+		}
 	}
 }

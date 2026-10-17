@@ -106,6 +106,10 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		var errorResp dto.OpenAITextResponse
 		if err := common.UnmarshalJsonStr(data, &errorResp); err == nil {
 			if oaiError := errorResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+				if service.ValidUsage(&errorResp.Usage) {
+					applyUsagePostProcessing(info, &errorResp.Usage, common.StringToByteSlice(data))
+					state.SetUsage(relayconvert.UsageFromChatUsage(&errorResp.Usage))
+				}
 				streamErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
 				sr.Stop(streamErr)
 				return
@@ -118,6 +122,14 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 			sr.Stop(streamErr)
 			return
+		}
+
+		// All-zero usage placeholders must not replace the last authoritative
+		// snapshot held by the converter and used for settlement.
+		if !service.ValidUsage(chunk.Usage) {
+			chunk.Usage = nil
+		} else {
+			applyUsagePostProcessing(info, chunk.Usage, common.StringToByteSlice(data))
 		}
 
 		results, err := relayconvert.ConvertStreamResponseChunk(c, info, state, &chunk)

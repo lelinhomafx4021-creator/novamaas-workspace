@@ -104,7 +104,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	return helper.ObjectData(c, lastStreamResponse)
 }
 
-func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (resultUsage *dto.Usage, apiErr *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid response or response body")
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -127,10 +127,35 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var lastStreamData string
 	seenStreamToolCalls := make(map[string]struct{})
 	var streamFunctionCallNames []string
+	defer func() {
+		// A retryable attempt has not been settled. Its tool observations must
+		// not carry into the next channel and charge the user twice.
+		if apiErr == nil {
+			for _, name := range streamFunctionCallNames {
+				info.CountBillableToolCall(dto.BuildInCallFunctionCall, name)
+			}
+		}
+	}()
 	finishedChoices := make(map[int]bool)
 	clientWriteFailed := false
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		var streamResponse struct {
+			Usage   *dto.Usage         `json:"usage"`
+			Error   *types.OpenAIError `json:"error"`
+			Choices []struct {
+				Index        int     `json:"index"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+		}
+		parseErr := common.UnmarshalJsonStr(data, &streamResponse)
+		if parseErr == nil && service.ValidUsage(streamResponse.Usage) {
+			// The current frame has already arrived from upstream. Retain its
+			// authoritative usage even if writing the pending frame fails.
+			usage = streamResponse.Usage
+			usageStreamData = data
+			containStreamUsage = true
+		}
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, forceFormat, thinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
@@ -144,16 +169,8 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			lastStreamData = ""
 		}
 		if len(data) > 0 {
-			var streamResponse struct {
-				Usage   *dto.Usage         `json:"usage"`
-				Error   *types.OpenAIError `json:"error"`
-				Choices []struct {
-					Index        int     `json:"index"`
-					FinishReason *string `json:"finish_reason"`
-				} `json:"choices"`
-			}
-			if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
-				sr.Stop(err)
+			if parseErr != nil {
+				sr.Stop(parseErr)
 				return
 			}
 			if streamResponse.Error != nil {
@@ -163,13 +180,6 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			for _, choice := range streamResponse.Choices {
 				finishedChoices[choice.Index] = finishedChoices[choice.Index] ||
 					(choice.FinishReason != nil && strings.TrimSpace(*choice.FinishReason) != "")
-			}
-			if service.ValidUsage(streamResponse.Usage) {
-				// Usage can precede one or more empty terminal chunks. Keep the
-				// latest valid report and its provider-specific cache details.
-				usage = streamResponse.Usage
-				usageStreamData = data
-				containStreamUsage = true
 			}
 
 			lastStreamData = data
@@ -229,10 +239,6 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		applyUsagePostProcessing(info, usage, common.StringToByteSlice(usageStreamData))
 	}
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
-
-	for _, name := range streamFunctionCallNames {
-		info.CountBillableToolCall(dto.BuildInCallFunctionCall, name)
-	}
 
 	if c.Request.Context().Err() != nil || clientWriteFailed || info.StreamStatus.EndReason == relaycommon.StreamEndReasonPingFail {
 		return usage, nil

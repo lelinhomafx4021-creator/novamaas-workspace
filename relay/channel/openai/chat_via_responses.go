@@ -213,6 +213,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	streamErr := (*types.NewAPIError)(nil)
 	clientWriteFailed := false
 	terminalSeen := false
+	var latestResponseUsage *dto.Usage
 
 	if info.RelayFormat == types.RelayFormatClaude && info.ClaudeConvertInfo == nil {
 		info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{LastMessagesType: relaycommon.LastMessageTypeNone}
@@ -296,6 +297,16 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 			sr.Stop(streamErr)
 			return
+		}
+
+		if streamResp.Response != nil {
+			candidate := relayconvert.UsageFromResponsesUsage(streamResp.Response.Usage)
+			if service.ValidUsage(candidate) {
+				latestResponseUsage = streamResp.Response.Usage
+			} else if latestResponseUsage != nil {
+				// Missing/zero terminal usage cannot erase an earlier snapshot.
+				streamResp.Response.Usage = latestResponseUsage
+			}
 		}
 
 		responseFailed := false

@@ -318,3 +318,60 @@ func TestConvertedStreamsClientWriteFailureStopsImmediately(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertedStreamsZeroUsageTailCannotReplaceBillingSnapshot(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	for _, chatUpstream := range []bool{true, false} {
+		t.Run(map[bool]string{true: "Chat to Responses", false: "Responses to Chat"}[chatUpstream], func(t *testing.T) {
+			body := "data: " + streamUsageTextChunk + "\n\ndata: " + streamUsageEmptyChunk + "\n\ndata: " + streamUsageFinalChunk + "\n\ndata: " + streamUsageZeroChunk + "\n\ndata: [DONE]\n\n"
+			if !chatUpstream {
+				body = "data: {\"type\":\"response.created\",\"response\":{\"usage\":{\"input_tokens\":5000,\"output_tokens\":60,\"total_tokens\":5060,\"input_tokens_details\":{\"cached_tokens\":4800}}}}\n\n" +
+					"data: {\"type\":\"response.output_text.delta\",\"delta\":\"answer\"}\n\n" +
+					"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0}}}\n\n"
+			}
+			c, _, resp, info := newResponsesChatTestContext(t, body, true)
+			info.SetEstimatePromptTokens(11)
+			var usage *dto.Usage
+			var apiErr *types.NewAPIError
+			if chatUpstream {
+				usage, apiErr = OaiChatToResponsesStreamHandler(c, info, resp)
+			} else {
+				usage, apiErr = OaiResponsesToChatStreamHandler(c, info, resp)
+			}
+			require.Nil(t, apiErr)
+			require.NotNil(t, usage)
+			assert.Equal(t, 5000, usage.PromptTokens)
+			assert.Equal(t, 60, usage.CompletionTokens)
+			require.NotNil(t, usage.BillingUsage)
+			require.NotNil(t, usage.BillingUsage.OpenAIUsage)
+			snapshot := usage.BillingUsage.OpenAIUsage
+			if chatUpstream {
+				assert.Equal(t, 4800, snapshot.PromptTokensDetails.CachedTokens)
+			} else {
+				require.NotNil(t, snapshot.InputTokensDetails)
+				assert.Equal(t, 4800, snapshot.InputTokensDetails.CachedTokens)
+			}
+		})
+	}
+}
+
+func TestChatToResponsesStreamKeepsUsageCarriedByError(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	errFrame := strings.Replace(streamUsageFinalChunk, `"choices":[]`, `"error":{"type":"server_error","message":"private upstream failure"},"choices":[]`, 1)
+	c, w, resp, info := newResponsesChatTestContext(t, "data: "+streamUsageTextChunk+"\n\ndata: "+errFrame+"\n\n", true)
+	info.SetEstimatePromptTokens(11)
+	usage, apiErr := OaiChatToResponsesStreamHandler(c, info, resp)
+	require.Nil(t, apiErr, "a partial stream must settle instead of entering failure refund handling")
+	require.NotNil(t, usage)
+	assert.Equal(t, 5000, usage.PromptTokens)
+	assert.Equal(t, 60, usage.CompletionTokens)
+	require.NotNil(t, usage.BillingUsage)
+	require.NotNil(t, usage.BillingUsage.OpenAIUsage)
+	assert.Equal(t, 4800, usage.BillingUsage.OpenAIUsage.PromptTokensDetails.CachedTokens)
+	assert.Contains(t, w.Body.String(), "event: error\n")
+	assert.NotContains(t, w.Body.String(), "event: response.completed\n")
+}

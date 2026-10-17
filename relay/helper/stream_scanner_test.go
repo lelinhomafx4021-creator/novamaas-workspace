@@ -806,7 +806,7 @@ func TestWaitForStreamEnd_FinishedUpstreamDisablesIdleTimeoutWhileDraining(t *te
 				var endError error
 				done := make(chan struct{})
 				go func() {
-					reason, endError = waitForStreamEnd(ctx, ticker, scannerFinished, handlerStopped)
+					reason, endError = waitForStreamEnd(ctx, ticker, scannerFinished, handlerStopped, &streamReadResult{})
 					close(done)
 				}()
 				synctest.Wait()
@@ -841,8 +841,62 @@ func TestWaitForStreamEnd_UnfinishedUpstreamStillTimesOut(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
-		reason, err := waitForStreamEnd(context.Background(), ticker, make(chan struct{}), make(chan bool))
+		reason, err := waitForStreamEnd(context.Background(), ticker, make(chan struct{}), make(chan bool), &streamReadResult{})
 		assert.Equal(t, relaycommon.StreamEndReasonTimeout, reason)
 		assert.NoError(t, err)
 	})
+}
+
+func TestWaitForStreamEnd_ReadFailurePrecedesLaterClientCancel(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		readerFinished bool
+		readError      error
+		wantReason     relaycommon.StreamEndReason
+		stopHandler    bool
+	}{
+		{"failed reader", true, io.ErrUnexpectedEOF, relaycommon.StreamEndReasonScannerErr, false},
+		{"failed reader and stopped handler", true, io.ErrUnexpectedEOF, relaycommon.StreamEndReasonScannerErr, true},
+		{"finished reader with pending output", true, nil, relaycommon.StreamEndReasonClientGone, false},
+		{"reader still active", false, nil, relaycommon.StreamEndReasonClientGone, false},
+		{"unpublished read error", false, io.ErrUnexpectedEOF, relaycommon.StreamEndReasonClientGone, false},
+		{"request cancellation reached reader", true, fmt.Errorf("read stopped: %w", context.Canceled), relaycommon.StreamEndReasonClientGone, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				finished := make(chan struct{})
+				readResult := &streamReadResult{reason: relaycommon.StreamEndReasonEOF}
+				if tc.readError != nil {
+					readResult.reason, readResult.err = relaycommon.StreamEndReasonScannerErr, tc.readError
+				}
+				if tc.readerFinished {
+					close(finished)
+				}
+				var reason relaycommon.StreamEndReason
+				var endError error
+				done := make(chan struct{})
+				handlerStopped := make(chan bool)
+				go func() {
+					reason, endError = waitForStreamEnd(ctx, ticker, finished, handlerStopped, readResult)
+					close(done)
+				}()
+				synctest.Wait()
+				cancel()
+				if tc.stopHandler {
+					close(handlerStopped)
+				}
+				<-done
+				assert.Equal(t, tc.wantReason, reason)
+				if tc.wantReason == relaycommon.StreamEndReasonScannerErr {
+					assert.ErrorIs(t, endError, tc.readError)
+				} else {
+					assert.ErrorIs(t, endError, context.Canceled)
+				}
+			})
+		})
+	}
 }

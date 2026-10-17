@@ -3,6 +3,7 @@ package helper
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type streamReadResult struct {
+	reason relaycommon.StreamEndReason
+	err    error
+}
 
 const (
 	InitialScannerBufferSize    = 64 << 10  // 64KB (64*1024)
@@ -204,8 +210,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	scannerFinished := make(chan struct{})
 	// Closing dataChan publishes the transport result. The handler applies it
 	// after buffered events, which may contain a protocol terminal, are consumed.
-	scannerEndReason := relaycommon.StreamEndReasonEOF
-	var scannerEndError error
+	scannerResult := &streamReadResult{reason: relaycommon.StreamEndReasonEOF}
 
 	wg.Add(1)
 	gopool.Go(func() {
@@ -238,10 +243,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		if ctx.Err() != nil || c.Request.Context().Err() != nil {
 			return
 		}
-		if scannerEndReason == relaycommon.StreamEndReasonScannerErr {
-			logger.LogError(c, "scanner error: "+scannerEndError.Error())
+		if scannerResult.reason == relaycommon.StreamEndReasonScannerErr {
+			logger.LogError(c, "scanner error: "+scannerResult.err.Error())
 		}
-		info.StreamStatus.SetEndReason(scannerEndReason, scannerEndError)
+		info.StreamStatus.SetEndReason(scannerResult.reason, scannerResult.err)
 	})
 
 	// Scanner goroutine with improved error handling
@@ -250,8 +255,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		defer func() {
 			if r := recover(); r != nil {
 				logger.LogError(c, fmt.Sprintf("scanner goroutine panic: %v", r))
-				scannerEndReason = relaycommon.StreamEndReasonPanic
-				scannerEndError = fmt.Errorf("scanner panic: %v", r)
+				scannerResult.reason = relaycommon.StreamEndReasonPanic
+				scannerResult.err = fmt.Errorf("scanner panic: %v", r)
 			}
 			close(dataChan)
 			close(scannerFinished)
@@ -296,7 +301,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					return
 				}
 			} else {
-				scannerEndReason = relaycommon.StreamEndReasonDone
+				scannerResult.reason = relaycommon.StreamEndReasonDone
 				logger.LogDebug(c, "received [DONE], stopping scanner")
 				return
 			}
@@ -304,13 +309,13 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 		if err := scanner.Err(); err != nil {
 			if err != io.EOF {
-				scannerEndReason = relaycommon.StreamEndReasonScannerErr
-				scannerEndError = err
+				scannerResult.reason = relaycommon.StreamEndReasonScannerErr
+				scannerResult.err = err
 			}
 		}
 	})
 
-	endReason, endError := waitForStreamEnd(c.Request.Context(), ticker, scannerFinished, stopChan)
+	endReason, endError := waitForStreamEnd(c.Request.Context(), ticker, scannerFinished, stopChan, scannerResult)
 
 	// Close the upstream immediately, then let any in-flight callback finish.
 	// A terminal event already forwarded by that callback must win over a
@@ -333,7 +338,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 // waitForStreamEnd distinguishes upstream idleness from buffered output still
 // being delivered. A finished reader no longer needs the upstream idle watchdog,
 // while handler completion and client cancellation remain active.
-func waitForStreamEnd(requestContext context.Context, ticker *time.Ticker, scannerFinished <-chan struct{}, handlerStopped <-chan bool) (relaycommon.StreamEndReason, error) {
+func waitForStreamEnd(requestContext context.Context, ticker *time.Ticker, scannerFinished <-chan struct{}, handlerStopped <-chan bool, scannerResult *streamReadResult) (relaycommon.StreamEndReason, error) {
 	idleTimeout := ticker.C
 	upstreamFinished := scannerFinished
 	for {
@@ -353,9 +358,25 @@ func waitForStreamEnd(requestContext context.Context, ticker *time.Ticker, scann
 			}
 			return relaycommon.StreamEndReasonTimeout, nil
 		case <-handlerStopped:
-			return relaycommon.StreamEndReasonNone, nil
+			if requestContext.Err() == nil {
+				return relaycommon.StreamEndReasonNone, nil
+			}
 		case <-requestContext.Done():
-			return relaycommon.StreamEndReasonClientGone, requestContext.Err()
+		}
+		if err := requestContext.Err(); err != nil {
+			// Only a result published before cleanup is evidence of an upstream
+			// failure. Closing Body on cancellation can itself cause a read error;
+			// that later error must not disguise a real client disconnect.
+			// Likewise, a request cancellation propagated to Read is not a fault.
+			select {
+			case <-scannerFinished:
+				if (scannerResult.reason == relaycommon.StreamEndReasonScannerErr || scannerResult.reason == relaycommon.StreamEndReasonPanic) &&
+					!errors.Is(scannerResult.err, err) {
+					return scannerResult.reason, scannerResult.err
+				}
+			default:
+			}
+			return relaycommon.StreamEndReasonClientGone, err
 		}
 	}
 }

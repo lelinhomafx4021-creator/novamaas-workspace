@@ -352,24 +352,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			return nil, types.NewOpenAIError(fmt.Errorf("upstream responses stream ended before completion"), types.ErrorCodeBadResponse, http.StatusBadGateway)
 		}
 		message := "The upstream stream ended before the response was complete."
-		var writeErr error
-		helper.ExtendWriteDeadline(c)
-		switch info.RelayFormat {
-		case types.RelayFormatClaude:
-			writeErr = helper.ClaudeData(c, dto.ClaudeResponse{
-				Type:  "error",
-				Error: types.ClaudeError{Type: "api_error", Message: message},
-			})
-		case types.RelayFormatGemini:
-			writeErr = helper.ObjectData(c, gin.H{"error": gin.H{
-				"code": http.StatusBadGateway, "message": message, "status": "UNAVAILABLE",
-			}})
-		default:
-			writeErr = helper.ObjectData(c, gin.H{"error": types.OpenAIError{
-				Type: "upstream_error", Code: "upstream_stream_incomplete", Message: message,
-			}})
-		}
-		if writeErr != nil {
+		if writeErr := writeTextStreamError(c, info, "upstream_stream_incomplete", message); writeErr != nil {
 			logger.LogError(c, "failed to write converted stream error: "+writeErr.Error())
 		}
 		return usage, nil

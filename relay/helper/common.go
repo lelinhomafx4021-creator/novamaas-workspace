@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -153,8 +154,21 @@ func StringData(c *gin.Context, str string) error {
 	if err != nil {
 		return err
 	}
-	c.Render(-1, common.CustomEvent{Data: "data: " + str})
-	return FlushWriter(c)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	if _, exists := c.Writer.Header()["Cache-Control"]; !exists {
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+	}
+	// Preserve CustomEvent's carriage-return escaping while propagating writes.
+	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", strings.ReplaceAll(str, "\r", "\\r")); err != nil {
+		return err
+	}
+	if err := FlushWriter(c); err != nil {
+		return err
+	}
+	if requestContextDone(c) {
+		return fmt.Errorf("request context done after flush: %w", c.Request.Context().Err())
+	}
+	return nil
 }
 
 func PingData(c *gin.Context) error {

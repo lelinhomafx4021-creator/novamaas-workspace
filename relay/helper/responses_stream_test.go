@@ -60,6 +60,35 @@ func TestResponseChunkDataReportsCancelDuringFlush(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "event: response.completed\n")
 }
 
+func TestStringDataPropagatesClientWriteFailure(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	writeErr := errors.New("client disconnected")
+	writer := &responsesFailingWriter{ResponseWriter: c.Writer, err: writeErr}
+	c.Writer = writer
+	assert.ErrorIs(t, StringData(c, `{"choices":[]}`), writeErr)
+	assert.Equal(t, 1, writer.writes)
+}
+
+func TestStringDataReportsCancelDuringFlush(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
+	c.Writer = &responsesCancelOnFlushWriter{ResponseWriter: c.Writer, cancel: cancel}
+	assert.ErrorIs(t, StringData(c, "[DONE]"), context.Canceled)
+}
+
+func TestStringDataPreservesEventFraming(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	require.NoError(t, StringData(c, "first\rsecond"))
+	assert.Equal(t, "data: first\\rsecond\n\n", w.Body.String())
+	assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+	assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+}
+
 func TestWriteResponsesStreamErrorUsesResponsesSchema(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

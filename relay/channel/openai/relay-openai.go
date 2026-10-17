@@ -125,19 +125,44 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var lastStreamData string
 	seenStreamToolCalls := make(map[string]struct{})
 	var streamFunctionCallNames []string
+	finishedChoices := make(map[int]bool)
+	clientWriteFailed := false
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, forceFormat, thinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
-				sr.Error(err)
+				clientWriteFailed = true
+				if c.Request.Context().Err() != nil {
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Request.Context().Err())
+				}
+				sr.Stop(err)
+				return
 			}
+			lastStreamData = ""
 		}
 		if len(data) > 0 {
 			var streamResponse struct {
-				Usage *dto.Usage `json:"usage"`
+				Usage   *dto.Usage         `json:"usage"`
+				Error   *types.OpenAIError `json:"error"`
+				Choices []struct {
+					Index        int     `json:"index"`
+					FinishReason *string `json:"finish_reason"`
+				} `json:"choices"`
 			}
-			if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil && service.ValidUsage(streamResponse.Usage) {
+			if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
+				sr.Stop(err)
+				return
+			}
+			if streamResponse.Error != nil {
+				sr.Stop(fmt.Errorf("upstream returned an error inside the OpenAI stream"))
+				return
+			}
+			for _, choice := range streamResponse.Choices {
+				finishedChoices[choice.Index] = finishedChoices[choice.Index] ||
+					(choice.FinishReason != nil && strings.TrimSpace(*choice.FinishReason) != "")
+			}
+			if service.ValidUsage(streamResponse.Usage) {
 				// Usage can precede one or more empty terminal chunks. Keep the
 				// latest valid report and its provider-specific cache details.
 				usage = streamResponse.Usage
@@ -149,24 +174,47 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			collectStreamFunctionCallNames(data, seenStreamToolCalls, &streamFunctionCallNames)
 			if err := processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount); err != nil {
 				logger.LogError(c, "error processing stream token data: "+err.Error())
-				sr.Error(err)
+				sr.Stop(err)
 			}
 		}
 	})
 
+	// Chat accepts an explicit [DONE], or a graceful EOF after every requested
+	// choice supplied finish_reason. EOF/timeout alone cannot prove completion.
+	streamCompleted := info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone
+	if info.StreamStatus.EndReason == relaycommon.StreamEndReasonEOF && len(finishedChoices) > 0 {
+		expectedChoices := 1
+		if request, ok := info.Request.(*dto.GeneralOpenAIRequest); ok && request != nil && request.N != nil && *request.N > 1 {
+			expectedChoices = *request.N
+		}
+		streamCompleted = len(finishedChoices) >= expectedChoices
+		for _, finished := range finishedChoices {
+			if !finished {
+				streamCompleted = false
+				break
+			}
+		}
+	}
+	streamCompleted = streamCompleted && !info.StreamStatus.HasErrors()
+
 	// 处理最后的响应
 	shouldSendLastResp := true
-	if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,
-		&containStreamUsage, info, &shouldSendLastResp); err != nil {
-		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
+	if streamCompleted {
+		if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,
+			&containStreamUsage, info, &shouldSendLastResp); err != nil {
+			logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
+		}
 	}
 	if kimiPassthrough {
 		shouldSendLastResp = true
 	}
 
-	if info.RelayFormat == types.RelayFormatOpenAI {
+	if streamCompleted && c.Request.Context().Err() == nil && info.RelayFormat == types.RelayFormatOpenAI {
 		if shouldSendLastResp {
-			_ = sendStreamData(c, info, lastStreamData, forceFormat, thinkingToContent)
+			if err := sendStreamData(c, info, lastStreamData, forceFormat, thinkingToContent); err != nil {
+				clientWriteFailed = true
+				info.StreamStatus.RecordError(err.Error())
+			}
 		}
 	}
 
@@ -182,6 +230,28 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	for _, name := range streamFunctionCallNames {
 		info.CountBillableToolCall(dto.BuildInCallFunctionCall, name)
+	}
+
+	if c.Request.Context().Err() != nil || clientWriteFailed || info.StreamStatus.EndReason == relaycommon.StreamEndReasonPingFail {
+		return usage, nil
+	}
+	if !streamCompleted {
+		info.StreamStatus.RecordError("OpenAI stream ended without a valid terminal signal")
+		logger.LogError(c, "OpenAI stream ended without a valid terminal signal: "+info.StreamStatus.Summary())
+		message := "The upstream stream ended before the response was complete."
+		code := "upstream_stream_incomplete"
+		if info.StreamStatus.EndReason == relaycommon.StreamEndReasonTimeout {
+			code = "upstream_stream_timeout"
+			message = "The upstream response stream timed out before completion."
+		}
+		if !c.Writer.Written() {
+			helper.ResetEventStreamHeaders(c)
+			return nil, types.NewOpenAIError(fmt.Errorf("%s", message), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+		}
+		if err := writeTextStreamError(c, info, code, message); err != nil {
+			info.StreamStatus.RecordError("failed to write OpenAI stream error: " + err.Error())
+		}
+		return usage, nil
 	}
 
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)

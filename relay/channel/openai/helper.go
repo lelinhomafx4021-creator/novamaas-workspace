@@ -2,6 +2,7 @@ package openai
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -35,6 +36,26 @@ func HandleStreamFormat(c *gin.Context, info *relaycommon.RelayInfo, data string
 	return nil
 }
 
+// writeTextStreamError reports a partial text-stream failure in the client's
+// protocol, without generating a successful completion or another response.
+func writeTextStreamError(c *gin.Context, info *relaycommon.RelayInfo, code, message string) error {
+	helper.ExtendWriteDeadline(c)
+	switch info.RelayFormat {
+	case types.RelayFormatClaude:
+		return helper.ClaudeData(c, dto.ClaudeResponse{
+			Type: "error", Error: types.ClaudeError{Type: "api_error", Message: message},
+		})
+	case types.RelayFormatGemini:
+		return helper.ObjectData(c, gin.H{"error": gin.H{
+			"code": http.StatusBadGateway, "message": message, "status": "UNAVAILABLE",
+		}})
+	default:
+		return helper.ObjectData(c, gin.H{"error": types.OpenAIError{
+			Type: "upstream_error", Code: code, Message: message,
+		}})
+	}
+}
+
 func handleClaudeFormat(c *gin.Context, data string, info *relaycommon.RelayInfo) error {
 	var streamResponse dto.ChatCompletionsStreamResponse
 	if err := common.Unmarshal(common.StringToByteSlice(data), &streamResponse); err != nil {
@@ -48,6 +69,12 @@ func handleClaudeFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 		// Empty usage placeholders must not replace a previously reported usage
 		// or make the converter emit terminal events with zero token counts.
 		streamResponse.Usage = nil
+	}
+	// Usage snapshots can precede completion. Keep them for settlement, but
+	// do not let a usage-only frame close a still-unfinished Claude response.
+	// HandleFinalResponse bypasses this gate once [DONE]/finish_reason is known.
+	if len(streamResponse.Choices) == 0 && info.EnsureClaudeConvertInfo().FinishReason == "" {
+		return nil
 	}
 	result, err := relayconvert.ConvertStreamResponse(c, info, types.RelayFormatClaude, &streamResponse)
 	if err != nil {

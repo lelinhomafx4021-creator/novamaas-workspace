@@ -3,8 +3,10 @@ package openai
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,14 +29,27 @@ func TestChatStreamPartialFailureDoesNotSendSuccessfulTerminal(t *testing.T) {
 				name = string(format) + "/broken HTTP body"
 			}
 			t.Run(name, func(t *testing.T) {
-				c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(
-					"data: "+streamUsageTextChunk+"\n\ndata: "+streamUsageFinalChunk+"\n\ndata: "+streamUsageZeroChunk+"\n\n")))
+				payload := "data: " + streamUsageTextChunk + "\n\ndata: " + streamUsageFinalChunk + "\n\ndata: " + streamUsageZeroChunk + "\n\n"
+				c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(payload)))
 				info.RelayMode = relayconstant.RelayModeChatCompletions
 				info.RelayFormat = format
 				info.ShouldIncludeUsage = true
 				info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{}
 				if readError {
-					resp.Body = io.NopCloser(io.MultiReader(resp.Body, convertedStreamErrorReader{}))
+					upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						conn, _, err := w.(http.Hijacker).Hijack()
+						if err != nil {
+							return
+						}
+						defer conn.Close()
+						// Send complete SSE data inside HTTP chunks, then disconnect
+						// without the zero chunk that completes the HTTP message.
+						_, _ = fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n", len(payload), payload)
+					}))
+					t.Cleanup(upstream.Close)
+					var err error
+					resp, err = upstream.Client().Get(upstream.URL)
+					require.NoError(t, err)
 				}
 
 				usage, apiErr := OaiStreamHandler(c, info, resp)
@@ -49,6 +65,10 @@ func TestChatStreamPartialFailureDoesNotSendSuccessfulTerminal(t *testing.T) {
 				assert.NotContains(t, got, "event: message_stop\n")
 				assert.NotContains(t, got, `"finishReason":"STOP"`)
 				assert.True(t, info.StreamStatus.HasErrors())
+				if readError {
+					assert.Equal(t, relaycommon.StreamEndReasonScannerErr, info.StreamStatus.EndReason)
+					assert.ErrorIs(t, info.StreamStatus.EndError, io.ErrUnexpectedEOF)
+				}
 			})
 		}
 	}
@@ -226,4 +246,94 @@ func TestChatStreamRejectsErrorAndMalformedFrames(t *testing.T) {
 		assert.NotContains(t, w.Body.String(), "private upstream details")
 		assert.NotContains(t, w.Body.String(), "data: [DONE]")
 	}
+}
+
+type streamTerminalFailingWriter struct {
+	gin.ResponseWriter
+	failOn             string
+	err                error
+	failed             bool
+	writesAfterFailure int
+}
+
+func (w *streamTerminalFailingWriter) Write(data []byte) (int, error) {
+	if w.failed {
+		w.writesAfterFailure++
+		return 0, w.err
+	}
+	if strings.Contains(string(data), w.failOn) {
+		w.failed = true
+		return 0, w.err
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func TestChatStreamConvertedClientWriteFailureStopsImmediately(t *testing.T) {
+	for _, format := range []types.RelayFormat{types.RelayFormatClaude, types.RelayFormatGemini} {
+		t.Run(string(format), func(t *testing.T) {
+			body := "data: " + streamUsageTextChunk + "\n\ndata: " + streamUsageEmptyChunk + "\n\ndata: [DONE]\n\n"
+			c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
+			info.RelayMode = relayconstant.RelayModeChatCompletions
+			info.RelayFormat = format
+			info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{}
+			writeErr := errors.New("client socket disconnected")
+			writer := &responsesDisconnectedWriter{ResponseWriter: c.Writer, err: writeErr}
+			c.Writer = writer
+
+			usage, apiErr := OaiStreamHandler(c, info, resp)
+			require.Nil(t, apiErr, "a client write failure must not retry or refund")
+			require.NotNil(t, usage)
+			assert.Equal(t, 1, writer.attempts)
+			assert.Empty(t, w.Body.String())
+			assert.True(t, info.StreamStatus.HasErrors())
+			assert.ErrorIs(t, info.StreamStatus.EndError, writeErr)
+		})
+	}
+}
+
+func TestChatStreamFinalWriteFailureDoesNotSendLaterTerminal(t *testing.T) {
+	for _, tc := range []struct {
+		format   types.RelayFormat
+		failOn   string
+		terminal string
+	}{
+		{types.RelayFormatOpenAI, `"usage":`, "data: [DONE]"},
+		{types.RelayFormatClaude, "event: message_delta", "event: message_stop"},
+	} {
+		t.Run(string(tc.format), func(t *testing.T) {
+			body := "data: " + streamUsageTextChunk + "\n\ndata: " + streamUsageEmptyChunk + "\n\ndata: [DONE]\n\n"
+			c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
+			info.RelayMode = relayconstant.RelayModeChatCompletions
+			info.RelayFormat = tc.format
+			info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{}
+			info.ShouldIncludeUsage = true
+			writer := &streamTerminalFailingWriter{ResponseWriter: c.Writer, failOn: tc.failOn, err: errors.New("client socket disconnected")}
+			c.Writer = writer
+
+			usage, apiErr := OaiStreamHandler(c, info, resp)
+			require.Nil(t, apiErr)
+			require.NotNil(t, usage)
+			assert.True(t, writer.failed, "the test must reach the terminal write")
+			assert.Zero(t, writer.writesAfterFailure)
+			assert.Contains(t, w.Body.String(), "hello world")
+			assert.NotContains(t, w.Body.String(), tc.terminal)
+			assert.True(t, info.StreamStatus.HasErrors())
+		})
+	}
+}
+
+func TestChatStreamKeepsFinishAndToolArgumentsInUsageBearingTail(t *testing.T) {
+	tail := `{"id":"stream-usage","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`
+	c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(
+		"data: "+streamUsageTextChunk+"\n\ndata: "+tail+"\n\ndata: [DONE]\n\n")))
+	info.RelayMode = relayconstant.RelayModeChatCompletions
+	info.RelayFormat = types.RelayFormatOpenAI
+	info.ShouldIncludeUsage = false
+	usage, apiErr := OaiStreamHandler(c, info, resp)
+	require.Nil(t, apiErr)
+	require.NotNil(t, usage)
+	assert.Equal(t, 18, usage.TotalTokens)
+	assert.Contains(t, w.Body.String(), "data: "+tail+"\n\n", "disabling usage must not drop finish_reason or final tool arguments")
+	assert.Equal(t, 1, strings.Count(w.Body.String(), "data: [DONE]"))
+	assert.False(t, info.StreamStatus.HasErrors())
 }

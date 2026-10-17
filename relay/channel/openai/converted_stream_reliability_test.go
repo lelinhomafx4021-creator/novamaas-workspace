@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -274,5 +276,45 @@ func TestConvertedStreamsDoNotRetryOrWriteAfterClientCancellation(t *testing.T) 
 			require.NotNil(t, usage)
 		}
 		assert.Empty(t, recorder.Body.String())
+	}
+}
+
+func TestConvertedStreamsClientWriteFailureStopsImmediately(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	for _, tc := range []struct {
+		name         string
+		chatUpstream bool
+		format       types.RelayFormat
+	}{
+		{"Chat to Responses", true, types.RelayFormatOpenAIResponses},
+		{"Responses to Chat", false, types.RelayFormatOpenAI},
+		{"Responses to Claude", false, types.RelayFormatClaude},
+		{"Responses to Gemini", false, types.RelayFormatGemini},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"answer\"}\n\ndata: {\"type\":\"response.completed\"}\n\n"
+			if tc.chatUpstream {
+				body = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+			}
+			c, recorder, resp, info := newResponsesChatTestContext(t, body, true)
+			info.RelayFormat = tc.format
+			writeErr := errors.New("client socket disconnected")
+			writer := &responsesDisconnectedWriter{ResponseWriter: c.Writer, err: writeErr}
+			c.Writer = writer
+			var usage *dto.Usage
+			var apiErr *types.NewAPIError
+			if tc.chatUpstream {
+				usage, apiErr = OaiChatToResponsesStreamHandler(c, info, resp)
+			} else {
+				usage, apiErr = OaiResponsesToChatStreamHandler(c, info, resp)
+			}
+			require.Nil(t, apiErr, "a client write failure must not retry or refund")
+			require.NotNil(t, usage)
+			assert.Equal(t, 1, writer.attempts)
+			assert.Empty(t, recorder.Body.String())
+			assert.True(t, info.StreamStatus.HasErrors())
+		})
 	}
 }

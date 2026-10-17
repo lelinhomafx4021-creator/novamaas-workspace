@@ -3,6 +3,7 @@ package helper
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -622,6 +623,46 @@ func (b *observedStreamBody) Close() error {
 	err := b.ReadCloser.Close()
 	b.once.Do(func() { close(b.closed) })
 	return err
+}
+
+func TestStreamScannerHandler_PingWriteFailureClosesUpstream(t *testing.T) {
+	setting := operation_setting.GetGeneralSetting()
+	oldEnabled, oldSeconds := setting.PingIntervalEnabled, setting.PingIntervalSeconds
+	oldTimeout := constant.StreamingTimeout
+	setting.PingIntervalEnabled, setting.PingIntervalSeconds = true, 1
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() {
+		setting.PingIntervalEnabled, setting.PingIntervalSeconds = oldEnabled, oldSeconds
+		constant.StreamingTimeout = oldTimeout
+	})
+	reader, writer := io.Pipe()
+	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+	c, resp, info := setupStreamTest(t, reader)
+	body := &observedStreamBody{ReadCloser: reader, closed: make(chan struct{})}
+	resp.Body = body
+	writeErr := errors.New("client socket disconnected")
+	failingWriter := &responsesFailingWriter{ResponseWriter: c.Writer, err: writeErr}
+	c.Writer = failingWriter
+	done := make(chan struct{})
+	go func() {
+		StreamScannerHandler(c, resp, info, func(string, *StreamResult) {})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		_ = writer.Close()
+		<-done
+		t.Fatal("failed heartbeat did not stop the stream before the upstream idle timeout")
+	}
+	assert.Equal(t, relaycommon.StreamEndReasonPingFail, info.StreamStatus.EndReason)
+	assert.ErrorIs(t, info.StreamStatus.EndError, writeErr)
+	assert.Equal(t, 1, failingWriter.writes)
+	select {
+	case <-body.closed:
+	default:
+		t.Fatal("failed heartbeat left the upstream connection open")
+	}
 }
 
 func TestStreamScannerHandler_ForwardedTerminalWinsConcurrentClientCancel(t *testing.T) {

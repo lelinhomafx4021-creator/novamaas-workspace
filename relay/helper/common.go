@@ -37,6 +37,11 @@ func FlushWriter(c *gin.Context) (err error) {
 	}
 
 	flusher.Flush()
+	// http.Flusher has no error return. A buffered socket error discovered by
+	// Flush cancels the request, so check again before accepting this event.
+	if requestContextDone(c) {
+		return fmt.Errorf("request context done after flush: %w", c.Request.Context().Err())
+	}
 	return nil
 }
 
@@ -73,23 +78,29 @@ func ResetEventStreamHeaders(c *gin.Context) {
 }
 
 func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
+	if c == nil || c.Writer == nil {
+		return errors.New("context or writer is nil")
+	}
 	if requestContextDone(c) {
-		return nil
+		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
 	jsonData, err := common.Marshal(resp)
 	if err != nil {
-		common.SysError("error marshalling stream response: " + err.Error())
-	} else {
-		jsonData, err = moonshotfacade.TransformJSON(c, jsonData)
-		if err != nil {
-			return err
-		}
-		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
+		return fmt.Errorf("error marshalling stream response: %w", err)
 	}
-	_ = FlushWriter(c)
-	return nil
+	jsonData, err = moonshotfacade.TransformJSON(c, jsonData)
+	if err != nil {
+		return err
+	}
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	if _, exists := c.Writer.Header()["Cache-Control"]; !exists {
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+	}
+	if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", resp.Type, jsonData); err != nil {
+		return err
+	}
+	return FlushWriter(c)
 }
 
 func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
@@ -129,15 +140,7 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 	if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", resp.Type, data); err != nil {
 		return err
 	}
-	if err := FlushWriter(c); err != nil {
-		return err
-	}
-	// http.Flusher has no error return. A buffered socket error discovered by
-	// Flush cancels the request, so check again before accepting this event.
-	if requestContextDone(c) {
-		return fmt.Errorf("request context done after flush: %w", c.Request.Context().Err())
-	}
-	return nil
+	return FlushWriter(c)
 }
 
 func StringData(c *gin.Context, str string) error {
@@ -162,13 +165,7 @@ func StringData(c *gin.Context, str string) error {
 	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", strings.ReplaceAll(str, "\r", "\\r")); err != nil {
 		return err
 	}
-	if err := FlushWriter(c); err != nil {
-		return err
-	}
-	if requestContextDone(c) {
-		return fmt.Errorf("request context done after flush: %w", c.Request.Context().Err())
-	}
-	return nil
+	return FlushWriter(c)
 }
 
 func PingData(c *gin.Context) error {

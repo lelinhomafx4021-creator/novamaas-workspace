@@ -16,8 +16,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 
-	"github.com/samber/lo"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -85,7 +83,9 @@ func handleClaudeFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 		return fmt.Errorf("expected Claude stream responses, got %T", result.Value)
 	}
 	for _, resp := range claudeResponses {
-		helper.ClaudeData(c, *resp)
+		if err := helper.ClaudeData(c, *resp); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -118,9 +118,7 @@ func handleGeminiFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 	}
 
 	// send gemini format response
-	c.Render(-1, common.CustomEvent{Data: "data: " + string(geminiResponseStr)})
-	_ = helper.FlushWriter(c)
-	return nil
+	return helper.StringData(c, string(geminiResponseStr))
 }
 
 func ProcessStreamResponse(streamResponse dto.ChatCompletionsStreamResponse, responseTextBuilder *strings.Builder, toolCount *int) error {
@@ -183,9 +181,9 @@ func handleLastResponse(lastStreamData string, responseId *string, createAt *int
 		*containStreamUsage = true
 		*usage = lastStreamResponse.Usage
 		if !info.ShouldIncludeUsage {
-			*shouldSendLastResp = lo.SomeBy(lastStreamResponse.Choices, func(choice dto.ChatCompletionsStreamResponseChoice) bool {
-				return choice.Delta.GetContentString() != "" || choice.Delta.GetReasoningContent() != ""
-			})
+			// Only a usage-only frame may be suppressed. A mixed frame can
+			// contain finish_reason or the final tool arguments without text.
+			*shouldSendLastResp = len(lastStreamResponse.Choices) > 0
 		}
 	}
 
@@ -194,22 +192,23 @@ func handleLastResponse(lastStreamData string, responseId *string, createAt *int
 
 func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStreamData string,
 	responseId string, createAt int64, model string, systemFingerprint string,
-	usage *dto.Usage, containStreamUsage bool) {
+	usage *dto.Usage, containStreamUsage bool) error {
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
 		if shouldEmitSyntheticStreamUsage(c, info, containStreamUsage) {
 			response := helper.GenerateFinalUsageResponse(responseId, createAt, model, *usage)
 			response.SetSystemFingerprint(systemFingerprint)
-			helper.ObjectData(c, response)
+			if err := helper.ObjectData(c, response); err != nil {
+				return err
+			}
 		}
-		helper.Done(c)
+		return helper.StringData(c, "[DONE]")
 
 	case types.RelayFormatClaude:
 		var streamResponse dto.ChatCompletionsStreamResponse
 		if err := common.Unmarshal(common.StringToByteSlice(lastStreamData), &streamResponse); err != nil {
-			common.SysLog("error unmarshalling stream response: " + err.Error())
-			return
+			return err
 		}
 
 		info.ClaudeConvertInfo.Usage = usage
@@ -217,24 +216,23 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 
 		result, err := relayconvert.ConvertStreamResponse(c, info, types.RelayFormatClaude, &streamResponse)
 		if err != nil {
-			common.SysLog("error converting Claude stream response: " + err.Error())
-			return
+			return err
 		}
 		claudeResponses, ok := result.Value.([]*dto.ClaudeResponse)
 		if !ok {
-			common.SysLog(fmt.Sprintf("expected Claude stream responses, got %T", result.Value))
-			return
+			return fmt.Errorf("expected Claude stream responses, got %T", result.Value)
 		}
 		for _, resp := range claudeResponses {
-			_ = helper.ClaudeData(c, *resp)
+			if err := helper.ClaudeData(c, *resp); err != nil {
+				return err
+			}
 		}
 		info.ClaudeConvertInfo.Done = true
 
 	case types.RelayFormatGemini:
 		var streamResponse dto.ChatCompletionsStreamResponse
 		if err := common.Unmarshal(common.StringToByteSlice(lastStreamData), &streamResponse); err != nil {
-			common.SysLog("error unmarshalling stream response: " + err.Error())
-			return
+			return err
 		}
 
 		// 这里处理的是 openai 最后一个流响应，其 delta 为空，有 finish_reason 字段
@@ -244,30 +242,27 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 
 		result, err := relayconvert.ConvertStreamResponse(c, info, types.RelayFormatGemini, &streamResponse)
 		if err != nil {
-			common.SysLog("error converting Gemini stream response: " + err.Error())
-			return
+			return err
 		}
 		geminiResponse, ok := result.Value.(*dto.GeminiChatResponse)
 		if !ok {
-			common.SysLog(fmt.Sprintf("expected Gemini stream response, got %T", result.Value))
-			return
+			return fmt.Errorf("expected Gemini stream response, got %T", result.Value)
 		}
 
 		// openai 流响应开头的空数据
 		if geminiResponse == nil {
-			return
+			return nil
 		}
 
 		geminiResponseStr, err := common.Marshal(geminiResponse)
 		if err != nil {
-			common.SysLog("error marshalling gemini response: " + err.Error())
-			return
+			return err
 		}
 
 		// 发送最终的 Gemini 响应
-		c.Render(-1, common.CustomEvent{Data: "data: " + string(geminiResponseStr)})
-		_ = helper.FlushWriter(c)
+		return helper.StringData(c, string(geminiResponseStr))
 	}
+	return nil
 }
 
 func shouldEmitSyntheticStreamUsage(c *gin.Context, info *relaycommon.RelayInfo, containStreamUsage bool) bool {

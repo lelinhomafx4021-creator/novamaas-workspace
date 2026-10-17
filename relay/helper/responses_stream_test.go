@@ -89,6 +89,34 @@ func TestStringDataPreservesEventFraming(t *testing.T) {
 	assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
 }
 
+func TestClaudeDataPreservesEventFramingAndReportsFlushCancellation(t *testing.T) {
+	for _, cancelDuringFlush := range []bool{false, true} {
+		t.Run(map[bool]string{false: "normal", true: "cancel during flush"}[cancelDuringFlush], func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(ctx)
+			if cancelDuringFlush {
+				c.Writer = &responsesCancelOnFlushWriter{ResponseWriter: c.Writer, cancel: cancel}
+			}
+			err := ClaudeData(c, dto.ClaudeResponse{Type: "message_stop"})
+			if cancelDuringFlush {
+				assert.ErrorIs(t, err, context.Canceled)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+			assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+			assert.True(t, strings.HasPrefix(w.Body.String(), "event: message_stop\ndata: "))
+			assert.Equal(t, 1, strings.Count(w.Body.String(), "\n\n"))
+			var payload dto.ClaudeResponse
+			require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(strings.TrimPrefix(w.Body.String(), "event: message_stop\ndata: ")), &payload))
+			assert.Equal(t, "message_stop", payload.Type)
+		})
+	}
+}
+
 func TestWriteResponsesStreamErrorUsesResponsesSchema(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

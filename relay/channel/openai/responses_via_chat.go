@@ -78,6 +78,7 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 	}
 	streamErr := (*types.NewAPIError)(nil)
+	clientWriteFailed := false
 	finishSeen := false
 	var sequenceNumber int64
 
@@ -88,6 +89,7 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			return false
 		}
 		if err := helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: event.Type}, string(data)); err != nil {
+			clientWriteFailed = true
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
 			return false
 		}
@@ -152,7 +154,7 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		usage = service.ResponseText2Usage(c, state.UsageText(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		state.SetUsage(usage)
 	}
-	if c.Request.Context().Err() != nil {
+	if c.Request.Context().Err() != nil || clientWriteFailed || info.StreamStatus.EndReason == relaycommon.StreamEndReasonPingFail {
 		return usage, nil
 	}
 	completed := finishSeen || info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone

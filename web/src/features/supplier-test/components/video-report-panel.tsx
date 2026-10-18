@@ -152,7 +152,7 @@ export function VideoReportPanel(props: {
               {t('Manual confirmation')}
             </FieldLegend>
             <FieldDescription>
-              {t('Select the capabilities confirmed for this report.')}
+              {t('Checked means implemented; unchecked means not implemented.')}
             </FieldDescription>
             <FieldGroup className='gap-2 sm:flex-row sm:gap-6'>
               {VIDEO_REPORT_CAPABILITIES.map((item) => (

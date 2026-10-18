@@ -188,9 +188,6 @@ export function buildVideoRunMarkdownReport(
   input: VideoReportInput
 ): string {
   const t = input.t
-  const capabilities = VIDEO_REPORT_CAPABILITIES.filter(
-    (item) => input.manualChecks?.[item.key]
-  )
   const lines = [
     `# ${t('Doubao Video Generation Test Report')}`,
     '',
@@ -198,15 +195,14 @@ export function buildVideoRunMarkdownReport(
     `- ${t('Base URL')}: ${run.base_url}`,
     `- ${t('Task ID')}: ${run.task_id || '—'}`,
     `- QueryID: ${run.query_id || '—'}`,
+    '',
+    `**${t('Manual confirmation')}**`,
+    ...VIDEO_REPORT_CAPABILITIES.map((item) => {
+      const checked = Boolean(input.manualChecks?.[item.key])
+      return `- [${checked ? 'x' : ' '}] ${t(item.label)}: ${t(checked ? 'Yes' : 'No')}`
+    }),
+    '',
   ]
-  if (capabilities.length) {
-    lines.push(
-      '',
-      `**${t('Manual confirmation')}**`,
-      ...capabilities.map((item) => `- [x] ${t(item.label)}`),
-      ''
-    )
-  }
   for (const card of reportSummary(run, t)) {
     lines.push(`- ${card.label}: ${card.value} · ${card.detail}`)
   }
@@ -272,9 +268,10 @@ export function buildVideoRunHtmlReport(
 ): string {
   const t = input.t
   const pdf = options.format === 'pdf'
-  const capabilities = VIDEO_REPORT_CAPABILITIES.filter(
-    (item) => input.manualChecks?.[item.key]
-  )
+  const capabilities = VIDEO_REPORT_CAPABILITIES.map((item) => {
+    const checked = Boolean(input.manualChecks?.[item.key])
+    return `${checked ? '☑' : '☐'} ${escapeHtml(t(item.label))}: ${escapeHtml(t(checked ? 'Yes' : 'No'))}`
+  })
   const title = t('Doubao Video Generation Test Report')
   const code = (label: string, body: string) =>
     `<div class="evidence-label">${escapeHtml(t(label))}</div><pre class="evidence-json">${escapeHtml(formatEvidenceJSON(body))}</pre>`
@@ -287,11 +284,7 @@ export function buildVideoRunHtmlReport(
   const blocks = [
     `<div class="report-header"><h1 class="report-title">${escapeHtml(title)}</h1><span class="record-reference">${escapeHtml(t('Run ID'))}: ${escapeHtml(run.id)}</span></div>`,
     `<div class="meta-grid">${metadata.map(([key, value]) => `<div class="meta-item"><span class="meta-label">${escapeHtml(t(key))}：</span><span class="meta-value">${escapeHtml(value)}</span></div>`).join('')}</div>`,
-    ...(capabilities.length
-      ? [
-          `<p class="report-note">${escapeHtml(t('Manual confirmation'))}: ${capabilities.map((item) => `☑ ${escapeHtml(t(item.label))}`).join(' · ')}</p>`,
-        ]
-      : []),
+    `<p class="report-note">${escapeHtml(t('Manual confirmation'))}: ${capabilities.join(' · ')}</p>`,
     pdfSummaryCards(reportSummary(run, t)),
     `<p class="report-note">${escapeHtml(videoPollingSummary(run, t))}${run.assets.length ? ` · ${escapeHtml(t('Input materials'))}: ${run.assets.length}` : ''}</p>`,
   ]

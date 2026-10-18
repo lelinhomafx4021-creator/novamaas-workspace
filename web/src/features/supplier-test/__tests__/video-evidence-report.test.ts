@@ -193,7 +193,7 @@ test.each([
   { v3Compatible: false, materialLibrary: false },
   {},
 ] satisfies VideoReportChecks[])(
-  'all exports show only manually selected supplier capabilities: %j',
+  'all exports show yes for checked supplier capabilities and no for unchecked ones: %j',
   (manualChecks) => {
     const reportInput: VideoReportInput = { ...input, manualChecks }
     const markdown = buildVideoMarkdownReport(reportInput)
@@ -202,18 +202,13 @@ test.each([
       ['materialLibrary', 'Supplier has implemented a material library'],
     ] as const) {
       const checked = Boolean(manualChecks[key])
-      if (checked) {
-        expect(markdown).toContain(`- [x] ${label}`)
-      } else {
-        expect(markdown).not.toContain(label)
-      }
+      const value = checked ? 'Yes' : 'No'
+      expect(markdown).toContain(
+        `- [${checked ? 'x' : ' '}] ${label}: ${value}`
+      )
       for (const format of ['html', 'pdf'] as const) {
         const html = buildVideoHtmlReport(reportInput, { format })
-        if (checked) {
-          expect(html).toContain(`☑ ${label}`)
-        } else {
-          expect(html).not.toContain(label)
-        }
+        expect(html).toContain(`${checked ? '☑' : '☐'} ${label}: ${value}`)
       }
     }
     for (const report of [
@@ -221,12 +216,7 @@ test.each([
       buildVideoHtmlReport(reportInput),
       buildVideoHtmlReport(reportInput, { format: 'pdf' }),
     ]) {
-      if (manualChecks.v3Compatible || manualChecks.materialLibrary) {
-        expect(report).toContain('Manual confirmation')
-      } else {
-        expect(report).not.toContain('Manual confirmation')
-      }
-      expect(report).not.toContain('☐')
+      expect(report).toContain('Manual confirmation')
     }
     expect(input.runReport).not.toHaveProperty('manualChecks')
   }

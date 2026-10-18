@@ -122,6 +122,11 @@ test('report capabilities require independent manual selection and are disabled 
     onReportChecksChange: onChange,
   }
   const view = render(<VideoReportPanel {...props} />)
+  expect(
+    screen.getByText(
+      'Checked means implemented; unchecked means not implemented.'
+    )
+  ).toBeVisible()
   const v3 = screen.getByRole('checkbox', {
     name: 'Supplier has implemented the v3 API',
   })
@@ -141,6 +146,17 @@ test('report capabilities require independent manual selection and are disabled 
   await user.keyboard(' ')
   expect(onChange).toHaveBeenLastCalledWith({
     v3Compatible: true,
+    materialLibrary: true,
+  })
+  view.rerender(
+    <VideoReportPanel
+      {...props}
+      reportChecks={{ v3Compatible: true, materialLibrary: true }}
+    />
+  )
+  await user.click(v3)
+  expect(onChange).toHaveBeenLastCalledWith({
+    v3Compatible: false,
     materialLibrary: true,
   })
   view.rerender(

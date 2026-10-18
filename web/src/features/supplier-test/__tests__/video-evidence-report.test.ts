@@ -165,9 +165,11 @@ test('compact evidence preserves large numbers, explicit values and whitespace i
 test.each([
   { v3Compatible: true, materialLibrary: false },
   { v3Compatible: false, materialLibrary: true },
+  { v3Compatible: true, materialLibrary: true },
+  { v3Compatible: false, materialLibrary: false },
   {},
 ] satisfies VideoReportChecks[])(
-  'all exports preserve independent manual capability selections: %j',
+  'all exports show only manually selected supplier capabilities: %j',
   (manualChecks) => {
     const reportInput: VideoReportInput = { ...input, manualChecks }
     const markdown = buildVideoMarkdownReport(reportInput)
@@ -176,14 +178,32 @@ test.each([
       ['materialLibrary', 'Material library available'],
     ] as const) {
       const checked = Boolean(manualChecks[key])
-      expect(markdown).toContain(`- [${checked ? 'x' : ' '}] ${label}`)
+      if (checked) {
+        expect(markdown).toContain(`- [x] ${label}`)
+      } else {
+        expect(markdown).not.toContain(label)
+      }
       for (const format of ['html', 'pdf'] as const) {
-        expect(buildVideoHtmlReport(reportInput, { format })).toContain(
-          `${checked ? '☑' : '☐'} ${label}`
-        )
+        const html = buildVideoHtmlReport(reportInput, { format })
+        if (checked) {
+          expect(html).toContain(`☑ ${label}`)
+        } else {
+          expect(html).not.toContain(label)
+        }
       }
     }
-    expect(markdown).toContain('Manual confirmation')
+    for (const report of [
+      markdown,
+      buildVideoHtmlReport(reportInput),
+      buildVideoHtmlReport(reportInput, { format: 'pdf' }),
+    ]) {
+      if (manualChecks.v3Compatible || manualChecks.materialLibrary) {
+        expect(report).toContain('Manual confirmation')
+      } else {
+        expect(report).not.toContain('Manual confirmation')
+      }
+      expect(report).not.toContain('☐')
+    }
     expect(input.runReport).not.toHaveProperty('manualChecks')
   }
 )

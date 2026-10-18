@@ -17,10 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
 import { VideoReportPanel } from '../components/video-report-panel'
-import type { VideoRunReport } from '../types'
+import type { VideoReportChecks, VideoRunReport } from '../types'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -85,4 +86,64 @@ test('a single report shows both generation and verification without a report sw
   expect(
     screen.getByRole('button', { name: 'Continue official verification' })
   ).toBeDisabled()
+})
+
+test('report capabilities require independent manual selection and are disabled while running', async () => {
+  const user = userEvent.setup()
+  const onChange = vi.fn()
+  const run: VideoRunReport = {
+    id: 'manual-run',
+    model: 'model',
+    base_url: 'https://gateway.example/api/v3',
+    task_id: 'manual-task',
+    status: 'completed',
+    started_at: 1,
+    stages: [],
+    assets: [
+      { index: 0, role: 'first_frame', source: 'asset', url: 'asset://one' },
+    ],
+  }
+  const props = {
+    run,
+    busy: false,
+    verify: false,
+    onVerifyChange: vi.fn(),
+    reportChecks: {} as VideoReportChecks,
+    onReportChecksChange: onChange,
+  }
+  const view = render(<VideoReportPanel {...props} />)
+  const v3 = screen.getByRole('checkbox', { name: 'Compatible with v3 API' })
+  const library = screen.getByRole('checkbox', {
+    name: 'Material library available',
+  })
+  expect(v3).not.toBeChecked()
+  expect(library).not.toBeChecked()
+  await user.click(v3)
+  expect(onChange).toHaveBeenLastCalledWith({ v3Compatible: true })
+  view.rerender(
+    <VideoReportPanel {...props} reportChecks={{ v3Compatible: true }} />
+  )
+  expect(v3).toBeChecked()
+  expect(library).not.toBeChecked()
+  library.focus()
+  await user.keyboard(' ')
+  expect(onChange).toHaveBeenLastCalledWith({
+    v3Compatible: true,
+    materialLibrary: true,
+  })
+  view.rerender(
+    <VideoReportPanel
+      {...props}
+      busy
+      reportChecks={{ v3Compatible: true, materialLibrary: true }}
+    />
+  )
+  expect(v3).toBeChecked()
+  expect(library).toBeChecked()
+  expect(v3).toHaveAttribute('aria-disabled', 'true')
+  expect(library).toHaveAttribute('aria-disabled', 'true')
+  onChange.mockClear()
+  await user.click(v3)
+  await user.click(library)
+  expect(onChange).not.toHaveBeenCalled()
 })

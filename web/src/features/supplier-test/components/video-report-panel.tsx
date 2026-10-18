@@ -23,6 +23,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -31,12 +39,13 @@ import {
   getVerificationSettings,
   saveVerificationSettings,
 } from '../api'
-import type { VideoRunReport } from '../types'
+import type { VideoReportChecks, VideoRunReport } from '../types'
 import {
   compactEvidenceJSON,
   videoPollingSummary,
   videoReportSections,
   videoStageTitle,
+  VIDEO_REPORT_CAPABILITIES,
 } from '../video-report'
 
 export function VideoReportPanel(props: {
@@ -45,6 +54,8 @@ export function VideoReportPanel(props: {
   verify: boolean
   onVerifyChange: (checked: boolean) => void
   onVerifyRun?: () => void
+  reportChecks?: VideoReportChecks
+  onReportChecksChange?: (checks: VideoReportChecks) => void
 }) {
   const { t } = useTranslation()
   const [configured, setConfigured] = useState(false)
@@ -136,6 +147,38 @@ export function VideoReportPanel(props: {
           <h3 className='font-medium'>
             {t('Doubao Video Generation Test Report')}
           </h3>
+          <FieldSet className='gap-2'>
+            <FieldLegend variant='label'>
+              {t('Manual confirmation')}
+            </FieldLegend>
+            <FieldDescription>
+              {t('Select the capabilities confirmed for this report.')}
+            </FieldDescription>
+            <FieldGroup className='gap-2 sm:flex-row sm:gap-6'>
+              {VIDEO_REPORT_CAPABILITIES.map((item) => (
+                <Field
+                  key={item.key}
+                  orientation='horizontal'
+                  data-disabled={props.busy || !props.onReportChecksChange}
+                >
+                  <Checkbox
+                    id={`video-report-${item.key}`}
+                    checked={Boolean(props.reportChecks?.[item.key])}
+                    disabled={props.busy || !props.onReportChecksChange}
+                    onCheckedChange={(checked) =>
+                      props.onReportChecksChange?.({
+                        ...props.reportChecks,
+                        [item.key]: Boolean(checked),
+                      })
+                    }
+                  />
+                  <FieldLabel htmlFor={`video-report-${item.key}`}>
+                    {t(item.label)}
+                  </FieldLabel>
+                </Field>
+              ))}
+            </FieldGroup>
+          </FieldSet>
           <p className='text-xs break-all'>
             {t('Task ID')}: {props.run.task_id || '—'} · QueryID:{' '}
             {props.run.query_id || '—'}

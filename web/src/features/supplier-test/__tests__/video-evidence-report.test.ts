@@ -23,6 +23,7 @@ import {
   buildVideoMarkdownReport,
   type VideoReportInput,
 } from '../report'
+import type { VideoReportChecks } from '../types'
 import { compactEvidenceJSON } from '../video-report'
 
 const input = {
@@ -160,3 +161,29 @@ test('compact evidence preserves large numbers, explicit values and whitespace i
     'Upstream error:  service unavailable'
   )
 })
+
+test.each([
+  { v3Compatible: true, materialLibrary: false },
+  { v3Compatible: false, materialLibrary: true },
+  {},
+] satisfies VideoReportChecks[])(
+  'all exports preserve independent manual capability selections: %j',
+  (manualChecks) => {
+    const reportInput: VideoReportInput = { ...input, manualChecks }
+    const markdown = buildVideoMarkdownReport(reportInput)
+    for (const [key, label] of [
+      ['v3Compatible', 'Compatible with v3 API'],
+      ['materialLibrary', 'Material library available'],
+    ] as const) {
+      const checked = Boolean(manualChecks[key])
+      expect(markdown).toContain(`- [${checked ? 'x' : ' '}] ${label}`)
+      for (const format of ['html', 'pdf'] as const) {
+        expect(buildVideoHtmlReport(reportInput, { format })).toContain(
+          `${checked ? '☑' : '☐'} ${label}`
+        )
+      }
+    }
+    expect(markdown).toContain('Manual confirmation')
+    expect(input.runReport).not.toHaveProperty('manualChecks')
+  }
+)

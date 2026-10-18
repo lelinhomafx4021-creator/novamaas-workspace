@@ -64,6 +64,7 @@ import type {
   CheckResult,
   VideoForm,
   VideoMetrics,
+  VideoReportChecks,
   VideoRunReport,
 } from '../types'
 import {
@@ -84,6 +85,8 @@ export function VideoPanel(props: {
   videoChecks: CheckResult[]
   videoMetrics: VideoMetrics | null
   runReport?: VideoRunReport | null
+  reportChecks?: VideoReportChecks
+  onReportChecksChange?: (checks: VideoReportChecks) => void
   onVerifyRun?: () => void
   onVideoChange: Dispatch<SetStateAction<VideoForm>>
   onSendRawJson?: (rawJson: string) => void
@@ -768,6 +771,8 @@ export function VideoPanel(props: {
 
           <VideoReportPanel
             run={props.runReport}
+            reportChecks={props.reportChecks}
+            onReportChecksChange={props.onReportChecksChange}
             busy={props.busy}
             verify={Boolean(props.video.verifyOfficial)}
             onVerifyChange={(checked) =>

@@ -42,6 +42,7 @@ import type {
   CacheMetrics,
   CheckResult,
   CheckStatus,
+  VideoReportChecks,
   VideoRunReport,
   StressMetrics,
 } from './types'
@@ -1129,6 +1130,7 @@ ${options.format === 'pdf' ? '</tbody></table>' : ''}
 
 export type VideoReportInput = {
   runReport: VideoRunReport
+  manualChecks?: VideoReportChecks
   language?: string
   branding?: ReportBranding
   t: ReportInput['t']

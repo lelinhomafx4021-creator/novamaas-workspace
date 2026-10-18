@@ -247,6 +247,11 @@ export type StageEvidence = {
   final?: boolean
 }
 
+export type VideoReportChecks = {
+  v3Compatible?: boolean
+  materialLibrary?: boolean
+}
+
 export type VideoRunReport = {
   video_polling?: { count: number; elapsed_ms: number }
   verification_polling?: { count: number; elapsed_ms: number }

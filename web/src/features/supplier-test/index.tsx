@@ -86,6 +86,7 @@ import type {
   SupplierTestRunRequest,
   TargetForm,
   VideoForm,
+  VideoReportChecks,
 } from './types'
 import { buildVideoRequestPayload } from './video-json'
 
@@ -162,6 +163,9 @@ export function SupplierTest() {
   const [standard, setStandard] = useState<SupplierStandard>(readStoredStandard)
   const [moduleTab, setModuleTab] = useState<SupplierTestModule>('basic')
   const run = useSupplierTestRun()
+  const [videoReportChecks, setVideoReportChecks] = useState<
+    Record<string, VideoReportChecks>
+  >({})
   const matchedStandardId = matchingStandardId(standard)
   const standardLabel = t(
     matchedStandardId
@@ -563,6 +567,7 @@ export function SupplierTest() {
     if (!run.videoReport) throw new Error(t('Unable to load video test record'))
     return {
       runReport: await getVideoRun(run.videoReport.id),
+      manualChecks: videoReportChecks[run.videoReport.id],
       language: reportLanguage,
       branding,
       t: (key, options) => t(key, options),
@@ -765,6 +770,19 @@ export function SupplierTest() {
                 videoChecks={run.videoChecks}
                 videoMetrics={run.videoMetrics}
                 runReport={run.videoReport}
+                reportChecks={
+                  run.videoReport
+                    ? videoReportChecks[run.videoReport.id]
+                    : undefined
+                }
+                onReportChecksChange={(checks) => {
+                  if (!run.videoReport) return
+                  const runID = run.videoReport.id
+                  setVideoReportChecks((current) => ({
+                    ...current,
+                    [runID]: checks,
+                  }))
+                }}
                 onVerifyRun={() => {
                   if (!run.videoReport) return
                   const payload = buildPayload('video', ['video_result'])

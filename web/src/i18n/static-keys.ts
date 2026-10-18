@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  'Compatible with v3 API',
+  'Material library available',
   // Supplier video run evidence and official verification
   'Returned task ID does not match this video run',
   'Returned QueryID does not match this verification query',

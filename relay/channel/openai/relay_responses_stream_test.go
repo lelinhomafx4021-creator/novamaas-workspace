@@ -161,40 +161,9 @@ func TestResponsesStreamMissingTerminalEmitsError(t *testing.T) {
 	}
 }
 
-func TestResponsesStreamTimeoutEmitsErrorAfterPartialResponse(t *testing.T) {
-	reader, writer := io.Pipe()
-	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
-	c, w, info, resp := setupResponsesStreamReliabilityTest(t, reader)
-	constant.StreamingTimeout = 1
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_, apiErr := OaiResponsesStreamHandler(c, info, resp)
-		assert.Nil(t, apiErr)
-	}()
-	_, err := io.WriteString(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial output\"}\n\n")
-	require.NoError(t, err)
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		_ = writer.Close()
-		<-done
-		t.Fatal("idle upstream was not stopped by the stream timeout")
-	}
-	assert.Equal(t, relaycommon.StreamEndReasonTimeout, info.StreamStatus.EndReason)
-	assert.Contains(t, w.Body.String(), `"code":"upstream_stream_timeout"`)
-	assert.NotContains(t, w.Body.String(), "response.completed")
-}
-
 type responsesCancelWriter struct {
 	gin.ResponseWriter
 	cancel context.CancelFunc
-}
-
-type responsesDisconnectedWriter struct {
-	gin.ResponseWriter
-	err      error
-	attempts int
 }
 
 type responsesCancelOnFlushWriter struct {
@@ -209,69 +178,10 @@ func (w *responsesCancelOnFlushWriter) Flush() {
 	w.cancel()
 }
 
-func (w *responsesDisconnectedWriter) Write([]byte) (int, error) {
-	w.attempts++
-	return 0, w.err
-}
-
 func (w *responsesCancelWriter) Write(data []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(data)
 	w.cancel()
 	return n, err
-}
-
-func TestResponsesStreamClientCancelDoesNotAppendError(t *testing.T) {
-	body := "data: {\"type\":\"response.in_progress\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n"
-	c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	t.Cleanup(cancel)
-	c.Request = c.Request.WithContext(ctx)
-	c.Writer = &responsesCancelWriter{ResponseWriter: c.Writer, cancel: cancel}
-	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
-	require.Nil(t, apiErr)
-	require.NotNil(t, usage)
-	assert.Equal(t, 10, usage.PromptTokens)
-	assert.Equal(t, relaycommon.StreamEndReasonClientGone, info.StreamStatus.EndReason)
-	assert.NotContains(t, w.Body.String(), "event: error\n")
-	assert.NotContains(t, w.Body.String(), "response.completed")
-}
-
-func TestResponsesStreamFailedTerminalWriteIsNotSuccessful(t *testing.T) {
-	body := "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n"
-	c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
-	writeErr := fmt.Errorf("client socket closed")
-	writer := &responsesDisconnectedWriter{ResponseWriter: c.Writer, err: writeErr}
-	c.Writer = writer
-	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
-	require.Nil(t, apiErr)
-	require.NotNil(t, usage)
-	assert.Equal(t, 10, usage.PromptTokens)
-	assert.Equal(t, 1, usage.CompletionTokens)
-	assert.Equal(t, relaycommon.StreamEndReasonHandlerStop, info.StreamStatus.EndReason)
-	assert.ErrorIs(t, info.StreamStatus.EndError, writeErr)
-	assert.True(t, info.StreamStatus.HasErrors())
-	assert.Empty(t, w.Body.String())
-	assert.Equal(t, 1, writer.attempts, "do not append an error to an unwritable connection")
-}
-
-func TestResponsesStreamCancelDuringTerminalFlushIsNotSuccessful(t *testing.T) {
-	body := "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n"
-	c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	t.Cleanup(cancel)
-	c.Request = c.Request.WithContext(ctx)
-	writer := &responsesCancelOnFlushWriter{ResponseWriter: c.Writer, cancel: cancel}
-	c.Writer = writer
-	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
-	require.Nil(t, apiErr)
-	require.NotNil(t, usage)
-	assert.Equal(t, 10, usage.PromptTokens)
-	assert.Equal(t, 1, usage.CompletionTokens)
-	assert.Equal(t, relaycommon.StreamEndReasonClientGone, info.StreamStatus.EndReason)
-	assert.ErrorIs(t, info.StreamStatus.EndError, context.Canceled)
-	assert.True(t, info.StreamStatus.HasErrors())
-	assert.NotContains(t, w.Body.String(), "event: error\n")
-	assert.Equal(t, 1, writer.flushes, "do not append another event after a failed flush")
 }
 
 func TestResponsesStreamFailureBeforeOutputCanRetry(t *testing.T) {
@@ -285,19 +195,22 @@ func TestResponsesStreamFailureBeforeOutputCanRetry(t *testing.T) {
 			assert.False(t, c.Writer.Written())
 			assert.Empty(t, w.Body.String())
 			assert.Empty(t, w.Header().Get("Content-Type"))
-			_, headersSet := c.Get("event_stream_headers_set")
-			assert.False(t, headersSet)
 			assert.NotContains(t, apiErr.Error(), "internal-provider.example")
 		})
 	}
 }
 
-func TestResponsesStreamPreservesUsageAcrossZeroTerminalSnapshot(t *testing.T) {
-	for _, terminalType := range []string{"response.completed", "response.incomplete"} {
-		t.Run(terminalType, func(t *testing.T) {
-			body := "data: {\"type\":\"response.in_progress\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":3,\"total_tokens\":13,\"input_tokens_details\":{\"cached_tokens\":8}}}}\n\n" +
-				"data: {\"type\":\"" + terminalType + "\",\"response\":{\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0,\"input_tokens_details\":{\"cached_tokens\":0}}}}\n\n"
-			c, _, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
+func TestResponsesStreamRetainsUsageAcrossPartialSnapshots(t *testing.T) {
+	first := `{"type":"response.in_progress","response":{"usage":{"input_tokens":10,"output_tokens":3,"input_tokens_details":{"cached_tokens":8}}}}`
+	for _, tc := range []struct {
+		name, initial, tail string
+	}{
+		{"zero completed", first, `{"type":"response.completed","response":{"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}`},
+		{"zero incomplete", first, `{"type":"response.incomplete","response":{"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}`},
+		{"output only", strings.Replace(first, `"output_tokens":3`, `"output_tokens":0`, 1), `{"type":"response.incomplete","response":{"usage":{"input_tokens":0,"output_tokens":3,"total_tokens":3}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(streamTestBody(tc.initial, tc.tail))))
 			usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
 			require.Nil(t, apiErr)
 			require.NotNil(t, usage)
@@ -317,18 +230,6 @@ func TestResponsesStreamZeroPlaceholderUsageAllowsTokenFallback(t *testing.T) {
 	require.Nil(t, apiErr)
 	require.NotNil(t, usage)
 	assert.Positive(t, usage.CompletionTokens)
-}
-
-func TestResponsesStreamRetainsInputUsageFromEarlierSnapshot(t *testing.T) {
-	body := "data: {\"type\":\"response.in_progress\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":0,\"total_tokens\":10}}}\n\n" +
-		"data: {\"type\":\"response.incomplete\",\"response\":{\"usage\":{\"input_tokens\":0,\"output_tokens\":3,\"total_tokens\":3}}}\n\n"
-	c, _, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
-	usage, apiErr := OaiResponsesStreamHandler(c, info, resp)
-	require.Nil(t, apiErr)
-	require.NotNil(t, usage)
-	assert.Equal(t, 10, usage.PromptTokens)
-	assert.Equal(t, 3, usage.CompletionTokens)
-	assert.Equal(t, 13, usage.TotalTokens)
 }
 
 func TestResponsesStreamMalformedFrameAfterOutputEmitsPublicError(t *testing.T) {

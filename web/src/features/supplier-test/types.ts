@@ -154,22 +154,6 @@ export type SupplierTestRunRequest = {
     verify_official?: boolean
     resume_run_id?: string
     preparation_run_ids?: string[]
-    prompt: string
-    upload_mode?: string
-    image_url?: string
-    base64_data?: string
-    role?: string
-    last_frame_mode?: string
-    last_frame_url?: string
-    last_frame_base64?: string
-    resolution?: string
-    ratio?: string
-    duration?: number
-    watermark?: boolean
-    seed?: number
-    generate_audio?: boolean
-    return_last_frame?: boolean
-    custom_json?: string
     custom_path?: string
     raw_payload?: string
     task_id?: string
@@ -296,24 +280,14 @@ export type VideoRunReport = {
 }
 
 export type VideoForm = {
-  materials?: VideoMaterial[]
+  materials: VideoMaterial[]
   scenario?: 'text' | 'first_frame' | 'first_last_frame' | 'reference'
   platformMode?: boolean
   verifyOfficial?: boolean
   preparationRunIds?: string[]
-  preservedContent?: Array<Record<string, unknown>>
   contentOrder?: Array<{ material: true } | { value: Record<string, unknown> }>
 
   prompt: string
-  hasImage: boolean
-  uploadMode: 'url' | 'base64'
-  imageUrl: string
-  base64Data: string
-  role: string
-  hasLastFrame: boolean
-  lastFrameMode: 'url' | 'base64'
-  lastFrameUrl: string
-  lastFrameBase64: string
   hasResolution: boolean
   resolution: string
   hasRatio: boolean

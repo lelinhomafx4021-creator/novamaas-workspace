@@ -22,6 +22,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { BASIC_CHECKS, CACHE_CHECKS, VIDEO_CHECKS } from '../constants'
+import type { SupplierTestRunRequest } from '../types'
 
 const runMock = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }))
 
@@ -81,4 +82,48 @@ test('polling an existing video task starts without a model', async () => {
       }),
     })
   )
+})
+
+test('video submission sends material and generation parameters once in the native request body', async () => {
+  const user = userEvent.setup()
+  render(
+    <QueryClientProvider client={queryClient}>
+      <SupplierTest />
+    </QueryClientProvider>
+  )
+  await user.type(screen.getByLabelText('Base URL'), 'https://api.example.com')
+  await user.type(screen.getByLabelText('Model'), 'video-model')
+  await user.click(screen.getByRole('tab', { name: 'Doubao Video' }))
+  await user.type(screen.getByLabelText('Generation Prompt'), 'animate')
+  await user.type(
+    screen.getByRole('textbox', { name: 'Material URL or asset ID' }),
+    'asset://reference-one'
+  )
+  await user.click(screen.getByRole('button', { name: 'Add material' }))
+  await user.click(screen.getByRole('checkbox', { name: 'Watermark' }))
+  await user.click(screen.getByRole('button', { name: 'Start Video Test' }))
+
+  const request = runMock.start.mock.calls[0]?.[0] as SupplierTestRunRequest
+  expect(request.video).toEqual({
+    scenario: 'reference',
+    platform_mode: false,
+    verify_official: true,
+    preparation_run_ids: [],
+    checks: undefined,
+    task_id: undefined,
+    raw_payload: expect.any(String),
+    custom_path: undefined,
+  })
+  expect(JSON.parse(request.video?.raw_payload || '{}')).toEqual({
+    model: 'video-model',
+    content: [
+      { type: 'text', text: 'animate' },
+      {
+        type: 'image_url',
+        image_url: { url: 'asset://reference-one' },
+        role: 'reference_image',
+      },
+    ],
+    watermark: false,
+  })
 })

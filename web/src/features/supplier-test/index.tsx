@@ -255,6 +255,11 @@ export function SupplierTest() {
       module === 'basic' && checks && checks.length > 0
         ? checks
         : defaultBasicChecks
+    let rawVideoPayload = video.rawPayload?.trim()
+    if (module === 'video' && !rawVideoPayload) {
+      const request = buildVideoRequestPayload(target.model, video)
+      if (request) rawVideoPayload = JSON.stringify(request)
+    }
     return {
       base_url: target.baseUrl.trim(),
       api_key: target.apiKey,
@@ -286,72 +291,21 @@ export function SupplierTest() {
         break_cache: stress.breakCache,
         stream: stress.stream,
       },
-      video: {
-        scenario: video.scenario,
-        platform_mode: video.platformMode,
-        verify_official: video.verifyOfficial,
-        preparation_run_ids: video.preparationRunIds,
-        ...(module === 'video' && checks && checks.length > 0
-          ? { checks }
-          : {}),
-        ...(video.taskId || run.videoMetrics?.task_id
-          ? { task_id: (video.taskId || run.videoMetrics?.task_id)?.trim() }
-          : {}),
-        ...(() => {
-          const edited = video.rawPayload?.trim() ?? ''
-          if (edited) return { raw_payload: edited }
-          if (module !== 'video') return {}
-          const preview = buildVideoRequestPayload(target.model, video)
-          return preview ? { raw_payload: JSON.stringify(preview) } : {}
-        })(),
-        prompt: video.prompt.trim(),
-        ...(video.hasImage
+      video:
+        module === 'video'
           ? {
-              upload_mode: video.uploadMode,
-              ...(video.uploadMode === 'url'
-                ? { image_url: video.imageUrl.trim() }
-                : {}),
-              ...(video.uploadMode === 'base64'
-                ? { base64_data: video.base64Data.trim() }
-                : {}),
-              role: video.role,
+              scenario: video.scenario,
+              platform_mode: video.platformMode,
+              verify_official: video.verifyOfficial,
+              preparation_run_ids: video.preparationRunIds,
+              checks: checks?.length ? checks : undefined,
+              task_id:
+                (video.taskId || run.videoMetrics?.task_id)?.trim() ||
+                undefined,
+              raw_payload: rawVideoPayload,
+              custom_path: video.customPath.trim() || undefined,
             }
-          : {}),
-        ...(video.hasLastFrame
-          ? {
-              last_frame_mode: video.lastFrameMode,
-              ...(video.lastFrameMode === 'url'
-                ? { last_frame_url: video.lastFrameUrl.trim() }
-                : {}),
-              ...(video.lastFrameMode === 'base64'
-                ? { last_frame_base64: video.lastFrameBase64.trim() }
-                : {}),
-            }
-          : {}),
-        ...(video.hasResolution && video.resolution
-          ? { resolution: video.resolution }
-          : {}),
-        ...(video.hasRatio && video.ratio ? { ratio: video.ratio } : {}),
-        ...(video.hasDuration && video.duration > 0
-          ? { duration: video.duration }
-          : {}),
-        ...(video.hasWatermark ? { watermark: video.watermark } : {}),
-        ...(video.hasSeed && video.seed.trim() !== ''
-          ? { seed: Number.parseInt(video.seed, 10) }
-          : {}),
-        ...(video.hasGenerateAudio
-          ? { generate_audio: video.generateAudio }
-          : {}),
-        ...(video.hasReturnLastFrame
-          ? { return_last_frame: video.returnLastFrame }
-          : {}),
-        ...(video.hasCustomJson && video.customJson.trim()
-          ? { custom_json: video.customJson.trim() }
-          : {}),
-        ...(video.customPath.trim()
-          ? { custom_path: video.customPath.trim() }
-          : {}),
-      },
+          : undefined,
     }
   }
 
@@ -469,31 +423,6 @@ export function SupplierTest() {
           toast.error(t('Please enter a prompt for video generation'))
           return
         }
-        if (video.hasImage) {
-          if (video.uploadMode === 'url' && !video.imageUrl.trim()) {
-            toast.error(t('Please enter an image URL'))
-            return
-          }
-          if (video.uploadMode === 'base64' && !video.base64Data.trim()) {
-            toast.error(t('Please select an image file or provide Base64 data'))
-            return
-          }
-        }
-        if (video.hasLastFrame) {
-          if (video.lastFrameMode === 'url' && !video.lastFrameUrl.trim()) {
-            toast.error(t('Please enter an end frame image URL'))
-            return
-          }
-          if (
-            video.lastFrameMode === 'base64' &&
-            !video.lastFrameBase64.trim()
-          ) {
-            toast.error(
-              t('Please select an end frame image file or provide Base64 data')
-            )
-            return
-          }
-        }
         if (video.hasCustomJson && video.customJson.trim()) {
           try {
             JSON.parse(video.customJson)
@@ -514,10 +443,7 @@ export function SupplierTest() {
   const handleSendRawJson = (rawJson: string) => {
     if (!validateTarget()) return
     const payload = buildPayload('video')
-    if (!payload.video) {
-      payload.video = { prompt: DEFAULT_VIDEO_FORM.prompt }
-    }
-    payload.video.raw_payload = rawJson.trim()
+    payload.video = { ...payload.video, raw_payload: rawJson.trim() }
     setVideo((current) => ({ ...current, preparationRunIds: [] }))
     void run.start(payload)
   }

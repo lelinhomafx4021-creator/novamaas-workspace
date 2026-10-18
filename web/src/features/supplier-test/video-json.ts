@@ -22,82 +22,42 @@ export function buildVideoRequestPayload(
   model: string,
   video: VideoForm
 ): Record<string, unknown> | null {
-  const content: Array<Record<string, unknown>> = []
   const prompt = video.prompt.trim()
-  const firstText = video.preservedContent?.find((item) => item.type === 'text')
-  if (prompt) {
-    content.push({
-      ...firstText,
-      type: 'text',
-      text: prompt,
-    })
-  }
-
-  if (video.materials) {
-    for (const material of video.materials) {
-      if (!material.url.trim()) continue
+  const images = video.materials
+    .filter((material) => material.url.trim())
+    .map((material) => {
       const original = material.payload || {}
       const image =
         original.image_url && typeof original.image_url === 'object'
           ? (original.image_url as Record<string, unknown>)
           : {}
-      content.push({
+      return {
         ...original,
         type: 'image_url',
         image_url: { ...image, url: material.url.trim() },
         role: material.role,
-      })
-    }
-    for (const item of video.preservedContent || []) {
-      if (item !== firstText) {
-        content.push(item)
       }
+    })
+  const content: Array<Record<string, unknown>> = []
+  let imageIndex = 0
+  let textSeen = false
+  for (const entry of video.contentOrder || []) {
+    if ('material' in entry) {
+      const image = images[imageIndex++]
+      if (image) content.push(image)
+    } else if (
+      entry.value.type === 'text' &&
+      typeof entry.value.text === 'string' &&
+      !textSeen
+    ) {
+      textSeen = true
+      if (prompt) content.push({ ...entry.value, text: prompt })
+    } else {
+      content.push(entry.value)
     }
   }
-  if (!video.materials) {
-    for (const frame of [
-      {
-        enabled: video.hasImage,
-        role: video.role || 'reference_image',
-        url: video.uploadMode === 'url' ? video.imageUrl : video.base64Data,
-      },
-      {
-        enabled: video.hasLastFrame,
-        role: 'last_frame',
-        url:
-          video.lastFrameMode === 'url'
-            ? video.lastFrameUrl
-            : video.lastFrameBase64,
-      },
-    ]) {
-      if (frame.enabled && frame.url.trim()) {
-        content.push({
-          type: 'image_url',
-          image_url: { url: frame.url.trim() },
-          role: frame.role,
-        })
-      }
-    }
-  }
-
-  if (video.contentOrder && video.materials) {
-    const images = content.filter((item) => item.type === 'image_url')
-    const ordered: Array<Record<string, unknown>> = []
-    let imageIndex = 0
-    let textSeen = false
-    for (const entry of video.contentOrder) {
-      if ('material' in entry) {
-        const image = images[imageIndex++]
-        if (image) ordered.push(image)
-      } else if (entry.value.type === 'text' && !textSeen) {
-        textSeen = true
-        if (prompt) ordered.push({ ...entry.value, text: prompt })
-      } else ordered.push(entry.value)
-    }
-    if (!textSeen && prompt) ordered.unshift({ type: 'text', text: prompt })
-    ordered.push(...images.slice(imageIndex))
-    content.splice(0, content.length, ...ordered)
-  }
+  if (!textSeen && prompt) content.unshift({ type: 'text', text: prompt })
+  content.push(...images.slice(imageIndex))
 
   const payload: Record<string, unknown> = {}
   if (content.length > 0) payload.content = content
@@ -175,9 +135,6 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     prompt: '',
     materials: [],
     contentOrder: [],
-    preservedContent: [],
-    hasImage: false,
-    hasLastFrame: false,
     hasResolution: false,
     hasRatio: false,
     hasDuration: false,
@@ -189,6 +146,7 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     customJson: '',
   }
   let extractedModel: string | undefined
+  let promptFound = false
 
   if (typeof obj.model === 'string' && obj.model.trim()) {
     extractedModel = obj.model.trim()
@@ -216,10 +174,10 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
         itemType === 'text' &&
         typeof (item as Record<string, unknown>).text === 'string'
       ) {
-        if (!patch.preservedContent?.some((entry) => entry.type === 'text')) {
+        if (!promptFound) {
           patch.prompt = String((item as Record<string, unknown>).text)
+          promptFound = true
         }
-        patch.preservedContent?.push(item as Record<string, unknown>)
       } else if (itemType === 'image_url') {
         const imgObj = (item as Record<string, unknown>).image_url as
           | Record<string, unknown>
@@ -240,28 +198,6 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
           role: roleStr || 'reference_image',
           payload: item as Record<string, unknown>,
         })
-        if (roleStr === 'last_frame') {
-          patch.hasLastFrame = true
-          if (urlStr.startsWith('data:image/')) {
-            patch.lastFrameMode = 'base64'
-            patch.lastFrameBase64 = urlStr
-          } else {
-            patch.lastFrameMode = 'url'
-            patch.lastFrameUrl = urlStr
-          }
-        } else {
-          patch.hasImage = true
-          patch.role = roleStr || 'reference_image'
-          if (urlStr.startsWith('data:image/')) {
-            patch.uploadMode = 'base64'
-            patch.base64Data = urlStr
-          } else {
-            patch.uploadMode = 'url'
-            patch.imageUrl = urlStr
-          }
-        }
-      } else {
-        patch.preservedContent?.push(item as Record<string, unknown>)
       }
     }
   }

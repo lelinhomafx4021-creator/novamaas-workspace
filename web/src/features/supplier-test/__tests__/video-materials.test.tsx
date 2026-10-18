@@ -91,11 +91,12 @@ test('adding, reordering and removing images updates every material without losi
   expect(payload.content[1].image_url.url).toBe('https://cdn.example/a.png')
 })
 
-test('native JSON round-trips multiple images and unknown interleaved content without stale form fields', () => {
+test('native JSON round-trips every material and interleaved content while replacing earlier materials', () => {
   const native = {
     model: 'doubao-seedance-2-5',
     content: [
       { type: 'text', text: 'new prompt', custom: 'kept' },
+      { type: 'text', text: 'second caption', custom: 0 },
       {
         type: 'image_url',
         role: 'reference_image',
@@ -121,8 +122,14 @@ test('native JSON round-trips multiple images and unknown interleaved content wi
   expect(parsed.success).toBe(true)
   const form = {
     ...DEFAULT_VIDEO_FORM,
-    hasLastFrame: true,
-    lastFrameUrl: 'https://stale.example',
+    materials: [
+      {
+        id: 'stale',
+        source: 'url' as const,
+        role: 'last_frame',
+        url: 'https://stale.example',
+      },
+    ],
     ...parsed.videoPatch,
   }
   expect(buildVideoRequestPayload(parsed.model || '', form)).toEqual(native)

@@ -64,34 +64,7 @@ export function VideoMaterialPanel(props: {
   )
   const [loading, setLoading] = useState(false)
   const [uploadToLibrary, setUploadToLibrary] = useState(false)
-  const materials: VideoMaterial[] = props.video.materials ?? [
-    ...(props.video.hasImage
-      ? [
-          {
-            id: 'legacy-first',
-            role: props.video.role || 'first_frame',
-            source: props.video.uploadMode,
-            url:
-              props.video.uploadMode === 'url'
-                ? props.video.imageUrl
-                : props.video.base64Data,
-          },
-        ]
-      : []),
-    ...(props.video.hasLastFrame
-      ? [
-          {
-            id: 'legacy-last',
-            role: 'last_frame',
-            source: props.video.lastFrameMode,
-            url:
-              props.video.lastFrameMode === 'url'
-                ? props.video.lastFrameUrl
-                : props.video.lastFrameBase64,
-          },
-        ]
-      : []),
-  ]
+  const materials = props.video.materials
   const scenario =
     props.video.scenario || (materials.length ? 'reference' : 'text')
   let nextRole = 'reference_image'
@@ -105,7 +78,7 @@ export function VideoMaterialPanel(props: {
         current.scenario === 'text' || !current.scenario
           ? 'reference'
           : current.scenario,
-      materials: [...(current.materials || materials), ...next],
+      materials: [...current.materials, ...next],
       preparationRunIds: [
         ...(current.preparationRunIds || []),
         ...preparationIds,

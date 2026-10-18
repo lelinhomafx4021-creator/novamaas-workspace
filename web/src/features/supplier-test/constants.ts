@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import threeKText from './corpora/3k.txt?raw'
 import longText from './corpora/long.txt?raw'
 import mediumText from './corpora/medium.txt?raw'
@@ -333,6 +351,8 @@ export const DEFAULT_VIDEO_PROMPT =
   '镜头缓慢向前推进，画面中的人物在雨夜霓虹街道穿梭，4K高清，电影级光影'
 
 export const DEFAULT_VIDEO_FORM: VideoForm = {
+  verifyOfficial: true,
+  platformMode: false,
   prompt: '',
   hasImage: false,
   uploadMode: 'url',
@@ -400,18 +420,19 @@ export const VIDEO_ROLES = [
   { value: 'reference_image', labelKey: 'Reference image' },
 ] as const
 
-export const ENDPOINT_PATH_PRESETS: Array<{ value: string; labelKey: string }> = [
-  { value: '', labelKey: 'Auto detect / default' },
-  {
-    value: '/api/v3/contents/generations/tasks',
-    labelKey: 'Official API (/api/v3/contents/generations/tasks)',
-  },
-  {
-    value: '/contents/generations/tasks',
-    labelKey: 'Without /api/v3 (/contents/generations/tasks)',
-  },
-  {
-    value: '/v1/contents/generations/tasks',
-    labelKey: 'Gateway /v1 (/v1/contents/generations/tasks)',
-  },
-]
+export const ENDPOINT_PATH_PRESETS: Array<{ value: string; labelKey: string }> =
+  [
+    { value: '', labelKey: 'Auto detect / default' },
+    {
+      value: '/api/v3/contents/generations/tasks',
+      labelKey: 'Official API (/api/v3/contents/generations/tasks)',
+    },
+    {
+      value: '/contents/generations/tasks',
+      labelKey: 'Without /api/v3 (/contents/generations/tasks)',
+    },
+    {
+      value: '/v1/contents/generations/tasks',
+      labelKey: 'Gateway /v1 (/v1/contents/generations/tasks)',
+    },
+  ]

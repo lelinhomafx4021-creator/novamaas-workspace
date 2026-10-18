@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { DEFAULT_LOGO, DEFAULT_SYSTEM_NAME } from '@/lib/constants'
 
 import {
   displayMeasured,
@@ -29,13 +28,27 @@ import {
   type Verdict,
 } from './baselines'
 import { PROTOCOL_BASIC_IDS, SHALLOW_BASIC_IDS } from './constants'
-import { checkMessage, statusLabel } from './formatters'
+import { checkMessage } from './formatters'
+import {
+  escapeHtml,
+  pdfLetterhead,
+  pdfPageFooterStyles,
+  pdfRow,
+  pdfSummaryCards,
+  pdfDocumentStyles,
+  printHtmlReport,
+} from './report-layout'
 import type {
   CacheMetrics,
   CheckResult,
   CheckStatus,
+  VideoRunReport,
   StressMetrics,
 } from './types'
+import {
+  buildVideoRunHtmlReport,
+  buildVideoRunMarkdownReport,
+} from './video-report'
 
 export type StressConfig = {
   concurrency: number
@@ -130,72 +143,6 @@ export async function preparePdfBranding(
     reader.readAsDataURL(response.data)
   })
   return { ...branding, operatingEntityLogo: logo }
-}
-
-async function printHtmlReport(html: string, title: string): Promise<void> {
-  const iframe = document.createElement('iframe')
-  iframe.style.position = 'fixed'
-  iframe.style.right = '0'
-  iframe.style.bottom = '0'
-  iframe.style.width = '0'
-  iframe.style.height = '0'
-  iframe.style.border = '0'
-  iframe.title = title
-  document.body.appendChild(iframe)
-
-  const doc = iframe.contentWindow?.document
-  if (!doc) {
-    document.body.removeChild(iframe)
-    throw new Error('Unable to prepare PDF report')
-  }
-
-  doc.open()
-  doc.write(html)
-  doc.close()
-
-  let timeoutId: ReturnType<typeof setTimeout> | undefined
-  try {
-    const images = Array.from(
-      doc.images,
-      (img) =>
-        new Promise<void>((resolve, reject) => {
-          if (img.complete) {
-            if (img.naturalWidth > 0) resolve()
-            else reject(new Error('Unable to load PDF branding image'))
-            return
-          }
-          img.addEventListener('load', () => resolve(), { once: true })
-          img.addEventListener(
-            'error',
-            () => reject(new Error('Unable to load PDF branding image')),
-            { once: true }
-          )
-        })
-    )
-    await Promise.race([
-      Promise.all([doc.fonts?.ready, ...images]),
-      new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error('PDF branding image load timed out')),
-          10000
-        )
-      }),
-    ])
-    const cleanup = () => {
-      if (iframe.isConnected) document.body.removeChild(iframe)
-    }
-    iframe.contentWindow?.addEventListener('afterprint', cleanup, {
-      once: true,
-    })
-    iframe.contentWindow?.focus()
-    iframe.contentWindow?.print()
-    setTimeout(cleanup, 30000)
-  } catch (error) {
-    if (iframe.isConnected) document.body.removeChild(iframe)
-    throw error
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId)
-  }
 }
 
 function translate(
@@ -451,170 +398,6 @@ export function buildMarkdownReport(input: ReportInput): string {
   }
   return `${lines.join('\n')}\n`
 }
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
-function pdfLetterhead(
-  branding: ReportBranding | undefined,
-  title: string,
-  operatorLabel: string
-): string {
-  const platformName = branding?.platformName || DEFAULT_SYSTEM_NAME
-  const platformLogo = branding?.platformLogo || DEFAULT_LOGO
-  const operatingName = branding?.operatingEntityName || ''
-  const operatingLogo = branding?.operatingEntityLogo || ''
-  let operator = ''
-  if (operatingLogo) {
-    const logoSource = operatingLogo.startsWith('data:image/png;base64,')
-      ? operatingLogo
-      : '/api/pdf-branding/operating-logo'
-    operator = `<div class="document-operator"><img src="${escapeHtml(logoSource)}" alt="${escapeHtml(operatingName || operatorLabel)}"/></div>`
-  } else if (operatingName) {
-    operator = `<div class="document-operator"><span>${escapeHtml(operatingName)}</span></div>`
-  }
-  return `<div class="document-letterhead">
-  <div class="document-platform"><img src="${escapeHtml(platformLogo)}" alt=""/><div><strong>${escapeHtml(platformName)}</strong><span>${escapeHtml(title)}</span></div></div>
-  ${operator}
-</div>`
-}
-
-function pdfPageFooterStyles(
-  branding: ReportBranding | undefined,
-  title: string
-): string {
-  const platformName = branding?.platformName || DEFAULT_SYSTEM_NAME
-  const operatingName = branding?.operatingEntityName || ''
-  const footer = `${platformName}${operatingName ? ` · ${operatingName}` : ''} · ${title}`
-  const safeFooter = footer
-    .replaceAll('\\', '\\\\')
-    .replaceAll('"', '\\"')
-    .replaceAll('<', '\\3c ')
-    .replaceAll('>', '\\3e ')
-    .replaceAll('\r', ' ')
-    .replaceAll('\n', ' ')
-  return `@page {
-  size:A4; margin:33pt 40pt 58pt;
-  @bottom-left { content:"${safeFooter}"; color:#637184; font:7.5pt "Noto Sans SC","PingFang SC",sans-serif; border-top:0.5pt solid #dde4ed; vertical-align:top; padding-top:5pt; }
-  @bottom-center { content:""; border-top:0.5pt solid #dde4ed; }
-  @bottom-right { content:counter(page, decimal-leading-zero) " / " counter(pages, decimal-leading-zero); color:#637184; font:8pt "Noto Sans SC","PingFang SC",sans-serif; border-top:0.5pt solid #dde4ed; vertical-align:top; padding-top:5pt; }
-}`
-}
-
-function pdfRow(content: string): string {
-  return `<tr><td class="pdf-document">${content}</td></tr>`
-}
-
-function pdfSummaryCards(
-  cards: Array<{
-    label: string
-    value: string
-    detail: string
-    valueClass?: string
-  }>
-): string {
-  return `<div class="document-summary">${cards
-    .map(
-      (card) => `<div class="document-summary-card">
-  <div class="document-summary-label">${escapeHtml(card.label)}</div>
-  <div class="document-summary-value${card.valueClass ? ` ${card.valueClass}` : ''}">${escapeHtml(card.value)}</div>
-  <div class="document-summary-detail">${escapeHtml(card.detail)}</div>
-</div>`
-    )
-    .join('')}</div>`
-}
-
-const pdfDocumentStyles = `
-html, body.pdf-document { margin:0 !important; padding:0 !important; }
-body.pdf-document { width:auto; max-width:none; min-height:0; display:block; font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; font-size:8.5pt; line-height:1.45; color:#1c2b40; }
-.pdf-shell { width:515pt; border-collapse:collapse; table-layout:fixed; }
-.pdf-shell thead { display:table-header-group; }
-.pdf-shell tbody { display:table-row-group; }
-.pdf-shell tr, .pdf-shell td { break-inside:auto; page-break-inside:auto; }
-.pdf-shell tbody tr { break-inside:avoid-page; }
-.pdf-shell > thead > tr > td, .pdf-shell > tbody > tr > td { padding:0; border:0; vertical-align:top; }
-.pdf-shell > thead > tr > td { height:86pt; }
-.document-letterhead { display:flex; width:515pt; height:67pt; padding-top:9pt; box-sizing:border-box; align-items:flex-start; justify-content:space-between; border-bottom:1.5pt solid #27477a; }
-.document-platform { display:flex; gap:12pt; align-items:center; max-width:335pt; }
-.document-platform img { width:38pt; height:38pt; object-fit:contain; }
-.document-platform strong { display:block; color:#19335e; font-size:15pt; font-weight:400; line-height:19pt; white-space:nowrap; }
-.document-platform span { display:block; margin-top:1pt; color:#5a6a81; font-size:7.5pt; line-height:11pt; }
-.document-operator { display:flex; width:125pt; height:40pt; align-items:center; justify-content:flex-end; color:#19335e; white-space:nowrap; }
-.document-operator img { width:125pt; height:40pt; object-fit:contain; object-position:right center; }
-.document-operator span { font-size:10pt; line-height:14pt; text-align:right; }
-.pdf-document .report-header { border:0; padding:2pt 0 0; margin:0 0 20pt; }
-.pdf-document .report-title-row { align-items:flex-end; }
-.pdf-document .report-title-row > div:first-child { display:flex; flex-direction:column-reverse; }
-.pdf-document .report-subtitle { font-size:8.5pt; line-height:11pt; color:#59697f; margin:0 0 5pt; }
-.pdf-document .report-title { font-size:26pt; line-height:31pt; font-weight:400; color:#19335e; }
-.pdf-document .report-badge-top { max-width:150pt; padding:0; border:0; border-radius:0; background:none; color:#19335e; font-size:16pt; font-weight:400; text-align:right; text-transform:none; }
-.pdf-document > .meta-grid { display:flex; flex-direction:column; gap:6pt; padding:0; margin:0 0 24pt; border:0; border-radius:0; background:none; }
-.pdf-document > .meta-grid .meta-item { font-size:8.5pt; line-height:12pt; }
-.pdf-document > .meta-grid .meta-label { width:auto; margin-right:6pt; font-weight:400; color:#58687e; }
-.pdf-document > .meta-grid .meta-value { color:#1c2b40; font-weight:400; }
-.document-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:13pt; margin:0 0 26pt; }
-.document-summary-card { height:79pt; padding:11pt 12pt; background:#f1f5fb; color:#19335e; }
-.document-summary-card:last-child { background:#19335e; color:#fff; }
-.document-summary-label { font-size:8pt; line-height:11pt; color:#536681; }
-.document-summary-card:last-child .document-summary-label { color:#dce7f7; }
-.document-summary-value { margin-top:8pt; font-size:16pt; line-height:21pt; text-align:right; overflow-wrap:anywhere; }
-.document-summary-value.result-pass { color:#86efac; font-weight:700; }
-.document-summary-value.result-fail { color:#fecaca; font-weight:700; }
-.document-summary-detail { margin-top:3pt; font-size:8pt; text-align:right; }
-.pdf-document .section { margin:0 0 16pt; padding:0; border:0; border-radius:0; background:none; }
-.pdf-document .section-header { height:26pt; padding:0 10pt; margin:0 0 6pt; border:0; background:#19335e; break-after:avoid-page; }
-.pdf-document .section-title { font-size:9pt; font-weight:400; line-height:1.3; color:#fff; }
-.pdf-document .section-title::before { display:none; }
-.pdf-document .verdict-badge { padding:0; border:0; background:none; color:#fff; font-size:8pt; font-weight:400; }
-.pdf-document .check-group-title { margin:6pt 0 3pt; color:#59697f; font-size:8.5pt; font-weight:400; break-after:avoid-page; }
-.pdf-document .check-list { display:block; margin:0 0 6pt; }
-.pdf-document .check-list-item { min-height:15pt; padding:2.5pt 10pt; gap:5pt; font-size:8.2pt; line-height:10pt; break-inside:avoid; }
-.pdf-document .check-list-item:nth-child(odd), .pdf-document .check-item:nth-child(odd) { background:#f5f7fb; }
-.pdf-document .check-bullet { display:none; }
-.pdf-document .checks-list .check-item > span:first-child { display:none; }
-.pdf-document .check-name { flex:1; font-weight:400; }
-.pdf-document .check-status-pass { color:#15803d; }
-.pdf-document .check-status-fail { color:#b91c1c; }
-.pdf-document .check-status-skip { color:#a16207; }
-.pdf-document .check-detail, .pdf-document .check-reason { color:#59697f; }
-.pdf-document .config-bar { grid-template-columns:repeat(2,minmax(0,1fr)); gap:4pt 12pt; margin:0 0 7pt; padding:5pt 0; border:0; border-radius:0; background:none; font-size:8.2pt; }
-.pdf-document .config-item { color:#59697f; }
-.pdf-document .config-item span { color:#233145; font-weight:400; }
-.pdf-document .stats-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; margin:0 0 6pt; }
-.pdf-document .stat-card { min-height:15pt; padding:2.5pt 10pt; border:0; border-radius:0; background:none; display:flex; flex-direction:row-reverse; justify-content:space-between; align-items:baseline; text-align:left; }
-.pdf-document .stat-card:nth-child(4n + 1), .pdf-document .stat-card:nth-child(4n + 2) { background:#f5f7fb; }
-.pdf-document .stat-val { font-size:8.2pt; font-weight:400; line-height:10pt; color:#233145; }
-.pdf-document .stat-lbl { font-size:8pt; line-height:10pt; color:#59697f; margin:0; }
-.pdf-document table.benchmark-table { margin:6pt 0; font-size:8.2pt; }
-.pdf-document table.benchmark-table th { padding:6pt 10pt; border:0; background:#19335e; color:#fff; font-size:9pt; font-weight:400; }
-.pdf-document table.benchmark-table td { padding:3pt 10pt; border:0; color:#233145; }
-.pdf-document table.benchmark-table tbody tr:nth-child(odd) { background:#f5f7fb; }
-.pdf-document .summary-text { margin:5pt 0 0; padding:2pt 0; border:0; border-radius:0; background:none; color:#59697f; font-size:8pt; }
-.pdf-document .summary-text strong { color:#233145; }
-.pdf-document .prompt-box { padding:8pt 10pt; border:0; border-radius:0; background:#f5f7fb; color:#233145; font-size:8.5pt; }
-.pdf-document .check-item { min-height:15pt; padding:2.5pt 10pt; border:0; font-size:8.2pt; }
-.pdf-document .check-title, .pdf-document .check-status-text { font-size:8.2pt; font-weight:400; color:#233145; }
-.pdf-document .check-msg { font-size:8pt; color:#59697f; }
-.pdf-document .section > .meta-grid { margin:0; padding:0; border:0; background:none; font-size:8.2pt; }
-.pdf-document .section .meta-item { font-size:8.2pt; }
-.pdf-document .section .meta-label { width:auto; margin-right:5pt; }
-.pdf-document .section .meta-value { font-weight:400; }
-.pdf-document .output-box { padding:10pt 12pt; border:0; border-radius:0; background:#f1f5fb; }
-.pdf-document .output-title, .pdf-document .output-url, .pdf-document .output-url a { color:#19335e; font-size:8.5pt; }
-.pdf-document .error-box { padding:10pt 12pt; border:0; border-radius:0; }
-@media print {
-  .pdf-document .page-break-avoid { break-inside:auto; }
-  .pdf-document .section-header, .pdf-document .report-header, .document-summary { break-inside:avoid; }
-}
-/* Reassert row fragmentation after the print rules so Chromium repeats thead. */
-.pdf-shell tr, .pdf-shell td { break-inside:auto; page-break-inside:auto; }
-.pdf-shell tbody tr { break-inside:avoid-page; }
-`
 
 function verdictHtmlColor(verdict: Assessment['overall']): string {
   if (verdict === 'ok') return '#15803d'
@@ -1345,412 +1128,21 @@ ${options.format === 'pdf' ? '</tbody></table>' : ''}
 }
 
 export type VideoReportInput = {
+  runReport: VideoRunReport
   language?: string
   branding?: ReportBranding
-  baseUrl: string
-  model: string
-  endpointUrl?: string
-  taskId?: string
-  status?: string
-  elapsedMs: number
-  failReason?: string
-  videoUrl?: string
-  videoConfig: {
-    prompt: string
-    hasImage: boolean
-    uploadMode: string
-    imageUrl?: string
-    role?: string
-    hasLastFrame: boolean
-    lastFrameMode?: string
-    lastFrameUrl?: string
-    resolution?: string
-    ratio?: string
-    duration?: number
-    watermark?: boolean
-    seed?: string
-    generateAudio?: boolean
-    returnLastFrame?: boolean
-    customJson?: string
-    customPath?: string
-  }
-  videoChecks: CheckResult[]
-  t: (key: string, options?: Record<string, string | number>) => string
+  t: ReportInput['t']
 }
 
 export function buildVideoMarkdownReport(input: VideoReportInput): string {
-  const t = (key: string, options?: Record<string, string | number>) =>
-    translate(input.t, key, options)
-
-  const lines = [
-    `# ${t('Doubao Video Generation Test Report')}`,
-    '',
-    `- ${t('Time')}: ${new Date().toLocaleString()}`,
-    `- ${t('Base URL')}: ${input.baseUrl || '-'}`,
-    `- ${t('Endpoint URL')}: POST ${input.endpointUrl || '-'}`,
-    `- ${t('Model')}: ${input.model || '-'}`,
-    `- ${t('Task ID')}: ${input.taskId || '-'}`,
-    `- ${t('Status')}: ${input.status || t('Unknown')}`,
-    `- ${t('Duration')}: ${(input.elapsedMs / 1000).toFixed(1)}s`,
-    '',
-    `## 1. ${t('Video Generation Parameters')}`,
-    `### 1.1 ${t('Prompt')}`,
-    input.videoConfig.prompt || '-',
-    '',
-  ]
-
-  if (input.videoConfig.hasImage) {
-    const roleText =
-      input.videoConfig.role === 'first_frame'
-        ? t('First Frame')
-        : t('Reference Image')
-    const srcText =
-      input.videoConfig.uploadMode === 'url'
-        ? input.videoConfig.imageUrl || '-'
-        : t('Local File (Base64)')
-    lines.push(`- ${t('Image Input')}: ${roleText} (${srcText})`)
-  } else {
-    lines.push(`- ${t('Input Mode')}: ${t('Text-to-Video')}`)
-  }
-
-  if (input.videoConfig.hasLastFrame) {
-    const endSrc =
-      input.videoConfig.lastFrameMode === 'url'
-        ? input.videoConfig.lastFrameUrl || '-'
-        : t('Local File (Base64)')
-    lines.push(`- ${t('End Frame')}: ${endSrc}`)
-  }
-
-  if (input.videoConfig.resolution) {
-    lines.push(
-      `- ${t('Resolution (resolution)')}: ${input.videoConfig.resolution}`
-    )
-  }
-  if (input.videoConfig.ratio) {
-    lines.push(`- ${t('Aspect Ratio (ratio)')}: ${input.videoConfig.ratio}`)
-  }
-  if (input.videoConfig.duration) {
-    lines.push(
-      `- ${t('Duration (duration, sec)')}: ${input.videoConfig.duration}s`
-    )
-  }
-  if (input.videoConfig.watermark !== undefined) {
-    const wmText = input.videoConfig.watermark ? t('Enabled') : t('Disabled')
-    lines.push(`- ${t('Watermark (watermark)')}: ${wmText}`)
-  }
-  if (input.videoConfig.seed) {
-    lines.push(`- ${t('Seed (seed)')}: ${input.videoConfig.seed}`)
-  }
-  if (input.videoConfig.generateAudio !== undefined) {
-    const gaText = input.videoConfig.generateAudio
-      ? t('Enabled')
-      : t('Disabled')
-    lines.push(`- ${t('Generate Audio (generate_audio)')}: ${gaText}`)
-  }
-  if (input.videoConfig.returnLastFrame !== undefined) {
-    const rlfText = input.videoConfig.returnLastFrame
-      ? t('Enabled')
-      : t('Disabled')
-    lines.push(`- ${t('Return Last Frame (return_last_frame)')}: ${rlfText}`)
-  }
-  if (input.videoConfig.customJson) {
-    lines.push(
-      `- ${t('Custom Extra Parameters')}: \`${input.videoConfig.customJson}\``
-    )
-  }
-
-  lines.push('', `## 2. ${t('Execution Pipeline')}`)
-  for (const check of input.videoChecks) {
-    const message = checkMessage(check, t)
-    const detail = message ? ` — ${message}` : ''
-    lines.push(`- ${t(check.title)}: ${t(statusLabel(check.status))}${detail}`)
-  }
-
-  lines.push('', `## 3. ${t('Output Result')}`)
-  if (input.videoUrl) {
-    lines.push(
-      `- ${t('Generated Video Output')}: [${t('Open URL in new tab')}](${input.videoUrl})`
-    )
-  } else if (input.failReason) {
-    lines.push(`- ${t('Generation Failed')}: ${input.failReason}`)
-  } else {
-    lines.push(`- ${t('No output available')}`)
-  }
-
-  return `${lines.join('\n')}\n`
+  return buildVideoRunMarkdownReport(input.runReport, input)
 }
 
 export function buildVideoHtmlReport(
   input: VideoReportInput,
   options: { format?: 'html' | 'pdf' } = {}
 ): string {
-  const t = (key: string, options?: Record<string, string | number>) =>
-    translate(input.t, key, options)
-  const statusStr = (input.status || '').toLowerCase()
-  const isSucceeded = statusStr === 'succeeded' || statusStr === 'success'
-  const isFailed = statusStr === 'failed' || statusStr === 'failure'
-
-  let statusColor = '#2563eb'
-  let statusBg = '#eff6ff'
-  let statusBorder = '#bfdbfe'
-  if (isSucceeded) {
-    statusColor = '#15803d'
-    statusBg = '#f0fdf4'
-    statusBorder = '#bbf7d0'
-  } else if (isFailed) {
-    statusColor = '#dc2626'
-    statusBg = '#fef2f2'
-    statusBorder = '#fecaca'
-  }
-  let pdfStatus = t('Unknown')
-  if (isSucceeded) {
-    pdfStatus = t('Succeeded')
-  } else if (isFailed) {
-    pdfStatus = t('Failed')
-  } else if (statusStr === 'running') {
-    pdfStatus = t('Running')
-  }
-  const pdfSummary = pdfSummaryCards([
-    { label: t('Status'), value: pdfStatus, detail: t('Task ID') },
-    {
-      label: t('Duration'),
-      value: `${(input.elapsedMs / 1000).toFixed(1)} s`,
-      detail: t('Execution Pipeline'),
-    },
-    {
-      label: t('Result'),
-      value: `${input.videoChecks.filter((check) => check.status === 'pass').length} / ${input.videoChecks.length}`,
-      detail: t('Video Generation Parameters'),
-    },
-  ])
-  const pdfSubtitle = `VIDEO TEST REPORT  /  ${t('Doubao Video Generation Test Report')}`
-
-  const checksHtml = input.videoChecks
-    .map((check) => {
-      let statusCls = 'check-status-fail'
-      if (check.status === 'pass') {
-        statusCls = 'check-status-pass'
-      } else if (check.status === 'skip') {
-        statusCls = 'check-status-skip'
-      }
-      const message = checkMessage(check, t)
-      return `<div class="check-item"><span class="${statusCls}">●</span><span class="check-title">${escapeHtml(t(check.title))}：</span><span class="check-status-text">${escapeHtml(t(statusLabel(check.status)))}</span>${message ? `<span class="check-msg">${escapeHtml(message)}</span>` : ''}</div>`
-    })
-    .join('')
-
-  const params: string[] = []
-  if (input.videoConfig.hasImage) {
-    const roleText =
-      input.videoConfig.role === 'first_frame'
-        ? t('First Frame')
-        : t('Reference Image')
-    const srcText =
-      input.videoConfig.uploadMode === 'url'
-        ? input.videoConfig.imageUrl || '-'
-        : t('Local File (Base64)')
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Image Input'))}：</span><span class="meta-value">${escapeHtml(roleText)} (${escapeHtml(srcText)})</span></div>`
-    )
-  } else {
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Input Mode'))}：</span><span class="meta-value">${escapeHtml(t('Text-to-Video'))}</span></div>`
-    )
-  }
-  if (input.videoConfig.hasLastFrame) {
-    const endSrc =
-      input.videoConfig.lastFrameMode === 'url'
-        ? input.videoConfig.lastFrameUrl || '-'
-        : t('Local File (Base64)')
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('End Frame'))}：</span><span class="meta-value">${escapeHtml(endSrc)}</span></div>`
-    )
-  }
-  if (input.videoConfig.resolution) {
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Resolution (resolution)'))}：</span><span class="meta-value">${escapeHtml(input.videoConfig.resolution)}</span></div>`
-    )
-  }
-  if (input.videoConfig.ratio) {
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Aspect Ratio (ratio)'))}：</span><span class="meta-value">${escapeHtml(input.videoConfig.ratio)}</span></div>`
-    )
-  }
-  if (input.videoConfig.duration) {
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Duration (duration, sec)'))}：</span><span class="meta-value">${input.videoConfig.duration}s</span></div>`
-    )
-  }
-  if (input.videoConfig.watermark !== undefined) {
-    const wm = input.videoConfig.watermark ? t('Enabled') : t('Disabled')
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Watermark (watermark)'))}：</span><span class="meta-value">${escapeHtml(wm)}</span></div>`
-    )
-  }
-  if (input.videoConfig.seed) {
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Seed (seed)'))}：</span><span class="meta-value">${escapeHtml(input.videoConfig.seed)}</span></div>`
-    )
-  }
-  if (input.videoConfig.generateAudio !== undefined) {
-    const ga = input.videoConfig.generateAudio ? t('Enabled') : t('Disabled')
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Generate Audio (generate_audio)'))}：</span><span class="meta-value">${escapeHtml(ga)}</span></div>`
-    )
-  }
-  if (input.videoConfig.returnLastFrame !== undefined) {
-    const rlf = input.videoConfig.returnLastFrame ? t('Enabled') : t('Disabled')
-    params.push(
-      `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Return Last Frame (return_last_frame)'))}：</span><span class="meta-value">${escapeHtml(rlf)}</span></div>`
-    )
-  }
-  if (input.videoConfig.customJson) {
-    params.push(
-      `<div class="meta-item" style="grid-column: span 2;"><span class="meta-label">${escapeHtml(t('Custom Extra Parameters'))}：</span><span class="meta-value font-mono">${escapeHtml(input.videoConfig.customJson)}</span></div>`
-    )
-  }
-
-  let outputSectionHtml = `<p style="color:#64748b">${escapeHtml(t('No output available'))}</p>`
-  if (input.videoUrl) {
-    outputSectionHtml = `
-    <div class="output-box">
-      <div class="output-title">✓ ${escapeHtml(t('Generated Video Output'))}</div>
-      <div class="output-url"><a href="${escapeHtml(input.videoUrl)}" target="_blank" rel="noreferrer">${escapeHtml(input.videoUrl)}</a></div>
-    </div>`
-  } else if (input.failReason) {
-    outputSectionHtml = `
-    <div class="error-box">
-      <div class="error-title">✕ ${escapeHtml(t('Generation Failed'))}</div>
-      <div class="error-msg">${escapeHtml(input.failReason)}</div>
-    </div>`
-  }
-
-  const rowOpen =
-    options.format === 'pdf' ? '<tr><td class="pdf-document">' : ''
-  const rowClose = options.format === 'pdf' ? '</td></tr>' : ''
-
-  return `<!doctype html>
-<html lang="${escapeHtml(input.language || 'en')}">
-<head>
-<meta charset="utf-8"/>
-<title>${escapeHtml(t('Doubao Video Generation Test Report'))}${options.format === 'pdf' ? '' : `-${stampFileName()}`}</title>
-<style>
-${options.format === 'pdf' ? '' : '@page { size: A4; margin: 0; }'}
-@media print {
-  html, body {
-    margin: 0 !important;
-    padding: ${options.format === 'pdf' ? '0' : '12mm 16mm'} !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .page-break-avoid { break-inside: auto; page-break-inside: auto; }
-  .section-header { break-after: avoid-page; }
-}
-* { box-sizing: border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  color: #1e293b;
-  line-height: 1.5;
-  background: #fff;
-  margin: 0 auto;
-  padding: 12mm 16mm;
-  max-width: 960px;
-  font-size: 11.5px;
-}
-.report-header { border-bottom: 2px solid #7c3aed; padding-bottom: 8px; margin-bottom: 12px; }
-.report-title-row { display: flex; justify-content: space-between; align-items: flex-end; }
-.report-title { font-size: 19px; font-weight: 700; color: #0f172a; margin: 0; }
-.report-subtitle { font-size: 11px; color: #64748b; margin-top: 2px; }
-.report-badge-top { display: inline-flex; align-items: center; background: ${statusBg}; border: 1px solid ${statusBorder}; color: ${statusColor}; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; }
-.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
-.meta-item { display: flex; align-items: baseline; font-size: 11px; }
-.meta-label { color: #64748b; white-space: nowrap; flex-shrink: 0; }
-.meta-value { color: #0f172a; font-weight: 500; word-break: break-all; }
-.section { margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; background: #fff; }
-.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; }
-.section-title { font-size: 13px; font-weight: 700; color: #0f172a; }
-.prompt-box { font-size: 11px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; color: #334155; margin-bottom: 8px; }
-.check-item { display: flex; align-items: baseline; gap: 6px; font-size: 11px; padding: 3px 0; border-bottom: 1px dashed #f1f5f9; }
-.check-item:last-child { border-bottom: none; }
-.check-status-pass { color: #16a34a; font-size: 9px; flex-shrink: 0; }
-.check-status-fail { color: #dc2626; font-size: 9px; flex-shrink: 0; }
-.check-status-skip { color: #94a3b8; font-size: 9px; flex-shrink: 0; }
-.check-title { font-weight: 600; color: #1e293b; flex-shrink: 0; }
-.check-status-text { font-weight: 600; text-transform: uppercase; font-size: 10.5px; }
-.check-msg { color: #64748b; font-size: 10.5px; word-break: break-all; }
-.output-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 14px; margin-top: 8px; }
-.output-title { font-weight: 600; color: #15803d; font-size: 12px; margin-bottom: 4px; }
-.output-url { font-family: monospace; font-size: 11px; word-break: break-all; color: #166534; }
-.output-url a { color: #166534; text-decoration: underline; }
-.error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 14px; margin-top: 8px; }
-.error-title { font-weight: 600; color: #b91c1c; font-size: 12px; margin-bottom: 4px; }
-.error-msg { font-size: 11px; color: #991b1b; word-break: break-all; }
-${options.format === 'pdf' ? pdfPageFooterStyles(input.branding, t('Doubao Video Generation Test Report')) + pdfDocumentStyles : ''}
-</style>
-</head>
-<body${options.format === 'pdf' ? ' class="pdf-document"' : ''}>
-${options.format === 'pdf' ? `<table class="pdf-shell"><thead><tr><td>${pdfLetterhead(input.branding, pdfSubtitle, t('Operating entity'))}</td></tr></thead><tbody>` : ''}
-
-${rowOpen}
-<div class="report-header">
-  <div class="report-title-row">
-    <div>
-      <h1 class="report-title">${escapeHtml(t('Doubao Video Generation Test Report'))}</h1>
-      <div class="report-subtitle">Volcano Ark Seedance Video Model Verification</div>
-    </div>
-    <div class="report-badge-top">${escapeHtml(options.format === 'pdf' ? pdfStatus : input.status || t('Unknown'))}</div>
-  </div>
-</div>
-${rowClose}
-
-${rowOpen}
-<div class="meta-grid">
-  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Model'))}：</span><span class="meta-value">${escapeHtml(input.model || '-')}</span></div>
-  ${options.format === 'pdf' ? '' : `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Base URL'))}：</span><span class="meta-value">${escapeHtml(input.baseUrl || '-')}</span></div>`}
-  ${options.format === 'pdf' ? '' : `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Endpoint URL'))}：</span><span class="meta-value">POST ${escapeHtml(input.endpointUrl || '-')}</span></div>`}
-  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Task ID'))}：</span><span class="meta-value">${escapeHtml(input.taskId || '-')}</span></div>
-  <div class="meta-item"><span class="meta-label">${escapeHtml(t('Duration'))}：</span><span class="meta-value">${(input.elapsedMs / 1000).toFixed(1)} s</span></div>
-  ${options.format === 'pdf' ? '' : `<div class="meta-item"><span class="meta-label">${escapeHtml(t('Time'))}：</span><span class="meta-value">${escapeHtml(new Date().toLocaleString())}</span></div>`}
-</div>
-${rowClose}
-
-${options.format === 'pdf' ? pdfRow(pdfSummary) : ''}
-
-${rowOpen}
-<div class="section page-break-avoid">
-  <div class="section-header">
-    <div class="section-title">1. ${escapeHtml(t('Video Generation Parameters'))}</div>
-  </div>
-  <div class="prompt-box"><strong>${escapeHtml(t('Prompt'))}：</strong>${escapeHtml(input.videoConfig.prompt || '-')}</div>
-  <div class="meta-grid" style="margin-bottom:0; background:#fff; border:none; padding:0;">
-    ${params.join('')}
-  </div>
-</div>
-${rowClose}
-
-${rowOpen}
-<div class="section page-break-avoid">
-  <div class="section-header">
-    <div class="section-title">2. ${escapeHtml(t('Execution Pipeline'))}</div>
-  </div>
-  <div class="checks-list">
-    ${checksHtml}
-  </div>
-</div>
-${rowClose}
-
-${rowOpen}
-<div class="section page-break-avoid">
-  <div class="section-header">
-    <div class="section-title">3. ${escapeHtml(t('Output Result'))}</div>
-  </div>
-  ${outputSectionHtml}
-</div>
-${rowClose}
-
-${options.format === 'pdf' ? '</tbody></table>' : ''}
-
-</body>
-</html>`
+  return buildVideoRunHtmlReport(input.runReport, input, options)
 }
 
 export async function exportVideoPdfReport(

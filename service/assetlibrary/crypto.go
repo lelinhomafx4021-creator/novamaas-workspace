@@ -118,3 +118,13 @@ func credentialHint(value string) string {
 	}
 	return "****" + value[len(value)-4:]
 }
+
+// EncryptVerificationSecret isolates official verification credentials from
+// platform-issued material credentials while reusing the configured master key.
+func EncryptVerificationSecret(secret string) (string, error) {
+	return encryptAssetCredential(secret, "official-verification")
+}
+
+func DecryptVerificationSecret(payload string) (string, error) {
+	return decryptAssetCredential(payload, "official-verification")
+}

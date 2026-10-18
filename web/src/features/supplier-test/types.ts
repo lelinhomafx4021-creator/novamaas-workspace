@@ -91,6 +91,7 @@ export type CacheMetrics = {
 
 export type SupplierTestEvent = {
   type:
+    | 'evidence'
     | 'check'
     | 'progress'
     | 'stream'
@@ -112,6 +113,8 @@ export type SupplierTestEvent = {
   metrics?: StressMetrics
   cache?: CacheMetrics
   video?: VideoMetrics
+  video_report?: VideoRunReport
+  video_report_delta?: boolean
 }
 
 export type SupplierTestRunRequest = {
@@ -146,6 +149,11 @@ export type SupplierTestRunRequest = {
     stream: boolean
   }
   video?: {
+    scenario?: string
+    platform_mode?: boolean
+    verify_official?: boolean
+    resume_run_id?: string
+    preparation_run_ids?: string[]
     prompt: string
     upload_mode?: string
     image_url?: string
@@ -214,7 +222,82 @@ export type CacheForm = {
   mode: CacheMode
 }
 
+export type VideoMaterial = {
+  payload?: Record<string, unknown>
+  id: string
+  role: string
+  source: 'url' | 'base64' | 'asset'
+  url: string
+  name?: string
+}
+
+export type StageEvidence = {
+  endpoint?: string
+  id: string
+  purpose: string
+  status: string
+  method?: string
+  path?: string
+  request_body: string
+  response_body: string
+  http_status?: number
+  request_id?: string
+  elapsed_ms: number
+  conclusion: string
+  final?: boolean
+}
+
+export type VideoRunReport = {
+  video_polling?: { count: number; elapsed_ms: number }
+  verification_polling?: { count: number; elapsed_ms: number }
+  usage_json?: string
+  id: string
+  model: string
+  expected_model?: string
+  base_url: string
+  platform_mode?: boolean
+  task_id?: string
+  query_id?: string
+  status: string
+  started_at: number
+  completed_at?: number
+  stages: StageEvidence[]
+  assets: Array<{
+    index: number
+    role: string
+    source: string
+    url: string
+    asset_id?: string
+    reused?: boolean
+    name?: string
+    status?: string
+    size?: number
+    sha256?: string
+  }>
+  verification?: {
+    status: string
+    is_official?: boolean
+    model_name?: string
+    model_match: string
+    resource_type?: string
+    resolution?: string
+    size?: string
+    message?: string
+  }
+  video_url?: string
+  evidence_available?: boolean
+  evidence_error?: string
+}
+
 export type VideoForm = {
+  materials?: VideoMaterial[]
+  scenario?: 'text' | 'first_frame' | 'first_last_frame' | 'reference'
+  platformMode?: boolean
+  verifyOfficial?: boolean
+  preparationRunIds?: string[]
+  preservedContent?: Array<Record<string, unknown>>
+  contentOrder?: Array<{ material: true } | { value: Record<string, unknown> }>
+
   prompt: string
   hasImage: boolean
   uploadMode: 'url' | 'base64'

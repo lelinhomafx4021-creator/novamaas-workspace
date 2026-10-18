@@ -280,7 +280,12 @@ func waitForChannelRate(ctx context.Context, channelID int, qpm int) error {
 }
 
 func (client *volcActionClient) sign(request *http.Request, body []byte) {
-	now := client.now().UTC()
+	SignArkRequest(request, body, client.config.AccessKeyID, client.secret, client.config.Region, client.config.Service, client.now())
+}
+
+// SignArkRequest signs an Ark Action request using the actual path and query.
+func SignArkRequest(request *http.Request, body []byte, accessKeyID, secret, region, service string, now time.Time) {
+	now = now.UTC()
 	xDate := now.Format("20060102T150405Z")
 	shortDate := now.Format("20060102")
 	payloadHashBytes := sha256.Sum256(body)
@@ -302,16 +307,16 @@ func (client *volcActionClient) sign(request *http.Request, body []byte) {
 		payloadHash,
 	}, "\n")
 	canonicalHash := sha256.Sum256([]byte(canonicalRequest))
-	scope := strings.Join([]string{shortDate, client.config.Region, client.config.Service, "request"}, "/")
+	scope := strings.Join([]string{shortDate, region, service, "request"}, "/")
 	stringToSign := "HMAC-SHA256\n" + xDate + "\n" + scope + "\n" + hex.EncodeToString(canonicalHash[:])
-	kDate := hmacSHA256([]byte(client.secret), []byte(shortDate))
-	kRegion := hmacSHA256(kDate, []byte(client.config.Region))
-	kService := hmacSHA256(kRegion, []byte(client.config.Service))
+	kDate := hmacSHA256([]byte(secret), []byte(shortDate))
+	kRegion := hmacSHA256(kDate, []byte(region))
+	kService := hmacSHA256(kRegion, []byte(service))
 	kSigning := hmacSHA256(kService, []byte("request"))
 	signature := hex.EncodeToString(hmacSHA256(kSigning, []byte(stringToSign)))
 	request.Header.Set("Authorization", fmt.Sprintf(
 		"HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
-		client.config.AccessKeyID, scope, signedHeaders, signature,
+		accessKeyID, scope, signedHeaders, signature,
 	))
 }
 

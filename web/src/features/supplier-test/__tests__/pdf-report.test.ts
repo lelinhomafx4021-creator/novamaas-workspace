@@ -117,7 +117,7 @@ test('supplier PDF omits address and timestamp metadata while keeping test resul
   )
 })
 
-test('video PDF omits upstream address and time while keeping task details', () => {
+test('video PDF shares the branded page layout and keeps recorded task details', () => {
   const input: VideoReportInput = {
     branding: {
       platformName: 'Example Platform',
@@ -125,18 +125,16 @@ test('video PDF omits upstream address and time while keeping task details', () 
       operatingEntityName: 'Example Operator Ltd',
       operatingEntityLogo: 'https://cdn.example/operator.png',
     },
-    baseUrl: 'http://192.0.2.44',
-    endpointUrl: 'http://192.0.2.44/api/v3/contents/generations/tasks',
-    model: 'demo-video-model',
-    taskId: 'task-42',
-    elapsedMs: 1800,
-    videoConfig: {
-      prompt: 'A sunset',
-      hasImage: false,
-      uploadMode: 'url',
-      hasLastFrame: false,
+    runReport: {
+      id: 'run-42',
+      base_url: 'http://192.0.2.44',
+      model: 'demo-video-model',
+      task_id: 'task-42',
+      status: 'completed',
+      started_at: 1,
+      stages: [],
+      assets: [],
     },
-    videoChecks: [{ id: 'video_submit', title: 'Task submit', status: 'pass' }],
     t: (key) => key,
   }
 
@@ -157,7 +155,7 @@ test('video PDF omits upstream address and time while keeping task details', () 
     '<div class="document-operator"><img src="/api/pdf-branding/operating-logo" alt="Example Operator Ltd"/></div>'
   )
   expect(pdfHtml).not.toContain('<span>Example Operator Ltd</span>')
-  expect(pdfHtml).not.toContain('192.0.2.44')
+  expect(pdfHtml).toContain('192.0.2.44')
   expect(pdfHtml).not.toContain('meta-label">Time')
   expect(exportHtml).toContain('http://192.0.2.44')
 })

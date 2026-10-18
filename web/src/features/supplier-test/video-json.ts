@@ -26,12 +26,37 @@ export function buildVideoRequestPayload(
   const prompt = video.prompt.trim()
   if (prompt) {
     content.push({
+      ...video.preservedContent?.find((item) => item.type === 'text'),
       type: 'text',
       text: prompt,
     })
   }
 
-  if (video.hasImage) {
+  if (video.materials) {
+    for (const material of video.materials) {
+      if (!material.url.trim()) continue
+      const original = material.payload || {}
+      const image =
+        original.image_url && typeof original.image_url === 'object'
+          ? (original.image_url as Record<string, unknown>)
+          : {}
+      content.push({
+        ...original,
+        type: 'image_url',
+        image_url: { ...image, url: material.url.trim() },
+        role: material.role,
+      })
+    }
+    for (const item of video.preservedContent || []) {
+      if (
+        item.type !== 'text' ||
+        item !== video.preservedContent?.find((entry) => entry.type === 'text')
+      ) {
+        content.push(item)
+      }
+    }
+  }
+  if (!video.materials && video.hasImage) {
     const role = video.role || 'reference_image'
     if (video.uploadMode === 'url' && video.imageUrl.trim()) {
       content.push({
@@ -48,7 +73,7 @@ export function buildVideoRequestPayload(
     }
   }
 
-  if (video.hasLastFrame) {
+  if (!video.materials && video.hasLastFrame) {
     if (video.lastFrameMode === 'url' && video.lastFrameUrl.trim()) {
       content.push({
         type: 'image_url',
@@ -67,6 +92,25 @@ export function buildVideoRequestPayload(
     }
   }
 
+  if (video.contentOrder && video.materials) {
+    const images = content.filter((item) => item.type === 'image_url')
+    const ordered: Array<Record<string, unknown>> = []
+    let imageIndex = 0
+    let textSeen = false
+    for (const entry of video.contentOrder) {
+      if ('material' in entry) {
+        const image = images[imageIndex++]
+        if (image) ordered.push(image)
+      } else if (entry.value.type === 'text' && !textSeen) {
+        textSeen = true
+        if (prompt) ordered.push({ ...entry.value, text: prompt })
+      } else ordered.push(entry.value)
+    }
+    if (!textSeen && prompt) ordered.unshift({ type: 'text', text: prompt })
+    ordered.push(...images.slice(imageIndex))
+    content.splice(0, content.length, ...ordered)
+  }
+
   const payload: Record<string, unknown> = {}
   if (content.length > 0) payload.content = content
 
@@ -76,7 +120,7 @@ export function buildVideoRequestPayload(
   if (video.hasRatio && video.ratio) {
     payload.ratio = video.ratio
   }
-  if (video.hasDuration && video.duration > 0) {
+  if (video.hasDuration && Number.isFinite(video.duration)) {
     payload.duration = video.duration
   }
   if (video.hasWatermark) {
@@ -139,7 +183,23 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     }
   }
 
-  const patch: Partial<VideoForm> = {}
+  const patch: Partial<VideoForm> = {
+    prompt: '',
+    materials: [],
+    contentOrder: [],
+    preservedContent: [],
+    hasImage: false,
+    hasLastFrame: false,
+    hasResolution: false,
+    hasRatio: false,
+    hasDuration: false,
+    hasWatermark: false,
+    hasSeed: false,
+    hasGenerateAudio: false,
+    hasReturnLastFrame: false,
+    hasCustomJson: false,
+    customJson: '',
+  }
   let extractedModel: string | undefined
 
   if (typeof obj.model === 'string' && obj.model.trim()) {
@@ -159,14 +219,19 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
   ])
 
   if (Array.isArray(obj.content)) {
-    for (const item of obj.content) {
+    for (const [contentIndex, item] of obj.content.entries()) {
       if (!item || typeof item !== 'object') continue
       const itemType = (item as Record<string, unknown>).type
+      if (itemType === 'image_url') patch.contentOrder?.push({ material: true })
+      else patch.contentOrder?.push({ value: item as Record<string, unknown> })
       if (
         itemType === 'text' &&
         typeof (item as Record<string, unknown>).text === 'string'
       ) {
-        patch.prompt = String((item as Record<string, unknown>).text)
+        if (!patch.preservedContent?.some((entry) => entry.type === 'text')) {
+          patch.prompt = String((item as Record<string, unknown>).text)
+        }
+        patch.preservedContent?.push(item as Record<string, unknown>)
       } else if (itemType === 'image_url') {
         const imgObj = (item as Record<string, unknown>).image_url as
           | Record<string, unknown>
@@ -177,6 +242,16 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
             ? String((item as Record<string, unknown>).role)
             : ''
 
+        let source: 'base64' | 'asset' | 'url' = 'url'
+        if (urlStr.startsWith('data:')) source = 'base64'
+        else if (urlStr.startsWith('asset://')) source = 'asset'
+        patch.materials?.push({
+          id: `native-${contentIndex}`,
+          source,
+          url: urlStr,
+          role: roleStr || 'reference_image',
+          payload: item as Record<string, unknown>,
+        })
         if (roleStr === 'last_frame') {
           patch.hasLastFrame = true
           if (urlStr.startsWith('data:image/')) {
@@ -197,6 +272,8 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
             patch.imageUrl = urlStr
           }
         }
+      } else {
+        patch.preservedContent?.push(item as Record<string, unknown>)
       }
     }
   }
@@ -211,7 +288,7 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     patch.ratio = obj.ratio.trim()
   }
 
-  if (typeof obj.duration === 'number' && obj.duration > 0) {
+  if (typeof obj.duration === 'number' && Number.isFinite(obj.duration)) {
     patch.hasDuration = true
     patch.duration = obj.duration
   }

@@ -39,6 +39,7 @@ func ListSupplierTestModels(c *gin.Context) {
 }
 
 func RunSupplierTest(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 70<<20)
 	var req suppliertest.RunRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid request body"})
@@ -124,7 +125,12 @@ func RunSupplierTest(c *gin.Context) {
 		}
 	}
 
-	err := suppliertest.Run(runCtx, suppliertest.NewHTTPClient(service.GetHttpClient()), req, emit)
+	var err error
+	if len(req.Modules) == 1 && req.Modules[0] == suppliertest.ModuleVideo {
+		err = runRecordedSupplierVideo(c, runCtx, req, emit)
+	} else {
+		err = suppliertest.Run(runCtx, suppliertest.NewHTTPClient(service.GetHttpClient()), req, emit)
+	}
 	if err != nil && runCtx.Err() == nil {
 		emit(suppliertest.Event{Type: "error", Message: err.Error()})
 	}
@@ -153,13 +159,27 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 	}
 
 	httpClient := suppliertest.NewHTTPClient(service.GetHttpClient())
+	queryStarted := time.Now()
 	status, rawResp, err := suppliertest.GetVideoTaskRaw(c.Request.Context(), httpClient, req.BaseURL, req.CustomPath, req.APIKey, req.TaskID)
+	queryElapsedMS := time.Since(queryStarted).Milliseconds()
+	if err == nil {
+		err = suppliertest.ValidateVideoTaskResponse(req.TaskID, rawResp)
+	}
 	if err != nil {
+		report, _ := recordSupplierVideoQuery(c, req.BaseURL, req.CustomPath, req.TaskID, status, rawResp, queryElapsedMS)
 		c.JSON(http.StatusOK, gin.H{
 			"success":      false,
+			"task_id":      req.TaskID,
+			"video_report": report,
 			"message":      err.Error(),
 			"raw_response": string(rawResp),
 		})
+		return
+	}
+
+	report, recordErr := recordSupplierVideoQuery(c, req.BaseURL, req.CustomPath, req.TaskID, status, rawResp, queryElapsedMS)
+	if recordErr != nil {
+		common.ApiError(c, recordErr)
 		return
 	}
 
@@ -167,6 +187,7 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 		errMsg := suppliertest.ExtractAPIError(rawResp, fmt.Sprintf("HTTP %d", status))
 		c.JSON(http.StatusOK, gin.H{
 			"success":      false,
+			"video_report": report,
 			"status_code":  status,
 			"task_id":      req.TaskID,
 			"message":      errMsg,
@@ -178,6 +199,7 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 	taskState, videoURL, failReason := suppliertest.ParseVideoTaskState(rawResp)
 	c.JSON(http.StatusOK, gin.H{
 		"success":      true,
+		"video_report": report,
 		"status_code":  status,
 		"task_id":      req.TaskID,
 		"status":       taskState,

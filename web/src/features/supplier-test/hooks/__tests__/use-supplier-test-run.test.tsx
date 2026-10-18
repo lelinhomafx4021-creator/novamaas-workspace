@@ -21,7 +21,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 import { getFreshAuthHeaders } from '@/lib/api'
 
-import type { SupplierTestRunRequest } from '../../types'
+import type { SupplierTestRunRequest, VideoRunReport } from '../../types'
 import { useSupplierTestRun } from '../use-supplier-test-run'
 
 const mockStream = vi.hoisted(() => ({
@@ -135,4 +135,76 @@ test('manual video query keeps a translatable status and its task state separate
     message: 'Current status: {{status}}',
     messageArgs: { status: 'queued' },
   })
+})
+
+test('video stage deltas preserve submission evidence and isolate another run', async () => {
+  vi.mocked(getFreshAuthHeaders).mockResolvedValue({})
+  const { result } = renderHook(() => useSupplierTestRun())
+  await act(async () => {
+    await result.current.start(payload)
+  })
+  const send = (run: Partial<VideoRunReport>) =>
+    act(() => {
+      mockStream.listeners.get('message')?.(
+        Object.assign(new Event('message'), {
+          data: JSON.stringify({
+            type: 'evidence',
+            video_report_delta: true,
+            video_report: run,
+          }),
+        })
+      )
+    })
+  send({
+    id: 'first',
+    stages: [
+      {
+        id: 'video_submit',
+        request_body: '{"model":"actual"}',
+      } as VideoRunReport['stages'][number],
+    ],
+  })
+  send({
+    id: 'first',
+    stages: [
+      {
+        id: 'video_result',
+        response_body: '{"status":"succeeded"}',
+      } as VideoRunReport['stages'][number],
+    ],
+  })
+  expect(result.current.videoReport?.stages).toHaveLength(2)
+  expect(result.current.videoReport?.stages[0].request_body).toContain('actual')
+  send({ id: 'second', stages: [] })
+  expect(result.current.videoReport?.id).toBe('second')
+  expect(result.current.videoReport?.stages).toHaveLength(0)
+})
+
+test('a failed query for another task clears the previous artifact and verdicts', () => {
+  const { result } = renderHook(() => useSupplierTestRun())
+  act(() =>
+    result.current.updateVideoMetricsWithQueryResult({
+      success: true,
+      task_id: 'first',
+      status: 'succeeded',
+      video_url: 'https://cdn.example/first.mp4',
+    })
+  )
+  act(() =>
+    result.current.updateVideoMetricsWithQueryResult({
+      success: false,
+      task_id: 'second',
+    })
+  )
+  expect(result.current.videoMetrics?.task_id).toBe('second')
+  expect(result.current.videoMetrics?.video_url).toBeUndefined()
+  expect(result.current.videoReport).toBeNull()
+  expect(
+    result.current.videoChecks.find((check) => check.id === 'video_poll')
+      ?.status
+  ).toBe('fail')
+  expect(
+    result.current.videoChecks.find((check) => check.id === 'video_result')
+      ?.status
+  ).toBe('skip')
 })

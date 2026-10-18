@@ -13,18 +13,21 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type RunRequest struct {
-	BaseURL string       `json:"base_url"`
-	APIKey  string       `json:"api_key"`
-	Model   string       `json:"model"`
-	Vendor  string       `json:"vendor,omitempty"`
-	Modules []string     `json:"modules"`
-	Basic   BasicConfig  `json:"basic"`
-	Cache   CacheConfig  `json:"cache"`
-	Stress  StressConfig `json:"stress"`
-	Video   VideoConfig  `json:"video"`
+	BaseURL                 string               `json:"base_url"`
+	APIKey                  string               `json:"api_key"`
+	Model                   string               `json:"model"`
+	Vendor                  string               `json:"vendor,omitempty"`
+	Modules                 []string             `json:"modules"`
+	Basic                   BasicConfig          `json:"basic"`
+	Cache                   CacheConfig          `json:"cache"`
+	Stress                  StressConfig         `json:"stress"`
+	Video                   VideoConfig          `json:"video"`
+	VerificationCredentials *OfficialCredentials `json:"-"`
+	PreparedStages          []StageEvidence      `json:"-"`
 }
 
 type BasicConfig struct {
@@ -56,44 +59,51 @@ type StressConfig struct {
 }
 
 type VideoConfig struct {
-	Prompt          string   `json:"prompt"`
-	UploadMode      string   `json:"upload_mode,omitempty"`
-	ImageURL        string   `json:"image_url,omitempty"`
-	Base64Data      string   `json:"base64_data,omitempty"`
-	Role            *string  `json:"role,omitempty"`
-	LastFrameMode   string   `json:"last_frame_mode,omitempty"`
-	LastFrameURL    string   `json:"last_frame_url,omitempty"`
-	LastFrameBase64 string   `json:"last_frame_base64,omitempty"`
-	Resolution      *string  `json:"resolution,omitempty"`
-	Ratio           *string  `json:"ratio,omitempty"`
-	Duration        *int     `json:"duration,omitempty"`
-	Watermark       *bool    `json:"watermark,omitempty"`
-	Seed            *int     `json:"seed,omitempty"`
-	GenerateAudio   *bool    `json:"generate_audio,omitempty"`
-	ReturnLastFrame *bool    `json:"return_last_frame,omitempty"`
-	CustomJSON      string   `json:"custom_json,omitempty"`
-	CustomPath      string   `json:"custom_path,omitempty"`
-	RawPayload      string   `json:"raw_payload,omitempty"`
-	TaskID          string   `json:"task_id,omitempty"`
-	Checks          []string `json:"checks,omitempty"`
+	Scenario          string   `json:"scenario,omitempty"`
+	PreparationRunIDs []string `json:"preparation_run_ids,omitempty"`
+	PlatformMode      bool     `json:"platform_mode,omitempty"`
+	VerifyOfficial    bool     `json:"verify_official,omitempty"`
+	ResumeRunID       string   `json:"resume_run_id,omitempty"`
+	Prompt            string   `json:"prompt"`
+	UploadMode        string   `json:"upload_mode,omitempty"`
+	ImageURL          string   `json:"image_url,omitempty"`
+	Base64Data        string   `json:"base64_data,omitempty"`
+	Role              *string  `json:"role,omitempty"`
+	LastFrameMode     string   `json:"last_frame_mode,omitempty"`
+	LastFrameURL      string   `json:"last_frame_url,omitempty"`
+	LastFrameBase64   string   `json:"last_frame_base64,omitempty"`
+	Resolution        *string  `json:"resolution,omitempty"`
+	Ratio             *string  `json:"ratio,omitempty"`
+	Duration          *int     `json:"duration,omitempty"`
+	Watermark         *bool    `json:"watermark,omitempty"`
+	Seed              *int     `json:"seed,omitempty"`
+	GenerateAudio     *bool    `json:"generate_audio,omitempty"`
+	ReturnLastFrame   *bool    `json:"return_last_frame,omitempty"`
+	CustomJSON        string   `json:"custom_json,omitempty"`
+	CustomPath        string   `json:"custom_path,omitempty"`
+	RawPayload        string   `json:"raw_payload,omitempty"`
+	TaskID            string   `json:"task_id,omitempty"`
+	Checks            []string `json:"checks,omitempty"`
 }
 
 type Event struct {
-	Type        string         `json:"type"`
-	Module      string         `json:"module,omitempty"`
-	CheckID     string         `json:"check_id,omitempty"`
-	Status      string         `json:"status,omitempty"`
-	Title       string         `json:"title,omitempty"`
-	Message     string         `json:"message,omitempty"`
-	MessageArgs map[string]any `json:"message_args,omitempty"`
-	Summary     string         `json:"summary,omitempty"`
-	Worker      int            `json:"worker,omitempty"`
-	Text        string         `json:"text,omitempty"`
-	Completed   int            `json:"completed,omitempty"`
-	Total       int            `json:"total,omitempty"`
-	Metrics     *StressMetrics `json:"metrics,omitempty"`
-	Cache       *CacheMetrics  `json:"cache,omitempty"`
-	Video       *VideoMetrics  `json:"video,omitempty"`
+	Type             string          `json:"type"`
+	Module           string          `json:"module,omitempty"`
+	CheckID          string          `json:"check_id,omitempty"`
+	Status           string          `json:"status,omitempty"`
+	Title            string          `json:"title,omitempty"`
+	Message          string          `json:"message,omitempty"`
+	MessageArgs      map[string]any  `json:"message_args,omitempty"`
+	Summary          string          `json:"summary,omitempty"`
+	Worker           int             `json:"worker,omitempty"`
+	Text             string          `json:"text,omitempty"`
+	Completed        int             `json:"completed,omitempty"`
+	Total            int             `json:"total,omitempty"`
+	Metrics          *StressMetrics  `json:"metrics,omitempty"`
+	Cache            *CacheMetrics   `json:"cache,omitempty"`
+	Video            *VideoMetrics   `json:"video,omitempty"`
+	VideoReport      *VideoRunReport `json:"video_report,omitempty"`
+	VideoReportDelta bool            `json:"video_report_delta,omitempty"`
 }
 
 type VideoMetrics struct {
@@ -210,6 +220,11 @@ func NormalizeRunRequest(req *RunRequest) error {
 	}
 	if req.Model == "" && !queryOnlyVideo {
 		return fmt.Errorf("model is required")
+	}
+	if seen[ModuleVideo] {
+		if err := ValidateVideoDraft(*req); err != nil {
+			return err
+		}
 	}
 	hasBasic := seen[ModuleBasic]
 	hasStress := seen[ModuleStress]
@@ -1351,50 +1366,19 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		var payloadBytes []byte
 		rawPayloadTrimmed := strings.TrimSpace(req.Video.RawPayload)
 		if rawPayloadTrimmed != "" {
-			var rawMap map[string]any
-			if err := common.Unmarshal([]byte(rawPayloadTrimmed), &rawMap); err != nil {
-				emit(Event{
-					Type:        "check",
-					Module:      ModuleVideo,
-					CheckID:     CheckVideoSubmit,
-					Status:      "fail",
-					Title:       "Task submit",
-					Message:     "Could not parse native request JSON: {{error}}",
-					MessageArgs: map[string]any{"error": err.Error()},
-					Video:       metrics,
-				})
+			if !gjson.Valid(rawPayloadTrimmed) || !gjson.Parse(rawPayloadTrimmed).IsObject() {
+				emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoSubmit, Status: "fail", Title: "Task submit", Message: "Native request JSON must be an object.", Video: metrics})
 				return
 			}
-			if rawMap == nil {
-				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoSubmit,
-					Status:  "fail",
-					Title:   "Task submit",
-					Message: "Native request JSON must be an object.",
-					Video:   metrics,
-				})
-				return
+			payloadBytes = []byte(rawPayloadTrimmed)
+			if !gjson.Get(rawPayloadTrimmed, "model").Exists() && req.Model != "" {
+				var err error
+				payloadBytes, err = sjson.SetBytes(payloadBytes, "model", req.Model)
+				if err != nil {
+					return
+				}
 			}
-			if _, hasModel := rawMap["model"]; !hasModel && strings.TrimSpace(req.Model) != "" {
-				rawMap["model"] = strings.TrimSpace(req.Model)
-			}
-			b, err := common.Marshal(rawMap)
-			if err != nil {
-				emit(Event{
-					Type:        "check",
-					Module:      ModuleVideo,
-					CheckID:     CheckVideoSubmit,
-					Status:      "fail",
-					Title:       "Task submit",
-					Message:     "Could not serialize native request JSON: {{error}}",
-					MessageArgs: map[string]any{"error": err.Error()},
-					Video:       metrics,
-				})
-				return
-			}
-			payloadBytes = b
+
 		} else {
 			contentSlice := make([]map[string]any, 0, 3)
 			if prompt := strings.TrimSpace(req.Video.Prompt); prompt != "" {
@@ -1518,7 +1502,7 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			if req.Video.Ratio != nil && strings.TrimSpace(*req.Video.Ratio) != "" {
 				payloadMap["ratio"] = strings.TrimSpace(*req.Video.Ratio)
 			}
-			if req.Video.Duration != nil && *req.Video.Duration != 0 {
+			if req.Video.Duration != nil {
 				payloadMap["duration"] = *req.Video.Duration
 			}
 			if req.Video.Watermark != nil {
@@ -1568,6 +1552,12 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 				return
 			}
 			payloadBytes = b
+		}
+		validationRequest := req
+		validationRequest.Video.RawPayload = string(payloadBytes)
+		if err := ValidateVideoDraft(validationRequest); err != nil {
+			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoSubmit, Status: "fail", Title: "Task submit", Message: err.Error(), Video: metrics})
+			return
 		}
 
 		metrics.RawRequestJSON = string(payloadBytes)

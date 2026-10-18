@@ -62,30 +62,42 @@ test('video check title and interpolated detail follow a language change', async
   expect(screen.getByText('Tâche envoyée. ID : video-42')).toBeVisible()
 })
 
-test('video Markdown and HTML reports translate check details in the selected language', async () => {
+test('video Markdown and HTML reports translate recorded stage conclusions in the selected language', async () => {
   const i18n = createInstance()
   await i18n.init({ lng: 'fr', resources: { fr } })
   const input: VideoReportInput = {
     language: 'fr',
-    baseUrl: 'https://supplier.example',
-    model: 'video-model',
-    elapsedMs: 1000,
-    videoConfig: {
-      prompt: 'A sunset',
-      hasImage: false,
-      uploadMode: 'url',
-      hasLastFrame: false,
+    runReport: {
+      id: 'run-42',
+      base_url: 'https://supplier.example',
+      model: 'video-model',
+      task_id: 'video-42',
+      status: 'completed',
+      started_at: 1,
+      assets: [],
+      stages: [
+        {
+          id: 'video_submit',
+          purpose: 'Submit the video task',
+          status: 'pass',
+          method: 'POST',
+          path: '/api/v3/contents/generations/tasks',
+          request_body: '{"model":"video-model"}',
+          response_body: '{"id":"video-42"}',
+          elapsed_ms: 1,
+          conclusion: 'Task accepted',
+        },
+      ],
     },
-    videoChecks: [submittedCheck],
     t: (key, options) => i18n.t(key, options),
   }
 
   const markdown = buildVideoMarkdownReport(input)
   const html = buildVideoHtmlReport(input)
 
-  expect(markdown).toContain('Tâche envoyée. ID : video-42')
-  expect(markdown).toContain('Envoi de la tâche: Réussi')
-  expect(html).toContain('Tâche envoyée. ID : video-42')
-  expect(html).toContain('Réussi')
+  expect(markdown).toContain('Tâche acceptée')
+  expect(markdown).toContain('Envoi de la tâche vidéo')
+  expect(html).toContain('Tâche acceptée')
+  expect(html).toContain('Envoi de la tâche vidéo')
   expect(html).toContain('<html lang="fr">')
 })

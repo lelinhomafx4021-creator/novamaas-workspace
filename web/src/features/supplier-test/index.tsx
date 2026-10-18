@@ -30,7 +30,7 @@ import { TitledCard } from '@/components/ui/titled-card'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
-import { fetchSupplierModels } from './api'
+import { fetchSupplierModels, getVideoRun } from './api'
 import {
   assessCache,
   assessStress,
@@ -191,9 +191,7 @@ export function SupplierTest() {
     (run.cacheChecks ?? []).some((check) => check.status !== 'idle') ||
     run.metrics !== null ||
     run.cacheMetrics !== null
-  const hasVideoReport =
-    (run.videoChecks ?? []).some((check) => check.status !== 'idle') ||
-    run.videoMetrics !== null
+  const hasVideoReport = Boolean(run.videoReport)
   const hasReport = isVideoTab ? hasVideoReport : hasTextReport
 
   const progressValue =
@@ -285,6 +283,10 @@ export function SupplierTest() {
         stream: stress.stream,
       },
       video: {
+        scenario: video.scenario,
+        platform_mode: video.platformMode,
+        verify_official: video.verifyOfficial,
+        preparation_run_ids: video.preparationRunIds,
         ...(module === 'video' && checks && checks.length > 0
           ? { checks }
           : {}),
@@ -459,7 +461,7 @@ export function SupplierTest() {
           return
         }
       } else {
-        if (!video.prompt.trim()) {
+        if (!video.prompt.trim() && !video.materials?.length) {
           toast.error(t('Please enter a prompt for video generation'))
           return
         }
@@ -498,7 +500,11 @@ export function SupplierTest() {
         }
       }
     }
-    void run.start(buildPayload(module, checks))
+    const payload = buildPayload(module, checks)
+    if (module === 'video' && !isQueryOnlyVideo) {
+      setVideo((current) => ({ ...current, preparationRunIds: [] }))
+    }
+    void run.start(payload)
   }
 
   const handleSendRawJson = (rawJson: string) => {
@@ -508,6 +514,7 @@ export function SupplierTest() {
       payload.video = { prompt: DEFAULT_VIDEO_FORM.prompt }
     }
     payload.video.raw_payload = rawJson.trim()
+    setVideo((current) => ({ ...current, preparationRunIds: [] }))
     void run.start(payload)
   }
 
@@ -552,41 +559,15 @@ export function SupplierTest() {
     t: (key, options) => t(key, options),
   })
 
-  const videoReportInput = (): VideoReportInput => ({
-    language: reportLanguage,
-    branding,
-    baseUrl: target.baseUrl.trim(),
-    model: target.model.trim(),
-    endpointUrl: run.videoMetrics?.endpoint_url,
-    taskId: run.videoMetrics?.task_id || video.taskId?.trim() || undefined,
-    status: run.videoMetrics?.status,
-    elapsedMs: run.videoMetrics?.elapsed_ms ?? 0,
-    failReason: run.videoMetrics?.fail_reason,
-    videoUrl: run.videoMetrics?.video_url,
-    videoConfig: {
-      prompt: video.prompt.trim(),
-      hasImage: video.hasImage,
-      uploadMode: video.uploadMode,
-      imageUrl: video.imageUrl.trim(),
-      role: video.role,
-      hasLastFrame: video.hasLastFrame,
-      lastFrameMode: video.lastFrameMode,
-      lastFrameUrl: video.lastFrameUrl.trim(),
-      resolution: video.hasResolution ? video.resolution : undefined,
-      ratio: video.hasRatio ? video.ratio : undefined,
-      duration: video.hasDuration ? video.duration : undefined,
-      watermark: video.hasWatermark ? video.watermark : undefined,
-      seed: video.hasSeed ? video.seed.trim() : undefined,
-      generateAudio: video.hasGenerateAudio ? video.generateAudio : undefined,
-      returnLastFrame: video.hasReturnLastFrame
-        ? video.returnLastFrame
-        : undefined,
-      customJson: video.hasCustomJson ? video.customJson.trim() : undefined,
-      customPath: video.customPath.trim() || undefined,
-    },
-    videoChecks: run.videoChecks,
-    t: (key, options) => t(key, options),
-  })
+  const loadVideoReportInput = async (): Promise<VideoReportInput> => {
+    if (!run.videoReport) throw new Error(t('Unable to load video test record'))
+    return {
+      runReport: await getVideoRun(run.videoReport.id),
+      language: reportLanguage,
+      branding,
+      t: (key, options) => t(key, options),
+    }
+  }
 
   return (
     <SectionPageLayout>
@@ -602,19 +583,23 @@ export function SupplierTest() {
           variant='outline'
           disabled={busy || !hasReport}
           onClick={async () => {
-            const report = isVideoTab
-              ? buildVideoMarkdownReport(videoReportInput())
-              : buildMarkdownReport(reportInput())
-            const ok = await copyToClipboard(report)
-            if (!ok) {
+            try {
+              const report = isVideoTab
+                ? buildVideoMarkdownReport(await loadVideoReportInput())
+                : buildMarkdownReport(reportInput())
+              const ok = await copyToClipboard(report)
+              if (!ok) {
+                toast.error(t('Failed to copy report'))
+                return
+              }
+              toast.success(
+                isVideoTab
+                  ? t('Video report copied to clipboard')
+                  : t('Report copied to clipboard')
+              )
+            } catch {
               toast.error(t('Failed to copy report'))
-              return
             }
-            toast.success(
-              isVideoTab
-                ? t('Video report copied to clipboard')
-                : t('Report copied to clipboard')
-            )
           }}
         >
           <Copy />
@@ -626,7 +611,7 @@ export function SupplierTest() {
           onClick={async () => {
             try {
               if (isVideoTab) {
-                await exportVideoPdfReport(videoReportInput())
+                await exportVideoPdfReport(await loadVideoReportInput())
                 toast.success(t('Video PDF report ready'))
               } else {
                 await exportPdfReport(reportInput())
@@ -643,21 +628,25 @@ export function SupplierTest() {
         <Button
           variant='outline'
           disabled={busy || !hasReport}
-          onClick={() => {
-            if (isVideoTab) {
-              downloadFile(
-                `doubao-video-test-${stampFileName()}.html`,
-                buildVideoHtmlReport(videoReportInput()),
-                'text/html'
-              )
-              toast.success(t('Video HTML report exported'))
-            } else {
-              downloadFile(
-                `${supplierReportName((key, options) => t(key, options))}.html`,
-                buildHtmlReport(reportInput()),
-                'text/html'
-              )
-              toast.success(t('HTML report exported'))
+          onClick={async () => {
+            try {
+              if (isVideoTab) {
+                downloadFile(
+                  `doubao-video-test-${stampFileName()}.html`,
+                  buildVideoHtmlReport(await loadVideoReportInput()),
+                  'text/html'
+                )
+                toast.success(t('Video HTML report exported'))
+              } else {
+                downloadFile(
+                  `${supplierReportName((key, options) => t(key, options))}.html`,
+                  buildHtmlReport(reportInput()),
+                  'text/html'
+                )
+                toast.success(t('HTML report exported'))
+              }
+            } catch {
+              toast.error(t('Unable to load video test record'))
             }
           }}
         >
@@ -775,6 +764,18 @@ export function SupplierTest() {
                 apiKey={target.apiKey}
                 videoChecks={run.videoChecks}
                 videoMetrics={run.videoMetrics}
+                runReport={run.videoReport}
+                onVerifyRun={() => {
+                  if (!run.videoReport) return
+                  const payload = buildPayload('video', ['video_result'])
+                  payload.base_url = run.videoReport.base_url
+                  payload.model = run.videoReport.model
+                  if (payload.video) {
+                    payload.video.resume_run_id = run.videoReport.id
+                    payload.video.verify_official = true
+                  }
+                  void run.start(payload)
+                }}
                 onVideoChange={setVideo}
                 onModelChange={(m) => setTarget((c) => ({ ...c, model: m }))}
                 onSendRawJson={handleSendRawJson}
@@ -782,14 +783,6 @@ export function SupplierTest() {
                   startModule('video', checkId ? [checkId] : undefined)
                 }}
                 onManualQueryResult={run.updateVideoMetricsWithQueryResult}
-                onExportPdf={async () => {
-                  try {
-                    await exportVideoPdfReport(videoReportInput())
-                    toast.success(t('Video PDF report ready'))
-                  } catch {
-                    toast.error(t('PDF report could not be prepared'))
-                  }
-                }}
               />
             </TitledCard>
           </Tabs>

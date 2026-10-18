@@ -314,7 +314,8 @@ func parseSupplierBase(raw string) (*url.URL, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, fmt.Errorf("base URL must use http or https")
 	}
-	if parsed.Host == "" {
+	if parsed.User != nil {return nil,fmt.Errorf("base URL must not contain credentials")}
+ if parsed.Host == "" {
 		return nil, fmt.Errorf("base URL host is required")
 	}
 	parsed.Fragment = ""

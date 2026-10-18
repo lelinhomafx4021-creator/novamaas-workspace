@@ -38,6 +38,7 @@ import type {
   SupplierTestModule,
   SupplierTestRunRequest,
   VideoMetrics,
+  VideoRunReport,
 } from '../types'
 
 type StreamHandle = {
@@ -86,7 +87,12 @@ function resetChecks(current: CheckResult[], ids?: string[]): CheckResult[] {
     if (selected && !selected.has(check.id)) {
       return check
     }
-    return { ...check, status: 'idle', message: undefined, messageArgs: undefined }
+    return {
+      ...check,
+      status: 'idle',
+      message: undefined,
+      messageArgs: undefined,
+    }
   })
 }
 
@@ -106,6 +112,7 @@ export function useSupplierTestRun() {
   const [metrics, setMetrics] = useState<StressMetrics | null>(null)
   const [cacheMetrics, setCacheMetrics] = useState<CacheMetrics | null>(null)
   const [videoMetrics, setVideoMetrics] = useState<VideoMetrics | null>(null)
+  const [videoReport, setVideoReport] = useState<VideoRunReport | null>(null)
   const [summaries, setSummaries] = useState({
     basic: '',
     cache: '',
@@ -162,6 +169,7 @@ export function useSupplierTestRun() {
         setVideoChecks((current) => resetChecks(current, videoChecksToRun))
         if (!videoChecksToRun || videoChecksToRun.includes('video_submit')) {
           setVideoMetrics(null)
+          setVideoReport(null)
         }
       }
 
@@ -219,9 +227,29 @@ export function useSupplierTestRun() {
           handleError(t('Failed to parse stream'))
           return
         }
+        if (parsed.video_report) {
+          const next = parsed.video_report
+          setVideoReport((current) => {
+            if (!parsed.video_report_delta || current?.id !== next.id) {
+              return next
+            }
+            const stages = [...current.stages]
+            for (const stage of next.stages) {
+              const index = stages.findIndex((entry) => entry.id === stage.id)
+              if (index < 0) stages.push(stage)
+              else stages[index] = stage
+            }
+            return { ...next, stages }
+          })
+        }
         if (parsed.video) {
           setVideoMetrics((prev) => {
-            if (!prev) return parsed.video ?? null
+            if (
+              !prev ||
+              (parsed.video?.task_id && prev.task_id !== parsed.video.task_id)
+            ) {
+              return parsed.video ?? null
+            }
             return {
               ...prev,
               ...parsed.video,
@@ -358,16 +386,47 @@ export function useSupplierTestRun() {
 
   const updateVideoMetricsWithQueryResult = useCallback(
     (result: QueryVideoTaskResult) => {
-      setVideoMetrics((prev) => ({
-        ...prev,
-        task_id: result.task_id || prev?.task_id || '',
-        status: result.status || prev?.status || '',
-        elapsed_ms: prev?.elapsed_ms ?? 0,
-        video_url: result.video_url || prev?.video_url,
-        fail_reason: result.fail_reason || prev?.fail_reason,
-        raw_poll_response_json:
-          result.raw_response || prev?.raw_poll_response_json,
-      }))
+      setVideoReport(result.video_report || null)
+      setVideoChecks((current) =>
+        current.map((check) => ({
+          ...check,
+          status: 'skip',
+          message:
+            check.id === 'video_submit'
+              ? 'Original submission evidence is unavailable for this task query'
+              : 'No final response was obtained.',
+          messageArgs: undefined,
+        }))
+      )
+      if (!result.success) {
+        setVideoChecks((current) =>
+          current.map((check) =>
+            check.id === 'video_poll'
+              ? {
+                  ...check,
+                  status: 'fail',
+                  message: 'Failed to query task',
+                }
+              : check
+          )
+        )
+      }
+      setVideoMetrics((previous) => {
+        const prev =
+          previous && (!result.task_id || previous.task_id === result.task_id)
+            ? previous
+            : null
+        return {
+          ...prev,
+          task_id: result.task_id || prev?.task_id || '',
+          status: result.status || prev?.status || '',
+          elapsed_ms: prev?.elapsed_ms ?? 0,
+          video_url: result.video_url || prev?.video_url,
+          fail_reason: result.fail_reason || prev?.fail_reason,
+          raw_poll_response_json:
+            result.raw_response || prev?.raw_poll_response_json,
+        }
+      })
       if (result.status) {
         const normalized = result.status.toLowerCase()
         const isSuccess = normalized === 'succeeded' || normalized === 'success'
@@ -439,6 +498,8 @@ export function useSupplierTestRun() {
     metrics,
     cacheMetrics,
     videoMetrics,
+    videoReport,
+    setVideoReport,
     summaries,
     errorMessage,
     start,

@@ -256,6 +256,32 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			helper.ResetEventStreamHeaders(c)
 			return nil, types.NewOpenAIError(fmt.Errorf("%s", message), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 		}
+		// The next event normally flushes this pending chunk. On interruption
+		// there is no next event, but an already-started response must retain
+		// its final partial content or tool arguments before reporting failure.
+		var pendingChunk dto.ChatCompletionsStreamResponse
+		if common.UnmarshalJsonStr(lastStreamData, &pendingChunk) == nil && len(pendingChunk.Choices) > 0 {
+			pendingData := lastStreamData
+			if info.RelayFormat != types.RelayFormatOpenAI {
+				// Converters must not turn a finish-bearing partial chunk into
+				// message_stop or a successful Gemini terminal on a failed stream.
+				pendingChunk.Usage = nil
+				for i := range pendingChunk.Choices {
+					pendingChunk.Choices[i].FinishReason = nil
+				}
+				encoded, err := common.Marshal(pendingChunk)
+				if err != nil {
+					info.StreamStatus.RecordError("failed to encode interrupted OpenAI stream chunk: " + err.Error())
+					return usage, nil
+				}
+				pendingData = string(encoded)
+			}
+			helper.ExtendWriteDeadline(c)
+			if err := HandleStreamFormat(c, info, pendingData, forceFormat, thinkingToContent); err != nil {
+				info.StreamStatus.RecordError("failed to write interrupted OpenAI stream chunk: " + err.Error())
+				return usage, nil
+			}
+		}
 		if err := writeTextStreamError(c, info, code, message); err != nil {
 			info.StreamStatus.RecordError("failed to write OpenAI stream error: " + err.Error())
 		}

@@ -29,7 +29,12 @@ func TestChatStreamPartialFailureDoesNotSendSuccessfulTerminal(t *testing.T) {
 				name = string(format) + "/broken HTTP body"
 			}
 			t.Run(name, func(t *testing.T) {
-				payload := "data: " + streamUsageTextChunk + "\n\ndata: " + streamUsageFinalChunk + "\n\ndata: " + streamUsageZeroChunk + "\n\n"
+				tail := `{"choices":[{"index":0,"delta":{"content":"partial tail"}}]}`
+				if readError {
+					tail = `{"choices":[{"index":0,"delta":{"content":"partial tail"},"finish_reason":"stop"}]}`
+				}
+				payload := "data: " + streamUsageTextChunk + "\n\ndata: " + streamUsageFinalChunk + "\n\ndata: " + streamUsageZeroChunk + "\n\n" +
+					"data: " + tail + "\n\n"
 				c, w, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(payload)))
 				info.RelayMode = relayconstant.RelayModeChatCompletions
 				info.RelayFormat = format
@@ -60,11 +65,16 @@ func TestChatStreamPartialFailureDoesNotSendSuccessfulTerminal(t *testing.T) {
 				assert.Equal(t, 4800, usage.PromptTokensDetails.CachedTokens)
 				got := w.Body.String()
 				assert.Contains(t, got, "hello world")
+				assert.Equal(t, 1, strings.Count(got, "partial tail"), "the final buffered content must be delivered exactly once")
 				assert.Contains(t, got, "The upstream stream ended before the response was complete.")
+				assert.Less(t, strings.Index(got, "partial tail"), strings.Index(got, "The upstream stream ended before the response was complete."))
 				assert.NotContains(t, got, "data: [DONE]")
 				assert.NotContains(t, got, "event: message_stop\n")
 				assert.NotContains(t, got, `"finishReason":"STOP"`)
 				assert.True(t, info.StreamStatus.HasErrors())
+				if format == types.RelayFormatOpenAI {
+					assert.Contains(t, got, "data: "+tail+"\n\n", "native Chat retains the original partial payload")
+				}
 				if readError {
 					assert.Equal(t, relaycommon.StreamEndReasonScannerErr, info.StreamStatus.EndReason)
 					assert.ErrorIs(t, info.StreamStatus.EndError, io.ErrUnexpectedEOF)
@@ -124,6 +134,9 @@ func TestChatStreamOneFinishedChoiceDoesNotCompleteAnotherChoice(t *testing.T) {
 			require.Nil(t, apiErr)
 			assert.Contains(t, w.Body.String(), "upstream_stream_incomplete")
 			assert.NotContains(t, w.Body.String(), "data: [DONE]")
+			if !missingChoice {
+				assert.Contains(t, w.Body.String(), "partial", "an unfinished candidate must retain its buffered content")
+			}
 		})
 	}
 }
@@ -187,6 +200,7 @@ func TestChatStreamTimeoutAfterPartialToolArgumentsReportsError(t *testing.T) {
 		t.Fatal("stream did not stop at its idle timeout")
 	}
 	require.Nil(t, apiErr)
+	assert.Contains(t, w.Body.String(), "lookup", "buffered partial tool arguments must precede the error")
 	assert.Contains(t, w.Body.String(), "upstream_stream_timeout")
 	assert.NotContains(t, w.Body.String(), `"usage":`)
 	assert.NotContains(t, w.Body.String(), "data: [DONE]")
@@ -321,6 +335,34 @@ func TestChatStreamFinalWriteFailureDoesNotSendLaterTerminal(t *testing.T) {
 			assert.Zero(t, writer.writesAfterFailure)
 			assert.Contains(t, w.Body.String(), "hello world")
 			assert.NotContains(t, w.Body.String(), tc.terminal)
+			assert.True(t, info.StreamStatus.HasErrors())
+		})
+	}
+}
+
+func TestChatStreamInterruptedTailWriteFailurePreservesUsage(t *testing.T) {
+	for _, format := range []types.RelayFormat{types.RelayFormatOpenAI, types.RelayFormatClaude, types.RelayFormatGemini} {
+		t.Run(string(format), func(t *testing.T) {
+			body := "data: " + streamUsageTextChunk + "\n\ndata: " + streamUsageFinalChunk + "\n\n" +
+				"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial tail\"}}]}\n\n"
+			c, recorder, info, resp := setupResponsesStreamReliabilityTest(t, io.NopCloser(strings.NewReader(body)))
+			info.RelayMode = relayconstant.RelayModeChatCompletions
+			info.RelayFormat = format
+			info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{}
+			writer := &streamTerminalFailingWriter{ResponseWriter: c.Writer, failOn: "partial tail", err: errors.New("client socket disconnected")}
+			c.Writer = writer
+
+			usage, apiErr := OaiStreamHandler(c, info, resp)
+			require.Nil(t, apiErr, "the already-started attempt must settle instead of retrying or refunding all usage")
+			require.NotNil(t, usage)
+			assert.Equal(t, 5000, usage.PromptTokens)
+			assert.Equal(t, 60, usage.CompletionTokens)
+			assert.Equal(t, 4800, usage.PromptTokensDetails.CachedTokens)
+			assert.True(t, writer.failed, "the interrupted stream must attempt to flush its buffered content")
+			assert.Zero(t, writer.writesAfterFailure)
+			assert.Contains(t, recorder.Body.String(), "hello world")
+			assert.NotContains(t, recorder.Body.String(), "The upstream stream ended before the response was complete.")
+			assert.NotContains(t, recorder.Body.String(), "data: [DONE]")
 			assert.True(t, info.StreamStatus.HasErrors())
 		})
 	}

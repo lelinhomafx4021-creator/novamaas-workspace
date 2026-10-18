@@ -41,7 +41,7 @@ import {
 } from '../api'
 import type { VideoReportChecks, VideoRunReport } from '../types'
 import {
-  formatEvidenceJSON,
+  videoStageEvidence,
   videoPollingSummary,
   videoReportSections,
   videoStageTitle,
@@ -222,35 +222,20 @@ export function VideoReportPanel(props: {
                     {t(videoStageTitle(stage.id))}
                   </h5>
                   {stage.method && (
-                    <>
-                      <p className='text-muted-foreground font-mono text-xs break-all'>
-                        {stage.method} {stage.endpoint || stage.path} · HTTP{' '}
-                        {stage.http_status || '—'}
-                        {!stage.request_body && <> · {t('No request body')}</>}
-                      </p>
-                      <Label>{t('Request headers')}</Label>
-                      <pre className='bg-muted rounded p-3 font-mono text-xs break-all whitespace-pre-wrap'>
-                        {stage.request_headers || t('Not recorded')}
-                      </pre>
-                    </>
+                    <p className='text-muted-foreground font-mono text-xs break-all'>
+                      {stage.method} {stage.endpoint || stage.path} · HTTP{' '}
+                      {stage.http_status || '—'}
+                      {!stage.request_body && <> · {t('No request body')}</>}
+                    </p>
                   )}
-                  {stage.request_body && (
-                    <>
-                      <Label>{t('Request body')}</Label>
+                  {videoStageEvidence(stage, (key) => t(key)).map((block) => (
+                    <div key={block.label}>
+                      <Label>{block.label}</Label>
                       <pre className='bg-muted rounded p-3 font-mono text-xs break-all whitespace-pre-wrap'>
-                        {formatEvidenceJSON(stage.request_body)}
+                        {block.body}
                       </pre>
-                    </>
-                  )}
-                  {(stage.method || stage.response_body) && (
-                    <>
-                      <Label>{t('Response body')}</Label>
-                      <pre className='bg-muted rounded p-3 font-mono text-xs break-all whitespace-pre-wrap'>
-                        {formatEvidenceJSON(stage.response_body) ||
-                          t('No response received')}
-                      </pre>
-                    </>
-                  )}
+                    </div>
+                  ))}
                   <p className='text-muted-foreground text-xs'>
                     {t(stage.conclusion)}
                     {!stage.final && stage.id.endsWith('_result') && (

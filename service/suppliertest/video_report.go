@@ -160,35 +160,7 @@ func ReportBody(raw string) string {
 			return
 		}
 		text := value.String()
-		replacement := text
-		if strings.HasPrefix(text, "data:") && strings.Contains(text, ";base64,") {
-			parts := strings.SplitN(text, ",", 2)
-			data, err := base64.StdEncoding.DecodeString(parts[1])
-			if err != nil {
-				replacement = "[invalid Base64]"
-			} else {
-				hash := sha256.Sum256(data)
-				replacement = fmt.Sprintf("[%s; bytes=%d; sha256=%s]", strings.SplitN(parts[0], ";", 2)[0], len(data), hex.EncodeToString(hash[:]))
-			}
-		} else if parsed, err := url.Parse(text); err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") {
-			query := parsed.Query()
-			changed := false
-			if parsed.User != nil {
-				parsed.User = url.User("[REDACTED]")
-				changed = true
-			}
-			for key := range query {
-				lower := strings.ToLower(key)
-				if strings.Contains(lower, "signature") || strings.Contains(lower, "credential") || strings.Contains(lower, "token") || strings.Contains(lower, "accesskey") || strings.Contains(lower, "access_key") || lower == "sig" || lower == "authorization" || lower == "api_key" {
-					query.Set(key, "[REDACTED]")
-					changed = true
-				}
-			}
-			if changed {
-				parsed.RawQuery = query.Encode()
-				replacement = parsed.String()
-			}
-		}
+		replacement := ReportURL(text)
 		if replacement != text {
 			if path == "" {
 				encoded, _ := common.Marshal(replacement)
@@ -298,63 +270,72 @@ func (transport *videoEvidenceTransport) RoundTrip(request *http.Request) (*http
 			stage.Conclusion = "Task accepted"
 		}
 	} else {
-		if err := ValidateVideoTaskResponse(transport.report.TaskID, raw); err != nil {
-			stage.Conclusion = err.Error()
-			transport.report.SetStage(stage)
-			transport.publish(transport.report)
-			return response, nil
-		}
-		if response.StatusCode != http.StatusOK {
-			stage.Conclusion = "Video result query failed"
-			transport.report.SetStage(stage)
-			transport.publish(transport.report)
-			return response, nil
-		}
-		state, videoURL, _ := ParseVideoTaskState(raw)
-		switch strings.ToLower(state) {
-		case "succeeded", "success":
-			stage.Final = true
-			stage.Status = "pass"
-			stage.Conclusion = "Video generated"
-			transport.report.VideoURL = ReportURL(videoURL)
-			if videoURL == "" {
-				stage.Status = "fail"
-				stage.Conclusion = "Task succeeded but no video URL returned"
-			}
-			transport.report.OriginalVideoURL = videoURL
-			transport.report.UsageJSON = ReportBody(gjson.GetBytes(raw, "usage").Raw)
-		case "failed", "failure", "cancelled", "expired":
-			stage.Final = true
-			stage.Conclusion = "Video task failed"
-		default:
-			if response.StatusCode == 200 {
-				switch strings.ToLower(state) {
-				case "queued", "pending":
-					stage.ID = "video_queued"
-					stage.Purpose = "First queued response"
-				case "running", "processing", "in_progress":
-					stage.ID = "video_running"
-					stage.Purpose = "First running response"
-				default:
-					return response, nil
-				}
-				for _, existing := range transport.report.Stages {
-					if existing.ID == stage.ID {
-						return response, nil
-					}
-				}
-				stage.Status = "pass"
-				stage.Conclusion = stage.Purpose
-				transport.report.SetStage(stage)
-				transport.publish(transport.report)
+		stage = transport.report.EvaluateVideoQuery(stage)
+		if !stage.Final && stage.Status == "running" {
+			if stage.ID == "video_result" {
 				return response, nil
 			}
-			stage.Conclusion = "Video result query failed"
+			for _, existing := range transport.report.Stages {
+				if existing.ID == stage.ID {
+					return response, nil
+				}
+			}
+			stage.Status = "pass"
 		}
 	}
 	transport.report.SetStage(stage)
 	transport.publish(transport.report)
 	return response, nil
+}
+
+// EvaluateVideoQuery applies the same task identity, HTTP and terminal-state
+// rules to automatic polling and one-off queries, retaining the actual exchange.
+func (report *VideoRunReport) EvaluateVideoQuery(stage StageEvidence) StageEvidence {
+	if stage.HTTPStatus == 0 || stage.Status == "fail" && stage.Conclusion != "" {
+		return stage
+	}
+	stage.Status = "fail"
+	stage.Final = false
+	raw := []byte(stage.ResponseBody)
+	if err := ValidateVideoTaskResponse(report.TaskID, raw); err != nil {
+		stage.Conclusion = err.Error()
+		return stage
+	}
+	if stage.HTTPStatus != http.StatusOK {
+		stage.Conclusion = "Video result query failed"
+		return stage
+	}
+	state, videoURL, _ := ParseVideoTaskState(raw)
+	switch strings.ToLower(state) {
+	case "succeeded", "success":
+		stage.Final = true
+		stage.Status = "pass"
+		stage.Conclusion = "Video generated"
+		if videoURL == "" {
+			stage.Status = "fail"
+			stage.Conclusion = "Task succeeded but no video URL returned"
+		}
+		report.VideoURL = ReportURL(videoURL)
+		report.OriginalVideoURL = videoURL
+		report.UsageJSON = ReportBody(gjson.GetBytes(raw, "usage").Raw)
+	case "failed", "failure", "cancelled", "expired":
+		stage.Final = true
+		stage.Conclusion = "Video task failed"
+	default:
+		stage.Status = "running"
+		stage.Conclusion = "No final response was obtained."
+		switch strings.ToLower(state) {
+		case "queued", "pending":
+			stage.ID = "video_queued"
+			stage.Purpose = "First queued response"
+			stage.Conclusion = stage.Purpose
+		case "running", "processing", "in_progress":
+			stage.ID = "video_running"
+			stage.Purpose = "First running response"
+			stage.Conclusion = stage.Purpose
+		}
+	}
+	return stage
 }
 
 func ValidateVideoTaskResponse(expectedID string, raw []byte) error {
@@ -496,10 +477,35 @@ func (report *VideoRunReport) MarkUnexecutedStages(verificationRequested bool) {
 }
 
 func ReportURL(value string) string {
-	raw, _ := common.Marshal(value)
-	var sanitized string
-	if err := common.UnmarshalJsonStr(ReportBody(string(raw)), &sanitized); err != nil {
-		return ""
+	if strings.HasPrefix(value, "data:") && strings.Contains(value, ";base64,") {
+		parts := strings.SplitN(value, ",", 2)
+		data, err := base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return "[invalid Base64]"
+		}
+		hash := sha256.Sum256(data)
+		return fmt.Sprintf("[%s; bytes=%d; sha256=%s]", strings.SplitN(parts[0], ";", 2)[0], len(data), hex.EncodeToString(hash[:]))
 	}
-	return sanitized
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return value
+	}
+	query := parsed.Query()
+	changed := false
+	if parsed.User != nil {
+		parsed.User = url.User("[REDACTED]")
+		changed = true
+	}
+	for key := range query {
+		lower := strings.ToLower(key)
+		if strings.Contains(lower, "signature") || strings.Contains(lower, "credential") || strings.Contains(lower, "token") || strings.Contains(lower, "accesskey") || strings.Contains(lower, "access_key") || lower == "sig" || lower == "authorization" || lower == "api_key" {
+			query.Set(key, "[REDACTED]")
+			changed = true
+		}
+	}
+	if !changed {
+		return value
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }

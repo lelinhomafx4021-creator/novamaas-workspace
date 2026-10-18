@@ -204,13 +204,9 @@ func VerifyVideoArtifact(ctx context.Context, client *http.Client, report *Video
 			publish(report)
 			return
 		}
-		if stage.Status == "fail" && stage.HTTPStatus == 200 && gjson.Get(stage.ResponseBody, "ResponseMetadata.Error").Exists() {
-			report.SetStage(stage)
-			report.Verification = &OfficialVerification{Status: "failed", ModelMatch: "unknown", Message: stage.Conclusion}
-			publish(report)
-			return
-		}
-		if stage.Status == "fail" && stage.HTTPStatus >= 400 && stage.HTTPStatus < 500 && stage.HTTPStatus != 429 && stage.HTTPStatus != 408 {
+		providerError := stage.HTTPStatus == http.StatusOK && gjson.Get(stage.ResponseBody, "ResponseMetadata.Error").Exists()
+		clientError := stage.HTTPStatus >= 400 && stage.HTTPStatus < 500 && stage.HTTPStatus != 429 && stage.HTTPStatus != 408
+		if stage.Status == "fail" && (providerError || clientError) {
 			report.SetStage(stage)
 			report.Verification = &OfficialVerification{Status: "failed", ModelMatch: "unknown", Message: stage.Conclusion}
 			publish(report)

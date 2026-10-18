@@ -46,10 +46,9 @@ import type {
   VideoRunReport,
   StressMetrics,
 } from './types'
-import {
-  buildVideoRunHtmlReport,
-  buildVideoRunMarkdownReport,
-} from './video-report'
+import { buildVideoHtmlReport } from './video-report'
+
+export { buildVideoHtmlReport, buildVideoMarkdownReport } from './video-report'
 
 export type StressConfig = {
   concurrency: number
@@ -1134,17 +1133,6 @@ export type VideoReportInput = {
   language?: string
   branding?: ReportBranding
   t: ReportInput['t']
-}
-
-export function buildVideoMarkdownReport(input: VideoReportInput): string {
-  return buildVideoRunMarkdownReport(input.runReport, input)
-}
-
-export function buildVideoHtmlReport(
-  input: VideoReportInput,
-  options: { format?: 'html' | 'pdf' } = {}
-): string {
-  return buildVideoRunHtmlReport(input.runReport, input, options)
 }
 
 export async function exportVideoPdfReport(

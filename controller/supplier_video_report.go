@@ -390,58 +390,18 @@ func runRecordedSupplierVideo(c *gin.Context, ctx context.Context, req suppliert
 }
 
 func recordSupplierVideoQuery(c *gin.Context, baseURL, taskID string, stage suppliertest.StageEvidence) (*suppliertest.VideoRunReport, error) {
-	status, raw := stage.HTTPStatus, []byte(stage.ResponseBody)
-	state, videoURL, _ := suppliertest.ParseVideoTaskState(raw)
-	report := &suppliertest.VideoRunReport{ID: "svr_" + common.GetRandomString(24), BaseURL: baseURL, Model: gjson.GetBytes(raw, "model").String(), TaskID: taskID, Status: "incomplete", StartedAt: time.Now().UnixMilli(), VideoURL: suppliertest.ReportURL(videoURL), Assets: []suppliertest.VideoAssetEvidence{}, Stages: []suppliertest.StageEvidence{}}
+	report := &suppliertest.VideoRunReport{ID: "svr_" + common.GetRandomString(24), BaseURL: baseURL, Model: gjson.Get(stage.ResponseBody, "model").String(), TaskID: taskID, Status: "incomplete", StartedAt: time.Now().UnixMilli(), Assets: []suppliertest.VideoAssetEvidence{}, Stages: []suppliertest.StageEvidence{}}
 	report.SetStage(suppliertest.StageEvidence{ID: "video_submit", Purpose: "Submit the video task", Status: "skip", Conclusion: "Original submission evidence is unavailable for this task query"})
-	switch strings.ToLower(state) {
-	case "success", "succeeded":
-		stage.Final = true
-		stage.Status = "pass"
-		stage.Conclusion = "Video generated"
+	stage = report.EvaluateVideoQuery(stage)
+	if stage.Final {
 		report.Status = "completed"
 		report.CompletedAt = time.Now().UnixMilli()
-		if videoURL == "" {
-			stage.Status = "fail"
-			stage.Conclusion = "Task succeeded but no video URL returned"
-			report.Status = "failed"
-		}
-	case "failed", "failure", "cancelled", "expired":
-		stage.Final = true
-		stage.Status = "fail"
-		stage.Conclusion = "Video task failed"
-		report.Status = "failed"
-		report.CompletedAt = time.Now().UnixMilli()
 	}
-	if status != 200 {
-		report.VideoURL = ""
-		stage.Final = false
-		if stage.Status != "fail" {
-			stage.Conclusion = "Video result query failed"
-		}
-		stage.Status = "fail"
-		report.Status = "failed"
-	}
-	if err := suppliertest.ValidateVideoTaskResponse(taskID, raw); err != nil {
-		stage.Status = "fail"
-		stage.Final = false
-		stage.Conclusion = err.Error()
-		report.VideoURL = ""
+	if stage.Status == "fail" {
 		report.Status = "failed"
 	}
 	report.VideoPolling = suppliertest.VideoPollingSummary{Count: 1, ElapsedMS: stage.ElapsedMS}
-	if status == http.StatusOK && !stage.Final && stage.Status == "running" {
-		switch strings.ToLower(state) {
-		case "queued", "pending":
-			stage.ID = "video_queued"
-			stage.Purpose = "First queued response"
-		case "running", "processing", "in_progress":
-			stage.ID = "video_running"
-			stage.Purpose = "First running response"
-		}
-	}
 	report.SetStage(stage)
-	report.UsageJSON = suppliertest.ReportBody(gjson.GetBytes(raw, "usage").Raw)
 	report.MarkUnexecutedStages(false)
 	encoded, err := common.Marshal(report)
 	if err != nil {

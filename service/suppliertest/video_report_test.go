@@ -24,7 +24,7 @@ func TestVideoReportCapturesSubmitAndFinalWithoutProgressBodies(t *testing.T) {
 		require.NoError(t, err)
 	}))
 	defer server.Close()
-	req := RunRequest{BaseURL: server.URL, APIKey: "generation-private-key", Model: "actual-model", Modules: []string{ModuleVideo}, Video: VideoConfig{RawPayload: `{"model":"actual-model","watermark":false,"seed":0,"content":[{"type":"text","text":"animate"}]}`}}
+	req := RunRequest{BaseURL: server.URL, APIKey: "generation-private-key", Model: "actual-model", Modules: []string{ModuleVideo}, Video: VideoConfig{RawPayload: `{"model":"actual-model","watermark":false,"seed":0,"content":[{"type":"text","text":"animate"},{"type":"image_url","role":"reference_image","image_url":{"url":"data:image/png;base64,aGVsbG8="}}]}`}}
 	report := RunVideoReport(context.Background(), server.Client(), server.Client(), req, "run-report", nil, nil)
 	require.Len(t, report.Stages, 4)
 	assert.Equal(t, "task-report", report.TaskID)
@@ -37,6 +37,10 @@ func TestVideoReportCapturesSubmitAndFinalWithoutProgressBodies(t *testing.T) {
 	assert.Contains(t, report.Stages[0].RequestHeaders, "Authorization: [REDACTED]")
 	assert.Contains(t, report.Stages[1].RequestHeaders, "Accept: application/json")
 	assert.NotContains(t, report.RawEvidence["video_submit"].RequestHeaders, "generation-private-key")
+	require.Len(t, report.Assets, 1)
+	assert.Contains(t, report.Assets[0].URL, "bytes=5; sha256=")
+	assert.NotContains(t, report.Assets[0].URL, "aGVsbG8=")
+	assert.Contains(t, report.RawEvidence["video_submit"].RequestBody, "aGVsbG8=")
 }
 
 func TestRequestHeaderEvidencePreservesDiagnosticFieldsAndNeverPersistsCredentials(t *testing.T) {

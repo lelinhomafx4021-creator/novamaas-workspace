@@ -24,9 +24,10 @@ export function buildVideoRequestPayload(
 ): Record<string, unknown> | null {
   const content: Array<Record<string, unknown>> = []
   const prompt = video.prompt.trim()
+  const firstText = video.preservedContent?.find((item) => item.type === 'text')
   if (prompt) {
     content.push({
-      ...video.preservedContent?.find((item) => item.type === 'text'),
+      ...firstText,
       type: 'text',
       text: prompt,
     })
@@ -48,47 +49,34 @@ export function buildVideoRequestPayload(
       })
     }
     for (const item of video.preservedContent || []) {
-      if (
-        item.type !== 'text' ||
-        item !== video.preservedContent?.find((entry) => entry.type === 'text')
-      ) {
+      if (item !== firstText) {
         content.push(item)
       }
     }
   }
-  if (!video.materials && video.hasImage) {
-    const role = video.role || 'reference_image'
-    if (video.uploadMode === 'url' && video.imageUrl.trim()) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.imageUrl.trim() },
-        role,
-      })
-    } else if (video.uploadMode === 'base64' && video.base64Data.trim()) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.base64Data.trim() },
-        role,
-      })
-    }
-  }
-
-  if (!video.materials && video.hasLastFrame) {
-    if (video.lastFrameMode === 'url' && video.lastFrameUrl.trim()) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.lastFrameUrl.trim() },
+  if (!video.materials) {
+    for (const frame of [
+      {
+        enabled: video.hasImage,
+        role: video.role || 'reference_image',
+        url: video.uploadMode === 'url' ? video.imageUrl : video.base64Data,
+      },
+      {
+        enabled: video.hasLastFrame,
         role: 'last_frame',
-      })
-    } else if (
-      video.lastFrameMode === 'base64' &&
-      video.lastFrameBase64.trim()
-    ) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.lastFrameBase64.trim() },
-        role: 'last_frame',
-      })
+        url:
+          video.lastFrameMode === 'url'
+            ? video.lastFrameUrl
+            : video.lastFrameBase64,
+      },
+    ]) {
+      if (frame.enabled && frame.url.trim()) {
+        content.push({
+          type: 'image_url',
+          image_url: { url: frame.url.trim() },
+          role: frame.role,
+        })
+      }
     }
   }
 

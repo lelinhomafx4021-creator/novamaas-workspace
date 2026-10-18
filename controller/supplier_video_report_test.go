@@ -11,8 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/assetlibrary"
+	"github.com/QuantumNous/new-api/service/suppliertest"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -122,32 +124,77 @@ func TestVideoMaterialUploadUsesDefaultGroupAndPreservesFileMetadata(t *testing.
 	assert.NotContains(t, string(run.Report), "generation-key")
 }
 
-func TestManualVideoQueryStoresActualHeadersAndFinalBody(t *testing.T) {
+func TestManualVideoQueryRecordsEvidenceAndDistinguishesTerminalResults(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	previous := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = previous })
 	require.NoError(t, db.AutoMigrate(&model.SupplierVideoRun{}, &model.StoragePolicy{}))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		assert.Equal(t, "Bearer manual-secret-key", request.Header.Get("Authorization"))
-		w.Header().Set("X-Request-Id", "manual-request-id")
-		_, err := io.WriteString(w, `{"id":"manual-task","status":"succeeded","content":{"video_url":"https://cdn.example/video.mp4"}}`)
-		require.NoError(t, err)
-	}))
-	defer server.Close()
-	response := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(response)
-	c.Set("id", 7)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/supplier-test/video/query", strings.NewReader(`{"base_url":"`+server.URL+`","api_key":"manual-secret-key","task_id":"manual-task"}`))
-	QuerySupplierTestVideoTask(c)
-	require.Equal(t, http.StatusOK, response.Code)
-	assert.Contains(t, response.Body.String(), "request_headers")
-	assert.Contains(t, response.Body.String(), "Authorization: [REDACTED]")
-	assert.Contains(t, response.Body.String(), "manual-request-id")
-	assert.NotContains(t, response.Body.String(), "manual-secret-key")
-	var run model.SupplierVideoRun
-	require.NoError(t, db.First(&run).Error)
-	assert.Contains(t, string(run.Report), "succeeded")
-	assert.NotContains(t, string(run.Report), "manual-secret-key")
+	for _, fixture := range []struct {
+		name, body, status, stageID, stageStatus string
+		httpStatus                               int
+		final                                    bool
+		videoURL                                 string
+		truncated                                bool
+	}{
+		{"completed", `{"id":"manual-task","status":"succeeded","content":{"video_url":"https://cdn.example/video.mp4"}}`, "completed", "video_result", "pass", 200, true, "https://cdn.example/video.mp4", false},
+		{"missing video", `{"id":"manual-task","status":"succeeded"}`, "failed", "video_result", "fail", 200, true, "", false},
+		{"generation failed", `{"id":"manual-task","status":"failed","error":{"message":"generation rejected"}}`, "failed", "video_result", "fail", 200, true, "", false},
+		{"HTTP failure", `{"id":"manual-task","status":"succeeded","content":{"video_url":"https://cdn.example/wrong.mp4"}}`, "failed", "video_result", "fail", 404, false, "", false},
+		{"another task", `{"id":"another-task","status":"succeeded","content":{"video_url":"https://cdn.example/wrong.mp4"}}`, "failed", "video_result", "fail", 200, false, "", false},
+		{"queued", `{"id":"manual-task","status":"queued"}`, "incomplete", "video_queued", "running", 200, false, "", false},
+		{"running", `{"id":"manual-task","status":"running"}`, "incomplete", "video_running", "running", 200, false, "", false},
+		{"incomplete response", `{}`, "failed", "video_result", "fail", 200, false, "", true},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				assert.Equal(t, "Bearer manual-secret-key", request.Header.Get("Authorization"))
+				w.Header().Set("X-Request-Id", "manual-request-id")
+				if fixture.truncated {
+					w.Header().Set("Content-Length", "999")
+				}
+				w.WriteHeader(fixture.httpStatus)
+				_, err := io.WriteString(w, fixture.body)
+				require.NoError(t, err)
+			}))
+			defer server.Close()
+			response := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(response)
+			c.Set("id", 7)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/supplier-test/video/query", strings.NewReader(`{"base_url":"`+server.URL+`","api_key":"manual-secret-key","task_id":"manual-task"}`))
+			QuerySupplierTestVideoTask(c)
+			require.Equal(t, http.StatusOK, response.Code)
+			var result struct {
+				Report suppliertest.VideoRunReport `json:"video_report"`
+			}
+			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+			assert.Equal(t, "manual-task", result.Report.TaskID)
+			assert.Equal(t, fixture.status, result.Report.Status)
+			assert.Equal(t, fixture.videoURL, result.Report.VideoURL)
+			assert.Equal(t, 1, result.Report.VideoPolling.Count)
+			var actual *suppliertest.StageEvidence
+			for i := range result.Report.Stages {
+				if result.Report.Stages[i].ID == fixture.stageID {
+					actual = &result.Report.Stages[i]
+				}
+			}
+			require.NotNil(t, actual)
+			assert.Equal(t, fixture.stageStatus, actual.Status)
+			assert.Equal(t, fixture.final, actual.Final)
+			expectedBody := fixture.body
+			if fixture.truncated {
+				expectedBody = ""
+				assert.Equal(t, "Response could not be captured completely", actual.Conclusion)
+			}
+			assert.Equal(t, expectedBody, actual.ResponseBody)
+			assert.Contains(t, actual.RequestHeaders, "Authorization: [REDACTED]")
+			assert.Equal(t, "manual-request-id", actual.RequestID)
+			assert.NotContains(t, response.Body.String(), "manual-secret-key")
+			stored, err := model.GetSupplierVideoRun(context.Background(), result.Report.ID, 7)
+			require.NoError(t, err)
+			assert.Contains(t, string(stored.Report), "request_headers")
+			assert.NotContains(t, string(stored.Report), "manual-secret-key")
+		})
+	}
 }

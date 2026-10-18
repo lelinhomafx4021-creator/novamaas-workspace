@@ -116,6 +116,42 @@ export function formatEvidenceJSON(raw: string): string {
   return output.join('')
 }
 
+type VideoEvidenceBlock = {
+  label: string
+  language: 'http' | 'json'
+  body: string
+}
+
+export function videoStageEvidence(
+  stage: StageEvidence,
+  t: VideoReportInput['t']
+): VideoEvidenceBlock[] {
+  const blocks: VideoEvidenceBlock[] = []
+  if (stage.method) {
+    blocks.push({
+      label: t('Request headers'),
+      language: 'http',
+      body: stage.request_headers || t('Not recorded'),
+    })
+  }
+  if (stage.request_body) {
+    blocks.push({
+      label: t('Request body'),
+      language: 'json',
+      body: formatEvidenceJSON(stage.request_body),
+    })
+  }
+  if (stage.method || stage.response_body) {
+    blocks.push({
+      label: t('Response body'),
+      language: 'json',
+      body:
+        formatEvidenceJSON(stage.response_body) || t('No response received'),
+    })
+  }
+  return blocks
+}
+
 export function videoReportSections(
   run: VideoRunReport
 ): Array<{ title: string; stages: StageEvidence[] }> {
@@ -183,10 +219,8 @@ function reportSummary(run: VideoRunReport, t: VideoReportInput['t']) {
   ]
 }
 
-export function buildVideoRunMarkdownReport(
-  run: VideoRunReport,
-  input: VideoReportInput
-): string {
+export function buildVideoMarkdownReport(input: VideoReportInput): string {
+  const run = input.runReport
   const t = input.t
   const lines = [
     `# ${t('Doubao Video Generation Test Report')}`,
@@ -221,26 +255,13 @@ export function buildVideoRunMarkdownReport(
         lines.push(
           `${stage.method} ${stage.endpoint || stage.path || '—'} · HTTP ${stage.http_status || '—'} · ${stage.elapsed_ms} ms · Request ID: ${stage.request_id || '—'}`
         )
-        lines.push(
-          `**${t('Request headers')}**`,
-          '```http',
-          stage.request_headers || t('Not recorded'),
-          '```'
-        )
-        if (stage.request_body) {
-          lines.push(
-            `**${t('Request body')}**`,
-            '```json',
-            formatEvidenceJSON(stage.request_body),
-            '```'
-          )
-        } else lines.push(t('No request body'))
+        if (!stage.request_body) lines.push(t('No request body'))
       }
-      if (stage.method || stage.response_body) {
+      for (const block of videoStageEvidence(stage, t)) {
         lines.push(
-          `**${t('Response body')}**`,
-          '```json',
-          formatEvidenceJSON(stage.response_body) || t('No response received'),
+          `**${block.label}**`,
+          `\`\`\`${block.language}`,
+          block.body,
           '```'
         )
       }
@@ -261,11 +282,11 @@ export function buildVideoRunMarkdownReport(
   return `${lines.join('\n')}\n`
 }
 
-export function buildVideoRunHtmlReport(
-  run: VideoRunReport,
+export function buildVideoHtmlReport(
   input: VideoReportInput,
-  options: { format?: 'html' | 'pdf' }
+  options: { format?: 'html' | 'pdf' } = {}
 ): string {
+  const run = input.runReport
   const t = input.t
   const pdf = options.format === 'pdf'
   const capabilities = VIDEO_REPORT_CAPABILITIES.map((item) => {
@@ -273,8 +294,6 @@ export function buildVideoRunHtmlReport(
     return `${checked ? '☑' : '☐'} ${escapeHtml(t(item.label))}: ${escapeHtml(t(checked ? 'Yes' : 'No'))}`
   })
   const title = t('Doubao Video Generation Test Report')
-  const code = (label: string, body: string) =>
-    `<div class="evidence-label">${escapeHtml(t(label))}</div><pre class="evidence-json">${escapeHtml(formatEvidenceJSON(body))}</pre>`
   const metadata = [
     ['Model', run.model],
     ['Base URL', run.base_url],
@@ -300,17 +319,9 @@ export function buildVideoRunHtmlReport(
       let body = `<h3 class="evidence-title">${escapeHtml(stageTitle)}${conclusion && conclusion !== stageTitle ? `<span class="stage-caption"> · ${escapeHtml(conclusion)}</span>` : ''}</h3>`
       if (stage.method) {
         body += `<p class="exchange-meta">${escapeHtml(stage.method)} ${escapeHtml(stage.endpoint || stage.path || '—')} · HTTP ${stage.http_status || '—'} · ${stage.elapsed_ms} ms · Request ID: ${escapeHtml(stage.request_id || '—')}${stage.request_body ? '' : ` · ${escapeHtml(t('No request body'))}`}</p>`
-        body += code(
-          'Request headers',
-          stage.request_headers || t('Not recorded')
-        )
-        if (stage.request_body) body += code('Request body', stage.request_body)
       }
-      if (stage.method || stage.response_body) {
-        body += code(
-          'Response body',
-          stage.response_body || t('No response received')
-        )
+      for (const block of videoStageEvidence(stage, t)) {
+        body += `<div class="evidence-label">${escapeHtml(block.label)}</div><pre class="evidence-json">${escapeHtml(block.body)}</pre>`
       }
       if (
         !stage.final &&

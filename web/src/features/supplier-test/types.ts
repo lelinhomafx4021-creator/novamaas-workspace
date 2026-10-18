@@ -238,6 +238,7 @@ export type StageEvidence = {
   status: string
   method?: string
   path?: string
+  request_headers?: string
   request_body: string
   response_body: string
   http_status?: number

@@ -24,7 +24,7 @@ import {
   type VideoReportInput,
 } from '../report'
 import type { VideoReportChecks } from '../types'
-import { compactEvidenceJSON } from '../video-report'
+import { formatEvidenceJSON } from '../video-report'
 
 const input = {
   t: (key: string) => key,
@@ -46,6 +46,8 @@ const input = {
         purpose: 'Submit the video task',
         conclusion: 'Task accepted',
         method: 'POST',
+        request_headers:
+          'Content-Type: application/json\nAuthorization: [REDACTED]',
         path: '/api/v3/contents/generations/tasks',
         request_body: '{"model":"actual-model","watermark":false,"seed":0}',
         response_body: '{"id":"task-1","extra":"accepted-proof"}',
@@ -151,14 +153,36 @@ test('long JSON and untrusted response text remain visible and escaped in PDF', 
   expect(html).not.toContain('<script>bad()')
 })
 
-test('compact evidence preserves large numbers, explicit values and whitespace inside JSON strings', () => {
+test('readable JSON preserves large numbers, explicit values and whitespace inside JSON strings', () => {
   const raw =
     '{\n  "n":9007199254740993,\n  "text":"keep  two spaces",\n  "enabled": false, "zero": 0\n}'
-  expect(compactEvidenceJSON(raw)).toBe(
-    '{"n":9007199254740993,"text":"keep  two spaces","enabled":false,"zero":0}'
+  expect(formatEvidenceJSON(raw)).toBe(
+    '{\n  "n": 9007199254740993,\n  "text": "keep  two spaces",\n  "enabled": false,\n  "zero": 0\n}'
   )
-  expect(compactEvidenceJSON('Upstream error:  service unavailable')).toBe(
+  expect(formatEvidenceJSON('Upstream error:  service unavailable')).toBe(
     'Upstream error:  service unavailable'
+  )
+})
+
+test('exports expand headers and JSON and mark missing historic headers explicitly', () => {
+  for (const report of [
+    buildVideoMarkdownReport(input),
+    buildVideoHtmlReport(input),
+    buildVideoHtmlReport(input, { format: 'pdf' }),
+  ]) {
+    expect(report).toContain('Request headers')
+    expect(report).toContain(
+      'Content-Type: application/json\nAuthorization: [REDACTED]'
+    )
+    expect(report).toContain('Not recorded')
+    expect(report).toContain('\n  ')
+  }
+  expect(
+    formatEvidenceJSON(
+      '{"empty":[],"nested":[{"text":"keep } : [ and \\\"quotes\\\""}]}'
+    )
+  ).toBe(
+    '{\n  "empty": [],\n  "nested": [\n    {\n      "text": "keep } : [ and \\\"quotes\\\""\n    }\n  ]\n}'
   )
 })
 

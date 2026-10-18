@@ -273,33 +273,56 @@ func CreateVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, c
 }
 
 func GetVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, customPath, apiKey, taskID string) (int, []byte, error) {
+	exchange, err := GetVideoTaskExchange(ctx, httpClient, baseURL, customPath, apiKey, taskID)
+	var body []byte
+	if exchange.ResponseBody != "" {
+		body = []byte(exchange.ResponseBody)
+	}
+	return exchange.HTTPStatus, body, err
+}
+
+// GetVideoTaskExchange exposes the actual query evidence for manual reports.
+func GetVideoTaskExchange(ctx context.Context, httpClient *http.Client, baseURL, customPath, apiKey, taskID string) (StageEvidence, error) {
+	stage := StageEvidence{ID: "video_result", Purpose: "Retrieve the final video result", Method: http.MethodGet, Status: "running", Conclusion: "No final response was obtained."}
 	if httpClient == nil {
-		return 0, nil, fmt.Errorf("http client is required")
+		return stage, fmt.Errorf("http client is required")
 	}
 	endpoint, err := VideoTaskGetURL(baseURL, taskID, customPath)
 	if err != nil {
-		return 0, nil, err
+		return stage, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, videoPollRequestTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return 0, nil, err
+		return stage, err
 	}
 	req.Header.Set("Accept", "application/json")
 	if strings.TrimSpace(apiKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
+	stage.Endpoint = req.URL.String()
+	stage.Path = req.URL.RequestURI()
+	stage.RequestHeaders = ReportRequestHeaders(req)
+	started := time.Now()
 	resp, err := httpClient.Do(req)
+	stage.ElapsedMS = time.Since(started).Milliseconds()
 	if err != nil {
-		return 0, nil, err
+		return stage, err
 	}
 	defer resp.Body.Close()
-	rawResp, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return resp.StatusCode, nil, err
+	stage.HTTPStatus = resp.StatusCode
+	stage.RequestID = firstNonEmpty(resp.Header.Get("X-Request-Id"), resp.Header.Get("X-Tt-Logid"))
+	rawResp, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20+1))
+	stage.ElapsedMS = time.Since(started).Milliseconds()
+	if err != nil || len(rawResp) > 4<<20 {
+		return stage, fmt.Errorf("Response could not be captured completely")
 	}
-	return resp.StatusCode, rawResp, nil
+	stage.ResponseBody = string(rawResp)
+	if stage.RequestID == "" {
+		stage.RequestID = gjson.GetBytes(rawResp, "ResponseMetadata.RequestId").String()
+	}
+	return stage, nil
 }
 
 func parseSupplierBase(raw string) (*url.URL, error) {
@@ -314,8 +337,10 @@ func parseSupplierBase(raw string) (*url.URL, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, fmt.Errorf("base URL must use http or https")
 	}
-	if parsed.User != nil {return nil,fmt.Errorf("base URL must not contain credentials")}
- if parsed.Host == "" {
+	if parsed.User != nil {
+		return nil, fmt.Errorf("base URL must not contain credentials")
+	}
+	if parsed.Host == "" {
 		return nil, fmt.Errorf("base URL host is required")
 	}
 	parsed.Fragment = ""

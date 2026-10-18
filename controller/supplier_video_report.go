@@ -188,6 +188,7 @@ func UploadSupplierVideoAsset(c *gin.Context) {
 	}
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	request.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(c.PostForm("api_key"), "Bearer "))
+	requestHeaders := suppliertest.ReportRequestHeaders(request)
 	started := time.Now()
 	response, err := client.Do(request)
 	if err != nil {
@@ -202,7 +203,7 @@ func UploadSupplierVideoAsset(c *gin.Context) {
 	}
 	runID := "svr_" + common.GetRandomString(24)
 	requestBody, _ := common.Marshal(map[string]any{"group_id": groupID, "name": header.Filename, "type": "image", "file": map[string]any{"name": header.Filename, "bytes": header.Size, "content_type": contentType, "sha256": hex.EncodeToString(digest.Sum(nil))}, "encoding": "multipart/form-data"})
-	stage := suppliertest.StageEvidence{ID: "asset_upload_" + gjson.GetBytes(raw, "data.id").String(), Purpose: "Upload a material to the platform library", Method: "POST", Path: endpoint.Path, Endpoint: endpoint.String(), RequestID: response.Header.Get("X-Request-Id"), RequestBody: string(requestBody), ResponseBody: string(raw), HTTPStatus: response.StatusCode, ElapsedMS: time.Since(started).Milliseconds(), Final: true, Status: "fail", Conclusion: "Material upload failed"}
+	stage := suppliertest.StageEvidence{ID: "asset_upload_" + gjson.GetBytes(raw, "data.id").String(), Purpose: "Upload a material to the platform library", Method: "POST", Path: endpoint.Path, Endpoint: endpoint.String(), RequestHeaders: requestHeaders, RequestID: response.Header.Get("X-Request-Id"), RequestBody: string(requestBody), ResponseBody: string(raw), HTTPStatus: response.StatusCode, ElapsedMS: time.Since(started).Milliseconds(), Final: true, Status: "fail", Conclusion: "Material upload failed"}
 	if response.StatusCode == 200 && gjson.GetBytes(raw, "success").Bool() {
 		stage.Status = "pass"
 		stage.Conclusion = "Material uploaded; readiness will be checked before generation"
@@ -388,16 +389,11 @@ func runRecordedSupplierVideo(c *gin.Context, ctx context.Context, req suppliert
 	return nil
 }
 
-func recordSupplierVideoQuery(c *gin.Context, baseURL, customPath, taskID string, status int, raw []byte, elapsedMS int64) (*suppliertest.VideoRunReport, error) {
-	endpoint, err := suppliertest.VideoTaskGetURL(baseURL, taskID, customPath)
-	if err != nil {
-		return nil, err
-	}
-	parsed, _ := url.Parse(endpoint)
+func recordSupplierVideoQuery(c *gin.Context, baseURL, taskID string, stage suppliertest.StageEvidence) (*suppliertest.VideoRunReport, error) {
+	status, raw := stage.HTTPStatus, []byte(stage.ResponseBody)
 	state, videoURL, _ := suppliertest.ParseVideoTaskState(raw)
 	report := &suppliertest.VideoRunReport{ID: "svr_" + common.GetRandomString(24), BaseURL: baseURL, Model: gjson.GetBytes(raw, "model").String(), TaskID: taskID, Status: "incomplete", StartedAt: time.Now().UnixMilli(), VideoURL: suppliertest.ReportURL(videoURL), Assets: []suppliertest.VideoAssetEvidence{}, Stages: []suppliertest.StageEvidence{}}
 	report.SetStage(suppliertest.StageEvidence{ID: "video_submit", Purpose: "Submit the video task", Status: "skip", Conclusion: "Original submission evidence is unavailable for this task query"})
-	stage := suppliertest.StageEvidence{ID: "video_result", Purpose: "Retrieve the final video result", Method: http.MethodGet, Path: parsed.RequestURI(), Endpoint: endpoint, HTTPStatus: status, ResponseBody: string(raw), ElapsedMS: elapsedMS, RequestID: gjson.GetBytes(raw, "ResponseMetadata.RequestId").String(), Status: "running", Conclusion: "No final response was obtained."}
 	switch strings.ToLower(state) {
 	case "success", "succeeded":
 		stage.Final = true
@@ -420,8 +416,10 @@ func recordSupplierVideoQuery(c *gin.Context, baseURL, customPath, taskID string
 	if status != 200 {
 		report.VideoURL = ""
 		stage.Final = false
+		if stage.Status != "fail" {
+			stage.Conclusion = "Video result query failed"
+		}
 		stage.Status = "fail"
-		stage.Conclusion = "Video result query failed"
 		report.Status = "failed"
 	}
 	if err := suppliertest.ValidateVideoTaskResponse(taskID, raw); err != nil {
@@ -431,7 +429,7 @@ func recordSupplierVideoQuery(c *gin.Context, baseURL, customPath, taskID string
 		report.VideoURL = ""
 		report.Status = "failed"
 	}
-	report.VideoPolling = suppliertest.VideoPollingSummary{Count: 1, ElapsedMS: elapsedMS}
+	report.VideoPolling = suppliertest.VideoPollingSummary{Count: 1, ElapsedMS: stage.ElapsedMS}
 	if status == http.StatusOK && !stage.Final && stage.Status == "running" {
 		switch strings.ToLower(state) {
 		case "queued", "pending":

@@ -20,19 +20,58 @@ import (
 )
 
 type StageEvidence struct {
-	ID           string `json:"id"`
-	Purpose      string `json:"purpose"`
-	Status       string `json:"status"`
-	Method       string `json:"method,omitempty"`
-	Path         string `json:"path,omitempty"`
-	Endpoint     string `json:"endpoint,omitempty"`
-	RequestBody  string `json:"request_body"`
-	ResponseBody string `json:"response_body"`
-	HTTPStatus   int    `json:"http_status,omitempty"`
-	RequestID    string `json:"request_id,omitempty"`
-	ElapsedMS    int64  `json:"elapsed_ms"`
-	Conclusion   string `json:"conclusion"`
-	Final        bool   `json:"final"`
+	ID             string `json:"id"`
+	Purpose        string `json:"purpose"`
+	Status         string `json:"status"`
+	Method         string `json:"method,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Endpoint       string `json:"endpoint,omitempty"`
+	RequestHeaders string `json:"request_headers,omitempty"`
+	RequestBody    string `json:"request_body"`
+	ResponseBody   string `json:"response_body"`
+	HTTPStatus     int    `json:"http_status,omitempty"`
+	RequestID      string `json:"request_id,omitempty"`
+	ElapsedMS      int64  `json:"elapsed_ms"`
+	Conclusion     string `json:"conclusion"`
+	Final          bool   `json:"final"`
+}
+
+// ReportRequestHeaders captures configured outgoing headers without retaining
+// authentication values, even in the private evidence attachment.
+func ReportRequestHeaders(request *http.Request) string {
+	headers := request.Header.Clone()
+	if headers == nil {
+		headers = make(http.Header)
+	}
+	headers.Set("Host", firstNonEmpty(request.Host, request.URL.Host))
+	if request.Body != nil && request.ContentLength >= 0 {
+		headers.Set("Content-Length", fmt.Sprint(request.ContentLength))
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var result strings.Builder
+	for _, key := range keys {
+		normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "-", ""), "_", ""))
+		sensitive := normalized == "key" || normalized == "xkey"
+		for _, fragment := range []string{"authorization", "cookie", "token", "secret", "signature", "credential", "apikey", "accesskey"} {
+			if strings.Contains(normalized, fragment) {
+				sensitive = true
+				break
+			}
+		}
+		for _, value := range headers[key] {
+			if sensitive {
+				value = "[REDACTED]"
+			} else {
+				value = ReportURL(value)
+			}
+			fmt.Fprintf(&result, "%s: %s\n", key, value)
+		}
+	}
+	return strings.TrimSuffix(result.String(), "\n")
 }
 
 type VideoAssetEvidence struct {
@@ -200,7 +239,7 @@ func (transport *videoEvidenceTransport) RoundTrip(request *http.Request) (*http
 	if !submit && !query {
 		return transport.base.RoundTrip(request)
 	}
-	stage := StageEvidence{ID: "video_result", Purpose: "Retrieve the final video result", Method: request.Method, Path: request.URL.RequestURI(), Endpoint: request.URL.String(), Status: "fail"}
+	stage := StageEvidence{ID: "video_result", Purpose: "Retrieve the final video result", Method: request.Method, Path: request.URL.RequestURI(), Endpoint: request.URL.String(), RequestHeaders: ReportRequestHeaders(request), Status: "fail"}
 	if submit {
 		stage.ID = "video_submit"
 		stage.Purpose = "Submit the video task"

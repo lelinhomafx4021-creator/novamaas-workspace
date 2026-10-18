@@ -117,5 +117,37 @@ func TestVideoMaterialUploadUsesDefaultGroupAndPreservesFileMetadata(t *testing.
 	var run model.SupplierVideoRun
 	require.NoError(t, db.First(&run).Error)
 	assert.Contains(t, string(run.Report), "sha256")
+	assert.Contains(t, string(run.Report), "request_headers")
+	assert.Contains(t, string(run.Report), "Authorization: [REDACTED]")
 	assert.NotContains(t, string(run.Report), "generation-key")
+}
+
+func TestManualVideoQueryStoresActualHeadersAndFinalBody(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	previous := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = previous })
+	require.NoError(t, db.AutoMigrate(&model.SupplierVideoRun{}, &model.StoragePolicy{}))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, "Bearer manual-secret-key", request.Header.Get("Authorization"))
+		w.Header().Set("X-Request-Id", "manual-request-id")
+		_, err := io.WriteString(w, `{"id":"manual-task","status":"succeeded","content":{"video_url":"https://cdn.example/video.mp4"}}`)
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+	response := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(response)
+	c.Set("id", 7)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/supplier-test/video/query", strings.NewReader(`{"base_url":"`+server.URL+`","api_key":"manual-secret-key","task_id":"manual-task"}`))
+	QuerySupplierTestVideoTask(c)
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), "request_headers")
+	assert.Contains(t, response.Body.String(), "Authorization: [REDACTED]")
+	assert.Contains(t, response.Body.String(), "manual-request-id")
+	assert.NotContains(t, response.Body.String(), "manual-secret-key")
+	var run model.SupplierVideoRun
+	require.NoError(t, db.First(&run).Error)
+	assert.Contains(t, string(run.Report), "succeeded")
+	assert.NotContains(t, string(run.Report), "manual-secret-key")
 }

@@ -54,6 +54,7 @@ func callOfficial(ctx context.Context, client *http.Client, credential *Official
 	request.Header.Set("Content-Type", "application/json")
 	stage.Endpoint = request.URL.String()
 	assetlibrary.SignArkRequest(request, body, credential.AccessKeyID, credential.Secret, "cn-beijing", "ark", time.Now())
+	stage.RequestHeaders = ReportRequestHeaders(request)
 	// Official credentials must never follow a redirect to another origin.
 	clone := *client
 	clone.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

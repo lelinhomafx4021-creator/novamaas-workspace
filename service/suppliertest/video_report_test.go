@@ -14,6 +14,7 @@ import (
 
 func TestVideoReportCapturesSubmitAndFinalWithoutProgressBodies(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer generation-private-key", r.Header.Get("Authorization"))
 		if r.Method == http.MethodPost {
 			_, err := io.WriteString(w, `{"id":"task-report","custom":"receipt"}`)
 			require.NoError(t, err)
@@ -23,7 +24,7 @@ func TestVideoReportCapturesSubmitAndFinalWithoutProgressBodies(t *testing.T) {
 		require.NoError(t, err)
 	}))
 	defer server.Close()
-	req := RunRequest{BaseURL: server.URL, Model: "actual-model", Modules: []string{ModuleVideo}, Video: VideoConfig{RawPayload: `{"model":"actual-model","watermark":false,"seed":0,"content":[{"type":"text","text":"animate"}]}`}}
+	req := RunRequest{BaseURL: server.URL, APIKey: "generation-private-key", Model: "actual-model", Modules: []string{ModuleVideo}, Video: VideoConfig{RawPayload: `{"model":"actual-model","watermark":false,"seed":0,"content":[{"type":"text","text":"animate"}]}`}}
 	report := RunVideoReport(context.Background(), server.Client(), server.Client(), req, "run-report", nil, nil)
 	require.Len(t, report.Stages, 4)
 	assert.Equal(t, "task-report", report.TaskID)
@@ -32,6 +33,33 @@ func TestVideoReportCapturesSubmitAndFinalWithoutProgressBodies(t *testing.T) {
 	assert.Contains(t, report.Stages[1].ResponseBody, `"custom":"terminal"`)
 	assert.Empty(t, report.Stages[1].RequestBody)
 	assert.Equal(t, "pass", report.Stages[1].Status)
+	assert.Contains(t, report.Stages[0].RequestHeaders, "Content-Type: application/json")
+	assert.Contains(t, report.Stages[0].RequestHeaders, "Authorization: [REDACTED]")
+	assert.Contains(t, report.Stages[1].RequestHeaders, "Accept: application/json")
+	assert.NotContains(t, report.RawEvidence["video_submit"].RequestHeaders, "generation-private-key")
+}
+
+func TestRequestHeaderEvidencePreservesDiagnosticFieldsAndNeverPersistsCredentials(t *testing.T) {
+	request, err := http.NewRequest(http.MethodPost, "https://gateway.example/v3/tasks", strings.NewReader("request-body"))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer private-bearer")
+	request.Header.Set("X-Api-Key", "private-api-key")
+	request.Header.Set("Cookie", "session=private-cookie")
+	request.Header.Set("X-Security-Token", "private-token")
+	request.Header.Set("X-Date", "20261018T120000Z")
+	request.Header.Set("Idempotency-Key", "task-attempt-one")
+	request.Header.Add("X-Feature", "first")
+	request.Header.Add("X-Feature", "second")
+	request.Header.Set("Referer", "https://gateway.example/page?signature=private-signature")
+	headers := ReportRequestHeaders(request)
+	for _, field := range []string{"Host: gateway.example", "Content-Length: 12", "Content-Type: application/json", "X-Date: 20261018T120000Z", "Idempotency-Key: task-attempt-one", "X-Feature: first", "X-Feature: second", "Authorization: [REDACTED]"} {
+		assert.Contains(t, headers, field)
+	}
+	for _, secret := range []string{"private-bearer", "private-api-key", "private-cookie", "private-token", "private-signature"} {
+		assert.NotContains(t, headers, secret)
+	}
+	assert.Equal(t, "Bearer private-bearer", request.Header.Get("Authorization"))
 }
 
 func TestReportBodyRedactsBase64AndSignaturesWithoutChangingJSONNumbers(t *testing.T) {

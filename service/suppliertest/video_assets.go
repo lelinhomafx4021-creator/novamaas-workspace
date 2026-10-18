@@ -57,6 +57,7 @@ func EnsureVideoDefaultGroup(ctx context.Context, client *http.Client, baseURL, 
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(strings.TrimSpace(apiKey), "Bearer "))
+	created.RequestHeaders = ReportRequestHeaders(request)
 	started := time.Now()
 	response, err := client.Do(request)
 	created.ElapsedMS = time.Since(started).Milliseconds()
@@ -126,6 +127,7 @@ func QueryVideoLibrary(ctx context.Context, client *http.Client, input VideoLibr
 		return stage, err
 	}
 	request.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(strings.TrimSpace(input.APIKey), "Bearer "))
+	stage.RequestHeaders = ReportRequestHeaders(request)
 	stage.Path = endpoint.RequestURI()
 	stage.Endpoint = endpoint.String()
 	started := time.Now()

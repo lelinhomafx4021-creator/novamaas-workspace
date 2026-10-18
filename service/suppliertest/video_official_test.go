@@ -78,6 +78,13 @@ func TestVideoOfficialCreationAndResultPreserveBothExchanges(t *testing.T) {
 	assert.Contains(t, report.Stages[0].ResponseBody, "created-query")
 	assert.Contains(t, report.Stages[1].RequestBody, "created-query")
 	assert.Contains(t, report.Stages[1].ResponseBody, "retained")
+	for _, stage := range report.Stages {
+		assert.Contains(t, stage.RequestHeaders, "Authorization: [REDACTED]")
+		assert.Contains(t, stage.RequestHeaders, "X-Date:")
+		assert.NotContains(t, stage.RequestHeaders, credential.AccessKeyID)
+		assert.NotContains(t, stage.RequestHeaders, credential.Secret)
+		assert.Equal(t, stage.RequestHeaders, report.RawEvidence[stage.ID].RequestHeaders)
+	}
 	assert.Equal(t, 1, report.VerificationPolling.Count)
 	assert.Equal(t, "matched", report.Verification.ModelMatch)
 	// Re-verifying an existing record performs only a result query.

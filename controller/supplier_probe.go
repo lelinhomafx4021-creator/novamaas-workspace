@@ -159,14 +159,15 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 	}
 
 	httpClient := suppliertest.NewHTTPClient(service.GetHttpClient())
-	queryStarted := time.Now()
-	status, rawResp, err := suppliertest.GetVideoTaskRaw(c.Request.Context(), httpClient, req.BaseURL, req.CustomPath, req.APIKey, req.TaskID)
-	queryElapsedMS := time.Since(queryStarted).Milliseconds()
+	exchange, err := suppliertest.GetVideoTaskExchange(c.Request.Context(), httpClient, req.BaseURL, req.CustomPath, req.APIKey, req.TaskID)
+	status, rawResp := exchange.HTTPStatus, []byte(exchange.ResponseBody)
 	if err == nil {
 		err = suppliertest.ValidateVideoTaskResponse(req.TaskID, rawResp)
 	}
 	if err != nil {
-		report, _ := recordSupplierVideoQuery(c, req.BaseURL, req.CustomPath, req.TaskID, status, rawResp, queryElapsedMS)
+		exchange.Status = "fail"
+		exchange.Conclusion = err.Error()
+		report, _ := recordSupplierVideoQuery(c, req.BaseURL, req.TaskID, exchange)
 		c.JSON(http.StatusOK, gin.H{
 			"success":      false,
 			"task_id":      req.TaskID,
@@ -177,7 +178,7 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 		return
 	}
 
-	report, recordErr := recordSupplierVideoQuery(c, req.BaseURL, req.CustomPath, req.TaskID, status, rawResp, queryElapsedMS)
+	report, recordErr := recordSupplierVideoQuery(c, req.BaseURL, req.TaskID, exchange)
 	if recordErr != nil {
 		common.ApiError(c, recordErr)
 		return

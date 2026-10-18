@@ -51,6 +51,8 @@ test('a single report shows both generation and verification without a report sw
         purpose: '',
         status: 'pass',
         request_body: '{"prompt":"generation-body"}',
+        request_headers:
+          'Content-Type: application/json\nAuthorization: [REDACTED]',
         response_body: '{"id":"task-one"}',
         method: 'POST',
         elapsed_ms: 1,
@@ -75,6 +77,14 @@ test('a single report shows both generation and verification without a report sw
   })
   expect(screen.getByText(/generation-body/)).toBeInTheDocument()
   expect(screen.getByText(/verification-body/)).toBeInTheDocument()
+  for (const block of [
+    screen.getByText(/Content-Type: application\/json/),
+    screen.getByText(/generation-body/),
+    screen.getByText(/verification-body/),
+  ]) {
+    expect(block).toBeVisible()
+    expect(block.className).not.toMatch(/max-h-|overflow-auto/)
+  }
   expect(screen.getAllByText(/Polling summary/)).toHaveLength(1)
   expect(
     screen.queryByRole('textbox', { name: 'Run ID' })

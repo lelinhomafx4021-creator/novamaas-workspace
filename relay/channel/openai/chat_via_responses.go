@@ -237,44 +237,25 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	}
 
 	sendStreamResult := func(result relayconvert.ResponseResult) bool {
+		var writeErr error
 		switch value := result.Value.(type) {
 		case dto.ChatCompletionsStreamResponse:
 			if len(value.Choices) == 0 && value.Usage == nil {
 				return true
 			}
-			if err := helper.ObjectData(c, &value); err != nil {
-				clientWriteFailed = true
-				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
-				return false
-			}
-			return true
+			writeErr = helper.ObjectData(c, &value)
 		case *dto.ChatCompletionsStreamResponse:
 			if value == nil || (len(value.Choices) == 0 && value.Usage == nil) {
 				return true
 			}
-			if err := helper.ObjectData(c, value); err != nil {
-				clientWriteFailed = true
-				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
-				return false
-			}
-			return true
+			writeErr = helper.ObjectData(c, value)
 		case dto.ClaudeResponse:
-			if err := helper.ClaudeData(c, value); err != nil {
-				clientWriteFailed = true
-				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
-				return false
-			}
-			return true
+			writeErr = helper.ClaudeData(c, value)
 		case *dto.ClaudeResponse:
 			if value == nil {
 				return true
 			}
-			if err := helper.ClaudeData(c, *value); err != nil {
-				clientWriteFailed = true
-				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
-				return false
-			}
-			return true
+			writeErr = helper.ClaudeData(c, *value)
 		case dto.GeminiChatResponse:
 			return sendGeminiResponse(&value)
 		case *dto.GeminiChatResponse:
@@ -283,6 +264,12 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(fmt.Errorf("unsupported converted stream response type %T", result.Value), types.ErrorCodeBadResponse, http.StatusInternalServerError)
 			return false
 		}
+		if writeErr != nil {
+			clientWriteFailed = true
+			streamErr = types.NewOpenAIError(writeErr, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			return false
+		}
+		return true
 	}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {

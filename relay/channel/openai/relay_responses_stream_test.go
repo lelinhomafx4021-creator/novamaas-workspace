@@ -168,12 +168,10 @@ type responsesCancelWriter struct {
 
 type responsesCancelOnFlushWriter struct {
 	gin.ResponseWriter
-	cancel  context.CancelFunc
-	flushes int
+	cancel context.CancelFunc
 }
 
 func (w *responsesCancelOnFlushWriter) Flush() {
-	w.flushes++
 	w.ResponseWriter.Flush()
 	w.cancel()
 }

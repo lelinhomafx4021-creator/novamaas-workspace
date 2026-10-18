@@ -272,10 +272,3 @@ func shouldEmitSyntheticStreamUsage(c *gin.Context, info *relaycommon.RelayInfo,
 func allowsSyntheticUsage(c *gin.Context) bool {
 	return !moonshotfacade.KimiPassthroughEnabled(c)
 }
-
-func sendResponsesStreamData(c *gin.Context, streamResponse dto.ResponsesStreamResponse, data string) {
-	if data == "" {
-		return
-	}
-	_ = helper.ResponseChunkData(c, streamResponse, data)
-}

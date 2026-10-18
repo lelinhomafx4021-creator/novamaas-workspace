@@ -198,8 +198,8 @@ test.each([
     const reportInput: VideoReportInput = { ...input, manualChecks }
     const markdown = buildVideoMarkdownReport(reportInput)
     for (const [key, label] of [
-      ['v3Compatible', 'Compatible with v3 API'],
-      ['materialLibrary', 'Material library available'],
+      ['v3Compatible', 'Supplier has implemented the v3 API'],
+      ['materialLibrary', 'Supplier has implemented a material library'],
     ] as const) {
       const checked = Boolean(manualChecks[key])
       if (checked) {

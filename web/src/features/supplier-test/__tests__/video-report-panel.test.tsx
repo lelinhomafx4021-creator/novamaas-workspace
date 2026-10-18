@@ -122,9 +122,11 @@ test('report capabilities require independent manual selection and are disabled 
     onReportChecksChange: onChange,
   }
   const view = render(<VideoReportPanel {...props} />)
-  const v3 = screen.getByRole('checkbox', { name: 'Compatible with v3 API' })
+  const v3 = screen.getByRole('checkbox', {
+    name: 'Supplier has implemented the v3 API',
+  })
   const library = screen.getByRole('checkbox', {
-    name: 'Material library available',
+    name: 'Supplier has implemented a material library',
   })
   expect(v3).not.toBeChecked()
   expect(library).not.toBeChecked()

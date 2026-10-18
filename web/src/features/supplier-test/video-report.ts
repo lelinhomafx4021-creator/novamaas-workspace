@@ -28,8 +28,11 @@ import {
 import type { StageEvidence, VideoRunReport } from './types'
 
 export const VIDEO_REPORT_CAPABILITIES = [
-  { key: 'v3Compatible', label: 'Compatible with v3 API' },
-  { key: 'materialLibrary', label: 'Material library available' },
+  { key: 'v3Compatible', label: 'Supplier has implemented the v3 API' },
+  {
+    key: 'materialLibrary',
+    label: 'Supplier has implemented a material library',
+  },
 ] as const
 
 export function videoStageTitle(id: string): string {

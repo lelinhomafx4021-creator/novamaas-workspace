@@ -37,6 +37,9 @@ vi.mock('../hooks/use-supplier-test-run', () => ({
     metrics: null,
     cacheMetrics: null,
     videoMetrics: null,
+    videoRuns: [],
+    updateVideoVerification: () => {},
+    clearVideoReport: () => {},
     summaries: { basic: '', cache: '', stress: '' },
     errorMessage: '',
     start: runMock.start,
@@ -79,6 +82,7 @@ test('polling an existing video task starts without a model', async () => {
         task_id: 'existing-task',
         checks: ['video_poll'],
       }),
-    })
+    }),
+    undefined
   )
 })

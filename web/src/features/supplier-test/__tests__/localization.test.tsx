@@ -67,16 +67,20 @@ test('video Markdown and HTML reports translate check details in the selected la
   await i18n.init({ lng: 'fr', resources: { fr } })
   const input: VideoReportInput = {
     language: 'fr',
-    baseUrl: 'https://supplier.example',
-    model: 'video-model',
-    elapsedMs: 1000,
-    videoConfig: {
-      prompt: 'A sunset',
-      hasImage: false,
-      uploadMode: 'url',
-      hasLastFrame: false,
-    },
-    videoChecks: [submittedCheck],
+    records: [
+      {
+        id: 'case-42',
+        baseUrl: 'https://supplier.example',
+        model: 'video-model',
+        startedAt: 1,
+        outcome: 'Succeeded',
+        issue: i18n.t('Task submitted. Task ID: {{taskId}}', {
+          taskId: 'video-42',
+        }),
+        materials: [],
+        metrics: { task_id: 'video-42', status: 'succeeded', elapsed_ms: 1000 },
+      },
+    ],
     t: (key, options) => i18n.t(key, options),
   }
 
@@ -84,8 +88,8 @@ test('video Markdown and HTML reports translate check details in the selected la
   const html = buildVideoHtmlReport(input)
 
   expect(markdown).toContain('Tâche envoyée. ID : video-42')
-  expect(markdown).toContain('Envoi de la tâche: Réussi')
+  expect(markdown).toContain(i18n.t('Succeeded'))
   expect(html).toContain('Tâche envoyée. ID : video-42')
-  expect(html).toContain('Réussi')
+  expect(html).toContain(i18n.t('Succeeded'))
   expect(html).toContain('<html lang="fr">')
 })

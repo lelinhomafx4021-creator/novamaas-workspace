@@ -35,6 +35,9 @@ vi.mock('./hooks/use-supplier-test-run', () => ({
     metrics: null,
     cacheMetrics: null,
     videoMetrics: null,
+    videoRuns: [],
+    updateVideoVerification: () => {},
+    clearVideoReport: () => {},
     summaries: { basic: '', cache: '', stress: '' },
     errorMessage: '',
     start: vi.fn(),
@@ -134,7 +137,9 @@ test('Kimi KVV check only displays when Kimi vendor is selected', async () => {
   expect(screen.getAllByText('KVV preflight').length).toBeGreaterThan(0)
 
   // Switch back to DeepSeek, Kimi KVV should disappear
-  const kimiTrigger = screen.getByText('Kimi', { selector: '[data-slot="select-value"]' })
+  const kimiTrigger = screen.getByText('Kimi', {
+    selector: '[data-slot="select-value"]',
+  })
   await user.click(kimiTrigger)
   await user.click(screen.getByRole('option', { name: 'DeepSeek' }))
   expect(screen.queryByText('KVV preflight')).not.toBeInTheDocument()

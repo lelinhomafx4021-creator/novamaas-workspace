@@ -31,7 +31,7 @@ export function buildVideoRequestPayload(
     })
   }
 
-  if (video.hasImage) {
+  if (!video.materials && video.hasImage) {
     const role = video.role || 'reference_image'
     if (video.uploadMode === 'url' && video.imageUrl.trim()) {
       content.push({
@@ -48,7 +48,7 @@ export function buildVideoRequestPayload(
     }
   }
 
-  if (video.hasLastFrame) {
+  if (!video.materials && video.hasLastFrame) {
     if (video.lastFrameMode === 'url' && video.lastFrameUrl.trim()) {
       content.push({
         type: 'image_url',
@@ -67,6 +67,23 @@ export function buildVideoRequestPayload(
     }
   }
 
+  if (video.materials) {
+    content.length = 0
+    let index = 0,
+      textSeen = false
+    for (const item of video.contentTemplate || []) {
+      if (item.type === 'image_url') {
+        const image = video.materials[index++]
+        if (image) content.push(image)
+      } else if (item.type === 'text' && !textSeen) {
+        textSeen = true
+        if (prompt) content.push({ ...item, text: prompt })
+      } else content.push(item)
+    }
+    if (!textSeen && prompt) content.unshift({ type: 'text', text: prompt })
+    content.push(...video.materials.slice(index))
+  }
+
   const payload: Record<string, unknown> = {}
   if (content.length > 0) payload.content = content
 
@@ -76,7 +93,7 @@ export function buildVideoRequestPayload(
   if (video.hasRatio && video.ratio) {
     payload.ratio = video.ratio
   }
-  if (video.hasDuration && video.duration > 0) {
+  if (video.hasDuration && Number.isFinite(video.duration)) {
     payload.duration = video.duration
   }
   if (video.hasWatermark) {
@@ -139,7 +156,23 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     }
   }
 
-  const patch: Partial<VideoForm> = {}
+  const patch: Partial<VideoForm> = {
+    prompt: '',
+    materials: [],
+    contentTemplate: [],
+    hasImage: false,
+    hasLastFrame: false,
+    hasResolution: false,
+    hasRatio: false,
+    hasDuration: false,
+    hasWatermark: false,
+    hasSeed: false,
+    hasGenerateAudio: false,
+    hasReturnLastFrame: false,
+    hasCustomJson: false,
+    customJson: '',
+  }
+  let textFound = false
   let extractedModel: string | undefined
 
   if (typeof obj.model === 'string' && obj.model.trim()) {
@@ -161,13 +194,18 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
   if (Array.isArray(obj.content)) {
     for (const item of obj.content) {
       if (!item || typeof item !== 'object') continue
+      patch.contentTemplate?.push(item as Record<string, unknown>)
       const itemType = (item as Record<string, unknown>).type
       if (
         itemType === 'text' &&
         typeof (item as Record<string, unknown>).text === 'string'
       ) {
-        patch.prompt = String((item as Record<string, unknown>).text)
+        if (!textFound) {
+          patch.prompt = String((item as Record<string, unknown>).text)
+          textFound = true
+        }
       } else if (itemType === 'image_url') {
+        patch.materials?.push(item as Record<string, unknown>)
         const imgObj = (item as Record<string, unknown>).image_url as
           | Record<string, unknown>
           | undefined
@@ -211,7 +249,7 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     patch.ratio = obj.ratio.trim()
   }
 
-  if (typeof obj.duration === 'number' && obj.duration > 0) {
+  if (typeof obj.duration === 'number') {
     patch.hasDuration = true
     patch.duration = obj.duration
   }

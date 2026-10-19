@@ -105,32 +105,49 @@ function makeTestInput(): ReportInput {
 }
 
 function makeVideoTestInput(): VideoReportInput {
-  return {
-    baseUrl: 'https://ark.cn-beijing.volces.com',
+  const request = JSON.stringify({
     model: 'doubao-seedance-1-0-pro',
-    endpointUrl:
-      'https://ark.cn-beijing.volces.com/api/v3/content/generation/tasks',
-    taskId: 'cgt-20260921-test-12345',
-    status: 'succeeded',
-    elapsedMs: 25300,
-    videoUrl: 'https://tos.volces.com/test-video.mp4',
-    videoConfig: {
-      prompt: 'A futuristic city with flying cars at sunset',
-      hasImage: true,
-      uploadMode: 'url',
-      imageUrl: 'https://example.com/first-frame.png',
-      role: 'first_frame',
-      hasLastFrame: false,
-      resolution: '720p',
-      ratio: '16:9',
-      duration: 5,
-      watermark: false,
-      generateAudio: true,
-      returnLastFrame: false,
-    },
-    videoChecks: [
-      { id: 'create_task', title: 'Task creation', status: 'pass' },
-      { id: 'poll_task', title: 'Task execution polling', status: 'pass' },
+    resolution: '720p',
+    ratio: '16:9',
+    content: [
+      { type: 'text', text: 'A futuristic city with flying cars at sunset' },
+    ],
+    watermark: false,
+  })
+  const exchange = {
+    method: 'POST',
+    url: 'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks',
+    headers: 'Authorization: [REDACTED]',
+    request,
+    response: '{"id":"cgt-20260921-test-12345"}',
+    status: 200,
+    request_id: 'request-42',
+    elapsed_ms: 100,
+  }
+  return {
+    records: [
+      {
+        id: 'case-1',
+        baseUrl: 'https://ark.cn-beijing.volces.com',
+        model: 'doubao-seedance-1-0-pro',
+        startedAt: 1,
+        outcome: 'Succeeded',
+        materials: [],
+        metrics: {
+          task_id: 'cgt-20260921-test-12345',
+          status: 'succeeded',
+          elapsed_ms: 25300,
+          video_url: 'https://tos.volces.com/test-video.mp4',
+          raw_request_json: request,
+          submit: exchange,
+          final: {
+            ...exchange,
+            method: 'GET',
+            request: '',
+            response: '{"status":"succeeded"}',
+          },
+        },
+      },
     ],
     t: (key) => key,
   }
@@ -255,14 +272,14 @@ describe('supplier-test report', () => {
     const md = buildVideoMarkdownReport(videoInput)
 
     expect(md).toContain('# Doubao Video Generation Test Report')
-    expect(md).toContain('## 1. Video Generation Parameters')
+    expect(md).toContain('Video task submission')
     expect(md).toContain('A futuristic city with flying cars at sunset')
     expect(md).toContain('720p')
     expect(md).toContain('16:9')
     expect(md).toContain('cgt-20260921-test-12345')
     expect(md).toContain('https://tos.volces.com/test-video.mp4')
-    expect(md).toContain('## 2. Execution Pipeline')
-    expect(md).toContain('## 3. Output Result')
+    expect(md).toContain('Final video result')
+    expect(md).toContain('Official verification submission')
 
     // Zero contamination from text model tests
     expect(md).not.toContain('Concurrency and stress test')
@@ -276,10 +293,9 @@ describe('supplier-test report', () => {
     const html = buildVideoHtmlReport(videoInput)
 
     expect(html).toContain('Doubao Video Generation Test Report')
-    expect(html).toContain('Volcano Ark Seedance Video Model Verification')
     expect(html).toContain('cgt-20260921-test-12345')
     expect(html).toContain('https://tos.volces.com/test-video.mp4')
-    expect(html).toContain('@page { size: A4; margin: 0; }')
+    expect(html).toContain('size:A4')
 
     // Confirms text model report does not leak into video report
     expect(html).not.toContain('Stress test assessment')

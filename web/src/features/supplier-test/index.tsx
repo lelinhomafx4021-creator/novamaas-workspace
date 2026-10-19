@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation } from '@tanstack/react-query'
 import { ClipboardCheck, Copy, Download, Loader2, Square } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -46,6 +46,7 @@ import { JudgmentStandardCard } from './components/judgment-standard-card'
 import { StressPanel } from './components/stress-panel'
 import { TargetCard } from './components/target-card'
 import { VideoPanel } from './components/video-panel'
+import { VideoReportControls } from './components/video-report-controls'
 import {
   DEFAULT_BASIC_FORM,
   DEFAULT_CACHE_FORM,
@@ -162,6 +163,21 @@ export function SupplierTest() {
   const [standard, setStandard] = useState<SupplierStandard>(readStoredStandard)
   const [moduleTab, setModuleTab] = useState<SupplierTestModule>('basic')
   const run = useSupplierTestRun()
+  const [reportChecks, setReportChecks] = useState({
+    v3: false,
+    materialLibrary: false,
+  })
+  const [verificationBusy, setVerificationBusy] = useState(false)
+  const [materialBusy, setMaterialBusy] = useState(false)
+  const [stopVersion, setStopVersion] = useState(0)
+  const reportSupplier = useRef('')
+  useEffect(() => {
+    const supplier = run.videoRuns[0]?.baseUrl || ''
+    if (reportSupplier.current && supplier !== reportSupplier.current) {
+      setReportChecks({ v3: false, materialLibrary: false })
+    }
+    reportSupplier.current = supplier
+  }, [run.videoRuns])
   const matchedStandardId = matchingStandardId(standard)
   const standardLabel = t(
     matchedStandardId
@@ -181,7 +197,7 @@ export function SupplierTest() {
     if (run.runningModule) setModuleTab(run.runningModule)
   }, [run.runningModule])
 
-  const busy = run.runningModule !== null
+  const busy = run.runningModule !== null || verificationBusy || materialBusy
   const isVideoTab = moduleTab === 'video'
   const hasTextReport =
     Boolean(
@@ -191,9 +207,7 @@ export function SupplierTest() {
     (run.cacheChecks ?? []).some((check) => check.status !== 'idle') ||
     run.metrics !== null ||
     run.cacheMetrics !== null
-  const hasVideoReport =
-    (run.videoChecks ?? []).some((check) => check.status !== 'idle') ||
-    run.videoMetrics !== null
+  const hasVideoReport = run.videoRuns.length > 0
   const hasReport = isVideoTab ? hasVideoReport : hasTextReport
 
   const progressValue =
@@ -459,34 +473,9 @@ export function SupplierTest() {
           return
         }
       } else {
-        if (!video.prompt.trim()) {
+        if (!video.prompt.trim() && !video.materials?.length) {
           toast.error(t('Please enter a prompt for video generation'))
           return
-        }
-        if (video.hasImage) {
-          if (video.uploadMode === 'url' && !video.imageUrl.trim()) {
-            toast.error(t('Please enter an image URL'))
-            return
-          }
-          if (video.uploadMode === 'base64' && !video.base64Data.trim()) {
-            toast.error(t('Please select an image file or provide Base64 data'))
-            return
-          }
-        }
-        if (video.hasLastFrame) {
-          if (video.lastFrameMode === 'url' && !video.lastFrameUrl.trim()) {
-            toast.error(t('Please enter an end frame image URL'))
-            return
-          }
-          if (
-            video.lastFrameMode === 'base64' &&
-            !video.lastFrameBase64.trim()
-          ) {
-            toast.error(
-              t('Please select an end frame image file or provide Base64 data')
-            )
-            return
-          }
         }
         if (video.hasCustomJson && video.customJson.trim()) {
           try {
@@ -498,7 +487,13 @@ export function SupplierTest() {
         }
       }
     }
-    void run.start(buildPayload(module, checks))
+    void run.start(
+      buildPayload(module, checks),
+      module === 'video' ? video.materialEvidence : undefined
+    )
+    if (module === 'video') {
+      setVideo((current) => ({ ...current, materialEvidence: [] }))
+    }
   }
 
   const handleSendRawJson = (rawJson: string) => {
@@ -508,7 +503,8 @@ export function SupplierTest() {
       payload.video = { prompt: DEFAULT_VIDEO_FORM.prompt }
     }
     payload.video.raw_payload = rawJson.trim()
-    void run.start(payload)
+    void run.start(payload, video.materialEvidence)
+    setVideo((current) => ({ ...current, materialEvidence: [] }))
   }
 
   const stressAssessment = run.metrics
@@ -555,36 +551,8 @@ export function SupplierTest() {
   const videoReportInput = (): VideoReportInput => ({
     language: reportLanguage,
     branding,
-    baseUrl: target.baseUrl.trim(),
-    model: target.model.trim(),
-    endpointUrl: run.videoMetrics?.endpoint_url,
-    taskId: run.videoMetrics?.task_id || video.taskId?.trim() || undefined,
-    status: run.videoMetrics?.status,
-    elapsedMs: run.videoMetrics?.elapsed_ms ?? 0,
-    failReason: run.videoMetrics?.fail_reason,
-    videoUrl: run.videoMetrics?.video_url,
-    videoConfig: {
-      prompt: video.prompt.trim(),
-      hasImage: video.hasImage,
-      uploadMode: video.uploadMode,
-      imageUrl: video.imageUrl.trim(),
-      role: video.role,
-      hasLastFrame: video.hasLastFrame,
-      lastFrameMode: video.lastFrameMode,
-      lastFrameUrl: video.lastFrameUrl.trim(),
-      resolution: video.hasResolution ? video.resolution : undefined,
-      ratio: video.hasRatio ? video.ratio : undefined,
-      duration: video.hasDuration ? video.duration : undefined,
-      watermark: video.hasWatermark ? video.watermark : undefined,
-      seed: video.hasSeed ? video.seed.trim() : undefined,
-      generateAudio: video.hasGenerateAudio ? video.generateAudio : undefined,
-      returnLastFrame: video.hasReturnLastFrame
-        ? video.returnLastFrame
-        : undefined,
-      customJson: video.hasCustomJson ? video.customJson.trim() : undefined,
-      customPath: video.customPath.trim() || undefined,
-    },
-    videoChecks: run.videoChecks,
+    records: run.videoRuns,
+    ...reportChecks,
     t: (key, options) => t(key, options),
   })
 
@@ -593,7 +561,13 @@ export function SupplierTest() {
       <SectionPageLayout.Title>{t('Supplier Test')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         {busy ? (
-          <Button variant='outline' onClick={run.stop}>
+          <Button
+            variant='outline'
+            onClick={() => {
+              setStopVersion((value) => value + 1)
+              run.stop()
+            }}
+          >
             <Square />
             {t('Stop')}
           </Button>
@@ -768,6 +742,33 @@ export function SupplierTest() {
               />
 
               <VideoPanel
+                onUsePlatform={() =>
+                  setTarget((current) => ({
+                    ...current,
+                    baseUrl: thisPlatformBaseURL(),
+                  }))
+                }
+                onMaterialBusyChange={setMaterialBusy}
+                stopVersion={stopVersion}
+                reportControls={
+                  <VideoReportControls
+                    records={run.videoRuns}
+                    busy={busy}
+                    checks={reportChecks}
+                    onChecksChange={setReportChecks}
+                    onUpdate={run.updateVideoVerification}
+                    onBusyChange={setVerificationBusy}
+                    stopVersion={stopVersion}
+                    onClear={() => {
+                      run.clearVideoReport()
+                      setVideo((current) => ({
+                        ...current,
+                        materialEvidence: [],
+                      }))
+                      setReportChecks({ v3: false, materialLibrary: false })
+                    }}
+                  />
+                }
                 video={video}
                 busy={busy}
                 model={target.model}

@@ -241,65 +241,62 @@ func VideoTaskGetURL(raw string, taskID string, customEndpoint ...string) (strin
 	return strings.TrimRight(tasksURL, "/") + "/" + url.PathEscape(taskID), nil
 }
 
-func CreateVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, customPath, apiKey string, payload []byte) (int, []byte, error) {
-	if httpClient == nil {
-		return 0, nil, fmt.Errorf("http client is required")
-	}
+func CreateVideoTaskRaw(ctx context.Context, client *http.Client, baseURL, customPath, apiKey string, payload []byte) (int, []byte, error) {
+	exchange, raw, err := CreateVideoTask(ctx, client, baseURL, customPath, apiKey, payload)
+	return exchange.Status, raw, err
+}
+
+func CreateVideoTask(ctx context.Context, client *http.Client, baseURL, customPath, apiKey string, payload []byte) (VideoExchange, []byte, error) {
 	endpoint, err := VideoTasksURL(baseURL, customPath)
 	if err != nil {
-		return 0, nil, err
+		return VideoExchange{}, nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, videoSubmitTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return 0, nil, err
+		return VideoExchange{}, nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
 	if strings.TrimSpace(apiKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return 0, nil, err
+	if client == nil {
+		return VideoExchange{}, nil, fmt.Errorf("http client is required")
 	}
-	defer resp.Body.Close()
-	rawResp, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return resp.StatusCode, nil, err
-	}
-	return resp.StatusCode, rawResp, nil
+	return videoHTTP(client, request)
 }
 
-func GetVideoTaskRaw(ctx context.Context, httpClient *http.Client, baseURL, customPath, apiKey, taskID string) (int, []byte, error) {
-	if httpClient == nil {
-		return 0, nil, fmt.Errorf("http client is required")
-	}
+func GetVideoTaskRaw(ctx context.Context, client *http.Client, baseURL, customPath, apiKey, taskID string) (int, []byte, error) {
+	exchange, raw, err := GetVideoTask(ctx, client, baseURL, customPath, apiKey, taskID)
+	return exchange.Status, raw, err
+}
+
+func GetVideoTask(ctx context.Context, client *http.Client, baseURL, customPath, apiKey, taskID string) (VideoExchange, []byte, error) {
 	endpoint, err := VideoTaskGetURL(baseURL, taskID, customPath)
 	if err != nil {
-		return 0, nil, err
+		return VideoExchange{}, nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, videoPollRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return 0, nil, err
+		return VideoExchange{}, nil, err
 	}
-	req.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept", "application/json")
 	if strings.TrimSpace(apiKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return 0, nil, err
+	if client == nil {
+		return VideoExchange{}, nil, fmt.Errorf("http client is required")
 	}
-	defer resp.Body.Close()
-	rawResp, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return resp.StatusCode, nil, err
+	exchange, raw, err := videoHTTP(client, request)
+	if id := extractTaskID(raw); err == nil && id != "" && id != taskID {
+		err = fmt.Errorf("Returned task ID does not match this query")
+		exchange.Error = err.Error()
 	}
-	return resp.StatusCode, rawResp, nil
+	return exchange, raw, err
 }
 
 func parseSupplierBase(raw string) (*url.URL, error) {
@@ -313,6 +310,9 @@ func parseSupplierBase(raw string) (*url.URL, error) {
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, fmt.Errorf("base URL must use http or https")
+	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("base URL must not contain credentials")
 	}
 	if parsed.Host == "" {
 		return nil, fmt.Errorf("base URL host is required")

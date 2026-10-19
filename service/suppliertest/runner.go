@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type RunRequest struct {
@@ -97,15 +98,22 @@ type Event struct {
 }
 
 type VideoMetrics struct {
-	TaskID                string  `json:"task_id"`
-	Status                string  `json:"status"`
-	VideoURL              string  `json:"video_url,omitempty"`
-	EndpointURL           string  `json:"endpoint_url,omitempty"`
-	ElapsedMS             float64 `json:"elapsed_ms"`
-	FailReason            string  `json:"fail_reason,omitempty"`
-	RawRequestJSON        string  `json:"raw_request_json,omitempty"`
-	RawSubmitResponseJSON string  `json:"raw_submit_response_json,omitempty"`
-	RawPollResponseJSON   string  `json:"raw_poll_response_json,omitempty"`
+	Submit                *VideoExchange `json:"submit,omitempty"`
+	Queued                *VideoExchange `json:"queued,omitempty"`
+	Running               *VideoExchange `json:"running,omitempty"`
+	Final                 *VideoExchange `json:"final,omitempty"`
+	LastQuery             *VideoExchange `json:"last_query,omitempty"`
+	PollCount             int            `json:"poll_count"`
+	PollMS                int64          `json:"poll_ms"`
+	TaskID                string         `json:"task_id"`
+	Status                string         `json:"status"`
+	VideoURL              string         `json:"video_url,omitempty"`
+	EndpointURL           string         `json:"endpoint_url,omitempty"`
+	ElapsedMS             float64        `json:"elapsed_ms"`
+	FailReason            string         `json:"fail_reason,omitempty"`
+	RawRequestJSON        string         `json:"raw_request_json,omitempty"`
+	RawSubmitResponseJSON string         `json:"raw_submit_response_json,omitempty"`
+	RawPollResponseJSON   string         `json:"raw_poll_response_json,omitempty"`
 }
 
 type StressMetrics struct {
@@ -1351,50 +1359,14 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		var payloadBytes []byte
 		rawPayloadTrimmed := strings.TrimSpace(req.Video.RawPayload)
 		if rawPayloadTrimmed != "" {
-			var rawMap map[string]any
-			if err := common.Unmarshal([]byte(rawPayloadTrimmed), &rawMap); err != nil {
-				emit(Event{
-					Type:        "check",
-					Module:      ModuleVideo,
-					CheckID:     CheckVideoSubmit,
-					Status:      "fail",
-					Title:       "Task submit",
-					Message:     "Could not parse native request JSON: {{error}}",
-					MessageArgs: map[string]any{"error": err.Error()},
-					Video:       metrics,
-				})
+			if !gjson.Valid(rawPayloadTrimmed) || !gjson.Parse(rawPayloadTrimmed).IsObject() {
+				emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoSubmit, Status: "fail", Title: "Task submit", Message: "Native request JSON must be an object.", Video: metrics})
 				return
 			}
-			if rawMap == nil {
-				emit(Event{
-					Type:    "check",
-					Module:  ModuleVideo,
-					CheckID: CheckVideoSubmit,
-					Status:  "fail",
-					Title:   "Task submit",
-					Message: "Native request JSON must be an object.",
-					Video:   metrics,
-				})
-				return
+			payloadBytes = []byte(rawPayloadTrimmed)
+			if !gjson.Get(rawPayloadTrimmed, "model").Exists() && req.Model != "" {
+				payloadBytes, _ = sjson.SetBytes(payloadBytes, "model", req.Model)
 			}
-			if _, hasModel := rawMap["model"]; !hasModel && strings.TrimSpace(req.Model) != "" {
-				rawMap["model"] = strings.TrimSpace(req.Model)
-			}
-			b, err := common.Marshal(rawMap)
-			if err != nil {
-				emit(Event{
-					Type:        "check",
-					Module:      ModuleVideo,
-					CheckID:     CheckVideoSubmit,
-					Status:      "fail",
-					Title:       "Task submit",
-					Message:     "Could not serialize native request JSON: {{error}}",
-					MessageArgs: map[string]any{"error": err.Error()},
-					Video:       metrics,
-				})
-				return
-			}
-			payloadBytes = b
 		} else {
 			contentSlice := make([]map[string]any, 0, 3)
 			if prompt := strings.TrimSpace(req.Video.Prompt); prompt != "" {
@@ -1518,7 +1490,7 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			if req.Video.Ratio != nil && strings.TrimSpace(*req.Video.Ratio) != "" {
 				payloadMap["ratio"] = strings.TrimSpace(*req.Video.Ratio)
 			}
-			if req.Video.Duration != nil && *req.Video.Duration != 0 {
+			if req.Video.Duration != nil {
 				payloadMap["duration"] = *req.Video.Duration
 			}
 			if req.Video.Watermark != nil {
@@ -1570,14 +1542,20 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			payloadBytes = b
 		}
 
-		metrics.RawRequestJSON = string(payloadBytes)
+		if err := validateVideoInputs(payloadBytes); err != nil {
+			emit(Event{Type: "check", Module: ModuleVideo, CheckID: CheckVideoSubmit, Status: "fail", Title: "Task submit", Message: err.Error(), Video: metrics})
+			return
+		}
+		metrics.RawRequestJSON = SafeVideoJSON(string(payloadBytes), false)
 
 		endpoint, _ := VideoTasksURL(req.BaseURL, req.Video.CustomPath)
 		metrics.EndpointURL = endpoint
 
-		status, submitResp, err := CreateVideoTaskRaw(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, payloadBytes)
+		exchange, submitResp, err := CreateVideoTask(ctx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, payloadBytes)
+		metrics.Submit = &exchange
+		status := exchange.Status
 		metrics.ElapsedMS = float64(time.Since(started).Milliseconds())
-		metrics.RawSubmitResponseJSON = string(submitResp)
+		metrics.RawSubmitResponseJSON = SafeVideoJSON(string(submitResp), false)
 		if err != nil {
 			emit(Event{
 				Type:        "check",
@@ -1676,8 +1654,12 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 	}
 
 	queryTask := func() (done bool) {
-		pollStatus, pollResp, pollErr := GetVideoTaskRaw(pollCtx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, taskID)
-		metrics.RawPollResponseJSON = string(pollResp)
+		exchange, pollResp, pollErr := GetVideoTask(pollCtx, httpClient, req.BaseURL, req.Video.CustomPath, req.APIKey, taskID)
+		metrics.LastQuery = &exchange
+		metrics.PollCount++
+		metrics.PollMS += exchange.ElapsedMS
+		pollStatus := exchange.Status
+		metrics.RawPollResponseJSON = SafeVideoJSON(string(pollResp), false)
 		elapsed := time.Since(started)
 		metrics.ElapsedMS = float64(elapsed.Milliseconds())
 
@@ -1689,6 +1671,10 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 		}
 
 		if pollErr != nil {
+			if strings.Contains(pollErr.Error(), "task ID does not match") {
+				emitPollFailure("Returned task ID does not match this query", nil)
+				return true
+			}
 			if pollCtx.Err() != nil {
 				return false
 			}
@@ -1725,12 +1711,20 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 
 		taskState, videoURL, failReason := ParseVideoTaskState(pollResp)
 		metrics.Status = taskState
-		metrics.VideoURL = videoURL
+		if VideoTerminal(taskState) && (strings.EqualFold(taskState, "success") || strings.EqualFold(taskState, "succeeded")) {
+			metrics.VideoURL = videoURL
+		}
 		metrics.FailReason = failReason
 
 		normalizedState := strings.ToLower(taskState)
+		if VideoTerminal(taskState) {
+			metrics.Final = &exchange
+		}
 		switch normalizedState {
 		case "queued", "pending":
+			if metrics.Queued == nil {
+				metrics.Queued = &exchange
+			}
 			emit(Event{
 				Type:        "progress",
 				Module:      ModuleVideo,
@@ -1743,6 +1737,9 @@ func runVideo(ctx context.Context, httpClient *http.Client, req RunRequest, emit
 			})
 			return false
 		case "running", "processing", "in_progress":
+			if metrics.Running == nil {
+				metrics.Running = &exchange
+			}
 			emit(Event{
 				Type:        "progress",
 				Module:      ModuleVideo,

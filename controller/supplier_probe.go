@@ -39,6 +39,7 @@ func ListSupplierTestModels(c *gin.Context) {
 }
 
 func RunSupplierTest(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 70<<20)
 	var req suppliertest.RunRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid request body"})
@@ -153,12 +154,16 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 	}
 
 	httpClient := suppliertest.NewHTTPClient(service.GetHttpClient())
-	status, rawResp, err := suppliertest.GetVideoTaskRaw(c.Request.Context(), httpClient, req.BaseURL, req.CustomPath, req.APIKey, req.TaskID)
+	exchange, rawResp, err := suppliertest.GetVideoTask(c.Request.Context(), httpClient, req.BaseURL, req.CustomPath, req.APIKey, req.TaskID)
+	status := exchange.Status
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
+			"base_url":     req.BaseURL,
+			"task_id":      req.TaskID,
+			"exchange":     exchange,
 			"success":      false,
 			"message":      err.Error(),
-			"raw_response": string(rawResp),
+			"raw_response": suppliertest.SafeVideoJSON(string(rawResp), false),
 		})
 		return
 	}
@@ -166,23 +171,27 @@ func QuerySupplierTestVideoTask(c *gin.Context) {
 	if status != http.StatusOK {
 		errMsg := suppliertest.ExtractAPIError(rawResp, fmt.Sprintf("HTTP %d", status))
 		c.JSON(http.StatusOK, gin.H{
+			"base_url":     req.BaseURL,
 			"success":      false,
 			"status_code":  status,
+			"exchange":     exchange,
 			"task_id":      req.TaskID,
 			"message":      errMsg,
-			"raw_response": string(rawResp),
+			"raw_response": suppliertest.SafeVideoJSON(string(rawResp), false),
 		})
 		return
 	}
 
 	taskState, videoURL, failReason := suppliertest.ParseVideoTaskState(rawResp)
 	c.JSON(http.StatusOK, gin.H{
+		"base_url":     req.BaseURL,
 		"success":      true,
 		"status_code":  status,
+		"exchange":     exchange,
 		"task_id":      req.TaskID,
 		"status":       taskState,
 		"video_url":    videoURL,
 		"fail_reason":  failReason,
-		"raw_response": string(rawResp),
+		"raw_response": suppliertest.SafeVideoJSON(string(rawResp), false),
 	})
 }

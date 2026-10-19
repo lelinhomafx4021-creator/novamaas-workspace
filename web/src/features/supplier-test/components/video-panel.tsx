@@ -23,9 +23,7 @@ import {
   Play,
   RefreshCw,
   Send,
-  Upload,
   Video,
-  X,
   Zap,
 } from 'lucide-react'
 import {
@@ -33,7 +31,7 @@ import {
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
+  type ReactNode,
   type Dispatch,
   type SetStateAction,
 } from 'react'
@@ -63,7 +61,6 @@ import {
   ENDPOINT_PATH_PRESETS,
   VIDEO_RATIOS,
   VIDEO_RESOLUTIONS,
-  VIDEO_ROLES,
 } from '../constants'
 import type { CheckResult, VideoForm, VideoMetrics } from '../types'
 import {
@@ -72,8 +69,13 @@ import {
 } from '../video-json'
 import { CheckTable } from './check-table'
 import { RawJsonDialog } from './raw-json-dialog'
+import { VideoMaterials } from './video-materials'
 
 export function VideoPanel(props: {
+  reportControls?: ReactNode
+  onUsePlatform: () => void
+  onMaterialBusyChange: (value: boolean) => void
+  stopVersion: number
   video: VideoForm
   busy: boolean
   model?: string
@@ -89,8 +91,6 @@ export function VideoPanel(props: {
   onManualQueryResult?: (res: QueryVideoTaskResult) => void
 }) {
   const { t } = useTranslation()
-  const firstFileInputRef = useRef<HTMLInputElement>(null)
-  const lastFileInputRef = useRef<HTMLInputElement>(null)
 
   const [activeJsonTab, setActiveJsonTab] = useState<
     'request' | 'poll' | 'submit'
@@ -155,62 +155,6 @@ export function VideoPanel(props: {
         ...res.videoPatch,
       }))
     }
-  }
-
-  const handleFirstFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error(t('Please select an image file'))
-      return
-    }
-    const reader = new FileReader()
-    reader.addEventListener('load', (event) => {
-      const result = event.target?.result
-      if (typeof result === 'string') {
-        props.onVideoChange((current) => ({
-          ...current,
-          base64Data: result,
-        }))
-        toast.success(
-          t('Image loaded as Base64 ({{size}} KB)', {
-            size: Math.round(file.size / 1024),
-          })
-        )
-      }
-    })
-    reader.addEventListener('error', () => {
-      toast.error(t('Failed to read image file'))
-    })
-    reader.readAsDataURL(file)
-  }
-
-  const handleLastFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error(t('Please select an image file'))
-      return
-    }
-    const reader = new FileReader()
-    reader.addEventListener('load', (event) => {
-      const result = event.target?.result
-      if (typeof result === 'string') {
-        props.onVideoChange((current) => ({
-          ...current,
-          lastFrameBase64: result,
-        }))
-        toast.success(
-          t('End frame image loaded ({{size}} KB)', {
-            size: Math.round(file.size / 1024),
-          })
-        )
-      }
-    })
-    reader.addEventListener('error', () => {
-      toast.error(t('Failed to read image file'))
-    })
-    reader.readAsDataURL(file)
   }
 
   // Active Manual Query
@@ -387,246 +331,14 @@ export function VideoPanel(props: {
             </p>
           </Card>
 
-          {/* Compact First Frame / Reference Image Card */}
-          <Card className='p-2.5'>
-            <div className='flex flex-wrap items-center justify-between gap-2'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='toggle-has-image'
-                  checked={props.video.hasImage}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((cur) => ({
-                      ...cur,
-                      hasImage: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='toggle-has-image'
-                  className='cursor-pointer text-xs font-semibold'
-                >
-                  {t('First Frame / Reference Image')}
-                </Label>
-              </div>
-
-              {props.video.hasImage && (
-                <div className='flex items-center gap-2'>
-                  <Select
-                    value={props.video.uploadMode}
-                    disabled={props.busy}
-                    onValueChange={(val) => {
-                      if (val === 'url' || val === 'base64') {
-                        props.onVideoChange((c) => ({ ...c, uploadMode: val }))
-                      }
-                    }}
-                  >
-                    <SelectTrigger className='h-6 w-24 text-[11px]'>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value='url'>{t('URL Mode')}</SelectItem>
-                      <SelectItem value='base64'>{t('Base64 Mode')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select
-                    value={props.video.role}
-                    disabled={props.busy}
-                    onValueChange={(val) => {
-                      if (val) {
-                        props.onVideoChange((c) => ({ ...c, role: val }))
-                      }
-                    }}
-                  >
-                    <SelectTrigger className='h-6 w-28 text-[11px]'>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {VIDEO_ROLES.map((role) => (
-                        <SelectItem key={role.value} value={role.value}>
-                          {t(role.labelKey)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-
-            {props.video.hasImage && (
-              <div className='mt-2 space-y-1.5 border-t pt-2'>
-                {props.video.uploadMode === 'url' ? (
-                  <Input
-                    placeholder='https://.../sample.jpg'
-                    value={props.video.imageUrl}
-                    disabled={props.busy}
-                    onChange={(e) =>
-                      props.onVideoChange((c) => ({
-                        ...c,
-                        imageUrl: e.target.value,
-                      }))
-                    }
-                    className='h-7 text-xs'
-                  />
-                ) : (
-                  <div className='flex items-center gap-2'>
-                    <input
-                      type='file'
-                      ref={firstFileInputRef}
-                      accept='image/*'
-                      className='hidden'
-                      onChange={handleFirstFileChange}
-                    />
-                    <Button
-                      type='button'
-                      variant='outline'
-                      size='sm'
-                      className='h-7 gap-1 text-xs'
-                      onClick={() => firstFileInputRef.current?.click()}
-                    >
-                      <Upload className='size-3' />
-                      {t('Select Local Image')}
-                    </Button>
-                    <span className='text-muted-foreground truncate text-[11px]'>
-                      {props.video.base64Data
-                        ? t('Image loaded')
-                        : t('No image selected')}
-                    </span>
-                  </div>
-                )}
-
-                {/* Inline Compact Preview */}
-                {(props.video.uploadMode === 'url'
-                  ? props.video.imageUrl
-                  : props.video.base64Data) && (
-                  <div className='bg-muted/30 flex items-center gap-2 rounded border p-1'>
-                    <img
-                      src={
-                        props.video.uploadMode === 'url'
-                          ? props.video.imageUrl
-                          : props.video.base64Data
-                      }
-                      alt='Preview'
-                      className='size-7 rounded object-cover'
-                      onError={(e) => {
-                        ;(e.target as HTMLElement).style.display = 'none'
-                      }}
-                    />
-                    <span className='text-muted-foreground flex-1 truncate font-mono text-[11px]'>
-                      {props.video.uploadMode === 'url'
-                        ? props.video.imageUrl
-                        : 'data:image/...;base64'}
-                    </span>
-                    <Button
-                      type='button'
-                      variant='ghost'
-                      size='sm'
-                      className='text-muted-foreground hover:text-destructive h-5 w-5 p-0'
-                      onClick={() =>
-                        props.onVideoChange((c) => ({
-                          ...c,
-                          imageUrl: '',
-                          base64Data: '',
-                        }))
-                      }
-                    >
-                      <X className='size-3' />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-
-          {/* Compact End Frame Card */}
-          <Card className='p-2.5'>
-            <div className='flex flex-wrap items-center justify-between gap-2'>
-              <div className='flex items-center space-x-2'>
-                <Checkbox
-                  id='toggle-has-last-frame'
-                  checked={props.video.hasLastFrame}
-                  disabled={props.busy}
-                  onCheckedChange={(checked) =>
-                    props.onVideoChange((cur) => ({
-                      ...cur,
-                      hasLastFrame: Boolean(checked),
-                    }))
-                  }
-                />
-                <Label
-                  htmlFor='toggle-has-last-frame'
-                  className='cursor-pointer text-xs font-semibold'
-                >
-                  {t('End Frame (Dual-frame transition)')}
-                </Label>
-              </div>
-
-              {props.video.hasLastFrame && (
-                <Select
-                  value={props.video.lastFrameMode}
-                  disabled={props.busy}
-                  onValueChange={(val) => {
-                    if (val === 'url' || val === 'base64') {
-                      props.onVideoChange((c) => ({ ...c, lastFrameMode: val }))
-                    }
-                  }}
-                >
-                  <SelectTrigger className='h-6 w-24 text-[11px]'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value='url'>{t('URL Mode')}</SelectItem>
-                    <SelectItem value='base64'>{t('Base64 Mode')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {props.video.hasLastFrame && (
-              <div className='mt-2 space-y-1.5 border-t pt-2'>
-                {props.video.lastFrameMode === 'url' ? (
-                  <Input
-                    placeholder='https://.../end-frame.jpg'
-                    value={props.video.lastFrameUrl}
-                    disabled={props.busy}
-                    onChange={(e) =>
-                      props.onVideoChange((c) => ({
-                        ...c,
-                        lastFrameUrl: e.target.value,
-                      }))
-                    }
-                    className='h-7 text-xs'
-                  />
-                ) : (
-                  <div className='flex items-center gap-2'>
-                    <input
-                      type='file'
-                      ref={lastFileInputRef}
-                      accept='image/*'
-                      className='hidden'
-                      onChange={handleLastFileChange}
-                    />
-                    <Button
-                      type='button'
-                      variant='outline'
-                      size='sm'
-                      className='h-7 gap-1 text-xs'
-                      onClick={() => lastFileInputRef.current?.click()}
-                    >
-                      <Upload className='size-3' />
-                      {t('Select End Frame')}
-                    </Button>
-                    <span className='text-muted-foreground truncate text-[11px]'>
-                      {props.video.lastFrameBase64
-                        ? t('Image loaded')
-                        : t('No image selected')}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
+          <VideoMaterials
+            video={props.video}
+            busy={props.busy}
+            onChange={props.onVideoChange}
+            onUsePlatform={props.onUsePlatform}
+            onBusyChange={props.onMaterialBusyChange}
+            stopVersion={props.stopVersion}
+          />
 
           {/* Compact Advanced Parameters Grid */}
           <Card className='p-2.5'>
@@ -1122,6 +834,7 @@ export function VideoPanel(props: {
           />
         </div>
       </div>
+      {props.reportControls}
     </TabsContent>
   )
 }

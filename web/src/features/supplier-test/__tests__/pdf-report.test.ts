@@ -117,7 +117,7 @@ test('supplier PDF omits address and timestamp metadata while keeping test resul
   )
 })
 
-test('video PDF omits upstream address and time while keeping task details', () => {
+test('video PDF includes actual call details and reuses company branding', () => {
   const input: VideoReportInput = {
     branding: {
       platformName: 'Example Platform',
@@ -125,18 +125,17 @@ test('video PDF omits upstream address and time while keeping task details', () 
       operatingEntityName: 'Example Operator Ltd',
       operatingEntityLogo: 'https://cdn.example/operator.png',
     },
-    baseUrl: 'http://192.0.2.44',
-    endpointUrl: 'http://192.0.2.44/api/v3/contents/generations/tasks',
-    model: 'demo-video-model',
-    taskId: 'task-42',
-    elapsedMs: 1800,
-    videoConfig: {
-      prompt: 'A sunset',
-      hasImage: false,
-      uploadMode: 'url',
-      hasLastFrame: false,
-    },
-    videoChecks: [{ id: 'video_submit', title: 'Task submit', status: 'pass' }],
+    records: [
+      {
+        id: 'case-42',
+        baseUrl: 'http://192.0.2.44',
+        model: 'demo-video-model',
+        startedAt: 1,
+        outcome: 'Incomplete',
+        materials: [],
+        metrics: { task_id: 'task-42', status: '', elapsed_ms: 1800 },
+      },
+    ],
     t: (key) => key,
   }
 
@@ -149,7 +148,10 @@ test('video PDF omits upstream address and time while keeping task details', () 
   expect(pdfHtml).toContain('demo-video-model')
   expect(pdfHtml).toContain('task-42')
   expect(pdfHtml).toContain('class="document-letterhead"')
-  expect(pdfHtml).toContain('<table class="pdf-shell"><thead>')
+  expect(pdfHtml).toContain('<header class="video-letterhead">')
+  expect(pdfHtml).toContain('@page{margin-top:119pt;@top-left')
+  expect(pdfHtml).toContain('background-size:125pt 40pt')
+  expect(pdfHtml).toContain('<main class="video-body">')
   expect(pdfHtml).toContain('margin:33pt 40pt 58pt')
   expect(pdfHtml).toContain('content:counter(page, decimal-leading-zero)')
   expect(pdfHtml).toContain('Example Operator Ltd')
@@ -157,7 +159,7 @@ test('video PDF omits upstream address and time while keeping task details', () 
     '<div class="document-operator"><img src="/api/pdf-branding/operating-logo" alt="Example Operator Ltd"/></div>'
   )
   expect(pdfHtml).not.toContain('<span>Example Operator Ltd</span>')
-  expect(pdfHtml).not.toContain('192.0.2.44')
+  expect(pdfHtml).toContain('192.0.2.44')
   expect(pdfHtml).not.toContain('meta-label">Time')
   expect(exportHtml).toContain('http://192.0.2.44')
 })

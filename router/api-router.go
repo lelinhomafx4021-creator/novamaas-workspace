@@ -403,6 +403,7 @@ func SetApiRouter(router *gin.Engine) {
 			supplierTestRoute.POST("/models", controller.ListSupplierTestModels)
 			supplierTestRoute.POST("/runs", controller.RunSupplierTest)
 			supplierTestRoute.POST("/video/query", controller.QuerySupplierTestVideoTask)
+			supplierTestRoute.POST("/video/verify", controller.VerifySupplierVideo)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())

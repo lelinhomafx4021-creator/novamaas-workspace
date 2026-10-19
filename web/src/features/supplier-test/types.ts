@@ -22,7 +22,47 @@ export type SupplierTestModule = 'basic' | 'stress' | 'cache' | 'video'
 
 export type CheckStatus = 'idle' | 'running' | 'pass' | 'fail' | 'skip'
 
+export type VideoExchange = {
+  method: string
+  url: string
+  headers: string
+  request: string
+  response: string
+  status: number
+  request_id: string
+  elapsed_ms: number
+  error?: string
+}
+
+export type VideoTestRecord = {
+  id: string
+  baseUrl: string
+  model: string
+  startedAt: number
+  outcome: string
+  issue?: string
+  metrics: VideoMetrics
+  materials: VideoExchange[]
+  verification?: {
+    attempted: boolean
+    queryId?: string
+    create?: VideoExchange
+    last?: VideoExchange
+    final?: VideoExchange
+    count: number
+    elapsed: number
+    issue?: string
+  }
+}
+
 export type VideoMetrics = {
+  submit?: VideoExchange
+  queued?: VideoExchange
+  running?: VideoExchange
+  final?: VideoExchange
+  last_query?: VideoExchange
+  poll_count?: number
+  poll_ms?: number
   task_id: string
   status: string
   video_url?: string
@@ -215,6 +255,9 @@ export type CacheForm = {
 }
 
 export type VideoForm = {
+  materials?: Array<Record<string, unknown>>
+  materialEvidence?: VideoExchange[]
+  contentTemplate?: Array<Record<string, unknown>>
   prompt: string
   hasImage: boolean
   uploadMode: 'url' | 'base64'

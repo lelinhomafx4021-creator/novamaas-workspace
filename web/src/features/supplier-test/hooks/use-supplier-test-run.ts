@@ -38,6 +38,8 @@ import type {
   SupplierTestModule,
   SupplierTestRunRequest,
   VideoMetrics,
+  VideoTestRecord,
+  VideoExchange,
 } from '../types'
 
 type StreamHandle = {
@@ -86,12 +88,29 @@ function resetChecks(current: CheckResult[], ids?: string[]): CheckResult[] {
     if (selected && !selected.has(check.id)) {
       return check
     }
-    return { ...check, status: 'idle', message: undefined, messageArgs: undefined }
+    return {
+      ...check,
+      status: 'idle',
+      message: undefined,
+      messageArgs: undefined,
+    }
   })
+}
+
+function videoSupplier(value: string): string {
+  try {
+    return new URL(value).origin
+  } catch {
+    return value.trim().replace(/\/+$/, '')
+  }
 }
 
 export function useSupplierTestRun() {
   const { t } = useTranslation()
+  const [videoRuns, setVideoRuns] = useState<VideoTestRecord[]>([])
+  const activeVideoRef = useRef('')
+  const videoRunsRef = useRef(videoRuns)
+  videoRunsRef.current = videoRuns
   const sourceRef = useRef<StreamHandle | null>(null)
   const runIdRef = useRef(0)
   const [runningModule, setRunningModule] = useState<SupplierTestModule | null>(
@@ -127,11 +146,21 @@ export function useSupplierTestRun() {
     const source = sourceRef.current
     sourceRef.current = null
     source?.close()
+    setVideoRuns((current) =>
+      current.map((item) =>
+        item.id === activeVideoRef.current && item.outcome === 'Running'
+          ? { ...item, outcome: 'Cancelled' }
+          : item
+      )
+    )
     setRunningModule(null)
   }, [])
 
   const start = useCallback(
-    async (payload: SupplierTestRunRequest) => {
+    async (
+      payload: SupplierTestRunRequest,
+      materials: VideoExchange[] = []
+    ) => {
       const runId = ++runIdRef.current
       const previousSource = sourceRef.current
       sourceRef.current = null
@@ -157,12 +186,70 @@ export function useSupplierTestRun() {
         setMetrics(null)
         setSummaries((current) => ({ ...current, stress: '' }))
       }
+      let pollingOffset = 0,
+        pollingElapsedOffset = 0
+      if (module === 'video') {
+        const submit =
+          !payload.video?.checks?.length ||
+          payload.video.checks.includes('video_submit')
+        const previous = !submit
+          ? videoRunsRef.current.find(
+              (item) =>
+                videoSupplier(item.baseUrl) ===
+                  videoSupplier(payload.base_url) &&
+                item.metrics.task_id === payload.video?.task_id
+            )
+          : undefined
+        pollingOffset = previous?.metrics.poll_count || 0
+        pollingElapsedOffset = previous?.metrics.poll_ms || 0
+        const id = previous?.id || crypto.randomUUID()
+        activeVideoRef.current = id
+        setVideoRuns((current) => {
+          const sameSupplier =
+            current[0] &&
+            videoSupplier(current[0].baseUrl) ===
+              videoSupplier(payload.base_url)
+              ? current
+              : []
+          return previous
+            ? sameSupplier.map((item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      outcome: 'Running',
+                      issue: undefined,
+                      metrics: {
+                        ...item.metrics,
+                        final: undefined,
+                        last_query: undefined,
+                        video_url: undefined,
+                        status: '',
+                      },
+                    }
+                  : item
+              )
+            : [
+                ...sameSupplier,
+                {
+                  id,
+                  baseUrl: payload.base_url,
+                  model: payload.model,
+                  startedAt: Date.now(),
+                  outcome: 'Running',
+                  materials,
+                  metrics: {
+                    task_id: payload.video?.task_id || '',
+                    status: '',
+                    elapsed_ms: 0,
+                  },
+                },
+              ]
+        })
+      }
       if (module === 'video') {
         const videoChecksToRun = payload.video?.checks
         setVideoChecks((current) => resetChecks(current, videoChecksToRun))
-        if (!videoChecksToRun || videoChecksToRun.includes('video_submit')) {
-          setVideoMetrics(null)
-        }
+        setVideoMetrics(null)
       }
 
       let headers: Record<string, string>
@@ -170,6 +257,15 @@ export function useSupplierTestRun() {
         headers = await getFreshAuthHeaders()
       } catch (error) {
         if (runIdRef.current !== runId) return
+        if (module === 'video') {
+          setVideoRuns((current) =>
+            current.map((item) =>
+              item.id === activeVideoRef.current
+                ? { ...item, outcome: 'Failed' }
+                : item
+            )
+          )
+        }
         setRunningModule(null)
         toast.error(
           error instanceof Error ? error.message : t('Failed to start test')
@@ -193,6 +289,21 @@ export function useSupplierTestRun() {
 
       const finish = () => {
         if (runIdRef.current !== runId || sourceRef.current !== source) return
+        if (module === 'video') {
+          setVideoRuns((current) =>
+            current.map((item) =>
+              item.id === activeVideoRef.current && item.outcome === 'Running'
+                ? {
+                    ...item,
+                    outcome:
+                      item.metrics.final && item.metrics.video_url
+                        ? 'Succeeded'
+                        : 'Incomplete',
+                  }
+                : item
+            )
+          )
+        }
         setRunningModule(null)
         sourceRef.current = null
         source.close()
@@ -200,6 +311,15 @@ export function useSupplierTestRun() {
 
       const handleError = (message: string) => {
         setErrorMessage(message)
+        if (module === 'video') {
+          setVideoRuns((current) =>
+            current.map((item) =>
+              item.id === activeVideoRef.current
+                ? { ...item, outcome: 'Incomplete', issue: message }
+                : item
+            )
+          )
+        }
         finish()
         toast.error(message)
       }
@@ -218,6 +338,45 @@ export function useSupplierTestRun() {
         } catch {
           handleError(t('Failed to parse stream'))
           return
+        }
+        if (parsed.video) {
+          const next = parsed.video
+          setVideoRuns((current) =>
+            current.map((item) =>
+              item.id === activeVideoRef.current
+                ? {
+                    ...item,
+                    metrics: {
+                      ...item.metrics,
+                      ...next,
+                      poll_count: pollingOffset + (next.poll_count || 0),
+                      poll_ms: pollingElapsedOffset + (next.poll_ms || 0),
+                      submit: next.submit || item.metrics.submit,
+                      raw_request_json:
+                        next.raw_request_json || item.metrics.raw_request_json,
+                      raw_submit_response_json:
+                        next.raw_submit_response_json ||
+                        item.metrics.raw_submit_response_json,
+                    },
+                  }
+                : item
+            )
+          )
+        }
+        if (parsed.module === 'video' && parsed.status === 'fail') {
+          setVideoRuns((current) =>
+            current.map((item) =>
+              item.id === activeVideoRef.current
+                ? {
+                    ...item,
+                    outcome: 'Failed',
+                    issue: parsed.message
+                      ? t(parsed.message, parsed.message_args)
+                      : undefined,
+                  }
+                : item
+            )
+          )
         }
         if (parsed.video) {
           setVideoMetrics((prev) => {
@@ -358,16 +517,88 @@ export function useSupplierTestRun() {
 
   const updateVideoMetricsWithQueryResult = useCallback(
     (result: QueryVideoTaskResult) => {
+      const taskId = result.task_id || ''
+      const baseUrl = result.base_url || videoRunsRef.current[0]?.baseUrl || ''
+      const existing = videoRunsRef.current.find(
+        (item) =>
+          videoSupplier(item.baseUrl) === videoSupplier(baseUrl) &&
+          item.metrics.task_id === taskId
+      )
+      const state = (result.status || '').toLowerCase()
+      const terminal = [
+        'success',
+        'succeeded',
+        'failed',
+        'failure',
+        'cancelled',
+        'expired',
+      ].includes(state)
+      const update = {
+        task_id: taskId,
+        status: result.status || '',
+        elapsed_ms: existing?.metrics.elapsed_ms || 0,
+        video_url:
+          result.success && ['success', 'succeeded'].includes(state)
+            ? result.video_url
+            : undefined,
+        last_query: result.exchange,
+        raw_poll_response_json: result.raw_response,
+        final: result.success && terminal ? result.exchange : undefined,
+        queued: ['queued', 'pending'].includes(state)
+          ? existing?.metrics.queued || result.exchange
+          : existing?.metrics.queued,
+        running: ['running', 'processing', 'in_progress'].includes(state)
+          ? existing?.metrics.running || result.exchange
+          : existing?.metrics.running,
+        poll_count: (existing?.metrics.poll_count || 0) + 1,
+        poll_ms:
+          (existing?.metrics.poll_ms || 0) + (result.exchange?.elapsed_ms || 0),
+      }
+      setVideoRuns((current) => {
+        let outcome = 'Failed'
+        if (result.success && !terminal) outcome = 'Incomplete'
+        else if (update.video_url) outcome = 'Succeeded'
+        const next = {
+          ...(existing || {
+            id: crypto.randomUUID(),
+            model: '',
+            startedAt: Date.now(),
+            materials: [],
+          }),
+          baseUrl,
+          metrics: { ...existing?.metrics, ...update },
+          outcome,
+          issue: result.message || result.fail_reason,
+        }
+        return existing
+          ? current.map((item) => (item.id === existing.id ? next : item))
+          : [
+              ...(current[0] &&
+              videoSupplier(current[0].baseUrl) === videoSupplier(baseUrl)
+                ? current
+                : []),
+              next,
+            ]
+      })
       setVideoMetrics((prev) => ({
-        ...prev,
-        task_id: result.task_id || prev?.task_id || '',
-        status: result.status || prev?.status || '',
-        elapsed_ms: prev?.elapsed_ms ?? 0,
-        video_url: result.video_url || prev?.video_url,
-        fail_reason: result.fail_reason || prev?.fail_reason,
-        raw_poll_response_json:
-          result.raw_response || prev?.raw_poll_response_json,
+        ...(prev?.task_id === taskId ? prev : null),
+        ...update,
       }))
+      if (!result.success) {
+        setVideoChecks(
+          VIDEO_CHECKS.map((check) => {
+            let status: CheckResult['status'] = 'idle'
+            if (check.id === 'video_poll') status = 'fail'
+            else if (check.id === 'video_result') status = 'skip'
+            return {
+              ...check,
+              status,
+              message: check.id === 'video_poll' ? result.message : undefined,
+            }
+          })
+        )
+        return
+      }
       if (result.status) {
         const normalized = result.status.toLowerCase()
         const isSuccess = normalized === 'succeeded' || normalized === 'success'
@@ -428,7 +659,26 @@ export function useSupplierTestRun() {
     []
   )
 
+  const updateVideoVerification = useCallback(
+    (id: string, verification: VideoTestRecord['verification']) => {
+      setVideoRuns((current) =>
+        current.map((item) =>
+          item.id === id ? { ...item, verification } : item
+        )
+      )
+    },
+    []
+  )
+  const clearVideoReport = useCallback(() => {
+    setVideoRuns([])
+    setVideoMetrics(null)
+    activeVideoRef.current = ''
+  }, [])
+
   return {
+    videoRuns,
+    updateVideoVerification,
+    clearVideoReport,
     runningModule,
     basicChecks,
     cacheChecks,

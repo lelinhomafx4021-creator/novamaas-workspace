@@ -35,6 +35,8 @@ export async function fetchSupplierModels(payload: {
 }
 
 export type QueryVideoTaskResult = {
+  base_url?: string
+  exchange?: import('./types').VideoExchange
   success: boolean
   status_code?: number
   task_id?: string
@@ -56,4 +58,23 @@ export async function querySupplierVideoTask(payload: {
     skipErrorHandler: true,
   })
   return res.data as QueryVideoTaskResult
+}
+
+export async function verifySupplierVideo(
+  input: {
+    action: 'create' | 'query'
+    video_url?: string
+    query_id?: string
+    access_key: string
+    secret_key: string
+  },
+  signal: AbortSignal
+): Promise<import('./types').VideoExchange> {
+  const response = await api.post('/api/supplier-test/video/verify', input, {
+    signal,
+  })
+  if (!response.data.success) {
+    throw new Error('Official verification request failed')
+  }
+  return response.data.data
 }

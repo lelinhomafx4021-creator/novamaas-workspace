@@ -349,15 +349,7 @@ export const DEFAULT_VIDEO_PROMPT =
 
 export const DEFAULT_VIDEO_FORM: VideoForm = {
   prompt: '',
-  hasImage: false,
-  uploadMode: 'url',
-  imageUrl: '',
-  base64Data: '',
-  role: 'first_frame',
-  hasLastFrame: false,
-  lastFrameMode: 'url',
-  lastFrameUrl: '',
-  lastFrameBase64: '',
+  materials: [],
   hasResolution: false,
   resolution: '720p',
   hasRatio: false,

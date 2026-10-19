@@ -1372,7 +1372,9 @@ export function videoResult(record: VideoTestRecord): {
   let request: Record<string, unknown> = {},
     result: Record<string, unknown> = {}
   try {
-    request = JSON.parse(record.metrics.raw_request_json || '{}')
+    request = JSON.parse(
+      record.metrics.submit?.request || record.metrics.raw_request_json || '{}'
+    )
   } catch {
     /* unavailable */
   }
@@ -1552,26 +1554,31 @@ export function buildVideoPdfHtml(input: VideoReportInput): string {
     ? operatorLogo
     : '/api/pdf-branding/operating-logo'
   const printHeader = `@media print{.video-letterhead{display:none}@page{margin-top:119pt;@top-left{content:${cssContent(input.branding?.platformName || DEFAULT_SYSTEM_NAME)};background-image:url(${cssContent(input.branding?.platformLogo || DEFAULT_LOGO)});background-size:38pt 38pt;background-repeat:no-repeat;background-position:left center;padding-left:50pt;width:335pt;color:#19335e;font:15pt "PingFang SC",sans-serif;border-bottom:1.5pt solid #27477a;margin:25pt 0 19pt;vertical-align:middle}@top-right{content:${cssContent(operatorLogo ? '' : input.branding?.operatingEntityName || '')};${operatorLogo ? `background-image:url(${cssContent(headerLogo)});background-size:125pt 40pt;background-repeat:no-repeat;background-position:right center;` : ''}width:130pt;color:#19335e;font:10pt "PingFang SC",sans-serif;text-align:right;border-bottom:1.5pt solid #27477a;margin:25pt 0 19pt;vertical-align:middle}}}`
+  const cases = input.records.map((record) => ({
+    record,
+    result: videoResult(record),
+  }))
+  const groups = new Map<string, typeof cases>()
+  for (const entry of cases) {
+    const group = groups.get(entry.result.model)
+    if (group) group.push(entry)
+    else groups.set(entry.result.model, [entry])
+  }
   const rows: string[] = [
     `<h1>${escapeHtml(title)}</h1><div class="video-capabilities">${VIDEO_REPORT_CAPABILITIES.map(([key, label]) => `<p>${escapeHtml(t(label))}: ${escapeHtml(t(input[key] ? 'Yes' : 'No'))}</p>`).join('')}</div>`,
   ]
   rows.push(
-    `<table class="benchmark-table"><thead><tr>${['Model', 'Request resolution', 'Video generation', 'Official origin features', 'Model comparison'].map((key) => `<th>${escapeHtml(t(key))}</th>`).join('')}</tr></thead><tbody>${input.records
-      .map((record) => {
-        const result = videoResult(record)
+    `<table class="benchmark-table"><thead><tr>${['Model', 'Request resolution', 'Video generation', 'Official origin features', 'Model comparison'].map((key) => `<th>${escapeHtml(t(key))}</th>`).join('')}</tr></thead><tbody>${cases
+      .map(({ result }) => {
         return `<tr>${[result.model, result.resolution, t(result.generation), t(result.origin), t(result.comparison)].map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`
       })
       .join('')}</tbody></table>`
   )
-  for (const model of new Set(
-    input.records.map((record) => videoResult(record).model)
-  )) {
+  for (const [model, entries] of groups) {
     rows.push(`<h2>${escapeHtml(model)}</h2>`)
-    for (const record of input.records.filter(
-      (record) => videoResult(record).model === model
-    )) {
+    for (const { record, result } of entries) {
       rows.push(
-        `<h3>${escapeHtml(t('Request resolution'))}: ${escapeHtml(videoResult(record).resolution)} · ${escapeHtml(new Date(record.startedAt).toLocaleString(input.language))}</h3><p>${escapeHtml(videoReportURL(record.baseUrl))} · Task ID: ${escapeHtml(record.metrics.task_id || '—')} · QueryID: ${escapeHtml(record.verification?.queryId || '—')}</p><p>${escapeHtml(t('Polling summary'))}: ${record.metrics.poll_count || 0} / ${record.metrics.poll_ms || 0} ms · ${escapeHtml(t('Official verification'))}: ${record.verification?.count || 0} / ${record.verification?.elapsed || 0} ms</p>`
+        `<h3>${escapeHtml(t('Request resolution'))}: ${escapeHtml(result.resolution)} · ${escapeHtml(new Date(record.startedAt).toLocaleString(input.language))}</h3><p>${escapeHtml(videoReportURL(record.baseUrl))} · Task ID: ${escapeHtml(record.metrics.task_id || '—')} · QueryID: ${escapeHtml(record.verification?.queryId || '—')}</p><p>${escapeHtml(t('Polling summary'))}: ${record.metrics.poll_count || 0} / ${record.metrics.poll_ms || 0} ms · ${escapeHtml(t('Official verification'))}: ${record.verification?.count || 0} / ${record.verification?.elapsed || 0} ms</p>`
       )
       for (const [label, exchange] of videoExchanges(record)) {
         let html = ''

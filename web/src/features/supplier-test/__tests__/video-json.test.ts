@@ -18,9 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { DEFAULT_VIDEO_FORM } from './constants'
-import type { VideoForm } from './types'
-import { buildVideoRequestPayload, parseVideoPayloadToForm } from './video-json'
+import { DEFAULT_VIDEO_FORM } from '../constants'
+import type { VideoForm } from '../types'
+import {
+  buildVideoRequestPayload,
+  parseVideoPayloadToForm,
+} from '../video-json'
 
 describe('video-json helpers', () => {
   test('buildVideoRequestPayload builds standard Volcano Ark payload with only enabled fields', () => {
@@ -62,13 +65,18 @@ describe('video-json helpers', () => {
     const video: VideoForm = {
       ...DEFAULT_VIDEO_FORM,
       prompt: 'Morphing portrait',
-      hasImage: true,
-      uploadMode: 'url',
-      imageUrl: 'https://example.com/first.png',
-      role: 'first_frame',
-      hasLastFrame: true,
-      lastFrameMode: 'url',
-      lastFrameUrl: 'https://example.com/last.png',
+      materials: [
+        {
+          type: 'image_url',
+          image_url: { url: 'https://example.com/first.png' },
+          role: 'first_frame',
+        },
+        {
+          type: 'image_url',
+          image_url: { url: 'https://example.com/last.png' },
+          role: 'last_frame',
+        },
+      ],
     }
 
     const payload = buildVideoRequestPayload('doubao-seedance-pro', video)
@@ -119,12 +127,18 @@ describe('video-json helpers', () => {
     expect(res.success).toBe(true)
     expect(res.model).toBe('doubao-seedance-custom')
     expect(res.videoPatch?.prompt).toBe('An astronaut riding a dinosaur')
-    expect(res.videoPatch?.hasImage).toBe(true)
-    expect(res.videoPatch?.uploadMode).toBe('url')
-    expect(res.videoPatch?.imageUrl).toBe('https://example.com/ref.jpg')
-    expect(res.videoPatch?.role).toBe('reference_image')
-    expect(res.videoPatch?.hasLastFrame).toBe(true)
-    expect(res.videoPatch?.lastFrameUrl).toBe('https://example.com/tail.jpg')
+    expect(res.videoPatch?.materials).toEqual([
+      {
+        type: 'image_url',
+        image_url: { url: 'https://example.com/ref.jpg' },
+        role: 'reference_image',
+      },
+      {
+        type: 'image_url',
+        image_url: { url: 'https://example.com/tail.jpg' },
+        role: 'last_frame',
+      },
+    ])
     expect(res.videoPatch?.hasResolution).toBe(true)
     expect(res.videoPatch?.resolution).toBe('720p')
     expect(res.videoPatch?.hasRatio).toBe(true)

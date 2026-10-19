@@ -41,7 +41,6 @@ import {
 import { api } from '@/lib/api'
 
 import type { VideoForm, VideoExchange } from '../types'
-import { buildVideoRequestPayload } from '../video-json'
 
 type ImageInput = {
   type: 'image_url'
@@ -70,19 +69,11 @@ export function VideoMaterials(props: {
   useEffect(() => {
     abort.current?.abort()
   }, [props.stopVersion])
-  const images = (props.video.materials ||
-    (
-      (buildVideoRequestPayload('', props.video)?.content || []) as Record<
-        string,
-        unknown
-      >[]
-    ).filter((item) => item.type === 'image_url')) as ImageInput[]
+  const images = props.video.materials as ImageInput[]
   const change = (next: ImageInput[]) =>
     props.onChange((current) => ({
       ...current,
       materials: next,
-      hasImage: false,
-      hasLastFrame: false,
       rawPayload: undefined,
     }))
   // Use the existing authenticated material-library routes. Preserve the raw

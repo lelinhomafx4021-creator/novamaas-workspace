@@ -24,65 +24,19 @@ export function buildVideoRequestPayload(
 ): Record<string, unknown> | null {
   const content: Array<Record<string, unknown>> = []
   const prompt = video.prompt.trim()
-  if (prompt) {
-    content.push({
-      type: 'text',
-      text: prompt,
-    })
+  let index = 0,
+    textSeen = false
+  for (const item of video.contentTemplate || []) {
+    if (item.type === 'image_url') {
+      const image = video.materials[index++]
+      if (image) content.push(image)
+    } else if (item.type === 'text' && !textSeen) {
+      textSeen = true
+      if (prompt) content.push({ ...item, text: prompt })
+    } else content.push(item)
   }
-
-  if (!video.materials && video.hasImage) {
-    const role = video.role || 'reference_image'
-    if (video.uploadMode === 'url' && video.imageUrl.trim()) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.imageUrl.trim() },
-        role,
-      })
-    } else if (video.uploadMode === 'base64' && video.base64Data.trim()) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.base64Data.trim() },
-        role,
-      })
-    }
-  }
-
-  if (!video.materials && video.hasLastFrame) {
-    if (video.lastFrameMode === 'url' && video.lastFrameUrl.trim()) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.lastFrameUrl.trim() },
-        role: 'last_frame',
-      })
-    } else if (
-      video.lastFrameMode === 'base64' &&
-      video.lastFrameBase64.trim()
-    ) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: video.lastFrameBase64.trim() },
-        role: 'last_frame',
-      })
-    }
-  }
-
-  if (video.materials) {
-    content.length = 0
-    let index = 0,
-      textSeen = false
-    for (const item of video.contentTemplate || []) {
-      if (item.type === 'image_url') {
-        const image = video.materials[index++]
-        if (image) content.push(image)
-      } else if (item.type === 'text' && !textSeen) {
-        textSeen = true
-        if (prompt) content.push({ ...item, text: prompt })
-      } else content.push(item)
-    }
-    if (!textSeen && prompt) content.unshift({ type: 'text', text: prompt })
-    content.push(...video.materials.slice(index))
-  }
+  if (!textSeen && prompt) content.unshift({ type: 'text', text: prompt })
+  content.push(...video.materials.slice(index))
 
   const payload: Record<string, unknown> = {}
   if (content.length > 0) payload.content = content
@@ -160,8 +114,6 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
     prompt: '',
     materials: [],
     contentTemplate: [],
-    hasImage: false,
-    hasLastFrame: false,
     hasResolution: false,
     hasRatio: false,
     hasDuration: false,
@@ -205,36 +157,16 @@ export function parseVideoPayloadToForm(raw: string): ParseVideoPayloadResult {
           textFound = true
         }
       } else if (itemType === 'image_url') {
-        patch.materials?.push(item as Record<string, unknown>)
-        const imgObj = (item as Record<string, unknown>).image_url as
+        const image = (item as Record<string, unknown>).image_url as
           | Record<string, unknown>
           | undefined
-        const urlStr = typeof imgObj?.url === 'string' ? imgObj.url : ''
-        const roleStr =
-          typeof (item as Record<string, unknown>).role === 'string'
-            ? String((item as Record<string, unknown>).role)
-            : ''
-
-        if (roleStr === 'last_frame') {
-          patch.hasLastFrame = true
-          if (urlStr.startsWith('data:image/')) {
-            patch.lastFrameMode = 'base64'
-            patch.lastFrameBase64 = urlStr
-          } else {
-            patch.lastFrameMode = 'url'
-            patch.lastFrameUrl = urlStr
-          }
-        } else {
-          patch.hasImage = true
-          patch.role = roleStr || 'reference_image'
-          if (urlStr.startsWith('data:image/')) {
-            patch.uploadMode = 'base64'
-            patch.base64Data = urlStr
-          } else {
-            patch.uploadMode = 'url'
-            patch.imageUrl = urlStr
+        if (typeof image?.url !== 'string' || !image.url.trim()) {
+          return {
+            success: false,
+            error: 'Each material requires an image URL',
           }
         }
+        patch.materials?.push(item as Record<string, unknown>)
       }
     }
   }

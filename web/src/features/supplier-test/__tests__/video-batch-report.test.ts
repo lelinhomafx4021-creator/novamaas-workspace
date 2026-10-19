@@ -140,6 +140,7 @@ test('partial response cannot become terminal proof, and aliases do not imply mo
     metrics: {
       ...records[0].metrics,
       raw_request_json: '{"model":"public-alias"}',
+      submit: undefined,
       final: undefined,
       last_query: {
         ...terminal,
@@ -208,3 +209,15 @@ test.each([
     expect(result.comparison).toBe(comparison)
   }
 )
+
+test('summary reads the actual submitted model and resolution when raw binary evidence is absent', () => {
+  const record = {
+    ...records[0],
+    model: 'form-edited-after-submit',
+    metrics: { ...records[0].metrics, raw_request_json: undefined },
+  }
+  expect(videoResult(record)).toMatchObject({
+    model: 'doubao-seedance-2-0-260128',
+    resolution: '720p',
+  })
+})

@@ -62,3 +62,17 @@ test('native JSON preserves multiple input forms, order, unknown content and exp
     })
   ).toEqual(payload)
 })
+
+test.each([{}, { url: '' }, { url: 42 }])(
+  'malformed image reference %j is rejected before it reaches the material editor',
+  (image_url) => {
+    expect(
+      parseVideoPayloadToForm(
+        JSON.stringify({ content: [{ type: 'image_url', image_url }] })
+      )
+    ).toEqual({
+      success: false,
+      error: 'Each material requires an image URL',
+    })
+  }
+)

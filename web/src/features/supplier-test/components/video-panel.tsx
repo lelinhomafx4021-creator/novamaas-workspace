@@ -168,39 +168,43 @@ export function VideoPanel(props: {
       return
     }
     setIsManualQuerying(true)
+    let res: QueryVideoTaskResult
     try {
-      const res = await querySupplierVideoTask({
+      res = await querySupplierVideoTask({
         base_url: props.baseUrl.trim(),
         api_key: props.apiKey || '',
         task_id: effectiveTaskId,
         custom_path: props.video.customPath,
       })
-      if (res.raw_response) {
-        try {
-          setManualPollJson(
-            JSON.stringify(JSON.parse(res.raw_response), null, 2)
-          )
-        } catch {
-          setManualPollJson(res.raw_response)
-        }
-      } else {
-        setManualPollJson(JSON.stringify(res, null, 2))
-      }
-      setActiveJsonTab('poll')
-      if (!res.success) {
-        toast.error(res.message || t('Failed to query task'))
-      } else if (res.status) {
-        props.onManualQueryResult?.(res)
-        toast.success(t('Task status: {{status}}', { status: res.status }))
-      } else if (res.message) {
-        toast.error(res.message)
-      }
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : t('Failed to query task')
-      )
+      res = {
+        success: false,
+        message: err instanceof Error ? err.message : t('Failed to query task'),
+      }
     } finally {
       setIsManualQuerying(false)
+    }
+    props.onManualQueryResult?.({
+      ...res,
+      base_url: res.base_url || props.baseUrl.trim(),
+      task_id: res.task_id || effectiveTaskId,
+    })
+    if (res.raw_response) {
+      try {
+        setManualPollJson(JSON.stringify(JSON.parse(res.raw_response), null, 2))
+      } catch {
+        setManualPollJson(res.raw_response)
+      }
+    } else {
+      setManualPollJson(JSON.stringify(res, null, 2))
+    }
+    setActiveJsonTab('poll')
+    if (!res.success) {
+      toast.error(res.message || t('Failed to query task'))
+    } else if (res.status) {
+      toast.success(t('Task status: {{status}}', { status: res.status }))
+    } else if (res.message) {
+      toast.error(res.message)
     }
   }
 

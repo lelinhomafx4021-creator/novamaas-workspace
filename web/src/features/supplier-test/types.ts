@@ -262,19 +262,10 @@ export type VideoReportChecks = {
 }
 
 export type VideoForm = {
-  materials?: Array<Record<string, unknown>>
+  materials: Array<Record<string, unknown>>
   materialEvidence?: VideoExchange[]
   contentTemplate?: Array<Record<string, unknown>>
   prompt: string
-  hasImage: boolean
-  uploadMode: 'url' | 'base64'
-  imageUrl: string
-  base64Data: string
-  role: string
-  hasLastFrame: boolean
-  lastFrameMode: 'url' | 'base64'
-  lastFrameUrl: string
-  lastFrameBase64: string
   hasResolution: boolean
   resolution: string
   hasRatio: boolean

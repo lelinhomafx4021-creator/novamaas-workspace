@@ -262,6 +262,11 @@ export function SupplierTest() {
       module === 'basic' && checks && checks.length > 0
         ? checks
         : defaultBasicChecks
+    const videoPayload =
+      module === 'video' ? buildVideoRequestPayload(target.model, video) : null
+    const videoRaw =
+      video.rawPayload?.trim() ||
+      (videoPayload ? JSON.stringify(videoPayload) : '')
     return {
       base_url: target.baseUrl.trim(),
       api_key: target.apiKey,
@@ -300,57 +305,8 @@ export function SupplierTest() {
         ...(video.taskId || run.videoMetrics?.task_id
           ? { task_id: (video.taskId || run.videoMetrics?.task_id)?.trim() }
           : {}),
-        ...(() => {
-          const edited = video.rawPayload?.trim() ?? ''
-          if (edited) return { raw_payload: edited }
-          if (module !== 'video') return {}
-          const preview = buildVideoRequestPayload(target.model, video)
-          return preview ? { raw_payload: JSON.stringify(preview) } : {}
-        })(),
+        ...(videoRaw ? { raw_payload: videoRaw } : {}),
         prompt: video.prompt.trim(),
-        ...(video.hasImage
-          ? {
-              upload_mode: video.uploadMode,
-              ...(video.uploadMode === 'url'
-                ? { image_url: video.imageUrl.trim() }
-                : {}),
-              ...(video.uploadMode === 'base64'
-                ? { base64_data: video.base64Data.trim() }
-                : {}),
-              role: video.role,
-            }
-          : {}),
-        ...(video.hasLastFrame
-          ? {
-              last_frame_mode: video.lastFrameMode,
-              ...(video.lastFrameMode === 'url'
-                ? { last_frame_url: video.lastFrameUrl.trim() }
-                : {}),
-              ...(video.lastFrameMode === 'base64'
-                ? { last_frame_base64: video.lastFrameBase64.trim() }
-                : {}),
-            }
-          : {}),
-        ...(video.hasResolution && video.resolution
-          ? { resolution: video.resolution }
-          : {}),
-        ...(video.hasRatio && video.ratio ? { ratio: video.ratio } : {}),
-        ...(video.hasDuration && video.duration > 0
-          ? { duration: video.duration }
-          : {}),
-        ...(video.hasWatermark ? { watermark: video.watermark } : {}),
-        ...(video.hasSeed && video.seed.trim() !== ''
-          ? { seed: Number.parseInt(video.seed, 10) }
-          : {}),
-        ...(video.hasGenerateAudio
-          ? { generate_audio: video.generateAudio }
-          : {}),
-        ...(video.hasReturnLastFrame
-          ? { return_last_frame: video.returnLastFrame }
-          : {}),
-        ...(video.hasCustomJson && video.customJson.trim()
-          ? { custom_json: video.customJson.trim() }
-          : {}),
         ...(video.customPath.trim()
           ? { custom_path: video.customPath.trim() }
           : {}),

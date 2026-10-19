@@ -56,6 +56,7 @@ export interface PublicHeaderProps {
   leftContent?: React.ReactNode
   rightContent?: React.ReactNode
   showNavigation?: boolean
+  activeNavigationHref?: string
   showAuthButtons?: boolean
   showNotifications?: boolean
   className?: string
@@ -91,7 +92,7 @@ export function PublicHeader(props: PublicHeaderProps) {
   const dynamicLinks = useTopNavLinks()
   const notifications = useNotifications()
   const routerState = useRouterState()
-  const pathname = routerState.location.pathname
+  const pathname = props.activeNavigationHref ?? routerState.location.pathname
 
   const user = auth.user
   const isAuthenticated = !!user
@@ -251,6 +252,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                   <Link
                     key={link.href}
                     to={link.href}
+                    aria-current={isActive ? 'page' : undefined}
                     disabled={link.disabled}
                     onClick={(event) => handleNavLinkClick(event, link)}
                     className={cn(
@@ -394,6 +396,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                 <Link
                   key={link.href}
                   to={link.href}
+                  aria-current={isActive ? 'page' : undefined}
                   disabled={link.disabled}
                   onClick={(event) => handleNavLinkClick(event, link, true)}
                   className={linkClassName}

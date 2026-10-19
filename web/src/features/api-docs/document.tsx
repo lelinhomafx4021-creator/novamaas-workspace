@@ -52,7 +52,10 @@ const DirectoryLink = createLink(
   }
 )
 
-export function Document(props: { content: string }) {
+export function Document(props: {
+  content: string
+  to?: '/docs' | '/admin-manual'
+}) {
   const { t } = useTranslation()
   const hash = useLocation({ select: (location) => location.hash })
   const blocks = useMemo(() => {
@@ -182,7 +185,7 @@ export function Document(props: { content: string }) {
                 )}
               >
                 <Link
-                  to='/docs'
+                  to={props.to ?? '/docs'}
                   search={(previous) => previous}
                   hash={anchor}
                   onClick={() => setActiveAnchor(anchor)}
@@ -276,7 +279,7 @@ export function Document(props: { content: string }) {
           {headings.map(({ token, anchor }) => (
             <DirectoryLink
               key={anchor}
-              to='/docs'
+              to={props.to ?? '/docs'}
               search={(previous) => previous}
               hash={anchor}
               activeOptions={{ includeHash: true }}

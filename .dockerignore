@@ -16,3 +16,8 @@ docs
 !docs/platform-api/
 !docs/platform-api/*.go
 !docs/platform-api/*.md
+
+# Administrator documentation is embedded only in the backend binary.
+!docs/admin-manual/
+!docs/admin-manual/*.go
+!docs/admin-manual/*.md

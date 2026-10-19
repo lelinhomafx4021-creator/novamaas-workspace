@@ -53,6 +53,16 @@ export function useUpdateOption() {
       if (data.success) {
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        if (variables.key === 'AdminManualEnabled') {
+          void queryClient
+            .cancelQueries({ queryKey: ['admin-manual'] })
+            .then(() => {
+              queryClient.removeQueries({
+                queryKey: ['admin-manual', 'documents'],
+              })
+              void queryClient.invalidateQueries({ queryKey: ['admin-manual'] })
+            })
+        }
 
         // If updating frontend-display-related config, also refresh status
         if (STATUS_RELATED_KEYS.has(variables.key)) {

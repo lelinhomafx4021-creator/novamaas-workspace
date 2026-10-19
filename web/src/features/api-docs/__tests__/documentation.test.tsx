@@ -69,6 +69,7 @@ let requireAuth: boolean
 let enabled: boolean
 let failDocs: boolean
 let apiDocuments: typeof mockDocuments
+let manualAvailable: boolean
 
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
@@ -80,6 +81,7 @@ beforeEach(() => {
   enabled = true
   failDocs = false
   apiDocuments = mockDocuments
+  manualAvailable = false
   api.defaults.adapter = async (config) => {
     let data: unknown = ''
     if (config.url === '/api/status') {
@@ -105,6 +107,9 @@ beforeEach(() => {
         )
       }
       data = apiDocuments
+    }
+    if (config.url === '/api/admin-manual/access') {
+      data = { available: manualAvailable }
     }
     return {
       data: { success: true, data },
@@ -347,4 +352,47 @@ test('a new login session retries a failed documentation request for the same us
   expect(
     await screen.findByRole('heading', { level: 1, name: '快速开始' })
   ).toBeVisible()
+})
+
+test('public documentation adds only an authorized manual link and keeps its search independent', async () => {
+  manualAvailable = true
+  useAuthStore.setState((state) => ({
+    auth: {
+      ...state.auth,
+      user: { id: 90, username: 'reader', role: 1 },
+      accessToken: 'test-reader',
+      accessExpiresAt: 9999999999,
+    },
+  }))
+  await renderDocumentation()
+  await screen.findByRole('heading', { level: 1, name: '快速开始' })
+  expect(
+    screen.queryByRole('link', { name: 'Platform integration guide' })
+  ).not.toBeInTheDocument()
+  act(() =>
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 90, username: 'reader', role: 10 })
+  )
+  expect(
+    await screen.findByRole('link', { name: 'Platform integration guide' })
+  ).toHaveAttribute('href', '/admin-manual')
+  fireEvent.change(
+    screen.getByRole('searchbox', { name: 'Search documentation' }),
+    { target: { value: 'synthetic private administration procedure' } }
+  )
+  expect(
+    within(
+      screen.getByRole('navigation', { name: 'API documentation' })
+    ).queryAllByRole('link')
+  ).toHaveLength(0)
+  manualAvailable = false
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ['admin-manual', 'access'] })
+  })
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('link', { name: 'Platform integration guide' })
+    ).not.toBeInTheDocument()
+  )
 })

@@ -1,41 +1,27 @@
 # 视频生成
 
-平台全面支持火山方舟官方原生 v3 视频生成规范与网关兼容模式。**强烈推荐客户系统优先接入官方原生 v3 协议栈**，网关兼容模式仅作为存量系统过渡通道（不推荐新业务使用）。
+视频接入方式取决于模型系列和已开通渠道。Wan 使用 v1 接口；Seedance 可使用 v1 兼容或火山原生 v3。v3 是协议路径版本，不代表 Wan 3.0 必须走 v3。以下示例中的模型、任务和素材 ID 均需替换成当前账号可用的实际值。
 
-## 首选推荐规范：火山方舟官方原生 v3 协议
+## 协议与请求路径
 
-> [!TIP]
-> **企业对接最佳实践首选建议**：
-> 强烈推荐优先接入火山方舟官方原生协议栈（素材库 Action RPC + 视频任务 `POST /api/v3/contents/generations/tasks` + 状态轮询 `GET /api/v3/...`）。
-> 
-> **核心技术收益**：
-> 1. **100% 完整支持官方高级特性**：全面支持豆包 Seedance 2.0 / 2.5 系列模型，支持结构化输入、首尾帧控制、多图参考、音画同步与 Base64 直传。
-> 2. **彻底消除真人审核拦截**：素材库签发的 `asset://` 资产句柄直接在原生层毫秒级加载特征缓存，杜绝真人出镜审核被拒风险。
-> 3. **火山 TOS 极速 CDN 直链**：结果直接返回火山 TOS 官方极速 CDN 专属直链，下载吞吐带宽提升 3~5 倍且不占用网关中转资源。
+| 系列 / 操作 | 请求方式 | 路径 | 说明 |
+| --- | --- | --- | --- |
+| Wan 或 Seedance 兼容提交 | POST | `/v1/videos` | 兼容别名 `/v1/video/generations` |
+| v1 查询 | GET | `/v1/videos/{task_id}` | 顶层视频对象、整数 progress |
+| Seedance 原生提交 | POST | `/api/v3/contents/generations/tasks` | 需要对应的 Volc Native 渠道 |
+| v3 查询 / 列表 | GET | `/api/v3/contents/generations/tasks/{id}` / 同路径不带 ID | Gateway 保存的任务快照及本人 v3 任务列表 |
+| v3 取消 | DELETE | `/api/v3/contents/generations/tasks/{id}` | 以实际返回的任务终态为准 |
+| 文件交付信息 | GET | `/v1/videos/{task_id}/content-info` | 按响应选择直连或网关代理下载 |
 
-## 接口概览与调用链路
+请求携带 `Authorization: Bearer YOUR_API_KEY`。保存提交响应里的 Gateway 任务 ID，后续查询使用该 ID。提交成功表示任务已受理，仍需轮询到终态；网络超时不要自动重复创建付费任务。
 
-```text
-1. 创建素材组          ➔  2. 录入人像素材         ➔  3. 提交火山视频任务 ★    ➔  4. 原生轮询状态 ★        ➔  5. 官方 CDN 直连拉取 ★
-Action=CreateAssetGroup    Action=CreateAsset         POST /api/v3/.../tasks     GET /api/v3/.../tasks/{id}    GET {video_url}
-(AK/SK 增)                 获 asset:// 句柄 (增)      注入 asset:// (Bearer 增)  获取 video_url (查)           免 Header 极速高速下载
-```
+素材库可使用 REST 或 Action RPC，详见“素材库 API”。素材 ID 用于引用已注册媒体，上传与渠道同步完成后才能调用；素材仍受模型支持范围、审核结果及账号归属约束，不保证审核通过。
 
-| 业务场景 | 推荐等级 | 请求方式 | 接口路径 | 鉴权方式 | 核心特点与优势 |
-| --- | --- | --- | --- | --- | --- |
-| 提交视频生成任务 | ★ 首选推荐 | POST | `/api/v3/contents/generations/tasks` | API Key (Bearer) | 支持首尾帧、素材句柄、多图参考、音效同步 |
-| 查询单个任务状态 | ★ 首选推荐 | GET | `/api/v3/contents/generations/tasks/{id}` | API Key (Bearer) | 提取官方 TOS 专属极速直链与 Token 用量 |
-| 分页查询任务列表 | ★ 首选推荐 | GET | `/api/v3/contents/generations/tasks` | API Key (Bearer) | 分页查询当前账号所有任务，支持多维过滤 |
-| 取消/终止视频任务 | ★ 首选推荐 | DELETE | `/api/v3/contents/generations/tasks/{id}` | API Key (Bearer) | 及时取消正在排队或渲染的任务并释放配额 |
-| 视频文件极速下载 | ★ 首选推荐 | GET | `{video_url}` (火山 TOS 直链) | 免鉴权 Header | BGP 骨干带宽直连，支持流式断点续传 |
-| 网关兼容视频生成 | 兼容通道（不推荐） | POST | `/v1/video/generations` | API Key (Bearer) | 扁平化参数，仅用于存量系统对接 |
-| 网关兼容任务轮询 | 兼容通道（不推荐） | GET | `/v1/video/generations/{task_id}` | API Key (Bearer) | 附带百分比进度（`progress: "100%"`） |
-
-## 一、火山原生视频生成任务全生命周期规范（官方首选）
+## 一、Seedance 原生 v3 流程
 
 ### 1. 提交视频生成任务 (CreateTask) · 增
 
-采用火山方舟官方原生 v3 标准 REST 协议规范，全面支持豆包 Seedance 2.0 / 2.5 系列模型。使用 `content` 结构化输入，支持首帧控制、尾帧衔接、素材库句柄引用、多图参考、Base64 直传与音频同步生成。
+使用 content 数组传入文本和媒体，具体的媒体角色、尺寸、时长、音频能力由所选 Seedance 模型与渠道决定。接口不会替客户端保证所有模型具备相同特性。
 
 - **接口路径**：`POST /api/v3/contents/generations/tasks`
 - **请求头**：
@@ -50,15 +36,15 @@ Action=CreateAssetGroup    Action=CreateAsset         POST /api/v3/.../tasks    
 | `content` | array | 是 | — | 结构化内容列表，由文本提示词与图片对象数组构成（官方标准规范，无平铺限制） |
 | `content[].type` | string | 是 | — | 内容类型：`"text"`（文本描述）或 `"image_url"`（图像来源） |
 | `content[].text` | string | 条件 | — | 文本提示词，描述画面主体、动作动态、环境运镜、质感细节等（中英文均可） |
-| `content[].image_url.url` | string | 条件 | — | 支持三种格式：<br>1. **素材库句柄 (强烈推荐)**：`asset://{asset_id}`（100% 避免真人拦截）<br>2. **公网直链**：`https://...`（HTTP/HTTPS 直连直链）<br>3. **Base64 编码**：`data:image/jpeg;base64,{data}`（单图 < 30MB） |
-| `content[].role` | string | 否 | `first_frame` | 图片角色定位：<br>• `"first_frame"`：首帧图（从该图开始动态演化）<br>• `"last_frame"`：尾帧图（向该图演化收尾）<br>• `"reference_image"`：人像/风格特征参考图（保持多图一致性） |
-| `resolution` | string | 否 | `720p` | 输出物理分辨率：`480p`、`720p`（默认标清）、`1080p`（高清）、`4k` |
-| `ratio` | string | 否 | `16:9` | 画面宽高比：`16:9`、`9:16`、`1:1`、`4:3`、`3:4`、21:9、`adaptive`（自适应首图） |
-| `duration` | integer | 否 | 5 | 视频时长（秒），支持 `5` 或 `10`（生成更加从容丰富的连续动作） |
-| `generate_audio` | boolean | 否 | true | 是否同步生成与画面动态匹配的高保真音效/环境声/音乐（默认开启） |
-| `watermark` | boolean | 否 | false | 右下角是否保留官方“AI生成”水印，默认 false（无水印纯净版） |
+| `content[].image_url.url` | string | 条件 | — | 支持三种格式：<br>1. **素材库句柄**：`asset://{asset_id}`（需完成注册和所选渠道的同步）<br>2. **公网直链**：`https://...`（HTTP/HTTPS 直连直链）<br>3. **Base64 编码**：`data:image/jpeg;base64,{data}`（需符合模型和平台请求大小限制） |
+| `content[].role` | string | 否 | 由模型决定 | 图片角色定位：<br>• `"first_frame"`：首帧图（从该图开始动态演化）<br>• `"last_frame"`：尾帧图（向该图演化收尾）<br>• `"reference_image"`：人像/风格特征参考图（保持多图一致性） |
+| `resolution` | string | 否 | 由模型决定 | 按模型选择；当前 Seedance 2.5 接受 `480p`、`720p`、`1080p`，不能将 `4k` 视为通用选项 |
+| `ratio` | string | 否 | 由模型决定 | 画面宽高比：`16:9`、`9:16`、`1:1`、`4:3`、`3:4`、21:9、`adaptive`（自适应首图） |
+| `duration` | integer | 否 | 由模型决定 | 网关校验整数和通用时长边界；实际支持时长与 `-1` 智能时长能力由模型决定 |
+| `generate_audio` | boolean | 否 | 由模型决定 | 是否生成音频；需要所选模型支持 |
+| `watermark` | boolean | 否 | 由模型决定 | 是否请求水印；以所选模型支持范围为准 |
 
-#### (1) 官方首选方案：素材库句柄调用示例 (多图人像一致性参考 · 杜绝真人拦截)
+#### (1) 素材库句柄调用示例
 
 ```bash
 curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/api/v3/contents/generations/tasks' \
@@ -94,11 +80,11 @@ curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/api/v3/con
 }'
 ```
 
-提交成功响应 (HTTP 200)：
+提交响应示例（至少读取 id，其他字段不保证立即返回）：
 
 ```json
 {
-  "id": "cgt-20260924081530-ab123",
+  "id": "task_EXAMPLE_GATEWAY_ID",
   "model": "doubao-seedance-2-0",
   "status": "queued",
   "created_at": 1790237730
@@ -136,7 +122,7 @@ curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/api/v3/con
 
 #### (3) 本地 Base64 直传调用示例
 
-适合客户端本地图片直接提交（单图限制小于 30MB）：
+模型支持 Data URI 时可提交本地图片的 Base64 内容；文件大小仍受请求限制和上游限制约束：
 
 ```json
 {
@@ -168,7 +154,7 @@ curl --fail-with-body --request POST 'https://gateway.ai.shilijia.xyz/api/v3/con
 - **请求头**：`Authorization: Bearer YOUR_API_KEY`
 
 ```bash
-curl --fail-with-body --request GET 'https://gateway.ai.shilijia.xyz/api/v3/contents/generations/tasks/cgt-20260924081530-ab123' \
+curl --fail-with-body --request GET 'https://gateway.ai.shilijia.xyz/api/v3/contents/generations/tasks/task_EXAMPLE_GATEWAY_ID' \
   --header 'Authorization: Bearer YOUR_API_KEY'
 ```
 
@@ -176,7 +162,7 @@ curl --fail-with-body --request GET 'https://gateway.ai.shilijia.xyz/api/v3/cont
 
 ```json
 {
-  "id": "cgt-20260924081530-ab123",
+  "id": "task_EXAMPLE_GATEWAY_ID",
   "model": "doubao-seedance-2-0",
   "status": "succeeded",
   "content": {
@@ -200,10 +186,13 @@ curl --fail-with-body --request GET 'https://gateway.ai.shilijia.xyz/api/v3/cont
 | `running` | 渲染处理中 | 建议间隔 3~5 秒继续轮询 |
 | `succeeded` | 渲染成功 | 提取 `content.video_url`，立即下载或流式转存 |
 | `failed` | 任务失败 | 检查 `error` 字段说明，停止轮询 |
+| `cancelled` / `expired` | 已取消 / 已过期 | 停止轮询，不展示为生成成功 |
 
 ---
 
 ### 3. 分页查询视频任务列表 (ListTasks) · 查
+
+仅列出当前用户的 v3 任务，不会列出同一上游账号下其他用户或 Wan v1 的任务。
 
 - **接口路径**：`GET /api/v3/contents/generations/tasks`
 - **请求参数 (Query)**：
@@ -223,7 +212,7 @@ curl --fail-with-body --request GET 'https://gateway.ai.shilijia.xyz/api/v3/cont
 {
   "items": [
     {
-      "id": "cgt-20260924081530-ab123",
+      "id": "task_EXAMPLE_GATEWAY_ID",
       "model": "doubao-seedance-2-0",
       "status": "succeeded",
       "content": {
@@ -240,13 +229,13 @@ curl --fail-with-body --request GET 'https://gateway.ai.shilijia.xyz/api/v3/cont
 
 ### 4. 取消/终止视频任务 (CancelTask) · 删
 
-用于在任务排队或渲染过程中及时取消生成。取消成功后将释放扣减的配额，并返回任务当前状态快照：
+用于请求取消尚未结束的 v3 任务。已结束任务直接返回其当前状态；取消与完成并发时，以持久化后的返回状态为准。不能仅凭请求返回 HTTP 200 就预先确认取消或退款。
 
 - **接口路径**：`DELETE /api/v3/contents/generations/tasks/{id}`
 - **请求头**：`Authorization: Bearer YOUR_API_KEY`
 
 ```bash
-curl --fail-with-body --request DELETE 'https://gateway.ai.shilijia.xyz/api/v3/contents/generations/tasks/cgt-20260924081530-ab123' \
+curl --fail-with-body --request DELETE 'https://gateway.ai.shilijia.xyz/api/v3/contents/generations/tasks/task_EXAMPLE_GATEWAY_ID' \
   --header 'Authorization: Bearer YOUR_API_KEY'
 ```
 
@@ -254,39 +243,27 @@ curl --fail-with-body --request DELETE 'https://gateway.ai.shilijia.xyz/api/v3/c
 
 ```json
 {
-  "id": "cgt-20260924081530-ab123",
+  "id": "task_EXAMPLE_GATEWAY_ID",
   "model": "doubao-seedance-2-0",
-  "status": "failed",
-  "error": {
-    "code": "cancelled",
-    "message": "task was cancelled by user"
-  }
+  "status": "cancelled"
 }
 ```
 
 ---
 
-## 二、火山 TOS CDN 极速下载与转存最佳实践
+## 二、视频下载与保存
 
-1. **直连官方高速骨干 CDN**：
-   响应中的 `video_url` 是火山官方专属对象存储经过全球多线 BGP CDN 加速的直签名直链，吞吐带宽大、稳定无二次代理衰减。
-2. **免 Header 鉴权拉取**：
-   该直链为已签名的安全预认证 URL，**下载时严禁携带 Authorization 请求头**。
-3. **支持流式断点续传**：
-   大文件下载推荐使用断点续传命令直接保存：
-   ```bash
-   curl -L -C - -o "video.mp4" "YOUR_VIDEO_URL"
-   ```
-4. **有效期提示**：
-   官方直签名有效访问期为 **24 小时**（`X-Tos-Expires=86400`），请在生成后及时流式转存至业务自有对象存储。
+先取 `/v1/videos/{task_id}/content-info`。当 data.delivery_mode 为 redirect 时读取 data.url，下载时不携带 Gateway 的 Authorization；为 proxy 时携带模型 Key 请求 `/v1/videos/{task_id}/content`。视频地址来自具体渠道或平台存储，不保证总是某一家 CDN，也不保证统一有效期、速度或断点续传能力。
 
----
+需要长期保存的文件应及时转存至自己的存储；临时地址过期时重新查询任务或交付信息。下载示例：
 
-## 三、网关兼容模式接口（备选兼容通道 · 不推荐）
+```bash
+curl --fail-with-body -L -o 'video.mp4' '<VIDEO_URL>'
+```
 
-> [!WARNING]
-> **兼容通道声明（不推荐作为新系统接入方式）**：
-> 为兼顾已采用 OpenAI 视频风格接入或需要轻量级扁平参数调用的存量客户端，网关额外提供了兼容模式接口。两套协议完全共用同一个素材库与任务底层。但兼容模式在高级生成特性控制、首尾帧灵活演化及吞吐优化上存在局限，**仅作为存量兼容过渡，强烈建议新系统优先采用上方的原生 v3 接口**。
+## 三、v1 视频协议
+
+Wan 使用该入口；Seedance 也可使用兼容请求。需要保留 Seedance 原生 content 数组及模型原生字段时，选择前述 v3。两种请求的字段结构和状态格式应分别处理。
 
 ### 1. 网关兼容视频生成接口 (POST /v1/video/generations)
 
@@ -376,25 +353,26 @@ Wan3 渠道的参数覆盖在请求格式转换和参数校验前执行。条件
 
 百炼旧模型（例如 Wan2.5）关闭音频仍使用 `metadata.parameters.audio: false`，类型及支持范围保持原有适配器行为。媒体类型和素材限制见[Wan3.0 官方文档](https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference)。
 
-### 2. 网关兼容视频任务轮询 (GET /v1/video/generations/{task_id})
+### 2. 查询 v1 视频任务
 
-提供实时百分比进度（`progress`）的扩展状态展示：
+优先使用 `GET /v1/videos/{task_id}`：
 
 ```bash
-curl --fail-with-body --request GET 'https://gateway.ai.shilijia.xyz/v1/video/generations/task_TjyIFnCBCqj4UgdIkpP7mHFnZDbqZkx4' \
+curl --fail-with-body 'https://gateway.ai.shilijia.xyz/v1/videos/<TASK_ID>' \
   --header 'Authorization: Bearer YOUR_API_KEY'
 ```
 
-成功响应 (已完成 · 100%)：
+完成时的核心字段示例：
 
 ```json
 {
-  "code": "success",
-  "data": {
-    "task_id": "task_TjyIFnCBCqj4UgdIkpP7mHFnZDbqZkx4",
-    "status": "SUCCESS",
-    "progress": "100%",
-    "result_url": "https://gateway.ai.shilijia.xyz/output/video/task_xxx.mp4"
-  }
+  "id": "<TASK_ID>",
+  "object": "video",
+  "model": "<MODEL_ID>",
+  "status": "completed",
+  "progress": 100,
+  "metadata": {"url":"https://files.example.com/result.mp4"}
 }
 ```
+
+状态为 queued / in_progress / completed / failed / unknown；progress 为整数。失败读取 error.code/message。旧 `GET /v1/video/generations/{task_id}` 仍可使用，但返回 code/data 且各适配器字段存在差异，不能套用上面的顶层解析。当前没有通用的 v1 DELETE 取消入口。

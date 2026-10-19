@@ -1,11 +1,17 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook } from '@testing-library/react'
 import i18next from 'i18next'
+import { createElement, type ReactNode } from 'react'
 import { expect, test } from 'vitest'
 
 import { useSidebarData } from '../use-sidebar-data'
 
 test('personal navigation lists profile, statements and wallet in order', () => {
-  const { result } = renderHook(() => useSidebarData())
+  const client = new QueryClient()
+  const { result, unmount } = renderHook(() => useSidebarData(), {
+    wrapper: (props: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, props.children),
+  })
   const items = result.current.navGroups.find(
     (group) => group.id === 'personal'
   )?.items
@@ -19,4 +25,6 @@ test('personal navigation lists profile, statements and wallet in order', () => 
     '/billing',
     '/wallet',
   ])
+  unmount()
+  client.clear()
 })

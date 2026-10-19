@@ -28,8 +28,16 @@ import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { AdminManualSection } from './admin-manual-section'
 
 const SITE_SECTIONS = [
+  {
+    id: 'admin-manual',
+    titleKey: 'Platform integration guide',
+    build: (settings: SiteSettings) => (
+      <AdminManualSection defaultEnabled={settings.AdminManualEnabled} />
+    ),
+  },
   {
     id: 'system-info',
     titleKey: 'System Information',

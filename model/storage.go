@@ -34,17 +34,18 @@ const (
 	AssetLibraryAllowedMIMETypes = "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg"
 	legacyRelayMediaMIMETypes    = "image/jpeg,image/png,image/webp"
 
-	StorageObjectPurposeRelayMediaTemp  = "relay_media_temp"
-	StorageObjectPurposeAssetLibrary    = "asset_library"
-	StorageObjectPurposeImageStudio     = "image_studio"
-	StorageObjectPurposeBillingArchive  = "billing_archive"
-	StorageObjectPurposeRequestSnapshot = "request_snapshot"
-	StorageObjectStatusUploading        = "uploading"
-	StorageObjectStatusUploaded         = "uploaded"
-	StorageObjectStatusDeletePending    = "delete_pending"
-	StorageObjectStatusDeleting         = "deleting"
-	StorageObjectStatusDeleteFailed     = "delete_failed"
-	StorageObjectStatusDeleted          = "deleted"
+	StorageObjectPurposeRelayMediaTemp       = "relay_media_temp"
+	StorageObjectPurposeAssetLibrary         = "asset_library"
+	StorageObjectPurposeImageStudio          = "image_studio"
+	StorageObjectPurposeImageStudioReference = "image_studio_reference"
+	StorageObjectPurposeBillingArchive       = "billing_archive"
+	StorageObjectPurposeRequestSnapshot      = "request_snapshot"
+	StorageObjectStatusUploading             = "uploading"
+	StorageObjectStatusUploaded              = "uploaded"
+	StorageObjectStatusDeletePending         = "delete_pending"
+	StorageObjectStatusDeleting              = "deleting"
+	StorageObjectStatusDeleteFailed          = "delete_failed"
+	StorageObjectStatusDeleted               = "deleted"
 )
 
 type StorageProfile struct {
@@ -165,6 +166,9 @@ func (object *StorageObject) BeforeCreate(_ *gorm.DB) error {
 	}
 	if object.Purpose == StorageObjectPurposeImageStudio && object.DeleteAfter == 0 {
 		object.DeleteAfter = object.CreatedAt + ImageStudioRetentionSeconds
+	}
+	if object.Purpose == StorageObjectPurposeImageStudioReference && object.DeleteAfter == 0 {
+		object.DeleteAfter = object.CreatedAt + 7*24*60*60
 	}
 	object.UpdatedAt = now
 	return nil

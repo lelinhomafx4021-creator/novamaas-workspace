@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	studioService "github.com/QuantumNous/new-api/service/imagestudio"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +34,8 @@ func TestImageStudioPublicSurfaceKeepsModelsAndPersonalDataAuthenticated(t *test
 		"enabled":               operation_setting.GetImageStudioSetting().Enabled,
 		"max_images":            float64(operation_setting.ImageStudioMaxImages),
 		"max_prompt_characters": float64(operation_setting.ImageStudioMaxPromptCharacters),
+		"max_reference_images":  float64(studioService.MaxReferenceImages),
+		"max_reference_bytes":   float64(studioService.MaxReferenceImageBytes),
 	}, settings.Data)
 	for _, route := range []struct{ method, path string }{
 		{http.MethodGet, "/models"},
@@ -40,6 +43,7 @@ func TestImageStudioPublicSurfaceKeepsModelsAndPersonalDataAuthenticated(t *test
 		{http.MethodGet, "/runs/private-run"},
 		{http.MethodPost, "/runs"},
 		{http.MethodPost, "/prompt-assist"},
+		{http.MethodPost, "/references"},
 		{http.MethodDelete, "/runs/private-run"},
 		{http.MethodPost, "/results/private-result/save"},
 		{http.MethodDelete, "/results/private-result"},

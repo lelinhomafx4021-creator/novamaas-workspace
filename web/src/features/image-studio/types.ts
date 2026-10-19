@@ -20,6 +20,14 @@ export type StudioSettings = {
   enabled: boolean
   max_images: number
   max_prompt_characters: number
+  max_reference_images: number
+  max_reference_bytes: number
+}
+
+export type StudioReference = {
+  id: string
+  url: string
+  expires_at: number
 }
 
 export type StudioRunStatus = 'running' | 'completed' | 'failed'
@@ -76,5 +84,6 @@ export type CreateStudioRunInput = {
     model: string
     prompt: string
     size?: string
+    reference_ids?: string[]
   }
 }

@@ -22,10 +22,14 @@ import {
   Clock01Icon,
   Image01Icon,
   SparklesIcon,
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  Maximize01Icon,
+  Minimize01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
-import { useRef, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SystemBrand } from '@/components/layout/components/system-brand'
@@ -35,12 +39,13 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import type { ApiKey } from '@/features/keys/types'
+import { cn } from '@/lib/utils'
 
 import { useStudioComposer } from '../hooks/use-studio-composer'
 import { studioErrorMessage } from '../studio-utils'
 import type { StudioRun, StudioSettings } from '../types'
 import { StudioModelSettings } from './studio-model-settings'
-import { StudioSidebar } from './studio-sidebar'
+import { StudioReferenceImages } from './studio-reference-images'
 
 export function StudioComposer(props: {
   authenticated: boolean
@@ -56,8 +61,23 @@ export function StudioComposer(props: {
 }) {
   const { t } = useTranslation()
   const studio = useStudioComposer(props)
+  const [editorMode, setEditorMode] = useState<
+    'normal' | 'collapsed' | 'expanded'
+  >('normal')
+  const [dragging, setDragging] = useState(false)
   const historyRef = useRef<HTMLDivElement>(null)
-  const views = props.children(studio.busy, studio.reusePrompt)
+  const views = props.children(studio.busy, (value) => {
+    if (studio.busy) return
+    setEditorMode('normal')
+    studio.reusePrompt(value)
+    requestAnimationFrame(() => studio.form.setFocus('prompt'))
+  })
+  const newCreation = () => {
+    if (studio.busy) return
+    setEditorMode('normal')
+    studio.newCreation()
+    requestAnimationFrame(() => studio.form.setFocus('prompt'))
+  }
   const showHistory = () => {
     historyRef.current?.scrollIntoView({ block: 'start' })
     historyRef.current?.focus({ preventScroll: true })
@@ -85,13 +105,13 @@ export function StudioComposer(props: {
           <Button
             type='button'
             variant='ghost'
-            size='icon'
-            className='md:hidden'
+            size='sm'
             aria-label={t('New creation')}
             disabled={studio.busy}
-            onClick={studio.newCreation}
+            onClick={newCreation}
           >
             <HugeiconsIcon icon={Add01Icon} aria-hidden='true' />
+            <span className='hidden md:inline'>{t('New creation')}</span>
           </Button>
           <Button
             type='button'
@@ -123,14 +143,8 @@ export function StudioComposer(props: {
           </Button>
         </div>
       </header>
-      <div className='grid min-h-0 flex-1 auto-rows-max grid-cols-[180px_minmax(0,1fr)] content-start overflow-y-auto max-md:flex max-md:flex-col min-[75rem]:auto-rows-auto min-[75rem]:grid-cols-[208px_minmax(0,1fr)_288px] min-[75rem]:content-normal min-[75rem]:overflow-hidden min-[100rem]:grid-cols-[224px_minmax(0,1fr)_320px]'>
-        <StudioSidebar
-          authenticated={props.authenticated}
-          disabled={studio.busy}
-          onHistory={showHistory}
-          onNewCreation={studio.newCreation}
-        />
-        <div className='studio-center col-start-2 flex min-h-[calc(100svh-68px)] min-w-0 flex-none flex-col md:min-h-[calc(100svh-76px)] min-[75rem]:min-h-0'>
+      <div className='flex min-h-0 flex-1 flex-col overflow-y-auto min-[75rem]:grid min-[75rem]:grid-cols-[minmax(0,1fr)_288px] min-[75rem]:overflow-hidden min-[100rem]:grid-cols-[minmax(0,1fr)_320px]'>
+        <div className='studio-center flex min-h-[calc(100svh-68px)] min-w-0 flex-none flex-col md:min-h-[calc(100svh-76px)] min-[75rem]:min-h-0'>
           <div className='studio-canvas-toolbar text-muted-foreground flex min-h-12 shrink-0 items-center justify-between gap-3 px-4 text-[10px] md:min-h-[58px] md:px-7 md:text-[11px]'>
             <div className='flex min-w-0 items-center gap-2'>
               <span
@@ -146,11 +160,42 @@ export function StudioComposer(props: {
           </div>
           <form
             noValidate
+            data-dragging={dragging}
+            onDragOver={(event) => {
+              if (
+                !event.dataTransfer.types.includes('Files') &&
+                !event.dataTransfer.types.includes('text/uri-list')
+              ) {
+                return
+              }
+              event.preventDefault()
+              if (!studio.busy && props.authenticated) setDragging(true)
+            }}
+            onDragLeave={(event) => {
+              if (
+                !(event.relatedTarget instanceof Node) ||
+                !event.currentTarget.contains(event.relatedTarget)
+              ) {
+                setDragging(false)
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              setDragging(false)
+              setEditorMode('normal')
+              const files = [...event.dataTransfer.files]
+              const url = event.dataTransfer
+                .getData('text/uri-list')
+                .split('\n')
+                .find((line) => /^https?:\/\//.test(line))
+              if (files.length) studio.uploadReferences(files)
+              else if (url) studio.uploadReferences([url.trim()])
+            }}
             onSubmit={studio.submit}
             onChange={() => {
               studio.requestKey.current = ''
             }}
-            className='studio-composer focus-within:border-ring mx-3.5 mt-auto flex shrink-0 flex-col gap-2.5 rounded-[14px] border border-(--studio-panel-border) bg-(--studio-panel) px-3 pt-3.5 pb-2.5 transition-colors md:mx-7 md:px-4 min-[75rem]:mt-0 min-[100rem]:mx-10'
+            className='studio-composer focus-within:border-ring data-[dragging=true]:border-primary data-[dragging=true]:ring-primary/30 mx-3.5 mt-auto flex max-h-[70svh] shrink-0 flex-col gap-2.5 overflow-y-auto rounded-[14px] border border-(--studio-panel-border) bg-(--studio-panel) px-3 pt-3.5 pb-2.5 transition-colors data-[dragging=true]:ring-2 md:mx-7 md:px-4 min-[75rem]:mt-0 min-[100rem]:mx-10'
             aria-label={t('Image prompt editor')}
           >
             <div className='studio-composer-top flex min-w-0 items-center justify-between gap-3'>
@@ -168,194 +213,268 @@ export function StudioComposer(props: {
                     : t('Sign in to choose a model')}
                 </span>
               </div>
-              <StudioModelSettings
-                keys={props.keys}
-                userGroup={studio.userGroup}
-                image={{ tokenId: studio.tokenId, model: studio.model }}
-                text={{ ...studio.text, model: studio.textModel }}
-                imageModels={studio.models}
-                textModels={studio.textModels}
-                disabled={studio.busy || !props.authenticated}
-                onImageChange={(selection) => {
-                  studio.requestKey.current = ''
-                  studio.form.setValue('tokenId', String(selection.tokenId))
-                  studio.form.setValue('model', selection.model)
-                }}
-                onTextChange={studio.setText}
-              />
-            </div>
-            {!props.settings.enabled && (
-              <p
-                role='status'
-                className='text-muted-foreground text-[11px] leading-[1.6]'
-              >
-                {t('Image generation is disabled')}
-              </p>
-            )}
-            {props.authenticated && !props.keys.length && (
-              <p
-                role='status'
-                className='text-muted-foreground text-[11px] leading-[1.6]'
-              >
-                {t(
-                  'No API keys available. Create your first API key to get started.'
-                )}{' '}
-                <Link
-                  to='/keys'
-                  className='text-primary underline underline-offset-4'
-                >
-                  {t('API Keys')}
-                </Link>
-              </p>
-            )}
-            {studio.models.isError && (
-              <p role='alert' className='text-destructive text-xs'>
-                {t('Failed to load enabled models')}
-              </p>
-            )}
-            <Field
-              data-disabled={studio.busy}
-              data-invalid={Boolean(studio.form.formState.errors.prompt)}
-              className='gap-2'
-            >
-              <FieldLabel className='sr-only' htmlFor='studio-prompt'>
-                {t('Describe your image')}
-              </FieldLabel>
-              <Textarea
-                id='studio-prompt'
-                rows={3}
-                className='studio-prompt-input [field-sizing:fixed] max-h-[180px] min-h-[84px] resize-y rounded-none border-0 px-0 py-1 leading-[1.8] md:min-h-[70px] md:text-[13px]'
-                placeholder={t(
-                  'Describe the subject, scene, lighting and style, or try an example below.'
-                )}
-                {...studio.form.register('prompt')}
-                disabled={studio.busy}
-                aria-invalid={Boolean(studio.form.formState.errors.prompt)}
-                aria-describedby='studio-prompt-help'
-                maxLength={studio.maxCharacters}
-                onKeyDown={(event) => {
-                  if (
-                    (event.metaKey || event.ctrlKey) &&
-                    event.key === 'Enter' &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault()
-                    void studio.submit()
-                  }
-                }}
-              />
-            </Field>
-            {studio.optimize.isError && (
-              <p role='alert' className='text-destructive text-xs'>
-                {studioErrorMessage(studio.optimize.error)}
-              </p>
-            )}
-            {studio.generate.isError && (
-              <p role='alert' className='text-destructive text-xs'>
-                {studioErrorMessage(studio.generate.error)}
-              </p>
-            )}
-            {studio.optimize.isSuccess &&
-              studio.prompt === studio.optimize.data.suggested_prompt && (
-                <div className='text-muted-foreground flex items-center gap-2 text-xs'>
-                  <span role='status'>{t('Prompt optimized')}</span>
-                  <Button
-                    type='button'
-                    size='xs'
-                    variant='ghost'
-                    disabled={studio.busy}
-                    onClick={() => {
-                      if (studio.optimize.variables !== undefined) {
-                        studio.changePrompt(studio.optimize.variables)
-                      }
-                      studio.optimize.reset()
-                    }}
-                  >
-                    <HugeiconsIcon
-                      icon={ArrowTurnBackwardIcon}
-                      aria-hidden='true'
-                    />
-                    {t('Undo')}
-                  </Button>
-                </div>
-              )}
-            <div className='studio-composer-actions flex flex-wrap items-center justify-between gap-2 md:gap-2.5'>
-              <div className='flex flex-wrap items-center gap-[3px] md:gap-2'>
+              <div className='flex items-center gap-1'>
+                <StudioModelSettings
+                  keys={props.keys}
+                  userGroup={studio.userGroup}
+                  image={{ tokenId: studio.tokenId, model: studio.model }}
+                  text={{ ...studio.text, model: studio.textModel }}
+                  imageModels={studio.models}
+                  textModels={studio.textModels}
+                  disabled={studio.busy || !props.authenticated}
+                  onImageChange={(selection) => {
+                    studio.requestKey.current = ''
+                    studio.form.setValue('tokenId', String(selection.tokenId))
+                    studio.form.setValue('model', selection.model)
+                  }}
+                  onTextChange={studio.setText}
+                />
                 <Button
                   type='button'
-                  size='sm'
                   variant='ghost'
-                  disabled={
-                    !props.authenticated ||
-                    !props.settings.enabled ||
-                    studio.busy ||
-                    !studio.textModel ||
-                    studio.textModels.isFetching ||
-                    !studio.prompt.trim() ||
-                    studio.prompt.length > studio.maxCharacters
+                  size='icon-sm'
+                  aria-label={
+                    editorMode === 'expanded'
+                      ? t('Restore prompt editor')
+                      : t('Expand prompt editor')
                   }
-                  onClick={() => studio.optimize.mutate(studio.prompt)}
+                  aria-pressed={editorMode === 'expanded'}
+                  onClick={(event) => {
+                    event.currentTarget.form
+                      ?.querySelector('textarea')
+                      ?.style.removeProperty('height')
+                    setEditorMode(
+                      editorMode === 'expanded' ? 'normal' : 'expanded'
+                    )
+                  }}
                 >
-                  <HugeiconsIcon icon={SparklesIcon} aria-hidden='true' />
-                  {studio.optimize.isPending
-                    ? t('Optimizing...')
-                    : t('Optimize prompt')}
+                  <HugeiconsIcon
+                    icon={
+                      editorMode === 'expanded'
+                        ? Minimize01Icon
+                        : Maximize01Icon
+                    }
+                    aria-hidden='true'
+                  />
                 </Button>
-                <span
-                  className='text-muted-foreground rounded-md border px-[5px] py-1 text-[9px] md:px-2 md:text-[10px]'
-                  title={t(
-                    'Model defaults apply; you can also specify proportions in your prompt.'
-                  )}
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon-sm'
+                  aria-label={
+                    editorMode === 'collapsed'
+                      ? t('Show prompt editor')
+                      : t('Collapse prompt editor')
+                  }
+                  aria-expanded={editorMode !== 'collapsed'}
+                  aria-controls='studio-editor-body'
+                  onClick={() =>
+                    setEditorMode(
+                      editorMode === 'collapsed' ? 'normal' : 'collapsed'
+                    )
+                  }
                 >
-                  {t('Model default')}
-                </span>
+                  <HugeiconsIcon
+                    icon={
+                      editorMode === 'collapsed'
+                        ? ArrowUp01Icon
+                        : ArrowDown01Icon
+                    }
+                    aria-hidden='true'
+                  />
+                </Button>
               </div>
-              {props.authenticated ? (
-                <Button
-                  type='submit'
-                  size='lg'
-                  className='min-h-9 min-w-[100px] md:min-w-[126px]'
-                  disabled={!studio.canGenerate}
-                >
-                  {studio.generating ? (
-                    <Spinner />
-                  ) : (
-                    <HugeiconsIcon icon={SparklesIcon} aria-hidden='true' />
-                  )}
-                  {studio.generating ? t('Generating...') : t('Create images')}
-                </Button>
-              ) : (
-                <Button
-                  size='lg'
-                  nativeButton={false}
-                  role='link'
-                  render={
-                    <Link
-                      to='/sign-in'
-                      search={{ redirect: '/image-studio' }}
-                    />
-                  }
-                >
-                  {t('Sign in to create images')}
-                </Button>
-              )}
             </div>
             <div
-              id='studio-prompt-help'
-              className='text-muted-foreground flex min-w-0 justify-between gap-3 border-t pt-2 text-[9px]'
+              id='studio-editor-body'
+              hidden={editorMode === 'collapsed'}
+              className='flex flex-col gap-2.5'
             >
-              <span className='truncate'>
-                {t('Text model')}:{' '}
-                {props.authenticated
-                  ? studio.textModel || t('No models available')
-                  : t('Sign in to choose a model')}
-              </span>
-              <span className='shrink-0 tabular-nums'>
-                {studio.prompt.length} / {studio.maxCharacters}
-                <kbd className='ml-3 hidden font-[inherit] md:inline'>
-                  ⌘ / Ctrl ↵
-                </kbd>
-              </span>
+              {!props.settings.enabled && (
+                <p
+                  role='status'
+                  className='text-muted-foreground text-[11px] leading-[1.6]'
+                >
+                  {t('Image generation is disabled')}
+                </p>
+              )}
+              {props.authenticated && !props.keys.length && (
+                <p
+                  role='status'
+                  className='text-muted-foreground text-[11px] leading-[1.6]'
+                >
+                  {t(
+                    'No API keys available. Create your first API key to get started.'
+                  )}{' '}
+                  <Link
+                    to='/keys'
+                    className='text-primary underline underline-offset-4'
+                  >
+                    {t('API Keys')}
+                  </Link>
+                </p>
+              )}
+              {studio.models.isError && (
+                <p role='alert' className='text-destructive text-xs'>
+                  {t('Failed to load enabled models')}
+                </p>
+              )}
+              <Field
+                data-disabled={studio.busy}
+                data-invalid={Boolean(studio.form.formState.errors.prompt)}
+                className='gap-2'
+              >
+                <FieldLabel className='sr-only' htmlFor='studio-prompt'>
+                  {t('Describe your image')}
+                </FieldLabel>
+                <Textarea
+                  id='studio-prompt'
+                  rows={3}
+                  className={cn(
+                    'studio-prompt-input [field-sizing:fixed] max-h-[50svh] min-h-[84px] resize-y rounded-none border-0 px-0 py-1 leading-[1.8] md:min-h-[70px] md:text-[13px]',
+                    editorMode === 'expanded' && 'h-[35svh]'
+                  )}
+                  placeholder={t(
+                    'Describe the subject, scene, lighting and style, or try an example below.'
+                  )}
+                  {...studio.form.register('prompt')}
+                  disabled={studio.busy}
+                  aria-invalid={Boolean(studio.form.formState.errors.prompt)}
+                  aria-describedby='studio-prompt-help'
+                  maxLength={studio.maxCharacters}
+                  onKeyDown={(event) => {
+                    if (
+                      (event.metaKey || event.ctrlKey) &&
+                      event.key === 'Enter' &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault()
+                      void studio.submit()
+                    }
+                  }}
+                />
+              </Field>
+              <StudioReferenceImages
+                references={studio.references}
+                uploading={studio.upload.isPending}
+                disabled={
+                  studio.busy || !props.authenticated || !props.settings.enabled
+                }
+                maxImages={props.settings.max_reference_images}
+                onUpload={studio.uploadReferences}
+                onRemove={studio.removeReference}
+              />
+              {studio.upload.isError && (
+                <p role='alert' className='text-destructive text-xs'>
+                  {t(studioErrorMessage(studio.upload.error))}
+                </p>
+              )}
+              {studio.optimize.isError && (
+                <p role='alert' className='text-destructive text-xs'>
+                  {studioErrorMessage(studio.optimize.error)}
+                </p>
+              )}
+              {studio.generate.isError && (
+                <p role='alert' className='text-destructive text-xs'>
+                  {t(studioErrorMessage(studio.generate.error))}
+                </p>
+              )}
+              {studio.optimize.isSuccess &&
+                studio.prompt === studio.optimize.data.suggested_prompt && (
+                  <div className='text-muted-foreground flex items-center gap-2 text-xs'>
+                    <span role='status'>{t('Prompt optimized')}</span>
+                    <Button
+                      type='button'
+                      size='xs'
+                      variant='ghost'
+                      disabled={studio.busy}
+                      onClick={() => {
+                        if (studio.optimize.variables !== undefined) {
+                          studio.changePrompt(studio.optimize.variables)
+                        }
+                        studio.optimize.reset()
+                      }}
+                    >
+                      <HugeiconsIcon
+                        icon={ArrowTurnBackwardIcon}
+                        aria-hidden='true'
+                      />
+                      {t('Undo')}
+                    </Button>
+                  </div>
+                )}
+              <div className='studio-composer-actions flex flex-wrap items-center justify-between gap-2 md:gap-2.5'>
+                <div className='flex flex-wrap items-center gap-[3px] md:gap-2'>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='ghost'
+                    disabled={
+                      !props.authenticated ||
+                      !props.settings.enabled ||
+                      studio.busy ||
+                      !studio.textModel ||
+                      studio.textModels.isFetching ||
+                      !studio.prompt.trim() ||
+                      studio.prompt.length > studio.maxCharacters
+                    }
+                    onClick={() => studio.optimize.mutate(studio.prompt)}
+                  >
+                    <HugeiconsIcon icon={SparklesIcon} aria-hidden='true' />
+                    {studio.optimize.isPending
+                      ? t('Optimizing...')
+                      : t('Optimize prompt')}
+                  </Button>
+                </div>
+                {props.authenticated ? (
+                  <Button
+                    type='submit'
+                    size='lg'
+                    className='min-h-9 min-w-[100px] md:min-w-[126px]'
+                    disabled={!studio.canGenerate}
+                  >
+                    {studio.generating ? (
+                      <Spinner />
+                    ) : (
+                      <HugeiconsIcon icon={SparklesIcon} aria-hidden='true' />
+                    )}
+                    {studio.generating
+                      ? t('Generating...')
+                      : t('Create images')}
+                  </Button>
+                ) : (
+                  <Button
+                    size='lg'
+                    nativeButton={false}
+                    role='link'
+                    render={
+                      <Link
+                        to='/sign-in'
+                        search={{ redirect: '/image-studio' }}
+                      />
+                    }
+                  >
+                    {t('Sign in to create images')}
+                  </Button>
+                )}
+              </div>
+              <div
+                id='studio-prompt-help'
+                className='text-muted-foreground flex min-w-0 justify-between gap-3 border-t pt-2 text-[9px]'
+              >
+                <span className='truncate'>
+                  {t('Text model')}:{' '}
+                  {props.authenticated
+                    ? studio.textModel || t('No models available')
+                    : t('Sign in to choose a model')}
+                </span>
+                <span className='shrink-0 tabular-nums'>
+                  {studio.prompt.length} / {studio.maxCharacters}
+                  <kbd className='ml-3 hidden font-[inherit] md:inline'>
+                    ⌘ / Ctrl ↵
+                  </kbd>
+                </span>
+              </div>
             </div>
           </form>
           <p className='text-muted-foreground shrink-0 px-4.5 py-3 text-center text-[9px] leading-normal md:px-7'>
@@ -368,7 +487,7 @@ export function StudioComposer(props: {
           id='studio-history'
           ref={historyRef}
           tabIndex={-1}
-          className='col-start-2 flex min-h-[280px] min-w-0 flex-none border-t bg-(--studio-surface) -outline-offset-3 min-[75rem]:col-auto min-[75rem]:min-h-0 min-[75rem]:border-t-0 min-[75rem]:border-l min-[75rem]:border-(--studio-subtle-border)'
+          className='flex min-h-[280px] min-w-0 flex-none border-t bg-(--studio-surface) -outline-offset-3 min-[75rem]:min-h-0 min-[75rem]:border-t-0 min-[75rem]:border-l min-[75rem]:border-(--studio-subtle-border)'
         >
           {views.history}
         </div>

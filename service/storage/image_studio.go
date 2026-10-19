@@ -16,6 +16,14 @@ import (
 // UploadImageStudioObject uses the asset library's storage connection for a
 // generated image, with a separate 30-day lifetime and no library asset.
 func UploadImageStudioObject(ctx context.Context, ownerUserID int, runID string, resultID string, contentType string, data []byte) (*model.StorageObject, error) {
+	return uploadImageStudioObject(ctx, ownerUserID, runID, resultID, model.StorageObjectPurposeImageStudio, contentType, data)
+}
+
+func UploadImageStudioReference(ctx context.Context, ownerUserID int, contentType string, data []byte) (*model.StorageObject, error) {
+	return uploadImageStudioObject(ctx, ownerUserID, "references", "reference", model.StorageObjectPurposeImageStudioReference, contentType, data)
+}
+
+func uploadImageStudioObject(ctx context.Context, ownerUserID int, runID, resultID, purpose, contentType string, data []byte) (*model.StorageObject, error) {
 	policy, profile, credential, err := ResolveEnabledPolicy(model.StoragePolicyAssetLibrary)
 	if err != nil {
 		return nil, &RequestError{StatusCode: 503, Err: fmt.Errorf("permanent storage is unavailable: %w", err)}
@@ -39,7 +47,7 @@ func UploadImageStudioObject(ctx context.Context, ownerUserID int, runID string,
 		OwnerUserID:      ownerUserID,
 		StorageProfileID: profile.ID,
 		StoragePolicyID:  policy.ID,
-		Purpose:          model.StorageObjectPurposeImageStudio,
+		Purpose:          purpose,
 		ObjectKey:        objectKey,
 		ContentType:      contentType,
 		Size:             size,
@@ -65,6 +73,17 @@ func UploadImageStudioObject(ctx context.Context, ownerUserID int, runID string,
 	}
 	object.Status = model.StorageObjectStatusUploaded
 	return object, nil
+}
+
+// PresignImageStudioReference only resolves live temporary images owned by the
+// requesting user. Generation obtains a fresh URL rather than trusting a client URL.
+func PresignImageStudioReference(ctx context.Context, objectID string, ownerUserID int) (string, error) {
+	var object model.StorageObject
+	if err := model.DB.Where("object_id = ? AND owner_user_id = ? AND purpose = ? AND status = ? AND delete_after > ?",
+		objectID, ownerUserID, model.StorageObjectPurposeImageStudioReference, model.StorageObjectStatusUploaded, common.GetTimestamp()).First(&object).Error; err != nil {
+		return "", err
+	}
+	return presignPermanentObject(ctx, &object, 0, AssetObjectURLOriginal, "")
 }
 
 // PresignImageStudioObject signs a generated image owned by ownerUserID.

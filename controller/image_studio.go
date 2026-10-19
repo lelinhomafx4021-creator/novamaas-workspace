@@ -29,7 +29,55 @@ func GetImageStudioSettings(c *gin.Context) {
 		"enabled":               operation_setting.GetImageStudioSetting().Enabled,
 		"max_images":            operation_setting.ImageStudioMaxImages,
 		"max_prompt_characters": operation_setting.ImageStudioMaxPromptCharacters,
+		"max_reference_images":  studioService.MaxReferenceImages,
+		"max_reference_bytes":   studioService.MaxReferenceImageBytes,
 	})
+}
+
+func UploadImageStudioReference(c *gin.Context) {
+	if strings.HasPrefix(c.GetHeader("Content-Type"), gin.MIMEJSON) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
+		var input struct {
+			URL string `json:"url"`
+		}
+		if err := common.DecodeJson(c.Request.Body, &input); err != nil {
+			imageStudioError(c, &studioService.RequestError{StatusCode: http.StatusBadRequest, Code: "invalid_reference_image", Err: errors.New("invalid reference image URL")})
+			return
+		}
+		view, err := studioService.ImportReference(c.Request.Context(), c.GetInt("id"), input.URL)
+		if err != nil {
+			imageStudioError(c, err)
+			return
+		}
+		common.ApiSuccess(c, view)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, studioService.MaxReferenceImageBytes+1024*1024)
+	header, err := c.FormFile("file")
+	if c.Request.MultipartForm != nil {
+		defer c.Request.MultipartForm.RemoveAll()
+	}
+	if err != nil {
+		imageStudioError(c, &studioService.RequestError{StatusCode: http.StatusBadRequest, Code: "invalid_reference_image", Err: errors.New("Reference images must be PNG, JPEG or WebP and no larger than 20 MB.")})
+		return
+	}
+	file, err := header.Open()
+	if err != nil {
+		imageStudioError(c, err)
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, studioService.MaxReferenceImageBytes+1))
+	if err != nil {
+		imageStudioError(c, err)
+		return
+	}
+	view, err := studioService.UploadReference(c.Request.Context(), c.GetInt("id"), data)
+	if err != nil {
+		imageStudioError(c, err)
+		return
+	}
+	common.ApiSuccess(c, view)
 }
 
 func ListImageStudioModels(c *gin.Context) {

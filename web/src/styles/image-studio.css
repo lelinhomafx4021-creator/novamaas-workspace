@@ -49,16 +49,10 @@ body:has(.studio-shell)
 }
 
 /* Shared studio variants for existing UI primitives. */
-.studio-navigation [data-slot='button'] {
-  @apply min-h-[38px] justify-start gap-2.5 px-3 text-xs;
-}
-.studio-navigation [aria-current='page'] {
-  @apply text-primary;
-}
 .studio-canvas-toolbar [data-slot='badge'] {
   @apply text-muted-foreground text-[9px] font-normal md:text-[10px];
 }
-.studio-composer-top > [data-slot='button'] {
+.studio-composer-top [data-slot='button'] {
   @apply h-7 bg-transparent px-1.5 text-[10px] md:px-2.5 md:text-[11px];
 }
 .studio-composer-actions [data-slot='button'] {
@@ -82,9 +76,6 @@ body:has(.studio-shell)
   background:
     radial-gradient(ellipse at 50% 0%, #14203366, transparent 65%),
     var(--background);
-}
-.studio-note {
-  background: linear-gradient(135deg, #182334, var(--studio-surface));
 }
 .studio-composer {
   box-shadow:

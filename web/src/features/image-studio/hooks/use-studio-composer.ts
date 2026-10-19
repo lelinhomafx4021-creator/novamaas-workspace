@@ -21,14 +21,20 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { nanoid } from 'nanoid'
 import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 
 import type { ApiKey } from '@/features/keys/types'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { assistStudioPrompt, createStudioRun, listStudioModels } from '../api'
+import {
+  assistStudioPrompt,
+  createStudioRun,
+  listStudioModels,
+  uploadStudioReference,
+} from '../api'
 import type { StudioModelSelection } from '../components/studio-model-settings'
-import type { StudioRun, StudioSettings } from '../types'
+import type { StudioReference, StudioRun, StudioSettings } from '../types'
 
 export function useStudioComposer(props: {
   authenticated: boolean
@@ -38,6 +44,8 @@ export function useStudioComposer(props: {
   onGenerated: (run: StudioRun) => void
   onNewCreation: () => void
 }) {
+  const { t } = useTranslation()
+  const [references, setReferences] = useState<StudioReference[]>([])
   const userGroup = useAuthStore((state) => state.auth.user?.group || 'default')
   const maxCharacters = props.settings.max_prompt_characters
   const [text, setText] = useState<StudioModelSelection>({
@@ -92,13 +100,54 @@ export function useStudioComposer(props: {
       }),
     onSuccess: (result) => changePrompt(result.suggested_prompt),
   })
+  const upload = useMutation({
+    mutationFn: async (files: (File | string)[]) => {
+      if (
+        files.length + references.length >
+        props.settings.max_reference_images
+      ) {
+        throw new Error(
+          t('You can add up to {{count}} reference images.', {
+            count: props.settings.max_reference_images,
+          })
+        )
+      }
+      if (
+        files.some((file) => {
+          if (typeof file === 'string') return !/^https?:\/\//.test(file)
+          return (
+            !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+            !file.size ||
+            file.size > props.settings.max_reference_bytes
+          )
+        })
+      ) {
+        throw new Error(
+          t(
+            'Reference images must be PNG, JPEG or WebP and no larger than 20 MB.'
+          )
+        )
+      }
+      for (const file of files) {
+        const reference = await uploadStudioReference(file)
+        requestKey.current = ''
+        setReferences((current) => [...current, reference])
+      }
+    },
+  })
   const generate = useMutation({
     mutationFn: (values: { tokenId: string; prompt: string }) => {
       requestKey.current ||= nanoid()
       return createStudioRun({
         token_id: Number(values.tokenId),
         idempotency_key: requestKey.current,
-        request: { model, prompt: values.prompt },
+        request: {
+          model,
+          prompt: values.prompt,
+          ...(references.length
+            ? { reference_ids: references.map((item) => item.id) }
+            : {}),
+        },
       })
     },
     onSuccess: (result) => {
@@ -107,7 +156,7 @@ export function useStudioComposer(props: {
     },
   })
   const generating = generate.isPending || props.disabled
-  const busy = generating || optimize.isPending
+  const busy = generating || optimize.isPending || upload.isPending
   const canGenerate =
     props.authenticated &&
     props.settings.enabled &&
@@ -139,6 +188,25 @@ export function useStudioComposer(props: {
     busy,
     canGenerate,
     submit,
+    references,
+    upload,
+    uploadReferences: (files: (File | string)[]) => {
+      if (
+        !files.length ||
+        busy ||
+        !props.authenticated ||
+        !props.settings.enabled
+      ) {
+        return
+      }
+      upload.mutate(files)
+    },
+    removeReference: (id: string) => {
+      if (busy) return
+      requestKey.current = ''
+      setReferences((current) => current.filter((item) => item.id !== id))
+      upload.reset()
+    },
     reusePrompt: (value: string) => {
       if (busy || value.length > maxCharacters) return
       changePrompt(value)
@@ -148,6 +216,8 @@ export function useStudioComposer(props: {
     newCreation: () => {
       if (busy) return
       changePrompt('')
+      setReferences([])
+      upload.reset()
       optimize.reset()
       generate.reset()
       form.setFocus('prompt')

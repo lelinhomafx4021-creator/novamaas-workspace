@@ -26,6 +26,7 @@ import type {
   StudioRun,
   StudioRunList,
   StudioSettings,
+  StudioReference,
 } from './types'
 
 async function studioData<T>(
@@ -35,6 +36,20 @@ async function studioData<T>(
 }
 
 const quietErrors = { skipBusinessError: true, skipErrorHandler: true }
+
+export function uploadStudioReference(source: File | string) {
+  const data = typeof source === 'string' ? { url: source } : new FormData()
+  if (data instanceof FormData && typeof source !== 'string') {
+    data.set('file', source)
+  }
+  return studioData(
+    api.post<StudioResponse<StudioReference>>(
+      '/api/image-studio/references',
+      data,
+      { timeout: 120_000, ...quietErrors }
+    )
+  )
+}
 
 export function getStudioSettings() {
   return studioData(

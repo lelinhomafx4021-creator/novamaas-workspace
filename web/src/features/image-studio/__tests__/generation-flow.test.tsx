@@ -25,7 +25,14 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
@@ -36,7 +43,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import * as api from '../api'
 import { ImageStudio } from '../image-studio'
-import type { StudioRun } from '../types'
+import type { StudioReference, StudioRun } from '../types'
 
 vi.mock('../api')
 vi.mock('@/features/keys/api')
@@ -92,6 +99,8 @@ beforeEach(() => {
     enabled: true,
     max_images: 4,
     max_prompt_characters: 1000,
+    max_reference_images: 8,
+    max_reference_bytes: 20 * 1024 * 1024,
   })
   vi.mocked(getApiKeys).mockResolvedValue({
     success: true,
@@ -227,7 +236,9 @@ test('the canvas precedes the bottom prompt editor and records remain outside th
       name: 'Sign in to view your generation records',
     })
   ).not.toBeInTheDocument()
-  expect(screen.getByRole('complementary', { name: 'Workspace' })).toBeVisible()
+  expect(
+    screen.queryByRole('complementary', { name: 'Workspace' })
+  ).not.toBeInTheDocument()
   expect(
     screen.getByRole('textbox', { name: 'Describe your image' })
   ).toHaveAccessibleDescription(/Text model/)
@@ -382,41 +393,145 @@ test('prompt optimization identifies and calls the chosen text model separately 
   expect(api.createStudioRun).not.toHaveBeenCalled()
 })
 
-test('image proportions show model defaults without selectable sizes', async () => {
-  await openStudio()
-  expect(screen.getByText('Model default')).toBeVisible()
-  expect(
-    screen.queryByRole('combobox', { name: 'Image count' })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.queryByText('This model supports one image per request.')
-  ).not.toBeInTheDocument()
-  expect(
-    screen.queryByRole('button', { name: 'Model default' })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.queryByRole('button', { name: 'Landscape' })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.queryByRole('button', { name: 'Portrait' })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.queryByRole('button', { name: 'Square image' })
-  ).not.toBeInTheDocument()
-})
-
-test('opening image creation exposes the prompt editor without a start introduction', async () => {
+test('the dashboard link leaves the studio', async () => {
   const user = await openStudio()
-  expect(screen.getByRole('heading', { name: 'Image creation' })).toBeVisible()
-  expect(
-    screen.getByRole('textbox', { name: 'Describe your image' })
-  ).toBeVisible()
-  expect(screen.queryByText('Start with an idea')).not.toBeInTheDocument()
-  expect(
-    screen.queryByText('Describe an idea. Create something new.')
-  ).not.toBeInTheDocument()
   await user.click(screen.getByRole('link', { name: 'Back to Dashboard' }))
   expect(await screen.findByText('Dashboard page')).toBeVisible()
+})
+
+test('collapsing and expanding the editor preserves the prompt and exposes its current state', async () => {
+  const user = await openStudio()
+  await user.type(
+    screen.getByRole('textbox', { name: 'Describe your image' }),
+    'Keep this draft'
+  )
+  await user.click(
+    screen.getByRole('button', { name: 'Collapse prompt editor' })
+  )
+  expect(
+    screen.queryByRole('textbox', { name: 'Describe your image' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Show prompt editor' })
+  ).toHaveAttribute('aria-expanded', 'false')
+  await user.click(screen.getByRole('button', { name: 'Show prompt editor' }))
+  expect(
+    screen.getByRole('textbox', { name: 'Describe your image' })
+  ).toHaveValue('Keep this draft')
+  await user.click(screen.getByRole('button', { name: 'Expand prompt editor' }))
+  expect(
+    screen.getByRole('button', { name: 'Restore prompt editor' })
+  ).toHaveAttribute('aria-pressed', 'true')
+  await user.click(
+    screen.getByRole('button', { name: 'Restore prompt editor' })
+  )
+  expect(
+    screen.getByRole('textbox', { name: 'Describe your image' })
+  ).toHaveValue('Keep this draft')
+})
+
+test('file uploads and dropped images become removable references, block generation during upload and send only retained object IDs', async () => {
+  let finishUpload!: (reference: StudioReference) => void
+  vi.mocked(api.uploadStudioReference)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = resolve
+        })
+    )
+    .mockResolvedValueOnce({
+      id: 'ref-2',
+      url: 'https://example.test/second.png',
+      expires_at: 2000000000,
+    })
+    .mockResolvedValueOnce({
+      id: 'ref-3',
+      url: 'https://example.test/third.png',
+      expires_at: 2000000000,
+    })
+  vi.mocked(api.createStudioRun).mockResolvedValue({
+    run: completed,
+    replay: false,
+  })
+  const user = await openStudio()
+  const file = new File(['image'], 'reference.png', { type: 'image/png' })
+  await user.type(
+    screen.getByRole('textbox', { name: 'Describe your image' }),
+    'Use the reference'
+  )
+  await user.upload(screen.getByLabelText('Upload reference images'), file)
+  expect(await screen.findByText('Uploading...')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Create images' })).toBeDisabled()
+  await act(() =>
+    finishUpload({
+      id: 'ref-1',
+      url: 'https://example.test/first.png',
+      expires_at: 2000000000,
+    })
+  )
+  expect(await screen.findByAltText('Reference image 1')).toBeVisible()
+  const editor = screen.getByRole('form', { name: 'Image prompt editor' })
+  fireEvent.drop(editor, { dataTransfer: { files: [file], getData: () => '' } })
+  expect(await screen.findByAltText('Reference image 2')).toBeVisible()
+  fireEvent.drop(editor, {
+    dataTransfer: {
+      files: [],
+      getData: () => 'https://example.test/source.png',
+    },
+  })
+  expect(await screen.findByAltText('Reference image 3')).toBeVisible()
+  expect(api.uploadStudioReference).toHaveBeenNthCalledWith(1, file)
+  expect(api.uploadStudioReference).toHaveBeenNthCalledWith(2, file)
+  expect(api.uploadStudioReference).toHaveBeenNthCalledWith(
+    3,
+    'https://example.test/source.png'
+  )
+  await user.click(
+    screen.getByRole('button', { name: 'Remove reference image 3' })
+  )
+  await user.click(
+    screen.getByRole('button', { name: 'Remove reference image 1' })
+  )
+  expect(api.createStudioRun).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'Create images' }))
+  await waitFor(() =>
+    expect(api.createStudioRun).toHaveBeenCalledWith({
+      token_id: 1,
+      idempotency_key: expect.any(String),
+      request: {
+        model: 'dall-e-3',
+        prompt: 'Use the reference',
+        reference_ids: ['ref-2'],
+      },
+    })
+  )
+  await screen.findByRole('button', { name: 'Preview' })
+  await user.click(screen.getByRole('button', { name: 'New creation' }))
+  expect(screen.queryByAltText('Reference image 1')).not.toBeInTheDocument()
+})
+
+test('invalid image files and batches beyond the reference limit do not upload', async () => {
+  const user = userEvent.setup({ applyAccept: false })
+  await openStudio()
+  const input = screen.getByLabelText('Upload reference images')
+  await user.upload(
+    input,
+    new File(['not an image'], 'file.pdf', { type: 'application/pdf' })
+  )
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Reference images must be PNG, JPEG or WebP'
+  )
+  await user.upload(
+    input,
+    Array.from(
+      { length: 9 },
+      (_, index) => new File(['image'], `${index}.png`, { type: 'image/png' })
+    )
+  )
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'You can add up to 8 reference images.'
+  )
+  expect(api.uploadStudioReference).not.toHaveBeenCalled()
 })
 
 test('a failed submission retries with the same idempotency key and nothing is saved by default', async () => {
@@ -472,12 +587,7 @@ test('starting a new creation clears the canvas and draft while keeping existing
   })
   const user = await generate()
   await screen.findByRole('button', { name: 'Preview' })
-  await user.click(
-    within(screen.getByRole('complementary', { name: 'Workspace' })).getByRole(
-      'button',
-      { name: 'New creation' }
-    )
-  )
+  await user.click(screen.getByRole('button', { name: 'New creation' }))
   const prompt = screen.getByRole('textbox', { name: 'Describe your image' })
   expect(prompt).toHaveValue('')
   expect(prompt).toHaveFocus()
@@ -490,14 +600,9 @@ test('starting a new creation clears the canvas and draft while keeping existing
   expect(api.deleteStudioResult).not.toHaveBeenCalled()
 })
 
-test('records navigation scrolls to the history panel and moves keyboard focus there', async () => {
+test('the records shortcut scrolls to the history panel and moves keyboard focus there', async () => {
   const user = await openStudio()
-  const navigation = screen.getByRole('navigation', {
-    name: 'Studio navigation',
-  })
-  await user.click(
-    within(navigation).getByRole('button', { name: 'Generation records' })
-  )
+  await user.click(screen.getByRole('button', { name: 'Generation records' }))
   const panel = document.querySelector('#studio-history')
   expect(panel).toHaveFocus()
   expect(panel).toContainElement(
@@ -523,6 +628,24 @@ test('selecting a record opens its image and returns keyboard focus to the canva
   ).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('dragging a historical thumbnail uses its full-resolution original as the reference', async () => {
+  vi.mocked(api.listStudioRuns).mockResolvedValue({
+    items: [completed],
+    total: 1,
+  })
+  await openStudio()
+  const history = screen.getByRole('region', { name: 'Generation records' })
+  const setData = vi.fn()
+  fireEvent.dragStart(
+    within(history).getByRole('img', { name: 'Generated image' }),
+    { dataTransfer: { setData } }
+  )
+  expect(setData).toHaveBeenCalledWith(
+    'text/uri-list',
+    'https://example.test/original.png'
+  )
+})
+
 test('Ctrl Enter generates from the editor and prevents another submission while pending', async () => {
   let finish: (value: { run: StudioRun; replay: boolean }) => void = () =>
     undefined
@@ -536,12 +659,7 @@ test('Ctrl Enter generates from the editor and prevents another submission while
   await user.type(prompt, 'A mountain')
   await user.keyboard('{Control>}{Enter}{/Control}')
   await waitFor(() => expect(api.createStudioRun).toHaveBeenCalledTimes(1))
-  expect(
-    within(screen.getByRole('complementary', { name: 'Workspace' })).getByRole(
-      'button',
-      { name: 'New creation' }
-    )
-  ).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'New creation' })).toBeDisabled()
   expect(screen.getByRole('button', { name: /Generating/ })).toBeDisabled()
   expect(prompt).toBeDisabled()
   await act(async () => finish({ run: completed, replay: false }))

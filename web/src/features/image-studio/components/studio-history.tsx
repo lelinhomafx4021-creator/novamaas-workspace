@@ -171,6 +171,12 @@ export function StudioHistory(props: {
                       src={result.thumbnail_url || result.preview_url}
                       alt={t('Generated image')}
                       loading='lazy'
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData(
+                          'text/uri-list',
+                          result.preview_url || result.thumbnail_url || ''
+                        )
+                      }}
                       className='bg-background h-[76px] w-16 shrink-0 rounded-md object-contain'
                     />
                   )}

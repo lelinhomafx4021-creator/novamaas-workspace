@@ -148,6 +148,99 @@ func TestCreateRunCallsRelayOncePerIdempotencyKey(t *testing.T) {
 	assert.Zero(t, assets, "generated images are not saved to the library by default")
 }
 
+func TestReferenceImagesAreSignedForGenerationAndExpireAfterSevenDays(t *testing.T) {
+	db, token := setupImageStudio(t)
+	require.NoError(t, db.Model(&model.Channel{}).Where("name = ?", "image").Update("models", "gpt-image-2-1K").Error)
+	require.NoError(t, db.Model(&model.Ability{}).Where("model = ?", "dall-e-3").Update("model", "gpt-image-2-1K").Error)
+	model.InvalidatePricingCache()
+	policy, err := model.GetStoragePolicyByKey(model.StoragePolicyAssetLibrary)
+	require.NoError(t, err)
+	object := &model.StorageObject{ObjectID: "reference-owned", OwnerUserID: 501,
+		StorageProfileID: policy.StorageProfileID, StoragePolicyID: policy.ID,
+		Purpose: model.StorageObjectPurposeImageStudioReference, ObjectKey: "references/source.png",
+		ContentType: "image/png", Status: model.StorageObjectStatusUploaded}
+	require.NoError(t, db.Create(object).Error)
+	assert.Equal(t, object.CreatedAt+7*24*60*60, object.DeleteAfter)
+
+	input := RunInput{TokenID: token.Id, IdempotencyKey: "with-reference", Request: RunRequest{
+		Model: "gpt-image-2-1K", Prompt: "Use the reference composition", ReferenceIDs: []string{object.ObjectID},
+	}}
+	_, _, err = CreateRun(RelayContext{Context: context.Background()}, 501, input, nil,
+		func(_ RelayContext, _ *model.Token, path string, body []byte, _ types.RelayFormat, _ *RequestSnapshot) RelayResult {
+			assert.Equal(t, "/v1/images/generations", path)
+			var request dto.ImageRequest
+			require.NoError(t, common.Unmarshal(body, &request))
+			var references []string
+			require.NoError(t, common.Unmarshal(request.Image, &references))
+			require.Len(t, references, 1)
+			parsed, parseErr := url.Parse(references[0])
+			require.NoError(t, parseErr)
+			assert.Equal(t, "/references/source.png", parsed.Path)
+			assert.NotEmpty(t, parsed.Query().Get("x-oss-signature"))
+			return RelayResult{StatusCode: http.StatusOK, Body: pngResponse(t, 1)}
+		})
+	require.NoError(t, err)
+	beforeExpiry, err := model.ClaimStorageObjectsForDeletion(object.DeleteAfter-1, object.DeleteAfter+60, "before-reference-expiry", 10)
+	require.NoError(t, err)
+	assert.Empty(t, beforeExpiry)
+	atExpiry, err := model.ClaimStorageObjectsForDeletion(object.DeleteAfter, object.DeleteAfter+60, "reference-expiry", 10)
+	require.NoError(t, err)
+	require.Len(t, atExpiry, 1)
+	assert.Equal(t, object.ID, atExpiry[0].ID)
+}
+
+func TestUnavailableReferenceImagesFailBeforeCreatingOrBillingARun(t *testing.T) {
+	db, token := setupImageStudio(t)
+	now := common.GetTimestamp()
+	for _, item := range []struct {
+		name    string
+		owner   int
+		purpose string
+		expires int64
+		status  string
+	}{
+		{"another-owner", 502, model.StorageObjectPurposeImageStudioReference, now + 60, model.StorageObjectStatusUploaded},
+		{"expired", 501, model.StorageObjectPurposeImageStudioReference, now - 1, model.StorageObjectStatusUploaded},
+		{"deleted", 501, model.StorageObjectPurposeImageStudioReference, now + 60, model.StorageObjectStatusDeleted},
+		{"another-purpose", 501, model.StorageObjectPurposeAssetLibrary, now + 60, model.StorageObjectStatusUploaded},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			require.NoError(t, db.Create(&model.StorageObject{ObjectID: item.name, OwnerUserID: item.owner,
+				Purpose: item.purpose, DeleteAfter: item.expires, Status: item.status}).Error)
+			input := RunInput{TokenID: token.Id, IdempotencyKey: item.name, Request: RunRequest{
+				Model: "dall-e-3", Prompt: "Use this image", ReferenceIDs: []string{item.name},
+			}}
+			_, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, input, nil,
+				func(RelayContext, *model.Token, string, []byte, types.RelayFormat, *RequestSnapshot) RelayResult {
+					t.Fatal("unavailable references must not reach the billed relay")
+					return RelayResult{}
+				})
+			require.Error(t, err)
+			assert.Equal(t, http.StatusBadRequest, StatusCode(err))
+		})
+	}
+	var count int64
+	_, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{
+		TokenID: token.Id, IdempotencyKey: "too-many-references",
+		Request: RunRequest{Model: "dall-e-3", Prompt: "Use these images", ReferenceIDs: make([]string, 9)},
+	}, nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadRequest, StatusCode(err))
+	require.NoError(t, db.Model(&model.ImageStudioRun{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestReferenceUploadRejectsInvalidImagesAndNonHTTPImports(t *testing.T) {
+	for _, data := range [][]byte{[]byte("<svg xmlns='http://www.w3.org/2000/svg'></svg>"), make([]byte, MaxReferenceImageBytes+1)} {
+		_, err := UploadReference(context.Background(), 501, data)
+		require.Error(t, err)
+		assert.Equal(t, http.StatusBadRequest, StatusCode(err))
+	}
+	_, err := ImportReference(context.Background(), 501, "file:///etc/passwd")
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadRequest, StatusCode(err))
+}
+
 func TestFailedRunKeepsRequestIDForAudit(t *testing.T) {
 	_, token := setupImageStudio(t)
 	input := RunInput{TokenID: token.Id, IdempotencyKey: "fail", Request: RunRequest{Model: "dall-e-3", Prompt: "mountain"}}

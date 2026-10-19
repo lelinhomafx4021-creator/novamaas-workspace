@@ -34,10 +34,11 @@ const maxStudioImageBytes = 64 << 20
 var uploadImage = storageService.UploadImageStudioObject
 
 type RunRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	N      *uint  `json:"n,omitempty"`
-	Size   string `json:"size,omitempty"`
+	Model        string   `json:"model"`
+	Prompt       string   `json:"prompt"`
+	N            *uint    `json:"n,omitempty"`
+	Size         string   `json:"size,omitempty"`
+	ReferenceIDs []string `json:"reference_ids,omitempty"`
 }
 
 type RunInput struct {
@@ -75,6 +76,9 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 	if request.N != nil && (*request.N == 0 || *request.N > operation_setting.ImageStudioMaxImages) {
 		return nil, false, &RequestError{http.StatusBadRequest, "invalid_image_count", fmt.Errorf("n must be between 1 and %d", operation_setting.ImageStudioMaxImages)}
 	}
+	if len(request.ReferenceIDs) > MaxReferenceImages {
+		return nil, false, &RequestError{http.StatusBadRequest, "invalid_reference_images", fmt.Errorf("a maximum of %d reference images is allowed", MaxReferenceImages)}
+	}
 	token, err := resolveToken(userID, input.TokenID)
 	if err != nil {
 		return nil, false, err
@@ -85,6 +89,25 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 	if _, _, _, err = storageService.ResolveEnabledPolicy(model.StoragePolicyAssetLibrary); err != nil {
 		return nil, false, &RequestError{http.StatusServiceUnavailable, "image_storage_unavailable", errors.New("image storage is unavailable; enable permanent asset storage before generating")}
 	}
+	imageRequest := dto.ImageRequest{Model: request.Model, Prompt: request.Prompt, N: request.N, Size: request.Size}
+	if len(request.ReferenceIDs) > 0 {
+		urls := make([]string, 0, len(request.ReferenceIDs))
+		for _, id := range request.ReferenceIDs {
+			value, signErr := storageService.PresignImageStudioReference(execution.Context, id, userID)
+			if signErr != nil {
+				return nil, false, &RequestError{http.StatusBadRequest, "reference_unavailable", errors.New("A reference image has expired or is unavailable. Please upload it again.")}
+			}
+			urls = append(urls, value)
+		}
+		imageRequest.Image, err = common.Marshal(urls)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	body, err := common.Marshal(imageRequest)
+	if err != nil {
+		return nil, false, err
+	}
 	run := &model.ImageStudioRun{
 		UserID: userID, IdempotencyKey: key, TokenID: token.Id,
 		Model: request.Model, Prompt: request.Prompt, Status: model.ImageStudioRunStatusRunning,
@@ -94,10 +117,6 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 		if existing, findErr := model.FindImageStudioRunByIdempotencyKey(userID, key); findErr == nil {
 			return replayRun(execution.Context, existing)
 		}
-		return nil, false, err
-	}
-	body, err := common.Marshal(dto.ImageRequest{Model: request.Model, Prompt: request.Prompt, N: request.N, Size: request.Size})
-	if err != nil {
 		return nil, false, err
 	}
 	ctx, cancel := context.WithTimeout(execution.Context, 4*time.Minute)
@@ -171,7 +190,7 @@ func uploadImages(ctx context.Context, run *model.ImageStudioRun, result RelayRe
 	records := make([]*model.ImageStudioResult, 0, len(response.Data))
 	var lastErr error
 	for index, output := range response.Data {
-		data, err := readGeneratedImage(ctx, output)
+		data, err := readImage(ctx, output, maxStudioImageBytes)
 		if err != nil {
 			lastErr = err
 			continue
@@ -199,15 +218,15 @@ func uploadImages(ctx context.Context, run *model.ImageStudioRun, result RelayRe
 	return records, nil
 }
 
-// readGeneratedImage decodes base64 output or downloads a URL output through
-// the SSRF-protected client, bounded by maxStudioImageBytes.
-func readGeneratedImage(ctx context.Context, output dto.ImageData) ([]byte, error) {
+// readImage decodes base64 output or downloads a URL output through
+// the SSRF-protected client, bounded by maxBytes.
+func readImage(ctx context.Context, output dto.ImageData, maxBytes int) ([]byte, error) {
 	payload := strings.TrimSpace(output.B64Json)
 	if payload != "" {
 		if strings.HasPrefix(payload, "data:") {
 			_, payload, _ = strings.Cut(payload, ",")
 		}
-		if len(payload) > base64.StdEncoding.EncodedLen(maxStudioImageBytes) {
+		if len(payload) > base64.StdEncoding.EncodedLen(maxBytes) {
 			return nil, errors.New("generated image exceeds the storage limit")
 		}
 		data, err := base64.StdEncoding.DecodeString(payload)
@@ -232,8 +251,8 @@ func readGeneratedImage(ctx context.Context, output dto.ImageData) ([]byte, erro
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("generated image download returned HTTP %d", response.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, maxStudioImageBytes+1))
-	if err != nil || len(data) == 0 || len(data) > maxStudioImageBytes {
+	data, err := io.ReadAll(io.LimitReader(response.Body, int64(maxBytes)+1))
+	if err != nil || len(data) == 0 || len(data) > maxBytes {
 		return nil, errors.New("generated image download is empty or oversized")
 	}
 	return data, nil

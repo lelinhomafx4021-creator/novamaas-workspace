@@ -385,6 +385,7 @@ func SetApiRouter(router *gin.Engine) {
 		imageStudioRoute.Use(middleware.UserAuth(), controller.ImageStudioEnabled())
 		{
 			imageStudioRoute.GET("/models", controller.ListImageStudioModels)
+			imageStudioRoute.POST("/references", middleware.CriticalRateLimit(), controller.UploadImageStudioReference)
 			imageStudioRoute.POST("/prompt-assist", middleware.CriticalRateLimit(), controller.PromptAssistImageStudio)
 			imageStudioRoute.GET("/runs", controller.ListImageStudioRuns)
 			imageStudioRoute.POST("/runs", middleware.CriticalRateLimit(), controller.CreateImageStudioRun)

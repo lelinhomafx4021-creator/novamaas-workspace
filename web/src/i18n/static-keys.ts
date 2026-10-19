@@ -794,6 +794,8 @@ export const STATIC_I18N_KEYS = [
   'The upstream channel that served the requests',
 
   // Misc
+  'A reference image has expired or is unavailable. Please upload it again.',
+  'Could not read the reference image. Upload the file instead.',
   'Cancel',
   'Status',
   'Upgrade Group',

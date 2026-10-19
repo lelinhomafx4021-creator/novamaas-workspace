@@ -28,10 +28,15 @@ import {
   type Assessment,
   type Verdict,
 } from './baselines'
-import { PROTOCOL_BASIC_IDS, SHALLOW_BASIC_IDS } from './constants'
+import {
+  PROTOCOL_BASIC_IDS,
+  SHALLOW_BASIC_IDS,
+  VIDEO_REPORT_CAPABILITIES,
+} from './constants'
 import { checkMessage } from './formatters'
 import type {
   VideoTestRecord,
+  VideoReportChecks,
   VideoExchange,
   CacheMetrics,
   CheckResult,
@@ -1354,10 +1359,8 @@ export type VideoReportInput = {
   language?: string
   branding?: ReportBranding
   records: VideoTestRecord[]
-  v3?: boolean
-  materialLibrary?: boolean
   t: ReportInput['t']
-}
+} & Partial<VideoReportChecks>
 
 export function videoResult(record: VideoTestRecord): {
   model: string
@@ -1541,100 +1544,7 @@ export function videoEvidenceText(raw: string): string {
   )
 }
 
-export function buildVideoMarkdownReport(input: VideoReportInput): string {
-  const t = input.t
-  const lines = [
-    `# ${t('Doubao Video Generation Test Report')}`,
-    input.branding?.operatingEntityName || '',
-    `- ${t('Supplier has implemented the v3 API')}: ${t(input.v3 ? 'Yes' : 'No')}`,
-    `- ${t('Supplier has implemented a material library')}: ${t(input.materialLibrary ? 'Yes' : 'No')}`,
-    '',
-    `| ${['Model', 'Request resolution', 'Video generation', 'Official origin features', 'Model comparison'].map((key) => t(key)).join(' | ')} |`,
-    '| --- | --- | --- | --- | --- |',
-  ]
-  for (const record of input.records) {
-    const result = videoResult(record)
-    lines.push(
-      `| ${[result.model, result.resolution, t(result.generation), t(result.origin), t(result.comparison)].map((value) => value.replaceAll('|', '\\|')).join(' | ')} |`
-    )
-  }
-  for (const model of new Set(
-    input.records.map((record) => videoResult(record).model)
-  )) {
-    lines.push('', `## ${model}`)
-    for (const record of input.records.filter(
-      (record) => videoResult(record).model === model
-    )) {
-      lines.push(
-        '',
-        `### ${t('Request resolution')}: ${videoResult(record).resolution} · ${new Date(record.startedAt).toLocaleString(input.language)}`,
-        `${t('Base URL')}: ${videoReportURL(record.baseUrl)} · Task ID: ${record.metrics.task_id || '—'} · QueryID: ${record.verification?.queryId || '—'}`,
-        `${t('Polling summary')}: ${record.metrics.poll_count || 0} / ${record.metrics.poll_ms || 0} ms · ${t('Official verification')}: ${record.verification?.count || 0} / ${record.verification?.elapsed || 0} ms`
-      )
-      for (const [title, exchange] of videoExchanges(record)) {
-        if (
-          title === 'Video task submission' ||
-          title === 'Official verification submission'
-        ) {
-          lines.push(
-            '',
-            `#### ${t(title === 'Video task submission' ? 'Video generation' : 'Official verification')}`
-          )
-        }
-        lines.push('', `##### ${t(title)}`, t(videoStageNote(record, title)))
-        if (!exchange) {
-          lines.push(t('Phase unavailable'))
-          continue
-        }
-        lines.push(
-          `${exchange.method} ${videoReportURL(exchange.url)} · HTTP ${exchange.status || '—'} · ${exchange.elapsed_ms} ms · Request ID: ${exchange.request_id || '—'}`
-        )
-        const bodies = [['Response body', exchange.response, 'json']]
-        if (
-          title !== 'First queued response' &&
-          title !== 'First running response'
-        ) {
-          bodies.unshift(
-            ['Request headers', exchange.headers, 'http'],
-            ['Request body', exchange.request, 'json']
-          )
-        }
-        for (const [label, body, language] of bodies) {
-          const value =
-            videoEvidenceText(body) ||
-            t(
-              label === 'Request body'
-                ? 'No request body'
-                : 'No complete response received'
-            )
-          const fence = '`'.repeat(
-            Math.max(
-              3,
-              ...(value.match(/`+/g) || []).map((item) => item.length + 1)
-            )
-          )
-          lines.push(`**${t(label)}**`, fence + language, value, fence)
-        }
-        if (exchange.error) lines.push(t(exchange.error))
-      }
-      if (record.metrics.video_url) {
-        lines.push(
-          `${t('Generated Video Output')}: ${videoReportURL(record.metrics.video_url)}`
-        )
-      }
-      if (!record.metrics.final) lines.push(t('No final response obtained'))
-      if (record.issue || record.verification?.issue) {
-        lines.push(record.issue || '', t(record.verification?.issue || ''))
-      }
-    }
-  }
-  return `${lines.join('\n')}\n`
-}
-
-export function buildVideoHtmlReport(
-  input: VideoReportInput,
-  options: { format?: 'html' | 'pdf' } = {}
-): string {
+export function buildVideoPdfHtml(input: VideoReportInput): string {
   const t = input.t,
     title = t('Doubao Video Generation Test Report')
   const operatorLogo = input.branding?.operatingEntityLogo || ''
@@ -1643,7 +1553,7 @@ export function buildVideoHtmlReport(
     : '/api/pdf-branding/operating-logo'
   const printHeader = `@media print{.video-letterhead{display:none}@page{margin-top:119pt;@top-left{content:${cssContent(input.branding?.platformName || DEFAULT_SYSTEM_NAME)};background-image:url(${cssContent(input.branding?.platformLogo || DEFAULT_LOGO)});background-size:38pt 38pt;background-repeat:no-repeat;background-position:left center;padding-left:50pt;width:335pt;color:#19335e;font:15pt "PingFang SC",sans-serif;border-bottom:1.5pt solid #27477a;margin:25pt 0 19pt;vertical-align:middle}@top-right{content:${cssContent(operatorLogo ? '' : input.branding?.operatingEntityName || '')};${operatorLogo ? `background-image:url(${cssContent(headerLogo)});background-size:125pt 40pt;background-repeat:no-repeat;background-position:right center;` : ''}width:130pt;color:#19335e;font:10pt "PingFang SC",sans-serif;text-align:right;border-bottom:1.5pt solid #27477a;margin:25pt 0 19pt;vertical-align:middle}}}`
   const rows: string[] = [
-    `<h1>${escapeHtml(title)}</h1><p>${escapeHtml(t('Supplier has implemented the v3 API'))}: ${escapeHtml(t(input.v3 ? 'Yes' : 'No'))} · ${escapeHtml(t('Supplier has implemented a material library'))}: ${escapeHtml(t(input.materialLibrary ? 'Yes' : 'No'))}</p>`,
+    `<h1>${escapeHtml(title)}</h1><div class="video-capabilities">${VIDEO_REPORT_CAPABILITIES.map(([key, label]) => `<p>${escapeHtml(t(label))}: ${escapeHtml(t(input[key] ? 'Yes' : 'No'))}</p>`).join('')}</div>`,
   ]
   rows.push(
     `<table class="benchmark-table"><thead><tr>${['Model', 'Request resolution', 'Video generation', 'Official origin features', 'Model comparison'].map((key) => `<th>${escapeHtml(t(key))}</th>`).join('')}</tr></thead><tbody>${input.records
@@ -1698,8 +1608,7 @@ export function buildVideoHtmlReport(
     }
   }
   return `<!doctype html><html lang="${escapeHtml(input.language || 'en')}"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${pdfPageFooterStyles(input.branding, title)}${pdfDocumentStyles}
-    .video-body{width:515pt}body{font-family:"Noto Sans SC","PingFang SC",sans-serif;color:#233145}h1,h2,h3,h4{color:#19335e}h1{font-size:22pt}h2{font-size:15pt;margin:15pt 0 5pt}h3{font-size:11pt}h4{font-size:10pt;margin:10pt 0 4pt}h5{font-size:8.5pt;margin:4pt 0 2pt}p{font-size:8pt;overflow-wrap:anywhere;margin:4pt 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:8.5pt/1.5 monospace;background:#f5f7fb;padding:8pt;margin:0 0 6pt;overflow:visible}h2,h3,h4,h5{break-after:avoid-page}.benchmark-table{width:100%;border-collapse:collapse;table-layout:fixed}.benchmark-table td,.benchmark-table th{overflow-wrap:anywhere;padding:5pt;text-align:left}${printHeader}
-    ${options.format === 'pdf' ? '' : 'body{max-width:900px;margin:20px auto}.pdf-shell,.document-letterhead{width:100%}'}
+    .video-capabilities{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4pt 10pt;margin:8pt 0}.video-capabilities p{margin:0}.video-body{width:515pt}body{font-family:"Noto Sans SC","PingFang SC",sans-serif;color:#233145}h1,h2,h3,h4{color:#19335e}h1{font-size:22pt}h2{font-size:15pt;margin:15pt 0 5pt}h3{font-size:11pt}h4{font-size:10pt;margin:10pt 0 4pt}h5{font-size:8.5pt;margin:4pt 0 2pt}p{font-size:8pt;overflow-wrap:anywhere;margin:4pt 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:8.5pt/1.5 monospace;background:#f5f7fb;padding:8pt;margin:0 0 6pt;overflow:visible}h2,h3,h4,h5{break-after:avoid-page}.benchmark-table{width:100%;border-collapse:collapse;table-layout:fixed}.benchmark-table td,.benchmark-table th{overflow-wrap:anywhere;padding:5pt;text-align:left}${printHeader}
     </style></head><body class="pdf-document"><header class="video-letterhead">${pdfLetterhead(input.branding, title, t('Operating entity'))}</header><main class="video-body">${rows.map((row) => `<section class="pdf-document">${row}</section>`).join('')}</main></body></html>`
 }
 
@@ -1707,6 +1616,6 @@ export async function exportVideoPdfReport(
   input: VideoReportInput
 ): Promise<void> {
   const branding = await preparePdfBranding(input.branding)
-  const html = buildVideoHtmlReport({ ...input, branding }, { format: 'pdf' })
+  const html = buildVideoPdfHtml({ ...input, branding })
   await printHtmlReport(html, 'doubao-video-report-print')
 }

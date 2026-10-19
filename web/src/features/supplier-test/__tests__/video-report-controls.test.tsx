@@ -23,6 +23,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 import { verifySupplierVideo } from '../api'
 import { VideoReportControls } from '../components/video-report-controls'
+import { DEFAULT_VIDEO_REPORT_CHECKS } from '../constants'
 import type { VideoTestRecord, VideoExchange } from '../types'
 
 vi.mock('react-i18next', () => ({
@@ -55,7 +56,7 @@ const exchange = (response: string): VideoExchange => ({
 })
 function Editor() {
   const [records, setRecords] = useState([record]),
-    [checks, setChecks] = useState({ v3: false, materialLibrary: false })
+    [checks, setChecks] = useState(DEFAULT_VIDEO_REPORT_CHECKS)
   return (
     <>
       <VideoReportControls
@@ -100,6 +101,25 @@ test('capabilities remain unchecked until the user checks each option independen
   await user.keyboard(' ')
   expect(library).toBeChecked()
   await user.click(v3)
+  expect(v3).not.toBeChecked()
+  expect(library).toBeChecked()
+  const taskId = screen.getByRole('checkbox', {
+    name: 'Returns the upstream Task ID',
+  })
+  const officialUrl = screen.getByRole('checkbox', {
+    name: 'Returns the upstream Volcengine URL',
+  })
+  expect(taskId).not.toBeChecked()
+  expect(officialUrl).not.toBeChecked()
+  await user.click(taskId)
+  expect(taskId).toBeChecked()
+  expect(officialUrl).not.toBeChecked()
+  officialUrl.focus()
+  await user.keyboard(' ')
+  expect(officialUrl).toBeChecked()
+  await user.click(taskId)
+  expect(taskId).not.toBeChecked()
+  expect(officialUrl).toBeChecked()
   expect(v3).not.toBeChecked()
   expect(library).toBeChecked()
 })

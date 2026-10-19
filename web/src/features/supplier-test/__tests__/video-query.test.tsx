@@ -86,3 +86,28 @@ test('polling an existing video task starts without a model', async () => {
     undefined
   )
 })
+
+test('video report exposes PDF export only while text reports keep their existing exports', async () => {
+  const user = userEvent.setup()
+  render(
+    <QueryClientProvider client={queryClient}>
+      <SupplierTest />
+    </QueryClientProvider>
+  )
+  expect(
+    screen.getByRole('button', { name: 'Copy report' })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Export HTML' })
+  ).toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: 'Doubao Video' }))
+  expect(
+    screen.getByRole('button', { name: 'Export Video PDF' })
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: /Copy.*[Rr]eport/ })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: /Export.*HTML/ })
+  ).not.toBeInTheDocument()
+})

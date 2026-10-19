@@ -25,11 +25,7 @@ import en from '@/i18n/locales/en.json'
 import fr from '@/i18n/locales/fr.json'
 
 import { CheckTable } from '../components/check-table'
-import {
-  buildVideoHtmlReport,
-  buildVideoMarkdownReport,
-  type VideoReportInput,
-} from '../report'
+import { buildVideoPdfHtml, type VideoReportInput } from '../report'
 import type { CheckResult } from '../types'
 
 const submittedCheck: CheckResult = {
@@ -62,7 +58,7 @@ test('video check title and interpolated detail follow a language change', async
   expect(screen.getByText('Tâche envoyée. ID : video-42')).toBeVisible()
 })
 
-test('video Markdown and HTML reports translate check details in the selected language', async () => {
+test('video PDF translates check details in the selected language', async () => {
   const i18n = createInstance()
   await i18n.init({ lng: 'fr', resources: { fr } })
   const input: VideoReportInput = {
@@ -84,11 +80,8 @@ test('video Markdown and HTML reports translate check details in the selected la
     t: (key, options) => i18n.t(key, options),
   }
 
-  const markdown = buildVideoMarkdownReport(input)
-  const html = buildVideoHtmlReport(input)
+  const html = buildVideoPdfHtml(input)
 
-  expect(markdown).toContain('Tâche envoyée. ID : video-42')
-  expect(markdown).toContain(i18n.t('Succeeded'))
   expect(html).toContain('Tâche envoyée. ID : video-42')
   expect(html).toContain(i18n.t('Succeeded'))
   expect(html).toContain('<html lang="fr">')

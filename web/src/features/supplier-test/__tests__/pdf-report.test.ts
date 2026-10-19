@@ -22,7 +22,7 @@ import { api } from '@/lib/api'
 
 import {
   buildHtmlReport,
-  buildVideoHtmlReport,
+  buildVideoPdfHtml,
   preparePdfBranding,
   type ReportInput,
   type VideoReportInput,
@@ -139,8 +139,7 @@ test('video PDF includes actual call details and reuses company branding', () =>
     t: (key) => key,
   }
 
-  const pdfHtml = buildVideoHtmlReport(input, { format: 'pdf' })
-  const exportHtml = buildVideoHtmlReport(input)
+  const pdfHtml = buildVideoPdfHtml(input)
 
   expect(pdfHtml).toContain(
     '<title>Doubao Video Generation Test Report</title>'
@@ -161,5 +160,4 @@ test('video PDF includes actual call details and reuses company branding', () =>
   expect(pdfHtml).not.toContain('<span>Example Operator Ltd</span>')
   expect(pdfHtml).toContain('192.0.2.44')
   expect(pdfHtml).not.toContain('meta-label">Time')
-  expect(exportHtml).toContain('http://192.0.2.44')
 })

@@ -52,6 +52,7 @@ import {
   DEFAULT_CACHE_FORM,
   DEFAULT_STRESS_FORM,
   DEFAULT_VIDEO_FORM,
+  DEFAULT_VIDEO_REPORT_CHECKS,
   MAX_CACHE_ROUNDS,
   MAX_CACHE_WAIT_SECONDS,
   MAX_CONCURRENCY,
@@ -68,12 +69,9 @@ import { useSupplierTestRun } from './hooks/use-supplier-test-run'
 import {
   buildHtmlReport,
   buildMarkdownReport,
-  buildVideoHtmlReport,
-  buildVideoMarkdownReport,
   downloadFile,
   exportPdfReport,
   exportVideoPdfReport,
-  stampFileName,
   supplierReportName,
   type ReportInput,
   type ReportBranding,
@@ -163,10 +161,7 @@ export function SupplierTest() {
   const [standard, setStandard] = useState<SupplierStandard>(readStoredStandard)
   const [moduleTab, setModuleTab] = useState<SupplierTestModule>('basic')
   const run = useSupplierTestRun()
-  const [reportChecks, setReportChecks] = useState({
-    v3: false,
-    materialLibrary: false,
-  })
+  const [reportChecks, setReportChecks] = useState(DEFAULT_VIDEO_REPORT_CHECKS)
   const [verificationBusy, setVerificationBusy] = useState(false)
   const [materialBusy, setMaterialBusy] = useState(false)
   const [stopVersion, setStopVersion] = useState(0)
@@ -174,7 +169,7 @@ export function SupplierTest() {
   useEffect(() => {
     const supplier = run.videoRuns[0]?.baseUrl || ''
     if (reportSupplier.current && supplier !== reportSupplier.current) {
-      setReportChecks({ v3: false, materialLibrary: false })
+      setReportChecks(DEFAULT_VIDEO_REPORT_CHECKS)
     }
     reportSupplier.current = supplier
   }, [run.videoRuns])
@@ -572,28 +567,25 @@ export function SupplierTest() {
             {t('Stop')}
           </Button>
         ) : null}
-        <Button
-          variant='outline'
-          disabled={busy || !hasReport}
-          onClick={async () => {
-            const report = isVideoTab
-              ? buildVideoMarkdownReport(videoReportInput())
-              : buildMarkdownReport(reportInput())
-            const ok = await copyToClipboard(report)
-            if (!ok) {
-              toast.error(t('Failed to copy report'))
-              return
-            }
-            toast.success(
-              isVideoTab
-                ? t('Video report copied to clipboard')
-                : t('Report copied to clipboard')
-            )
-          }}
-        >
-          <Copy />
-          {isVideoTab ? t('Copy Video Report') : t('Copy report')}
-        </Button>
+        {!isVideoTab && (
+          <Button
+            variant='outline'
+            disabled={busy || !hasReport}
+            onClick={async () => {
+              const ok = await copyToClipboard(
+                buildMarkdownReport(reportInput())
+              )
+              if (!ok) {
+                toast.error(t('Failed to copy report'))
+                return
+              }
+              toast.success(t('Report copied to clipboard'))
+            }}
+          >
+            <Copy />
+            {t('Copy report')}
+          </Button>
+        )}
         <Button
           variant='outline'
           disabled={busy || !hasReport}
@@ -614,30 +606,23 @@ export function SupplierTest() {
           <Download />
           {isVideoTab ? t('Export Video PDF') : t('Export PDF')}
         </Button>
-        <Button
-          variant='outline'
-          disabled={busy || !hasReport}
-          onClick={() => {
-            if (isVideoTab) {
-              downloadFile(
-                `doubao-video-test-${stampFileName()}.html`,
-                buildVideoHtmlReport(videoReportInput()),
-                'text/html'
-              )
-              toast.success(t('Video HTML report exported'))
-            } else {
+        {!isVideoTab && (
+          <Button
+            variant='outline'
+            disabled={busy || !hasReport}
+            onClick={() => {
               downloadFile(
                 `${supplierReportName((key, options) => t(key, options))}.html`,
                 buildHtmlReport(reportInput()),
                 'text/html'
               )
               toast.success(t('HTML report exported'))
-            }
-          }}
-        >
-          <Download />
-          {isVideoTab ? t('Export Video HTML') : t('Export HTML')}
-        </Button>
+            }}
+          >
+            <Download />
+            {t('Export HTML')}
+          </Button>
+        )}
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='space-y-4'>
@@ -765,7 +750,7 @@ export function SupplierTest() {
                         ...current,
                         materialEvidence: [],
                       }))
-                      setReportChecks({ v3: false, materialLibrary: false })
+                      setReportChecks(DEFAULT_VIDEO_REPORT_CHECKS)
                     }}
                   />
                 }

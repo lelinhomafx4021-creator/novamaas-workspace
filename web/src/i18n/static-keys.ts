@@ -886,4 +886,7 @@ export const STATIC_I18N_KEYS = [
   'The terminal response determines generation success and provides the original video URL.',
   'The original video URL is submitted to Volcengine; QueryID identifies the verification.',
   'IsOfficial indicates source detection; ModelName is compared only for a canonical requested model.',
+  'Returns the upstream Task ID',
+  'Returns the upstream Volcengine URL',
+  'Checked means yes; unchecked means no.',
 ] as const

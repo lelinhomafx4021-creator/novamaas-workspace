@@ -254,6 +254,13 @@ export type CacheForm = {
   mode: CacheMode
 }
 
+export type VideoReportChecks = {
+  v3: boolean
+  materialLibrary: boolean
+  upstreamTaskId: boolean
+  upstreamVolcengineUrl: boolean
+}
+
 export type VideoForm = {
   materials?: Array<Record<string, unknown>>
   materialEvidence?: VideoExchange[]

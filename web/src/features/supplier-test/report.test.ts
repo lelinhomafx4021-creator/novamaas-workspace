@@ -27,8 +27,7 @@ import {
 import {
   buildHtmlReport,
   buildMarkdownReport,
-  buildVideoHtmlReport,
-  buildVideoMarkdownReport,
+  buildVideoPdfHtml,
   formatTokenCompact,
   type ReportInput,
   type VideoReportInput,
@@ -267,30 +266,16 @@ describe('supplier-test report', () => {
     expect(md).not.toContain('| Total duration |')
   })
 
-  test('buildVideoMarkdownReport generates dedicated Doubao video report decoupled from text metrics', () => {
+  test('buildVideoPdfHtml generates print-ready Doubao video report without text model sections', () => {
     const videoInput = makeVideoTestInput()
-    const md = buildVideoMarkdownReport(videoInput)
+    const html = buildVideoPdfHtml(videoInput)
 
-    expect(md).toContain('# Doubao Video Generation Test Report')
-    expect(md).toContain('Video task submission')
-    expect(md).toContain('A futuristic city with flying cars at sunset')
-    expect(md).toContain('720p')
-    expect(md).toContain('16:9')
-    expect(md).toContain('cgt-20260921-test-12345')
-    expect(md).toContain('https://tos.volces.com/test-video.mp4')
-    expect(md).toContain('Final video result')
-    expect(md).toContain('Official verification submission')
-
-    // Zero contamination from text model tests
-    expect(md).not.toContain('Concurrency and stress test')
-    expect(md).not.toContain('Prompt cache test')
-    expect(md).not.toContain('TTFT')
-    expect(md).not.toContain('TPOT')
-  })
-
-  test('buildVideoHtmlReport generates print-ready Doubao video report without text model sections', () => {
-    const videoInput = makeVideoTestInput()
-    const html = buildVideoHtmlReport(videoInput)
+    expect(html).toContain('Video task submission')
+    expect(html).toContain('A futuristic city with flying cars at sunset')
+    expect(html).toContain('720p')
+    expect(html).toContain('16:9')
+    expect(html).toContain('Final video result')
+    expect(html).toContain('Official verification submission')
 
     expect(html).toContain('Doubao Video Generation Test Report')
     expect(html).toContain('cgt-20260921-test-12345')

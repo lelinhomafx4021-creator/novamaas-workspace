@@ -29,7 +29,22 @@ import type {
   CheckResult,
   StressForm,
   VideoForm,
+  VideoReportChecks,
 } from './types'
+
+export const VIDEO_REPORT_CAPABILITIES = [
+  ['v3', 'Supplier has implemented the v3 API'],
+  ['materialLibrary', 'Supplier has implemented a material library'],
+  ['upstreamTaskId', 'Returns the upstream Task ID'],
+  ['upstreamVolcengineUrl', 'Returns the upstream Volcengine URL'],
+] as const
+
+export const DEFAULT_VIDEO_REPORT_CHECKS: VideoReportChecks = {
+  v3: false,
+  materialLibrary: false,
+  upstreamTaskId: false,
+  upstreamVolcengineUrl: false,
+}
 
 export const API_ENDPOINTS = {
   MODELS: '/api/supplier-test/models',

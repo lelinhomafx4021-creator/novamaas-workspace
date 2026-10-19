@@ -18,12 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { expect, test } from 'vitest'
 
-import {
-  buildVideoHtmlReport,
-  buildVideoMarkdownReport,
-  videoEvidenceText,
-  videoResult,
-} from '../report'
+import { buildVideoPdfHtml, videoEvidenceText, videoResult } from '../report'
 import type { VideoTestRecord } from '../types'
 
 const records: VideoTestRecord[] = [
@@ -88,31 +83,50 @@ test.each([
   { v3: true, materialLibrary: false },
   { v3: false, materialLibrary: true },
   { v3: true, materialLibrary: true },
+  {
+    v3: false,
+    materialLibrary: false,
+    upstreamTaskId: true,
+    upstreamVolcengineUrl: false,
+  },
+  {
+    v3: false,
+    materialLibrary: false,
+    upstreamTaskId: false,
+    upstreamVolcengineUrl: true,
+  },
+  {
+    v3: true,
+    materialLibrary: true,
+    upstreamTaskId: true,
+    upstreamVolcengineUrl: true,
+  },
 ])(
-  'all exports preserve four model/resolution snapshots and manual values: %j',
+  'PDF preserves four model/resolution snapshots and manual values: %j',
   (checks) => {
     const input = { records, ...checks, t: (key: string) => key }
-    for (const report of [
-      buildVideoMarkdownReport(input),
-      buildVideoHtmlReport(input),
-      buildVideoHtmlReport(input, { format: 'pdf' }),
-    ]) {
-      expect(report).toContain(
-        `Supplier has implemented the v3 API: ${checks.v3 ? 'Yes' : 'No'}`
-      )
-      expect(report).toContain(
-        `Supplier has implemented a material library: ${checks.materialLibrary ? 'Yes' : 'No'}`
-      )
-      for (const record of records) {
-        expect(report).toContain(record.metrics.task_id)
-        expect(report).toContain(`query-${record.id}`)
-      }
-      expect(report).toContain('9007199254740993')
-      expect(report).toContain('watermark')
-      expect(report).toContain('Request headers')
-      expect(report).toContain('Official verification submission')
-      expect(report).not.toContain('max-height:')
+    const report = buildVideoPdfHtml(input)
+    expect(report).toContain(
+      `Supplier has implemented the v3 API: ${checks.v3 ? 'Yes' : 'No'}`
+    )
+    expect(report).toContain(
+      `Supplier has implemented a material library: ${checks.materialLibrary ? 'Yes' : 'No'}`
+    )
+    expect(report).toContain(
+      `Returns the upstream Task ID: ${checks.upstreamTaskId ? 'Yes' : 'No'}`
+    )
+    expect(report).toContain(
+      `Returns the upstream Volcengine URL: ${checks.upstreamVolcengineUrl ? 'Yes' : 'No'}`
+    )
+    for (const record of records) {
+      expect(report).toContain(record.metrics.task_id)
+      expect(report).toContain(`query-${record.id}`)
     }
+    expect(report).toContain('9007199254740993')
+    expect(report).toContain('watermark')
+    expect(report).toContain('Request headers')
+    expect(report).toContain('Official verification submission')
+    expect(report).not.toContain('max-height:')
   }
 )
 
@@ -134,12 +148,12 @@ test('partial response cannot become terminal proof, and aliases do not imply mo
     },
   }
   expect(videoResult(record).comparison).toBe('Cannot confirm')
-  const markdown = buildVideoMarkdownReport({
+  const html = buildVideoPdfHtml({
     records: [record],
     t: (key) => key,
   })
-  expect(markdown).toContain('Latest query (not final)')
-  expect(markdown).toContain('No final response obtained')
+  expect(html).toContain('Latest query (not final)')
+  expect(html).toContain('No final response obtained')
 })
 
 test('redaction preserves large numeric tokens and binary attachments while masking nested credentials and link signatures', () => {

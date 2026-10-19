@@ -26,19 +26,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 import { verifySupplierVideo } from '../api'
-import {
-  downloadFile,
-  videoEvidenceText,
-  buildVideoMarkdownReport,
-  videoResult,
-} from '../report'
-import type { VideoTestRecord } from '../types'
+import { VIDEO_REPORT_CAPABILITIES } from '../constants'
+import { downloadFile, videoEvidenceText, videoResult } from '../report'
+import type { VideoTestRecord, VideoReportChecks } from '../types'
 
 export function VideoReportControls(props: {
   records: VideoTestRecord[]
   busy: boolean
-  checks: { v3: boolean; materialLibrary: boolean }
-  onChecksChange: (checks: { v3: boolean; materialLibrary: boolean }) => void
+  checks: VideoReportChecks
+  onChecksChange: (checks: VideoReportChecks) => void
   onUpdate: (id: string, value: VideoTestRecord['verification']) => void
   onClear: () => void
   onBusyChange: (busy: boolean) => void
@@ -191,33 +187,22 @@ export function VideoReportControls(props: {
     props.records.at(-1)
   return (
     <Card className='space-y-3 p-3'>
-      <div className='flex flex-wrap gap-4'>
-        <Label>
-          <Checkbox
-            checked={props.checks.v3}
-            disabled={props.busy}
-            onCheckedChange={(value) =>
-              props.onChecksChange({ ...props.checks, v3: Boolean(value) })
-            }
-          />
-          {t('Supplier has implemented the v3 API')}
-        </Label>
-        <Label>
-          <Checkbox
-            checked={props.checks.materialLibrary}
-            disabled={props.busy}
-            onCheckedChange={(value) =>
-              props.onChecksChange({
-                ...props.checks,
-                materialLibrary: Boolean(value),
-              })
-            }
-          />
-          {t('Supplier has implemented a material library')}
-        </Label>
+      <div className='grid gap-3 sm:grid-cols-2'>
+        {VIDEO_REPORT_CAPABILITIES.map(([key, label]) => (
+          <Label key={key}>
+            <Checkbox
+              checked={props.checks[key]}
+              disabled={props.busy}
+              onCheckedChange={(value) =>
+                props.onChecksChange({ ...props.checks, [key]: Boolean(value) })
+              }
+            />
+            {t(label)}
+          </Label>
+        ))}
       </div>
       <p className='text-muted-foreground text-xs'>
-        {t('Checked means implemented; unchecked means not implemented.')}
+        {t('Checked means yes; unchecked means no.')}
       </p>
       <div className='grid gap-2 sm:grid-cols-2'>
         <Input
@@ -338,18 +323,6 @@ export function VideoReportControls(props: {
           {active.verification?.issue && (
             <p className='text-xs'>{t(active.verification.issue)}</p>
           )}
-          <details>
-            <summary className='cursor-pointer text-sm'>
-              {t('Request and response evidence')}
-            </summary>
-            <pre className='bg-muted rounded p-3 text-xs break-all whitespace-pre-wrap'>
-              {buildVideoMarkdownReport({
-                records: [active],
-                ...props.checks,
-                t: (key) => t(key),
-              })}
-            </pre>
-          </details>
         </div>
       )}
     </Card>

@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAdminManualAccess } from '@/features/admin-manual/use-admin-manual-access'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -33,6 +34,7 @@ export function APIDocs() {
   const { t } = useTranslation()
   const { article = 'quickstart' } = useSearch({ from: '/docs/' })
   const { access } = useRouteContext({ from: '/docs/' })
+  const manual = useAdminManualAccess()
   const userID = useAuthStore((state) => state.auth.user?.id)
   const sessionID = useAuthStore((state) => state.auth.session?.sid)
   const allowed = access.enabled && (!access.requireAuth || !!userID)
@@ -94,6 +96,7 @@ export function APIDocs() {
   return (
     <DocumentationPage
       kind='api'
+      manualAvailable={manual.available}
       documents={allowed && !docs.isError ? (docs.data ?? []) : []}
       article={article}
       status={status}

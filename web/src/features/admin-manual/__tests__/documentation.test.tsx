@@ -203,6 +203,16 @@ async function renderManual(path = '/admin-manual') {
   return router
 }
 
+test('opening the manual shares one access request across the route and reader', async () => {
+  signIn(10)
+  await renderManual()
+  await screen.findByRole('heading', { name: 'Private chapter one' })
+  await waitFor(() => expect(client.isFetching()).toBe(0))
+
+  expect(accessRequests).toBe(1)
+  expect(contentRequests).toBe(1)
+})
+
 test('strictly mounted authorized readers switch between separate manuals inside the documentation layout', async () => {
   signIn(10)
   const router = await renderManual('/docs')

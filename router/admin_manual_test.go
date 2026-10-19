@@ -116,15 +116,13 @@ func TestAdminManualPermissionMatrix(t *testing.T) {
 					}
 					require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
 					assert.Equal(t, adminmanual.Documents, body.Data)
-					require.Len(t, body.Data, 6)
+					require.Len(t, body.Data, 7)
 					ids := make([]string, 0, len(body.Data))
-					titles := make([]string, 0, len(body.Data))
 					for _, document := range body.Data {
 						ids = append(ids, document.ID)
-						titles = append(titles, document.Title)
 					}
-					assert.Equal(t, []string{"account-login", "subscriptions", "api-keys", "text-models", "image-models", "video-models"}, ids)
-					assert.Equal(t, []string{"账号与钱包", "套餐与订阅", "密钥与插件权益", "文本接口对接", "图片接口对接", "视频接口对接"}, titles)
+					assert.Equal(t, []string{"account-login", "subscriptions", "plugins", "api-keys", "text-models", "image-models", "video-models"}, ids)
+					assert.Equal(t, "管理总览与对接规划", body.Data[0].Title)
 				})
 			}
 		}

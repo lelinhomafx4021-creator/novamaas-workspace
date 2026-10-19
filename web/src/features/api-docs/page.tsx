@@ -49,6 +49,7 @@ export function DocumentationPage(props: {
   documents: APIDocument[]
   article?: string
   kind: 'api' | 'admin'
+  manualAvailable: boolean
   status?: ReactNode
 }) {
   const { t } = useTranslation()
@@ -193,7 +194,7 @@ export function DocumentationPage(props: {
     >
       <main className='api-docs mx-auto grid w-full max-w-[1440px] gap-8 px-4 pt-24 pb-20 sm:px-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-12 lg:px-8'>
         <aside className='lg:border-border/60 min-w-0 self-start border-b pb-6 lg:sticky lg:top-24 lg:max-h-[calc(100svh-7rem)] lg:overflow-y-auto lg:border-r lg:border-b-0 lg:pr-6'>
-          <DocumentationSwitcher kind={props.kind} />
+          {props.manualAvailable && <DocumentationSwitcher kind={props.kind} />}
           <Button
             variant='outline'
             className='mb-3 w-full justify-between lg:hidden'

@@ -1,276 +1,117 @@
-# 账号与钱包
+# 管理总览与对接规划
 
-先接通 Gateway 账号、登录会话和个人钱包，再进入套餐、密钥与模型调用。全册接口字段按当前代码核对；请求示例使用占位值，真实两平台联调尚未完成。
+**聚合平台与星途管理及接口对接手册**
 
-## 版本、状态与接入顺序
+文档版本：V1.0 评审稿　｜　更新日期：2026-10-19　｜　适用阶段：方案评审与开发准备
 
-版本：2.0 收口稿，2026-10-19。六章及 article ID 保持不变。本册同时描述现有 API 和必须建设的目标契约；“现有”只表示源码存在，“拟新增”表示尚未实现，“待联调”表示没有真实两端验收证据。
+本手册用于统一管理口径、明确双方职责，并为开发排期和交付验收提供依据。全册包含管理总览、套餐订阅、插件、账户密钥、文本、图片、视频七个章节。
 
-| 对接范围 | 当前状态 | 实施时的完成条件 |
-| --- | --- | --- |
-| 管理员阅读、root 开关、内容隔离 | 本地实现；本次独立整理 | 权限矩阵、撤权清缓存、构建与公开内容隔离通过 |
-| 登录、钱包、只读套餐 | Gateway 现有；星途有接入代码 | 当前版本完成登录/刷新/撤销/换号、单位和失败展示的真实复验 |
-| Key、模型、文本、图片、视频与素材 | Gateway 有对应接口；客户端适配需逐项核对 | 按各章协议跑通结果保存、恢复查询和消费回查 |
-| 套餐/个人插件权限与同步 | 待开发 | 后台保存、本人快照、显示和执行校验一致 |
-| 统一版本、强制更新与回滚 | 待开发 | 同一目标版本、固定包、安装再授权、健康检查及恢复 |
+实施原则：**优先复用成熟能力，围绕公司业务完成适配，在完整验证后持续增强。** 聚合平台沿用现有账户、套餐、订阅及模型服务；星途沿用现有对话、插件安装和成果保存能力，优先补齐两端之间的管理连接。
 
-先复验星途现有对话与功能，再通过独立公司适配接现有接口，随后实施权限服务/管理后台和客户端守卫，最后完成统一发布及分平台验收。[第三章实施规划](/admin-manual?article=api-keys#实施规划与交付门槛)给出阶段和通过条件；仓库详细交付计划为 `docs/design/STARPATH_INTEGRATION_DELIVERY_PLAN.zh_CN.md`。
+## 一、方案要点
 
-Gateway 已有购买/充值 API 不代表星途当前产品已启用购买。星途现阶段套餐只读，不因手册列出接口就恢复旧购买入口、改变官方对话/工具/插件/技能/MCP 核心流程。本次仅升级手册并收口阅读功能，不实施拟新增业务能力。
+1. **管理入口统一。** 在聚合平台维护套餐资料、套餐授予的功能、受管插件目录、全局开关和目标版本；星途负责读取、展示和本机执行。
+2. **展示与使用资格分别管理。** 相同环境和兼容条件下，所有账号使用同一插件目录、排序和目标版本。订阅只影响已配置功能的使用资格、额度和期限。
+3. **版本由公司明确发布。** 受管插件按“平台目录 → 固定发布 → 指定目标 → 客户端安装器 → 结果回报”连接，更新不再自动追随来源最新版本。
+4. **当前处于开发准备阶段。** 基础账户、订阅、模型服务和本机安装能力已有源码依据；全局插件配置、统一版本连接及套餐功能权益仍待开发，完整桌面链路待联调。
 
-## 对接约定
+本文“已具备”表示源码已有对应能力；“待适配”表示需要连接或调整现有能力；“待开发”表示尚未实现；“待联调”表示两端完整链路未验证。“已验收”须有实际记录及脱敏证据，不能以文档完成或接口返回成功代替。
 
-Gateway 保存账号、登录会话、钱包账本、订阅和模型密钥。星途负责登录界面、个人中心、套餐界面、插件界面和调用这些接口。星途保存 Gateway 返回的 `user.id` 作为账号关联，不用昵称或邮箱推测两个账号是同一个人。
+## 二、管理范围、职责与现状
 
-运营管理集中在 Gateway：套餐定义与详情、功能开放、用户例外、插件目录和统一版本策略均由这里配置；星途只接收本人可见的结果并落实。星途安装包不持有管理员凭证，用户无需再注册另一套独立账号才能获得这些权益。本次交付只补对接文档，第三章和第二章标为“拟新增”的业务接口未实现。
-
-全册保留六章：本章账号/钱包；第二章套餐定义、购买、发放、重置和商品详情；第三章密钥、插件显示与执行、版本发布/统一更新/回滚；后面三章分别覆盖文本、图片和视频，素材及媒体回调集中在视频章。
-
-| 凭证 | 使用场景 | 从哪里取得 |
-| --- | --- | --- |
-| 用户登录 Access Token | 个人资料、钱包、订阅、管理自己的密钥 | 登录或刷新响应的 `data.access_token` |
-| Refresh Cookie | 刷新该用户的登录会话 | 登录响应的 `Set-Cookie`，不在 JSON 中返回 |
-| 管理员 Access Token / 面板 PAT | Gateway 运营后台；可选受信任服务端管理接入 | 管理员登录；PAT 由 `GET /api/user/token` 生成 |
-| 用户模型 API Key | 文本、图片、视频生成 | 第三部分的密钥接口 |
-| 素材 AK/SK | 素材 Action RPC 的签名 | 视频章的素材 access-keys 接口；不是上游火山账号凭证 |
-
-示例以 `https://gateway.example.com` 为 Gateway 地址。带 `<...>` 的字符串需替换；ID 示例 `123`、`7`、`42` 也都需替换成接口实际返回的 ID。多数管理接口返回 `{"success":true,"message":"","data":...}`；业务失败也可能是 HTTP 200 + `success:false`，同时检查 HTTP 状态和业务字段。模型接口、支付跳转接口有各自的响应格式。
-
-### 两平台接入时序
-
-| 时机 | 星途请求/动作 | Gateway 返回/处理 |
-| --- | --- | --- |
-| 未登录启动 | status，渲染当前部署支持的登录方式 | 公开站点能力，不返回个人权益 |
-| 登录完成 | 保存当前会话；并行读 user/self、subscription/self | 本人资料、钱包、订阅 |
-| 初始化调用 | 选择本人模型 Key、读 v1/models | 密钥级可用模型 |
-| 初始化插件（拟新增） | entitlements、plugins、plugin-updates/check | 本人最终功能、可见目录、更新要求 |
-| 用户购买套餐 | 向 Gateway 创建支付；返回后回查 | 回调确认后才发放订阅和权益 |
-| 后台调规则（拟新增） | 下次刷新读取新版本 | Gateway 计算并失效缓存，星途不自行推导授权 |
-| 新执行 | 先权限/版本检查，再模型或插件操作 | 云端再校验并按本人账本计费 |
-| 退出/换号 | 清空当前账号会话、Key、权限、目录、更新决策 | 下个账号重新取本人结果 |
-
-拟新增路径的完整前缀为 `/api/apps/starpath/`，具体请求见第二、三章；现在调用会找不到接口。现有媒体接口无需等待插件管理开发就能按各自协议对接。
-
-## 注册与登录
-
-```http
-GET /api/status
-```
-
-使用响应 `data` 中的 `register_enabled`、`password_register_enabled`、`password_login_enabled`、`email_verification`、`turnstile_check`、`turnstile_site_key` 决定显示哪些入口。不要假定每个部署都启用了相同的登录方式。
-
-若 `turnstile_check=true`，先取得验证码结果，并把 `?turnstile=<TURNSTILE_RESULT>` 加到要求 Turnstile 的请求 URL；不是放进 JSON。注册、密码登录和发送注册邮件验证码均经过该检查。
-
-### 注册
-
-开启邮箱验证时先发送验证码：
-
-```http
-GET /api/verification?email=reader%40example.com
-```
-
-再提交注册：
-
-```http
-POST /api/user/register
-Content-Type: application/json
-
-{
-  "username": "<USERNAME>",
-  "password": "<PASSWORD>",
-  "email": "reader@example.com",
-  "verification_code": "<EMAIL_CODE>"
-}
-```
-
-用户名最长 20 字符，密码为 8–20 字符。未开启邮箱验证时省略 `email`、`verification_code`；当前注册逻辑只在启用邮箱验证时保存该邮箱。成功响应没有登录凭证，也没有新用户 ID，继续调用登录获取账号信息。注册接口只创建普通用户。
-
-### 登录与二次验证
-
-```http
-POST /api/user/login
-Content-Type: application/json
-
-{"username":"<USERNAME>","password":"<PASSWORD>"}
-```
-
-正常成功时，响应核心结构如下（仅展示接入所需字段）：
-
-```json
-{
-  "success": true,
-  "message": "",
-  "data": {
-    "access_token": "<USER_ACCESS_TOKEN>",
-    "token_type": "Bearer",
-    "access_expires_at": 1900000900,
-    "session": {"sid":"<SESSION_ID>","expires_at":1902592000},
-    "user": {"id":123,"username":"<USERNAME>","display_name":"<DISPLAY_NAME>","role":1,"group":"<USER_GROUP>","quota":50000}
-  }
-}
-```
-
-`access_expires_at` 和其他时间戳均为 Unix 秒。保存 `access_token`、过期时间、`session.sid`、`user.id`；之后的用户接口发送 `Authorization: Bearer <USER_ACCESS_TOKEN>`。不需要旧版 `New-Api-User` 请求头。
-
-若响应是 `success:true` + `data.require_2fa=true`，此时还没有登录成功。使用返回的 `flow_token` 提交动态码或备份码：
-
-```http
-POST /api/user/login/2fa
-Content-Type: application/json
-
-{"flow_token":"<FLOW_TOKEN>","code":"<TOTP_OR_BACKUP_CODE>"}
-```
-
-完成后才会取得同样的登录凭证。挑战过期则重新密码登录，不把 `flow_token` 当作 Access Token。
-
-其他登录方式按对应流程接入：短信 `/api/user/login/sms/code`、`/api/user/login/sms`；Passkey `/api/user/passkey/login/begin`、`/finish`；OAuth `/api/oauth/state`、`/api/oauth/:provider`。这些入口不等于 Gateway 已向星途提供通用 SSO 授权服务。
-
-## 刷新与退出
-
-登录返回的 `new_api_refresh` Cookie 为 HttpOnly、SameSite=Strict、路径 `/api/user/auth`。浏览器请求需携带 Cookie；仅保存 JSON 中的 Access Token 无法长时间维持登录。
-
-```http
-POST /api/user/auth/refresh
-X-Auth-Session: <SESSION_ID>
-Cookie: new_api_refresh=<REFRESH_COOKIE_VALUE>
-Origin: https://gateway.example.com
-```
-
-Cookie 应由浏览器或服务端 Cookie 容器自动维护，示例只是说明协议。刷新成功后整体更新返回的 Access Token、过期时间、用户资料和会话；保留新的 Set-Cookie。刷新会轮换 Cookie，同一会话同时只发一次刷新，其他请求等待它完成。
-
-星途与 Gateway 若跨站，单加 `credentials:include` 不能绕过 SameSite=Strict。可通过星途服务端代理维护每个用户独立的 Gateway Cookie 会话，或使用双方评审后的同站代理方案；Cookie 路径、Origin、受信任来源和浏览器 Cookie 规则都必须一起匹配。桌面客户端使用独立 Cookie 容器时也要保留轮换结果和正确 Origin。当前没有专供任意第三方客户端交换 Refresh Token 的通用接口。
-
-退出时调用：
-
-```http
-POST /api/user/auth/logout
-Authorization: Bearer <USER_ACCESS_TOKEN>
-X-Auth-Session: <SESSION_ID>
-Origin: https://gateway.example.com
-```
-
-同时携带该会话 Cookie。之后清掉星途当前账号的会话、订阅、钱包和密钥缓存。Access Token 过期时可刷新后重试一次；会话撤销、账号禁用或刷新失败则返回登录界面。不要把管理员的登录状态替代用户会话。
-
-## 个人资料、钱包与积分
-
-```http
-GET /api/user/self
-Authorization: Bearer <USER_ACCESS_TOKEN>
-```
-
-| `data` 字段 | 星途如何使用 |
-| --- | --- |
-| `id`、`username`、`display_name`、`email`、`phone` | 个人资料；账号关联使用 `id` |
-| `role`、`status`、`group` | 账号状态和用户组；不能据此推导插件清单 |
-| `quota` | 钱包剩余额度，单位是原始 quota |
-| `used_quota`、`request_count` | 账户累计使用指标；不是订阅剩余额度 |
-| `setting` | JSON 字符串形式的用户设置，按需解析 |
-| `sidebar_modules`、`permissions` | Gateway 自身导航与后台能力，不是星途插件授权 |
-
-钱包、订阅额度、密钥上限分别展示。钱包用 `quota`；订阅用第二部分的 `amount_total` / `amount_used`；密钥的 `remain_quota` 只是调用上限，不能再加到钱包余额中。
-
-从 `/api/status` 读取 `quota_per_unit`、`quota_display_type`、`usd_exchange_rate`、`custom_currency_symbol`、`custom_currency_exchange_rate` 后换算：
-
-| 展示类型 | 展示值 |
-| --- | --- |
-| `USD` | quota ÷ quota_per_unit |
-| `CNY` | quota ÷ quota_per_unit × usd_exchange_rate |
-| `CUSTOM` | quota ÷ quota_per_unit × custom_currency_exchange_rate |
-| `TOKENS` | 原始 quota；不等于模型实际 token 数 |
-
-例如仅当 `quota_per_unit=500000`、自定义汇率为 100 时，50000 quota 显示为 10 积分。星途不要写死这个比例，也不要在接口里回传已换算的积分作为 quota。
-
-资料修改用 `PUT /api/user/self`；找回密码用 `GET /api/reset_password`、`POST /api/user/reset`；设备管理用 `/api/user/sessions` 系列。按需接入，修改安全资料后重新确认当前会话。
-
-### 账号相关接口索引与会话管理
-
-| 方法 | 现有地址 | 身份 | 用途 |
+| 管理领域 | 聚合平台责任 | 星途责任 | 当前状态 |
 | --- | --- | --- | --- |
-| GET | `/api/status` | 匿名 | 登录方式和单位配置 |
-| GET | `/api/verification` | 匿名 | 注册邮件验证码，email Query |
-| POST | `/api/user/register` | 匿名 | 普通用户注册，不自动登录 |
-| POST | `/api/user/login` | 匿名 | 密码登录或取得 MFA flow_token |
-| POST | `/api/user/login/2fa` | 挑战凭证 | 完成 TOTP/备份码登录 |
-| POST | `/api/user/login/sms/code` | 匿名 | 发送短信登录码 |
-| POST | `/api/user/login/sms` | 匿名 | 手机号/验证码登录 |
-| POST | `/api/user/login/sms/mfa/code` | 挑战凭证 | 短信二次认证发码 |
-| POST | `/api/user/login/sms/mfa` | 挑战凭证 | 完成短信 MFA |
-| POST | `/api/user/passkey/login/begin`、`/finish` | WebAuthn 挑战 | 浏览器/桌面安全上下文流程 |
-| POST | `/api/user/auth/refresh` | Refresh Cookie | 轮换会话和 Access Token |
-| POST | `/api/user/auth/logout` | 当前会话 | 撤销当前登录 |
-| GET / PUT | `/api/user/self` | 用户 | 读取/修改本人资料 |
-| GET | `/api/user/sessions` | 用户 | 当前账号登录设备列表 |
-| DELETE | `/api/user/sessions/:sid` | 用户 | 撤销指定会话 |
-| POST | `/api/user/sessions/revoke-others` | 用户 | 撤销其他会话，保留当前 |
-| GET | `/api/reset_password` | 匿名 | email Query，发送密码重置链接 |
-| POST | `/api/user/reset` | 重置凭证 | 执行重置，按服务端流程重新登录 |
+| 套餐与订阅 | 套餐定义、订阅发放、额度、期限、重置及作废 | 套餐目录、本人订阅及历史展示 | 基础已具备，完整展示待适配 |
+| 套餐功能权益 | 维护套餐与稳定功能标识的关联，计算本人有效权益 | 更新使用状态及订阅提示，保留统一目录 | 待开发 |
+| 插件目录与开关 | 发布同一目录、展示位置、排序、显示及全局启用状态 | 合并受管目录与本机状态，应用入口及操作规则 | 待开发 |
+| 插件统一版本 | 登记固定包，指定目标，管理暂停、撤销及恢复要求 | 下载校验、复用安装器、检查运行并回报 | 本机安装已具备，平台连接待开发 |
+| 账户与平台密钥 | 账户会话、模型密钥、权限及消费归属 | 分别维护账户登录与模型配置，保存密钥同步模型 | 源码已具备，完整桌面流程待联调 |
+| 文本模型 | 上游渠道、模型映射、权限和账务 | 复用现有对话、流式、工具及历史机制 | 连接能力已具备，完整链路待联调 |
+| 图片与视频 | 提供对应模型及任务能力 | 适配旧媒体协议、任务状态与成果保存 | 平台有基础能力，客户端待适配 |
 
-短信、Passkey 和 OAuth 是可选接入流程，索引不代替各自挑战格式；星途应先完成一种登录闭环，不能把这些路径当作与 username/password 相同的请求体。客户端版本更新、插件权限也不能替代登录身份校验。
+上游供应商及其凭据由聚合平台管理。模型密钥与插件管理分别维护，登录账号不自动等于模型密钥所有者。具体边界见[账户与平台密钥](/admin-manual?article=api-keys)。
 
-`GET /api/user/sessions` 的 data 为会话数组，每项含 sid、current、login_method、ip、user_agent、created_at、last_active_at、expires_at，时间均为 Unix 秒。会话管理要求当前浏览器登录会话的 Access Token，面板 PAT 不满足该控制器的会话身份要求。sid 是会话标识，不能用 user.id 代替。撤销当前会话后清掉本机权限和模型调用配置；“撤销其他设备”不删除用户密钥，模型 Key 的轮换/停用走第三章。
+## 三、运行方式与管理边界
 
-### 钱包充值
+### 3.1 三条业务链路
 
-先读 `GET /api/user/topup/info`，按 `enable_*_topup`、`payment_compliance_confirmed`、`pay_methods`、`amount_options` 和最低数量显示入口；不要把钱包充值与购买订阅共用同一个提交地址。
+- **统一配置：** 管理员发布插件目录、开关和目标 → 星途刷新并应用 → 回报设备实际状态。
+- **订阅使用：** 平台维护套餐及用户订阅 → 服务端计算本人权益 → 星途更新可用状态、额度和期限。
+- **插件安装：** 发布人员准备固定包 → Root 登记发布并指定目标 → 客户端取得安装计划、校验安装 → 运行检查及结果回报。
 
-易支付示例：先报价，再用相同 amount 创建支付。10 仅示意，需替换成当前部署允许的数量；全部请求使用当前用户 Access Token。
+目录发布、安装包存储和客户端安装分别承担不同工作。安装文件可来自稳定的精确版本来源或公司文件存储，聚合平台业务服务无需安装、运行星途插件。
 
-```http
-POST /api/user/amount
-Authorization: Bearer <USER_ACCESS_TOKEN>
-Content-Type: application/json
+### 3.2 客户端生效规则
 
-{"amount":10}
-```
-
-成功为 `message:"success"`，`data` 是收款金额字符串。确认后提交：
-
-```http
-POST /api/user/pay
-Authorization: Bearer <USER_ACCESS_TOKEN>
-Content-Type: application/json
-
-{"amount":10,"payment_method":"<EPAY_METHOD>"}
-```
-
-`<EPAY_METHOD>` 使用已开放的易支付渠道值。成功响应顶层 `url` 是提交地址，`data` 是表单参数。Stripe 另走 `/api/user/stripe/amount`、`/api/user/stripe/pay`，请求含 `amount` 和 `payment_method:"stripe"`，支付地址读 `data.pay_link`；其他支付渠道按各自字段接入，不能统一套用易支付结构。
-
-这里的 amount 是充值入口的数量字段，不是钱包 raw quota 或任意展示积分。易支付在 TOKENS 模式按 quota 输入并按整单位入账，其他模式按 amount × quota_per_unit 入账；CUSTOM 显示汇率不参与该数量反算。星途需明确充值档位与到账积分，实际收款金额以报价为准。
-
-支付返回后读 `GET /api/user/topup/self?p=1&page_size=20`，从 `data.items` 读取 `trade_no`、`status`、`money`、`complete_time`；可用 `keyword=<TRADE_NO>` 筛选当前用户记录。状态包括 pending/success/failed/expired。确认订单 success 后重新拉取 `/api/user/self`；跳转成功不代表到账，也不能只比较余额差（期间可能有消费）。超时先查记录，不直接再次创建付款。
-
-`POST /api/user/topup` 是兑换码入口，请求 `{"key":"<REDEMPTION_CODE>"}`，不是在线支付或模型 Key 充值。订阅支付后的权益回查与订单查询缺口见[套餐与订阅](/admin-manual?article=subscriptions#操作完成后的回查)，不能把充值记录当成完整订阅订单列表。
-
-## 消费回查与请求结果
-
-生成调用结束后读取 `/api/user/self`、`/api/subscription/self`，更新钱包和订阅余额。消费明细用：
-
-```http
-GET /api/log/self?p=1&page_size=20&request_id=<GATEWAY_REQUEST_ID>
-Authorization: Bearer <USER_ACCESS_TOKEN>
-```
-
-响应为 `data.items/total/page/page_size`，还可按 `model_name`、`start_timestamp`、`end_timestamp` 筛选。每条 quota 按本章规则展示；other 是 JSON 字符串，存在 billing_source 时可区分钱包和订阅，缺少时不自行推断扣费来源。汇总用 `/api/log/self/stat`。不要用列表展示序号 id 作为跨页或跨刷新唯一标识。
-
-Gateway 响应头 `X-Oneapi-Request-Id` 对应明细的 request_id，任务 ID 是另一种标识。桌面客户端或同站代理可保存该头；当前 CORS 没有配置 Expose-Headers，浏览器跨域直连可能无法读取，不能把“响应头存在”当成“浏览器脚本一定可读”。登录 Cookie 的同站限制仍按本章会话规则处理。
-
-### 账号与结果关联的交接要求
-
-主进程为当前登录维护 origin、user.id、session.sid 和本地登录代次；只有仍属于同一次登录的响应才能更新界面。换号/退出取消旧读取并丢弃迟到结果，不能只清一个头像或一个 localStorage 项。
-
-模型 Key 属于单独的调用身份：现有登录不能证明手工填入 Key 的所有者与当前账号相同。自动关联完成前，明确记录所选 Key 的来源和状态，不按密钥名猜测归属，不将登录 Access Token 填入模型配置。专用应用 Key 的待开发契约见第三章。
-
-一次生成至少保存账号关联、模型、提交协议、结果状态和可取得的请求编号；视频另存公开任务 ID，文件另存项目与本地路径。请求编号、模型响应 ID、公开任务 ID、支付订单号互不替代。查到消费不保证成果已保存，未查到即时日志也不证明可以安全重复提交。
-
-本章联调依次验证正常登录、二次验证、过期刷新、主动撤销、同设备换号、读取失败保留旧数据标记、一次真实调用后的用量回查。自动测试、实际调用和支付到账分别登记，不能以登录成功勾选全部通过。
-
-| 结果 | 星途的处理 |
+| 事项 | 本期约定 |
 | --- | --- |
-| 登录接口的 Access Token 过期 | 按会话流程刷新一次；模型 Key 被拒绝不能靠刷新登录凭证解决 |
-| 生成接口限流或暂时失败 | 显示可重试状态；先确认是否已受理，不自动重发付费请求 |
-| 已拿到视频任务 ID，但轮询中断 | 保存 ID，恢复后继续查询原任务，不重新生成 |
-| 提交超时且没有任务 ID | 状态记为待确认；先查本人任务和消费记录，不能把“超时”直接显示成“未扣费” |
+| 配置刷新 | 启动、回到前台及手动刷新时读取全局配置；在线轮询默认 60 秒，作为待联调参数 |
+| 订阅刷新 | 登录、订阅变化、到期及换号时刷新；新增订阅功能授权快照最长 5 分钟，更早到期时间优先，作为待联调参数 |
+| 安装执行 | 发现目标差异先提示；首期由用户确认，在运行空闲时执行，刷新配置不直接替换运行目录 |
+| 缓存与故障 | 全局配置按平台环境及兼容条件缓存；本人数据按账号隔离，读取失败保留最后有效数据并标注未更新 |
+| 授权过期 | 暂停新的订阅受限操作，保留统一目录、原有免费能力及用户成果；云端新操作由服务端即时校验 |
+| 生效确认 | 按设备区分配置已应用、已安装及运行检查结果；离线、未适配旧版及无近期回报的设备标记未确认 |
 
-本人任务列表 `/api/task/self?p=1&page_size=20` 返回 `data.items`，用 task_id 继续查任务；列表含 status、progress、result_url、model_name。列表内部状态与 v1/v3 详情状态不同，不能共用一套枚举。该列表覆盖异步任务，不等于完整图片/文本生成历史。项目、对话、提示词和文件历史仍由星途维护。
+全局关闭优先于套餐授予。隐藏改变展示，停用限制新操作；下架、订阅到期和包撤销均不自动卸载或删除用户配置。旧版星途须先发布一次接口适配版本，后续规则变更才能通过配置同步生效。
 
-源码依据：`router/api-router.go`；`controller/{user,auth_session,twofa,misc,topup,topup_stripe,log,task}.go`；`model/{topup,log}.go`；`service/{auth_session,log_info_generate}.go`；`middleware/{auth_origin,turnstile-check,request-id,cors}.go`。以上按源码核对，真实充值和两平台消费回查尚未联调。
+## 四、接口范围
+
+以下新增路由为拟定协议，供双方开发评审使用，均尚未实现；现有接口继续复用。管理员写入须校验权限并记录操作，客户端仅能读取规则、请求安装计划及回报状态。
+
+| 用途 | 接口 | 权限与约定 | 状态 |
+| --- | --- | --- | --- |
+| 读取全局配置 | GET /api/apps/starpath/config | 登录前可读已发布的非敏感目录与策略，内容不按账号定制 | 拟新增 |
+| 发布全局配置 | PUT /api/apps/starpath/admin/config | Root 提交目录、开关、已登记目标及原配置版本，校验后整体发布 | 拟新增 |
+| 登记固定发布 | POST /api/apps/starpath/admin/plugin-releases | Root 登记精确版本、固定文件、摘要、兼容及测试资料 | 拟新增 |
+| 撤销固定发布 | POST /api/apps/starpath/admin/plugin-releases/:release_id/revoke | Root 撤销指定发布，记录原因并阻止后续受管安装 | 拟新增 |
+| 申请及复核安装计划 | POST /api/apps/starpath/plugins/:plugin_id/install-plan | 客户端登录会话；下载前申请、切换前复核同一全局目标和包状态 | 拟新增 |
+| 回报设备结果 | POST /api/apps/starpath/plugin-reports | 客户端登录会话；按设备、操作及阶段记录，服务端绑定真实账号 | 拟新增 |
+| 读取套餐目录 | GET /api/subscription/plans | 用户登录后读取已启用套餐，补展示资料 | 已有，待扩展 |
+| 读取本人订阅及权益 | GET /api/subscription/self | 保留既有响应，补历史关联资料及有效套餐功能 | 已有，待扩展 |
+
+现有套餐、用户订阅管理继续使用原管理员接口。全局配置不返回用户资料、私有配置或下载凭证；私有文件短期下载地址由安装计划提供。订阅不分配不同安装包或版本，校验放在需订阅的功能使用环节。
+
+插件发布、计划、回报的最小字段及失败处理见[插件管理与统一版本](/admin-manual?article=plugins)；套餐和本人订阅数据要求见[套餐与订阅管理](/admin-manual?article=subscriptions)。新增字段须兼容现有调用，错误须区分无数据、读取失败、策略变化和权限失效。
+
+## 五、实施顺序与交付责任
+
+| 编号 | 交付内容 | 主要责任 | 依赖 | 完成标准 |
+| --- | --- | --- | --- | --- |
+| DP-01 | 受管对象与身份映射 | 星途开发、平台开发 | 当前源码盘点 | 明确独立插件、随包连接器和基础扩展，包名与运行标识准确关联 |
+| DP-02 | 套餐展示及功能定义 | 平台开发、产品运营 | 可与 DP-01 并行 | 展示资料、历史关联及稳定功能标识齐全，沿用既有账务规则 |
+| DP-03 | 全局配置发布与客户端应用 | 平台开发、星途开发 | DP-01 | 不同订阅状态账号读取同一目录、排序和目标，配置版本可追踪 |
+| DP-04 | 本人权益与功能使用状态 | 平台开发、星途开发 | DP-02、DP-03 | 订阅前、有效期内、到期、多份订阅及换号处理正确 |
+| DP-05 | 指定版本安装与恢复 | 平台开发、星途开发、插件维护者 | DP-01、DP-03、合格独立包 | 固定发布、安装计划、校验、运行检查、回报及恢复形成完整流程 |
+| DP-06 | 两端联调与发布验收 | 双方开发、测试 | 对应功能完成 | 业务结果与后台记录一致，现有对话、登录、密钥及扩展回归通过 |
+
+首个演示使用已有飞书入口验证统一显示与隐藏，两个账号的订阅状态不同但目录结果相同；再验证一项实际配置了订阅要求的功能，其使用状态随有效订阅变化。飞书示例仅用于展示验收，不预设收费。独立安装测试使用固定来源且兼容的测试包，不以先确定收费插件为前置条件。
+
+首期集中完成套餐展示、全局插件管理、订阅使用权益、指定版本安装及基础调用回归。图片与视频按独立适配任务推进；自动购买续费、自动领密钥、主应用升级和静默安装另行规划。
+
+## 六、交付验收标准
+
+| 验收项 | 通过标准 |
+| --- | --- |
+| 统一目录与开关 | 相同条件下，两个账号目录、排序和目标一致；全局隐藏及停用按规则生效 |
+| 订阅使用差异 | 未订阅、有效、到期及作废提示正确；多份有效套餐合并授予，失效一份不误撤其他来源 |
+| 套餐与历史 | 展示资料、额度、重置及历史名称正确，套餐下架不误删有效订阅 |
+| 指定版本 | 来源出现更高版本仍只安装平台目标；登记新发布不自动改变当前目标 |
+| 安装安全与恢复 | 身份、版本、摘要及兼容不符时拒绝；切换前复核，运行失败可安全恢复或明确阻断 |
+| 撤销与设备回报 | 旧计划不能绕过撤销；平台区分发布、应用、安装及运行结果，未回报标记未知 |
+| 换号与异常 | 本人资料不串号；故障不误报零余额、无订阅、无限授权或安装成功 |
+| 现有能力回归 | 文本、流式、工具、历史、登录、密钥及基础扩展保持正确，费用归属可核对 |
+
+验收记录包括日期、负责人、环境、账号及设备标识、配置与发布版本、预期与实际结果、脱敏证据和未解决事项。密码、模型密钥、Cookie、下载凭证及完整私有配置不得进入记录。
+
+## 七、实施依赖与文档维护
+
+| 依赖事项 | 开发前应明确的内容 | 负责角色 |
+| --- | --- | --- |
+| 排期与环境 | 双方实际负责人、目标日期、测试环境及接口版本 | 项目负责人、双方开发 |
+| 套餐业务资料 | 展示内容、稳定功能标识及各套餐授予关系 | 产品运营、平台开发 |
+| 发布资料 | 固定文件、摘要、兼容、运行检查及恢复条件 | 插件维护者、星途开发 |
+| 交付记录 | 实际调用、设备结果、费用核查及回归证据 | 双方开发、测试 |
+
+本版用于评审和开发交接。后续按七章统一更新实际进展、接口约定及验收记录；手册页面和访问权限验证不等于业务验收通过。
+
+章节入口：[套餐订阅](/admin-manual?article=subscriptions) · [插件管理](/admin-manual?article=plugins) · [账户密钥](/admin-manual?article=api-keys) · [文本](/admin-manual?article=text-models) · [图片](/admin-manual?article=image-models) · [视频](/admin-manual?article=video-models)。

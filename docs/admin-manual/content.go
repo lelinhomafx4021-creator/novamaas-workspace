@@ -23,6 +23,7 @@ func init() {
 	for _, name := range []string{
 		"01-account-login.md",
 		"02-subscriptions.md",
+		"07-plugins.md",
 		"03-api-keys.md",
 		"04-text-models.md",
 		"05-image-models.md",

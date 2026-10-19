@@ -20,7 +20,6 @@ import { createFileRoute, notFound } from '@tanstack/react-router'
 import { z } from 'zod'
 
 import { AdminManual } from '@/features/admin-manual'
-import { adminManualAccessOptions } from '@/features/admin-manual/api'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -28,19 +27,11 @@ export const Route = createFileRoute('/admin-manual/')({
   validateSearch: z.object({
     article: z.string().max(80).optional().catch(undefined),
   }),
-  beforeLoad: async ({ context }) => {
+  beforeLoad: () => {
     const { auth } = useAuthStore.getState()
     if (!auth.accessToken || !auth.user || auth.user.role < ROLE.ADMIN) {
       throw notFound()
     }
-    const available = await context.queryClient.fetchQuery(
-      adminManualAccessOptions(
-        auth.user.id,
-        auth.session?.sid ?? null,
-        auth.user.role
-      )
-    )
-    if (!available) throw notFound()
   },
   component: AdminManual,
 })

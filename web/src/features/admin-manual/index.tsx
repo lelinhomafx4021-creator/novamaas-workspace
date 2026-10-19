@@ -56,6 +56,7 @@ export function AdminManual() {
   return (
     <DocumentationPage
       kind='admin'
+      manualAvailable={access.available}
       documents={documents.data ?? []}
       article={article}
       status={documents.isPending ? loading : undefined}

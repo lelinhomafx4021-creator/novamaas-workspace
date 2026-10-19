@@ -21,42 +21,33 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
-import { useAdminManualAccess } from './use-admin-manual-access'
-
 export function DocumentationSwitcher(props: { kind: 'api' | 'admin' }) {
   const { t } = useTranslation()
-  const access = useAdminManualAccess()
-  if (!access.available) return null
+  const links = [
+    ['api', '/docs', t('API documentation')],
+    ['admin', '/admin-manual', t('Platform integration guide')],
+  ] as const
 
   return (
     <nav
       aria-label={t('Docs')}
       className='bg-muted/60 mb-5 grid grid-cols-2 gap-1 rounded-lg border p-1'
     >
-      <Link
-        to='/docs'
-        aria-current={props.kind === 'api' ? 'page' : undefined}
-        className={cn(
-          'rounded-md px-2 py-2 text-center text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring',
-          props.kind === 'api'
-            ? 'bg-background text-foreground shadow-xs'
-            : 'text-muted-foreground'
-        )}
-      >
-        {t('API documentation')}
-      </Link>
-      <Link
-        to='/admin-manual'
-        aria-current={props.kind === 'admin' ? 'page' : undefined}
-        className={cn(
-          'rounded-md px-2 py-2 text-center text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring',
-          props.kind === 'admin'
-            ? 'bg-background text-foreground shadow-xs'
-            : 'text-muted-foreground'
-        )}
-      >
-        {t('Platform integration guide')}
-      </Link>
+      {links.map(([kind, to, label]) => (
+        <Link
+          key={kind}
+          to={to}
+          aria-current={props.kind === kind ? 'page' : undefined}
+          className={cn(
+            'rounded-md px-2 py-2 text-center text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring',
+            props.kind === kind
+              ? 'bg-background text-foreground shadow-xs'
+              : 'text-muted-foreground'
+          )}
+        >
+          {label}
+        </Link>
+      ))}
     </nav>
   )
 }

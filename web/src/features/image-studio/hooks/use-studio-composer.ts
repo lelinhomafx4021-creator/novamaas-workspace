@@ -215,7 +215,8 @@ export function useStudioComposer(props: {
     },
     newCreation: () => {
       if (busy) return
-      changePrompt('')
+      requestKey.current = ''
+      form.resetField('prompt')
       setReferences([])
       upload.reset()
       optimize.reset()

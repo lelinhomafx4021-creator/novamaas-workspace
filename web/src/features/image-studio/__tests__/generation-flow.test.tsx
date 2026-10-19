@@ -219,11 +219,15 @@ test('signing out clears the prompt, private generation records and model select
   ).toHaveValue('')
 })
 
-test('the canvas precedes the bottom prompt editor and records remain outside the form', async () => {
+test('the canvas and editor share the creation area while records remain separate', async () => {
   await openStudio()
   const editor = screen.getByRole('form', { name: 'Image prompt editor' })
   const canvas = screen.getByRole('region', { name: 'Generation results' })
   const records = screen.getByRole('region', { name: 'Generation records' })
+  const workspace = screen.getByRole('region', { name: 'Creative canvas' })
+  expect(workspace).toContainElement(canvas)
+  expect(workspace).toContainElement(editor)
+  expect(workspace).not.toContainElement(records)
   expect(
     canvas.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING
   ).toBeTruthy()
@@ -317,7 +321,11 @@ test('completed images fit a landscape canvas with the prompt only below it and 
   })
   const user = await generate()
   const preview = await screen.findByRole('button', { name: 'Preview' })
-  expect(preview).toHaveClass('aspect-[4/3]', 'max-w-[48rem]', 'flex-none')
+  expect(preview).toHaveClass(
+    'studio-result-frame',
+    'aspect-[4/3]',
+    'flex-none'
+  )
   expect(within(preview).getByRole('img', { name: 'A mountain' })).toHaveClass(
     'object-contain'
   )
@@ -414,6 +422,7 @@ test('collapsing and expanding the editor preserves the prompt and exposes its c
   expect(
     screen.getByRole('button', { name: 'Show prompt editor' })
   ).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByText('Keep this draft')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Show prompt editor' }))
   expect(
     screen.getByRole('textbox', { name: 'Describe your image' })
@@ -591,6 +600,9 @@ test('starting a new creation clears the canvas and draft while keeping existing
   const prompt = screen.getByRole('textbox', { name: 'Describe your image' })
   expect(prompt).toHaveValue('')
   expect(prompt).toHaveFocus()
+  await waitFor(() => expect(prompt).toHaveAttribute('aria-invalid', 'false'))
+  await user.type(prompt, 'Next composition')
+  expect(prompt).toHaveAttribute('aria-invalid', 'false')
   expect(
     screen.queryByRole('button', { name: 'Preview' })
   ).not.toBeInTheDocument()

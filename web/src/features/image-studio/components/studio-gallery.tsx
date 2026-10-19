@@ -50,7 +50,7 @@ import type { StudioResult, StudioRun } from '../types'
 import { StudioWelcome } from './studio-welcome'
 
 const canvasClassName =
-  'mx-auto aspect-[4/3] min-h-48 w-full max-w-[48rem] flex-none'
+  'studio-result-frame mx-auto aspect-[4/3] min-h-48 w-full max-w-[48rem] flex-none'
 
 export function StudioGallery(props: {
   run?: StudioRun

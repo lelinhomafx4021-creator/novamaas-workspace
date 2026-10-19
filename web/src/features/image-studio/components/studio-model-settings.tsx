@@ -75,6 +75,7 @@ export function StudioModelSettings(props: {
       <Button
         type='button'
         variant='outline'
+        size='sm'
         disabled={props.disabled}
         onClick={() => setOpen(true)}
       >

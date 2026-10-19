@@ -63,8 +63,11 @@ export function StudioPromptExamples(props: {
     },
   ]
   return (
-    <section aria-label={t('Try an example')} className='grid gap-3'>
-      <h3 className='text-muted-foreground flex items-center gap-[7px] text-[11px] font-normal'>
+    <section
+      aria-label={t('Try an example')}
+      className='flex flex-col items-start gap-2.5 sm:flex-row sm:flex-wrap sm:items-center'
+    >
+      <h3 className='text-muted-foreground mr-1 flex items-center gap-1.5 text-xs font-normal'>
         <HugeiconsIcon
           icon={SparklesIcon}
           className='text-primary size-4'
@@ -72,8 +75,8 @@ export function StudioPromptExamples(props: {
         />
         {t('Try an example')}
       </h3>
-      <div className='grid grid-cols-2 gap-2 min-[75rem]:grid-cols-4'>
-        {examples.map((example, index) => (
+      <div className='grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap'>
+        {examples.map((example) => (
           <button
             key={example.name}
             type='button'
@@ -83,25 +86,14 @@ export function StudioPromptExamples(props: {
               props.disabled || example.prompt.length > props.maxCharacters
             }
             onClick={() => props.onChange(example.prompt)}
-            className='studio-example-card hover:border-ring hover:bg-muted focus-visible:outline-ring relative flex min-h-[100px] min-w-0 flex-col items-start gap-2 rounded-[10px] border bg-(--studio-surface) p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-not-allowed disabled:opacity-45 md:min-h-0 md:flex-row md:gap-2.5 md:py-[15px] md:pr-7 min-[75rem]:flex-col min-[75rem]:gap-3.5 min-[75rem]:pr-3'
+            className='studio-example-card hover:border-ring hover:bg-muted focus-visible:outline-ring inline-flex min-h-9 items-center gap-2 rounded-lg border bg-(--studio-surface) px-3 py-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-not-allowed disabled:opacity-45'
           >
-            <span
-              className='text-muted-foreground absolute top-3.5 right-3 font-mono text-[9px] md:top-[17px]'
-              aria-hidden='true'
-            >
-              0{index + 1}
-            </span>
             <HugeiconsIcon
               icon={example.icon}
-              className='studio-example-icon text-primary size-5 shrink-0 md:mt-0.5 md:size-4.5 min-[75rem]:mt-0 min-[75rem]:size-5'
+              className='studio-example-icon text-primary size-4 shrink-0'
               aria-hidden='true'
             />
-            <span className='grid min-w-0 gap-1'>
-              <span className='text-xs font-medium'>{example.name}</span>
-              <span className='text-muted-foreground line-clamp-2 text-[11px] leading-relaxed'>
-                {example.prompt}
-              </span>
-            </span>
+            {example.name}
           </button>
         ))}
       </div>

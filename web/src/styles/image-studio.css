@@ -34,11 +34,9 @@ body:has(.studio-shell)
   --studio-history-item: #111a27;
   --studio-selection: #1b2c42;
   --studio-hover-border: #536985;
-  --studio-art: #03070d;
   --studio-title: #f3f6fd;
   --studio-eyebrow: #c1d3eb;
   --studio-description: #b4c0d1;
-  --studio-art-label: #a6b5cb;
   --studio-soft-text: #d0dbea;
   --font-body:
     'Public Sans Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -49,14 +47,8 @@ body:has(.studio-shell)
 }
 
 /* Shared studio variants for existing UI primitives. */
-.studio-canvas-toolbar [data-slot='badge'] {
-  @apply text-muted-foreground text-[9px] font-normal md:text-[10px];
-}
-.studio-composer-top [data-slot='button'] {
-  @apply h-7 bg-transparent px-1.5 text-[10px] md:px-2.5 md:text-[11px];
-}
 .studio-composer-actions [data-slot='button'] {
-  @apply text-[10px] md:text-[11px];
+  @apply text-xs;
 }
 .studio-history-empty [data-slot='empty-icon'] {
   @apply text-muted-foreground mb-3 size-11 rounded-xl border;
@@ -92,14 +84,9 @@ body:has(.studio-shell)
 .studio-prompt-input::placeholder {
   color: #8999b0;
 }
-.studio-hero {
-  height: clamp(220px, 32svh, 340px);
-}
-.studio-hero-caption::before {
-  width: 16px;
-  height: 1px;
-  background: currentColor;
-  content: '';
+.studio-hero-art {
+  mask-image: radial-gradient(ellipse at 68% 48%, #000 32%, transparent 74%);
+  mix-blend-mode: screen;
 }
 .studio-example-card:nth-child(2) .studio-example-icon {
   color: #efbd99;
@@ -111,22 +98,41 @@ body:has(.studio-shell)
   color: #b9d3c4;
 }
 
-@media (width < 1200px) {
-  .studio-hero {
-    height: auto;
-    min-height: 270px;
-    aspect-ratio: 2.05;
+@media (width >= 768px) and (height < 760px) {
+  .studio-center {
+    padding-block: 1.5rem;
   }
-}
-@media (width < 768px) {
   .studio-hero {
-    min-height: 260px;
-    aspect-ratio: 1.35;
+    min-height: 11rem;
   }
   .studio-hero-copy {
-    background: linear-gradient(90deg, #03070dcc, transparent);
+    gap: 0.75rem;
+    padding-block: 0.5rem;
+  }
+  .studio-hero h2 {
+    font-size: 2rem;
+  }
+  .studio-hero-art {
+    object-fit: contain;
   }
 }
+
+@media (width >= 1200px) and (height >= 760px) {
+  .studio-center:has(.studio-result-viewport) {
+    overflow: hidden;
+  }
+  .studio-result-viewport {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    container-type: size;
+  }
+  .studio-result-viewport .studio-result-frame {
+    width: min(100%, max(16rem, calc((100cqh - 6rem) * 4 / 3)));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .image-studio-theme *,
   .image-studio-theme *::before,

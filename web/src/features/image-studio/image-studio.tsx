@@ -176,9 +176,10 @@ function StudioWorkspace(props: {
       }}
     >
       {(generating, reusePrompt) => ({
+        hasResults: Boolean(runId),
         canvas: (
           <div
-            className='min-h-full min-w-0 [&>section:not(.studio-welcome)]:py-2'
+            className='min-w-0 [&>section:not(.studio-welcome)]:py-2'
             ref={galleryRef}
             tabIndex={-1}
             role='group'

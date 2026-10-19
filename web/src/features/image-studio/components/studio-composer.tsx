@@ -24,8 +24,8 @@ import {
   SparklesIcon,
   ArrowDown01Icon,
   ArrowUp01Icon,
-  Maximize01Icon,
-  Minimize01Icon,
+  FullScreenIcon,
+  MinimizeScreenIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
@@ -33,7 +33,6 @@ import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SystemBrand } from '@/components/layout/components/system-brand'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
@@ -57,7 +56,7 @@ export function StudioComposer(props: {
   children: (
     generating: boolean,
     reusePrompt: (prompt: string) => void
-  ) => { canvas: ReactNode; history: ReactNode }
+  ) => { canvas: ReactNode; history: ReactNode; hasResults: boolean }
 }) {
   const { t } = useTranslation()
   const studio = useStudioComposer(props)
@@ -85,7 +84,7 @@ export function StudioComposer(props: {
 
   return (
     <>
-      <header className='sticky top-0 z-10 flex shrink-0 basis-[68px] items-center justify-between gap-2 border-b border-(--studio-subtle-border) bg-(--studio-surface) px-3 py-2.5 md:basis-[76px] md:gap-4 md:px-6 md:py-3'>
+      <header className='sticky top-0 z-10 flex min-h-16 shrink-0 items-center justify-between gap-2 border-b border-(--studio-subtle-border) bg-(--studio-surface) px-3 py-2 md:gap-4 md:px-6'>
         <div className='flex min-w-0 items-center gap-2.5 md:gap-5 max-md:[&>a]:px-0 max-md:[&>a>span]:hidden'>
           <SystemBrand variant='inline' />
           <span
@@ -143,19 +142,17 @@ export function StudioComposer(props: {
           </Button>
         </div>
       </header>
-      <div className='flex min-h-0 flex-1 flex-col overflow-y-auto min-[75rem]:grid min-[75rem]:grid-cols-[minmax(0,1fr)_288px] min-[75rem]:overflow-hidden min-[100rem]:grid-cols-[minmax(0,1fr)_320px]'>
-        <div className='studio-center flex min-h-[calc(100svh-68px)] min-w-0 flex-none flex-col md:min-h-[calc(100svh-76px)] min-[75rem]:min-h-0'>
-          <div className='studio-canvas-toolbar text-muted-foreground flex min-h-12 shrink-0 items-center justify-between gap-3 px-4 text-[10px] md:min-h-[58px] md:px-7 md:text-[11px]'>
-            <div className='flex min-w-0 items-center gap-2'>
-              <span
-                className='bg-primary size-1 shrink-0 rounded-full shadow-[0_0_8px_#b7dbff66]'
-                aria-hidden='true'
-              />
-              <span>{t('Creative canvas')}</span>
-            </div>
-            <Badge variant='outline'>{t('Private workspace')}</Badge>
-          </div>
-          <div className='min-h-0 flex-none overflow-visible px-3.5 pb-4.5 md:px-7 md:pb-5 min-[75rem]:flex-1 min-[75rem]:overflow-y-auto min-[75rem]:overscroll-contain min-[100rem]:px-10'>
+      <div className='flex min-h-0 flex-1 flex-col overflow-y-auto min-[75rem]:grid min-[75rem]:grid-cols-[minmax(0,1fr)_300px] min-[75rem]:overflow-hidden'>
+        <section
+          aria-label={t('Creative canvas')}
+          className='studio-center flex min-h-[calc(100svh-64px)] min-w-0 flex-none flex-col gap-5 px-4 py-6 md:gap-6 md:px-10 md:py-8 min-[75rem]:min-h-0 min-[75rem]:overflow-y-auto min-[75rem]:overscroll-contain'
+        >
+          <div
+            className={cn(
+              'mx-auto w-full max-w-[960px] min-w-0',
+              views.hasResults ? 'studio-result-viewport' : 'mt-auto'
+            )}
+          >
             {views.canvas}
           </div>
           <form
@@ -195,11 +192,11 @@ export function StudioComposer(props: {
             onChange={() => {
               studio.requestKey.current = ''
             }}
-            className='studio-composer focus-within:border-ring data-[dragging=true]:border-primary data-[dragging=true]:ring-primary/30 mx-3.5 mt-auto flex max-h-[70svh] shrink-0 flex-col gap-2.5 overflow-y-auto rounded-[14px] border border-(--studio-panel-border) bg-(--studio-panel) px-3 pt-3.5 pb-2.5 transition-colors data-[dragging=true]:ring-2 md:mx-7 md:px-4 min-[75rem]:mt-0 min-[100rem]:mx-10'
+            className='studio-composer focus-within:border-ring data-[dragging=true]:border-primary data-[dragging=true]:ring-primary/30 mx-auto flex max-h-[70svh] w-full max-w-[960px] shrink-0 flex-col gap-3 overflow-y-auto rounded-2xl border border-(--studio-panel-border) bg-(--studio-panel) p-4 transition-colors data-[dragging=true]:ring-2 md:p-5'
             aria-label={t('Image prompt editor')}
           >
             <div className='studio-composer-top flex min-w-0 items-center justify-between gap-3'>
-              <div className='flex min-w-0 items-center gap-2 text-[10px] md:text-[11px]'>
+              <div className='flex min-w-0 items-center gap-2 text-xs'>
                 <span className='bg-secondary text-primary grid size-6.5 shrink-0 place-items-center rounded-[7px] border'>
                   <HugeiconsIcon
                     icon={Image01Icon}
@@ -251,8 +248,8 @@ export function StudioComposer(props: {
                   <HugeiconsIcon
                     icon={
                       editorMode === 'expanded'
-                        ? Minimize01Icon
-                        : Maximize01Icon
+                        ? MinimizeScreenIcon
+                        : FullScreenIcon
                     }
                     aria-hidden='true'
                   />
@@ -285,6 +282,11 @@ export function StudioComposer(props: {
                 </Button>
               </div>
             </div>
+            {editorMode === 'collapsed' && (
+              <p className='text-muted-foreground truncate text-xs'>
+                {studio.prompt || t('Describe your image')}
+              </p>
+            )}
             <div
               id='studio-editor-body'
               hidden={editorMode === 'collapsed'}
@@ -331,12 +333,10 @@ export function StudioComposer(props: {
                   id='studio-prompt'
                   rows={3}
                   className={cn(
-                    'studio-prompt-input [field-sizing:fixed] max-h-[50svh] min-h-[84px] resize-y rounded-none border-0 px-0 py-1 leading-[1.8] md:min-h-[70px] md:text-[13px]',
+                    'studio-prompt-input [field-sizing:fixed] max-h-[50svh] min-h-24 resize-y rounded-none border-0 px-0 py-1 text-sm leading-[1.8]',
                     editorMode === 'expanded' && 'h-[35svh]'
                   )}
-                  placeholder={t(
-                    'Describe the subject, scene, lighting and style, or try an example below.'
-                  )}
+                  placeholder={t('Describe your image')}
                   {...studio.form.register('prompt')}
                   disabled={studio.busy}
                   aria-invalid={Boolean(studio.form.formState.errors.prompt)}
@@ -477,12 +477,17 @@ export function StudioComposer(props: {
               </div>
             </div>
           </form>
-          <p className='text-muted-foreground shrink-0 px-4.5 py-3 text-center text-[9px] leading-normal md:px-7'>
+          <p
+            className={cn(
+              'text-muted-foreground -mt-2 shrink-0 text-center text-[10px] leading-relaxed',
+              !views.hasResults && 'mb-auto'
+            )}
+          >
             {t(
               'Generated images are kept for 30 days, then automatically deleted. Please download them in time.'
             )}
           </p>
-        </div>
+        </section>
         <div
           id='studio-history'
           ref={historyRef}

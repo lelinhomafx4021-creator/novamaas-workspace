@@ -241,11 +241,6 @@ func VideoTaskGetURL(raw string, taskID string, customEndpoint ...string) (strin
 	return strings.TrimRight(tasksURL, "/") + "/" + url.PathEscape(taskID), nil
 }
 
-func CreateVideoTaskRaw(ctx context.Context, client *http.Client, baseURL, customPath, apiKey string, payload []byte) (int, []byte, error) {
-	exchange, raw, err := CreateVideoTask(ctx, client, baseURL, customPath, apiKey, payload)
-	return exchange.Status, raw, err
-}
-
 func CreateVideoTask(ctx context.Context, client *http.Client, baseURL, customPath, apiKey string, payload []byte) (VideoExchange, []byte, error) {
 	endpoint, err := VideoTasksURL(baseURL, customPath)
 	if err != nil {
@@ -266,11 +261,6 @@ func CreateVideoTask(ctx context.Context, client *http.Client, baseURL, customPa
 		return VideoExchange{}, nil, fmt.Errorf("http client is required")
 	}
 	return videoHTTP(client, request)
-}
-
-func GetVideoTaskRaw(ctx context.Context, client *http.Client, baseURL, customPath, apiKey, taskID string) (int, []byte, error) {
-	exchange, raw, err := GetVideoTask(ctx, client, baseURL, customPath, apiKey, taskID)
-	return exchange.Status, raw, err
 }
 
 func GetVideoTask(ctx context.Context, client *http.Client, baseURL, customPath, apiKey, taskID string) (VideoExchange, []byte, error) {

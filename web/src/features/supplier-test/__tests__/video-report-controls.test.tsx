@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, expect, test, vi } from 'vitest'
@@ -26,9 +26,6 @@ import { VideoReportControls } from '../components/video-report-controls'
 import { DEFAULT_VIDEO_REPORT_CHECKS } from '../constants'
 import type { VideoTestRecord, VideoExchange } from '../types'
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
 vi.mock('../api', () => ({ verifySupplierVideo: vi.fn() }))
 const record: VideoTestRecord = {
   id: 'one',
@@ -55,141 +52,64 @@ const exchange = (response: string): VideoExchange => ({
   elapsed_ms: 1,
 })
 function Editor() {
-  const [records, setRecords] = useState([record]),
-    [checks, setChecks] = useState(DEFAULT_VIDEO_REPORT_CHECKS)
+  const [records, setRecords] = useState([record])
+  const [checks, setChecks] = useState(DEFAULT_VIDEO_REPORT_CHECKS)
   return (
-    <>
-      <VideoReportControls
-        records={records}
-        busy={false}
-        checks={checks}
-        onChecksChange={setChecks}
-        onUpdate={(id, value) =>
-          setRecords((current) =>
-            current.map((item) =>
-              item.id === id ? { ...item, verification: value } : item
-            )
+    <VideoReportControls
+      records={records}
+      busy={false}
+      checks={checks}
+      onChecksChange={setChecks}
+      onUpdate={(id, value) =>
+        setRecords((current) =>
+          current.map((item) =>
+            item.id === id ? { ...item, verification: value } : item
           )
-        }
-        onClear={() => setRecords([])}
-        onBusyChange={() => {}}
-        stopVersion={0}
-      />
-      <output>{JSON.stringify(checks)}</output>
-    </>
+        )
+      }
+      onClear={() => setRecords([])}
+      onBusyChange={() => {}}
+      stopVersion={0}
+    />
+  )
+}
+async function enterCredentials(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(
+    screen.getByRole('textbox', { name: 'Official Access Key ID' }),
+    'official-key'
+  )
+  await user.type(
+    screen.getByLabelText('Official Secret Access Key'),
+    'official-secret'
   )
 }
 beforeEach(() => {
   vi.mocked(verifySupplierVideo).mockReset()
 })
 
-test('capabilities remain unchecked until the user checks each option independently', async () => {
+test('four capabilities start unchecked and can be independently toggled with mouse and keyboard', async () => {
   const user = userEvent.setup()
   render(<Editor />)
-  const v3 = screen.getByRole('checkbox', {
-      name: 'Supplier has implemented the v3 API',
-    }),
-    library = screen.getByRole('checkbox', {
-      name: 'Supplier has implemented a material library',
-    })
-  expect(v3).not.toBeChecked()
-  expect(library).not.toBeChecked()
-  await user.click(v3)
-  expect(v3).toBeChecked()
-  expect(library).not.toBeChecked()
-  library.focus()
-  await user.keyboard(' ')
-  expect(library).toBeChecked()
-  await user.click(v3)
-  expect(v3).not.toBeChecked()
-  expect(library).toBeChecked()
-  const taskId = screen.getByRole('checkbox', {
-    name: 'Returns the upstream Task ID',
-  })
-  const officialUrl = screen.getByRole('checkbox', {
-    name: 'Returns the upstream Volcengine URL',
-  })
-  expect(taskId).not.toBeChecked()
-  expect(officialUrl).not.toBeChecked()
-  await user.click(taskId)
-  expect(taskId).toBeChecked()
-  expect(officialUrl).not.toBeChecked()
-  officialUrl.focus()
-  await user.keyboard(' ')
-  expect(officialUrl).toBeChecked()
-  await user.click(taskId)
-  expect(taskId).not.toBeChecked()
-  expect(officialUrl).toBeChecked()
-  expect(v3).not.toBeChecked()
-  expect(library).toBeChecked()
+  const options = [
+    'Supplier has implemented the v3 API',
+    'Supplier has implemented a material library',
+    'Returns the upstream Task ID',
+    'Returns the upstream Volcengine URL',
+  ].map((name) => screen.getByRole('checkbox', { name }))
+  for (const option of options) expect(option).not.toBeChecked()
+  for (const option of options) {
+    await user.click(option)
+    expect(option).toBeChecked()
+    for (const other of options.filter((item) => item !== option)) {
+      expect(other).not.toBeChecked()
+    }
+    option.focus()
+    await user.keyboard(' ')
+    expect(option).not.toBeChecked()
+  }
 })
 
-test('entering official credentials for an existing result does not create a query while typing, and explicit verification uses the original URL', async () => {
-  vi.mocked(verifySupplierVideo)
-    .mockResolvedValueOnce(exchange('{"Result":{"QueryID":"accepted-query"}}'))
-    .mockResolvedValueOnce(
-      exchange('{"Result":{"Status":"Success","IsOfficial":null}}')
-    )
-  const user = userEvent.setup()
-  render(<Editor />)
-  await user.type(
-    screen.getByRole('textbox', { name: 'Official Access Key ID' }),
-    'official-key'
-  )
-  await user.type(
-    screen.getByLabelText('Official Secret Access Key'),
-    'official-secret'
-  )
-  expect(verifySupplierVideo).not.toHaveBeenCalled()
-  await user.click(
-    screen.getByRole('button', { name: 'Verify or continue querying' })
-  )
-  await waitFor(() => expect(verifySupplierVideo).toHaveBeenCalledTimes(2))
-  expect(
-    vi.mocked(verifySupplierVideo).mock.calls.map(([request]) => request.action)
-  ).toEqual(['create', 'query'])
-  expect(vi.mocked(verifySupplierVideo).mock.calls[0][0].video_url).toBe(
-    'https://cdn.example/original.mp4'
-  )
-  expect(vi.mocked(verifySupplierVideo).mock.calls[1][0].query_id).toBe(
-    'accepted-query'
-  )
-  await waitFor(() =>
-    expect(screen.getAllByText('Cannot confirm')).toHaveLength(2)
-  )
-})
-
-test('an ambiguous creation is not submitted again', async () => {
-  vi.mocked(verifySupplierVideo).mockRejectedValue(
-    new Error('network interrupted')
-  )
-  const user = userEvent.setup()
-  render(<Editor />)
-  await user.click(
-    screen.getByRole('checkbox', {
-      name: 'Automatically verify completed videos',
-    })
-  )
-  await user.type(
-    screen.getByRole('textbox', { name: 'Official Access Key ID' }),
-    'official-key'
-  )
-  await user.type(
-    screen.getByLabelText('Official Secret Access Key'),
-    'official-secret'
-  )
-  await user.click(
-    screen.getByRole('button', { name: 'Verify or continue querying' })
-  )
-  await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'Verify or continue querying' })
-    ).toBeDisabled()
-  )
-  expect(verifySupplierVideo).toHaveBeenCalledTimes(1)
-})
-
-test('a failed result query can be resumed by QueryID without creating another query', async () => {
+test('credentials do not submit while typing; verification uses the original URL and resumes by QueryID after a query error', async () => {
   vi.mocked(verifySupplierVideo)
     .mockResolvedValueOnce(exchange('{"Result":{"QueryID":"accepted-query"}}'))
     .mockRejectedValueOnce(new Error('result connection interrupted'))
@@ -198,20 +118,17 @@ test('a failed result query can be resumed by QueryID without creating another q
     )
   const user = userEvent.setup()
   render(<Editor />)
-  await user.type(
-    screen.getByRole('textbox', { name: 'Official Access Key ID' }),
-    'official-key'
-  )
-  await user.type(
-    screen.getByLabelText('Official Secret Access Key'),
-    'official-secret'
-  )
+  await enterCredentials(user)
+  expect(verifySupplierVideo).not.toHaveBeenCalled()
   const verify = screen.getByRole('button', {
     name: 'Verify or continue querying',
   })
   await user.click(verify)
   await screen.findByText('result connection interrupted')
   expect(verify).toBeEnabled()
+  expect(vi.mocked(verifySupplierVideo).mock.calls[0][0].video_url).toBe(
+    'https://cdn.example/original.mp4'
+  )
   await user.click(verify)
   await screen.findByText('No features detected')
   expect(
@@ -223,4 +140,21 @@ test('a failed result query can be resumed by QueryID without creating another q
     ['query', 'accepted-query'],
     ['query', 'accepted-query'],
   ])
+})
+
+test('an ambiguous creation is not submitted again', async () => {
+  vi.mocked(verifySupplierVideo).mockRejectedValue(
+    new Error('network interrupted')
+  )
+  const user = userEvent.setup()
+  render(<Editor />)
+  await enterCredentials(user)
+  await user.click(
+    screen.getByRole('button', { name: 'Verify or continue querying' })
+  )
+  await screen.findByText('network interrupted')
+  expect(
+    screen.getByRole('button', { name: 'Verify or continue querying' })
+  ).toBeDisabled()
+  expect(verifySupplierVideo).toHaveBeenCalledTimes(1)
 })

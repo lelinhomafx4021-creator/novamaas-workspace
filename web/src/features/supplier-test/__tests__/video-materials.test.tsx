@@ -29,9 +29,6 @@ import type { VideoForm } from '../types'
 import { buildVideoRequestPayload } from '../video-json'
 
 vi.mock('@/lib/api', () => ({ api: { request: vi.fn() } }))
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 const usePlatform = vi.fn()
 function Editor() {

@@ -187,21 +187,6 @@ export type SupplierTestRunRequest = {
   }
   video?: {
     prompt: string
-    upload_mode?: string
-    image_url?: string
-    base64_data?: string
-    role?: string
-    last_frame_mode?: string
-    last_frame_url?: string
-    last_frame_base64?: string
-    resolution?: string
-    ratio?: string
-    duration?: number
-    watermark?: boolean
-    seed?: number
-    generate_audio?: boolean
-    return_last_frame?: boolean
-    custom_json?: string
     custom_path?: string
     raw_payload?: string
     task_id?: string

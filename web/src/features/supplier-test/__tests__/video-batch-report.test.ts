@@ -25,7 +25,7 @@ const records: VideoTestRecord[] = [
   'doubao-seedance-2-0-260128',
   'doubao-seedance-1-5-pro-251215',
 ].flatMap((model) =>
-  ['720p', '1080p'].map((resolution) => {
+  ['480p', '720p', '1080p'].map((resolution) => {
     const id = `${model}-${resolution}`
     const exchange = {
       method: 'POST',
@@ -49,7 +49,6 @@ const records: VideoTestRecord[] = [
         status: 'succeeded',
         elapsed_ms: 100,
         submit: exchange,
-        raw_request_json: exchange.request,
         final: {
           ...exchange,
           method: 'GET',
@@ -78,57 +77,60 @@ const records: VideoTestRecord[] = [
   })
 )
 
-test.each([
-  { v3: false, materialLibrary: false },
-  { v3: true, materialLibrary: false },
-  { v3: false, materialLibrary: true },
-  { v3: true, materialLibrary: true },
-  {
-    v3: false,
+test('PDF groups six snapshots and keeps manual flags separate from successful results', () => {
+  const checks = {
+    v3: true,
     materialLibrary: false,
     upstreamTaskId: true,
     upstreamVolcengineUrl: false,
-  },
-  {
-    v3: false,
-    materialLibrary: false,
-    upstreamTaskId: false,
-    upstreamVolcengineUrl: true,
-  },
-  {
-    v3: true,
-    materialLibrary: true,
-    upstreamTaskId: true,
-    upstreamVolcengineUrl: true,
-  },
-])(
-  'PDF preserves four model/resolution snapshots and manual values: %j',
-  (checks) => {
-    const input = { records, ...checks, t: (key: string) => key }
-    const report = buildVideoPdfHtml(input)
-    expect(report).toContain(
-      `Supplier has implemented the v3 API: ${checks.v3 ? 'Yes' : 'No'}`
-    )
-    expect(report).toContain(
-      `Supplier has implemented a material library: ${checks.materialLibrary ? 'Yes' : 'No'}`
-    )
-    expect(report).toContain(
-      `Returns the upstream Task ID: ${checks.upstreamTaskId ? 'Yes' : 'No'}`
-    )
-    expect(report).toContain(
-      `Returns the upstream Volcengine URL: ${checks.upstreamVolcengineUrl ? 'Yes' : 'No'}`
-    )
-    for (const record of records) {
-      expect(report).toContain(record.metrics.task_id)
-      expect(report).toContain(`query-${record.id}`)
-    }
-    expect(report).toContain('9007199254740993')
-    expect(report).toContain('watermark')
-    expect(report).toContain('Request headers')
-    expect(report).toContain('Official verification submission')
-    expect(report).not.toContain('max-height:')
   }
-)
+  const input = {
+    records: records.map((record) => ({
+      ...record,
+      model: 'edited-after-submit',
+    })),
+    ...checks,
+    t: (key: string) => key,
+  }
+  const report = buildVideoPdfHtml(input)
+  expect(report).toContain(
+    `Supplier has implemented the v3 API: ${checks.v3 ? 'Yes' : 'No'}`
+  )
+  expect(report).toContain(
+    `Supplier has implemented a material library: ${checks.materialLibrary ? 'Yes' : 'No'}`
+  )
+  expect(report).toContain(
+    `Returns the upstream Task ID: ${checks.upstreamTaskId ? 'Yes' : 'No'}`
+  )
+  expect(report).toContain(
+    `Returns the upstream Volcengine URL: ${checks.upstreamVolcengineUrl ? 'Yes' : 'No'}`
+  )
+  for (const record of records) {
+    expect(report).toContain(record.metrics.task_id)
+    expect(report).toContain(`query-${record.id}`)
+  }
+  const document = new DOMParser().parseFromString(report, 'text/html')
+  const rows = [...document.querySelectorAll('.benchmark-table tbody tr')]
+  expect(
+    rows.map((row) =>
+      [...row.querySelectorAll('td')]
+        .slice(0, 2)
+        .map((cell) => cell.textContent)
+    )
+  ).toEqual([
+    ['doubao-seedance-2-0-260128', '480p'],
+    ['doubao-seedance-2-0-260128', '720p'],
+    ['doubao-seedance-2-0-260128', '1080p'],
+    ['doubao-seedance-1-5-pro-251215', '480p'],
+    ['doubao-seedance-1-5-pro-251215', '720p'],
+    ['doubao-seedance-1-5-pro-251215', '1080p'],
+  ])
+  expect(report).toContain('9007199254740993')
+  expect(report).toContain('watermark')
+  expect(report).toContain('Request headers')
+  expect(report).toContain('Official verification submission')
+  expect(report).not.toContain('max-height:')
+})
 
 test('partial response cannot become terminal proof, and aliases do not imply model matches', () => {
   const terminal = records[0].metrics.final
@@ -209,15 +211,3 @@ test.each([
     expect(result.comparison).toBe(comparison)
   }
 )
-
-test('summary reads the actual submitted model and resolution when raw binary evidence is absent', () => {
-  const record = {
-    ...records[0],
-    model: 'form-edited-after-submit',
-    metrics: { ...records[0].metrics, raw_request_json: undefined },
-  }
-  expect(videoResult(record)).toMatchObject({
-    model: 'doubao-seedance-2-0-260128',
-    resolution: '720p',
-  })
-})

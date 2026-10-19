@@ -402,11 +402,6 @@ export const VIDEO_RATIOS = [
   '21:9',
   'adaptive',
 ] as const
-export const VIDEO_ROLES = [
-  { value: 'first_frame', labelKey: 'First frame' },
-  { value: 'reference_image', labelKey: 'Reference image' },
-] as const
-
 export const ENDPOINT_PATH_PRESETS: Array<{ value: string; labelKey: string }> = [
   { value: '', labelKey: 'Auto detect / default' },
   {

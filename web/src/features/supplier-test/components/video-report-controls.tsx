@@ -82,7 +82,6 @@ export function VideoReportControls(props: {
             abort.signal
           )
           result = { ...result, create: exchange }
-          onUpdate(record.id, result)
           const body = JSON.parse(exchange.response || '{}')
           result.queryId = body.Result?.QueryID
           if (exchange.error || !result.queryId) {

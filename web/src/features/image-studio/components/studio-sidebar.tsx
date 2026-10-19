@@ -42,12 +42,17 @@ export function StudioSidebar(props: {
   const username = useAuthStore((state) => state.auth.user?.username)
 
   return (
-    <aside className='studio-sidebar' aria-label={t('Workspace')}>
-      <div className='studio-sidebar-top'>
-        <p className='studio-eyebrow'>{t('Workspace')}</p>
+    <aside
+      className='col-start-1 row-span-2 hidden min-w-0 flex-col gap-5 border-r border-(--studio-subtle-border) bg-(--studio-surface) md:flex min-[75rem]:row-auto'
+      aria-label={t('Workspace')}
+    >
+      <div className='grid gap-5 px-4.5 pt-7'>
+        <p className='text-muted-foreground text-[10px] font-medium tracking-[0.16em] uppercase'>
+          {t('Workspace')}
+        </p>
         <Button
           size='lg'
-          className='w-full'
+          className='h-10 w-full'
           onClick={props.onNewCreation}
           disabled={props.disabled}
         >
@@ -55,7 +60,10 @@ export function StudioSidebar(props: {
           {t('New creation')}
         </Button>
       </div>
-      <nav className='studio-navigation' aria-label={t('Studio navigation')}>
+      <nav
+        className='studio-navigation flex flex-col gap-1.5 px-3'
+        aria-label={t('Studio navigation')}
+      >
         <Button
           variant='secondary'
           aria-current='page'
@@ -67,7 +75,10 @@ export function StudioSidebar(props: {
         >
           <HugeiconsIcon icon={Image01Icon} aria-hidden='true' />
           {t('Image creation')}
-          <span className='studio-nav-dot' aria-hidden='true' />
+          <span
+            className='bg-primary ml-auto size-[5px] shrink-0 rounded-full'
+            aria-hidden='true'
+          />
         </Button>
         <Button
           variant='ghost'
@@ -94,24 +105,35 @@ export function StudioSidebar(props: {
           </Button>
         )}
       </nav>
-      <div className='studio-sidebar-bottom'>
-        <div className='studio-note'>
+      <div className='mt-auto grid gap-5 px-4.5 pt-6 pb-5'>
+        <div className='studio-note grid gap-2.5 rounded-[10px] border px-3.5 py-4'>
           <HugeiconsIcon
             icon={SparklesIcon}
-            className='size-5'
+            className='text-primary size-5'
             aria-hidden='true'
           />
-          <p>{t('A space for your next idea.')}</p>
-          <span>{t('Your API key. Your models. Your imagination.')}</span>
+          <p className='text-xs leading-[1.6] font-medium'>
+            {t('A space for your next idea.')}
+          </p>
+          <span className='text-muted-foreground text-[11px] leading-[1.7]'>
+            {t('Your API key. Your models. Your imagination.')}
+          </span>
         </div>
         <Separator />
-        <div className='studio-profile'>
-          <span className='studio-avatar' aria-hidden='true'>
+        <div className='flex min-w-0 items-center gap-2.5'>
+          <span
+            className='bg-muted text-primary grid size-8 shrink-0 place-items-center rounded-full border text-xs'
+            aria-hidden='true'
+          >
             {username?.slice(0, 1).toUpperCase() || 'N'}
           </span>
           <div className='min-w-0'>
-            <p className='truncate'>{username || t('Guest')}</p>
-            <span>{t('Personal workspace')}</span>
+            <p className='truncate text-xs font-medium'>
+              {username || t('Guest')}
+            </p>
+            <span className='text-muted-foreground text-[10px]'>
+              {t('Personal workspace')}
+            </span>
           </div>
         </div>
       </div>

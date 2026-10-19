@@ -65,21 +65,28 @@ export function StudioComposer(props: {
 
   return (
     <>
-      <header className='studio-header sticky top-0'>
-        <div className='studio-brand'>
+      <header className='sticky top-0 z-10 flex shrink-0 basis-[68px] items-center justify-between gap-2 border-b border-(--studio-subtle-border) bg-(--studio-surface) px-3 py-2.5 md:basis-[76px] md:gap-4 md:px-6 md:py-3'>
+        <div className='flex min-w-0 items-center gap-2.5 md:gap-5 max-md:[&>a]:px-0 max-md:[&>a>span]:hidden'>
           <SystemBrand variant='inline' />
-          <span className='studio-brand-divider' aria-hidden='true' />
+          <span
+            className='bg-border h-6 w-px shrink-0 md:h-7'
+            aria-hidden='true'
+          />
           <div>
-            <p className='studio-eyebrow'>{t('Image studio')}</p>
-            <h1>{t('Image creation')}</h1>
+            <p className='text-muted-foreground text-[8px] font-medium tracking-[0.16em] uppercase md:text-[10px]'>
+              {t('Image studio')}
+            </p>
+            <h1 className='mt-[3px] text-[13px] font-medium md:text-[15px]'>
+              {t('Image creation')}
+            </h1>
           </div>
         </div>
-        <div className='flex min-w-0 items-center gap-2'>
+        <div className='flex min-w-0 items-center gap-1 md:gap-2 max-md:[&>a]:px-2 max-md:[&>a]:text-[11px]'>
           <Button
             type='button'
             variant='ghost'
             size='icon'
-            className='studio-mobile-new'
+            className='md:hidden'
             aria-label={t('New creation')}
             disabled={studio.busy}
             onClick={studio.newCreation}
@@ -90,7 +97,7 @@ export function StudioComposer(props: {
             type='button'
             variant='ghost'
             size='icon'
-            className='studio-history-toggle'
+            className='min-[75rem]:hidden'
             aria-label={t('Generation records')}
             aria-controls='studio-history'
             onClick={showHistory}
@@ -116,34 +123,39 @@ export function StudioComposer(props: {
           </Button>
         </div>
       </header>
-      <div className='studio-workspace'>
+      <div className='grid min-h-0 flex-1 auto-rows-max grid-cols-[180px_minmax(0,1fr)] content-start overflow-y-auto max-md:flex max-md:flex-col min-[75rem]:auto-rows-auto min-[75rem]:grid-cols-[208px_minmax(0,1fr)_288px] min-[75rem]:content-normal min-[75rem]:overflow-hidden min-[100rem]:grid-cols-[224px_minmax(0,1fr)_320px]'>
         <StudioSidebar
           authenticated={props.authenticated}
           disabled={studio.busy}
           onHistory={showHistory}
           onNewCreation={studio.newCreation}
         />
-        <div className='studio-center'>
-          <div className='studio-canvas-toolbar'>
+        <div className='studio-center col-start-2 flex min-h-[calc(100svh-68px)] min-w-0 flex-none flex-col md:min-h-[calc(100svh-76px)] min-[75rem]:min-h-0'>
+          <div className='studio-canvas-toolbar text-muted-foreground flex min-h-12 shrink-0 items-center justify-between gap-3 px-4 text-[10px] md:min-h-[58px] md:px-7 md:text-[11px]'>
             <div className='flex min-w-0 items-center gap-2'>
-              <span className='studio-canvas-dot' aria-hidden='true' />
+              <span
+                className='bg-primary size-1 shrink-0 rounded-full shadow-[0_0_8px_#b7dbff66]'
+                aria-hidden='true'
+              />
               <span>{t('Creative canvas')}</span>
             </div>
             <Badge variant='outline'>{t('Private workspace')}</Badge>
           </div>
-          <div className='studio-canvas-scroll'>{views.canvas}</div>
+          <div className='min-h-0 flex-none overflow-visible px-3.5 pb-4.5 md:px-7 md:pb-5 min-[75rem]:flex-1 min-[75rem]:overflow-y-auto min-[75rem]:overscroll-contain min-[100rem]:px-10'>
+            {views.canvas}
+          </div>
           <form
             noValidate
             onSubmit={studio.submit}
             onChange={() => {
               studio.requestKey.current = ''
             }}
-            className='studio-composer'
+            className='studio-composer focus-within:border-ring mx-3.5 mt-auto flex shrink-0 flex-col gap-2.5 rounded-[14px] border border-(--studio-panel-border) bg-(--studio-panel) px-3 pt-3.5 pb-2.5 transition-colors md:mx-7 md:px-4 min-[75rem]:mt-0 min-[100rem]:mx-10'
             aria-label={t('Image prompt editor')}
           >
-            <div className='studio-composer-top'>
-              <div className='studio-model-label'>
-                <span className='studio-model-icon'>
+            <div className='studio-composer-top flex min-w-0 items-center justify-between gap-3'>
+              <div className='flex min-w-0 items-center gap-2 text-[10px] md:text-[11px]'>
+                <span className='bg-secondary text-primary grid size-6.5 shrink-0 place-items-center rounded-[7px] border'>
                   <HugeiconsIcon
                     icon={Image01Icon}
                     className='size-4'
@@ -173,12 +185,18 @@ export function StudioComposer(props: {
               />
             </div>
             {!props.settings.enabled && (
-              <p role='status' className='studio-composer-notice'>
+              <p
+                role='status'
+                className='text-muted-foreground text-[11px] leading-[1.6]'
+              >
                 {t('Image generation is disabled')}
               </p>
             )}
             {props.authenticated && !props.keys.length && (
-              <p role='status' className='studio-composer-notice'>
+              <p
+                role='status'
+                className='text-muted-foreground text-[11px] leading-[1.6]'
+              >
                 {t(
                   'No API keys available. Create your first API key to get started.'
                 )}{' '}
@@ -206,7 +224,7 @@ export function StudioComposer(props: {
               <Textarea
                 id='studio-prompt'
                 rows={3}
-                className='studio-prompt-input'
+                className='studio-prompt-input [field-sizing:fixed] max-h-[180px] min-h-[84px] resize-y rounded-none border-0 px-0 py-1 leading-[1.8] md:min-h-[70px] md:text-[13px]'
                 placeholder={t(
                   'Describe the subject, scene, lighting and style, or try an example below.'
                 )}
@@ -261,8 +279,8 @@ export function StudioComposer(props: {
                   </Button>
                 </div>
               )}
-            <div className='studio-composer-actions'>
-              <div className='flex flex-wrap items-center gap-2'>
+            <div className='studio-composer-actions flex flex-wrap items-center justify-between gap-2 md:gap-2.5'>
+              <div className='flex flex-wrap items-center gap-[3px] md:gap-2'>
                 <Button
                   type='button'
                   size='sm'
@@ -284,7 +302,7 @@ export function StudioComposer(props: {
                     : t('Optimize prompt')}
                 </Button>
                 <span
-                  className='studio-default-size'
+                  className='text-muted-foreground rounded-md border px-[5px] py-1 text-[9px] md:px-2 md:text-[10px]'
                   title={t(
                     'Model defaults apply; you can also specify proportions in your prompt.'
                   )}
@@ -296,7 +314,7 @@ export function StudioComposer(props: {
                 <Button
                   type='submit'
                   size='lg'
-                  className='studio-generate'
+                  className='min-h-9 min-w-[100px] md:min-w-[126px]'
                   disabled={!studio.canGenerate}
                 >
                   {studio.generating ? (
@@ -322,7 +340,10 @@ export function StudioComposer(props: {
                 </Button>
               )}
             </div>
-            <div id='studio-prompt-help' className='studio-composer-help'>
+            <div
+              id='studio-prompt-help'
+              className='text-muted-foreground flex min-w-0 justify-between gap-3 border-t pt-2 text-[9px]'
+            >
               <span className='truncate'>
                 {t('Text model')}:{' '}
                 {props.authenticated
@@ -331,11 +352,13 @@ export function StudioComposer(props: {
               </span>
               <span className='shrink-0 tabular-nums'>
                 {studio.prompt.length} / {studio.maxCharacters}
-                <kbd className='ml-3'>⌘ / Ctrl ↵</kbd>
+                <kbd className='ml-3 hidden font-[inherit] md:inline'>
+                  ⌘ / Ctrl ↵
+                </kbd>
               </span>
             </div>
           </form>
-          <p className='studio-retention'>
+          <p className='text-muted-foreground shrink-0 px-4.5 py-3 text-center text-[9px] leading-normal md:px-7'>
             {t(
               'Generated images are kept for 30 days, then automatically deleted. Please download them in time.'
             )}
@@ -345,7 +368,7 @@ export function StudioComposer(props: {
           id='studio-history'
           ref={historyRef}
           tabIndex={-1}
-          className='studio-history-panel'
+          className='col-start-2 flex min-h-[280px] min-w-0 flex-none border-t bg-(--studio-surface) -outline-offset-3 min-[75rem]:col-auto min-[75rem]:min-h-0 min-[75rem]:border-t-0 min-[75rem]:border-l min-[75rem]:border-(--studio-subtle-border)'
         >
           {views.history}
         </div>

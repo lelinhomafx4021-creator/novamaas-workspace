@@ -63,8 +63,8 @@ export function StudioPromptExamples(props: {
     },
   ]
   return (
-    <section aria-label={t('Try an example')} className='studio-examples'>
-      <h3 className='studio-examples-title'>
+    <section aria-label={t('Try an example')} className='grid gap-3'>
+      <h3 className='text-muted-foreground flex items-center gap-[7px] text-[11px] font-normal'>
         <HugeiconsIcon
           icon={SparklesIcon}
           className='text-primary size-4'
@@ -72,7 +72,7 @@ export function StudioPromptExamples(props: {
         />
         {t('Try an example')}
       </h3>
-      <div className='studio-example-grid'>
+      <div className='grid grid-cols-2 gap-2 min-[75rem]:grid-cols-4'>
         {examples.map((example, index) => (
           <button
             key={example.name}
@@ -83,14 +83,17 @@ export function StudioPromptExamples(props: {
               props.disabled || example.prompt.length > props.maxCharacters
             }
             onClick={() => props.onChange(example.prompt)}
-            className='studio-example-card'
+            className='studio-example-card hover:border-ring hover:bg-muted focus-visible:outline-ring relative flex min-h-[100px] min-w-0 flex-col items-start gap-2 rounded-[10px] border bg-(--studio-surface) p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-not-allowed disabled:opacity-45 md:min-h-0 md:flex-row md:gap-2.5 md:py-[15px] md:pr-7 min-[75rem]:flex-col min-[75rem]:gap-3.5 min-[75rem]:pr-3'
           >
-            <span className='studio-example-number' aria-hidden='true'>
+            <span
+              className='text-muted-foreground absolute top-3.5 right-3 font-mono text-[9px] md:top-[17px]'
+              aria-hidden='true'
+            >
               0{index + 1}
             </span>
             <HugeiconsIcon
               icon={example.icon}
-              className='studio-example-icon size-5 shrink-0'
+              className='studio-example-icon text-primary size-5 shrink-0 md:mt-0.5 md:size-4.5 min-[75rem]:mt-0 min-[75rem]:size-5'
               aria-hidden='true'
             />
             <span className='grid min-w-0 gap-1'>

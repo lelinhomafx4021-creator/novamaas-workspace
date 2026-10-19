@@ -171,6 +171,13 @@ test('guests can browse the editor and examples without fetching keys, models or
   expect(api.listStudioModels).not.toHaveBeenCalled()
   expect(api.listStudioRuns).not.toHaveBeenCalled()
   expect(api.createStudioRun).not.toHaveBeenCalled()
+  expect(screen.getByText('Your creative journey starts here')).toBeVisible()
+  expect(screen.queryByText('No generation records')).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('link', {
+      name: 'Sign in to view your generation records',
+    })
+  ).toHaveAttribute('href', '/sign-in?redirect=%2Fimage-studio')
   const signIn = screen.getByRole('link', { name: 'Sign in to create images' })
   expect(signIn).toHaveAttribute('href', '/sign-in?redirect=%2Fimage-studio')
   await user.click(signIn)
@@ -212,6 +219,14 @@ test('the canvas precedes the bottom prompt editor and records remain outside th
     canvas.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING
   ).toBeTruthy()
   expect(editor).not.toContainElement(records)
+  expect(
+    await within(records).findByText('No generation records')
+  ).toBeVisible()
+  expect(
+    within(records).queryByRole('link', {
+      name: 'Sign in to view your generation records',
+    })
+  ).not.toBeInTheDocument()
   expect(screen.getByRole('complementary', { name: 'Workspace' })).toBeVisible()
   expect(
     screen.getByRole('textbox', { name: 'Describe your image' })

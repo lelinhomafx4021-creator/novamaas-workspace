@@ -67,7 +67,7 @@ export function ImageStudio() {
   })
 
   return (
-    <div className='image-studio-theme studio-shell'>
+    <div className='image-studio-theme studio-shell bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
       {(settings.isPending || (userId > 0 && keys.isPending)) && (
         <p role='status' className='p-6'>
           {t('Loading...')}
@@ -178,7 +178,7 @@ function StudioWorkspace(props: {
       {(generating, reusePrompt) => ({
         canvas: (
           <div
-            className='studio-gallery-container'
+            className='min-h-full min-w-0 [&>section:not(.studio-welcome)]:py-2'
             ref={galleryRef}
             tabIndex={-1}
             role='group'

@@ -96,8 +96,11 @@ export function StudioHistory(props: {
   })
   return (
     <>
-      <section className='studio-history' aria-label={t('Generation records')}>
-        <div className='studio-history-heading'>
+      <section
+        className='flex min-h-0 w-full min-w-0 flex-col gap-4 px-4.5 pb-4.5'
+        aria-label={t('Generation records')}
+      >
+        <div className='flex min-h-[54px] shrink-0 items-center justify-between gap-1.5 border-b border-(--studio-subtle-border) min-[75rem]:min-h-[58px]'>
           <div className='flex items-center gap-2'>
             <HugeiconsIcon
               icon={Clock01Icon}
@@ -117,48 +120,39 @@ export function StudioHistory(props: {
             </Button>
           )}
         </div>
-        {!props.authenticated && (
-          <Empty className='studio-history-empty'>
+        {(!props.authenticated || runs.data?.items.length === 0) && (
+          <Empty className='studio-history-empty flex-1 px-2.5 py-7 min-[75rem]:py-6'>
             <EmptyHeader>
               <EmptyMedia variant='icon'>
                 <HugeiconsIcon icon={Clock01Icon} aria-hidden='true' />
               </EmptyMedia>
-              <EmptyTitle>{t('Your creative journey starts here')}</EmptyTitle>
+              <EmptyTitle>
+                {props.authenticated
+                  ? t('No generation records')
+                  : t('Your creative journey starts here')}
+              </EmptyTitle>
               <EmptyDescription>
                 {t(
                   'Generated images will be collected here, ready to revisit and download.'
                 )}
               </EmptyDescription>
             </EmptyHeader>
-            <Link
-              to='/sign-in'
-              search={{ redirect: '/image-studio' }}
-              className='text-primary text-sm hover:underline'
-            >
-              {t('Sign in to view your generation records')}
-            </Link>
+            {!props.authenticated && (
+              <Link
+                to='/sign-in'
+                search={{ redirect: '/image-studio' }}
+                className='text-primary text-sm hover:underline'
+              >
+                {t('Sign in to view your generation records')}
+              </Link>
+            )}
           </Empty>
         )}
         {props.authenticated && runs.isPending && (
           <p role='status'>{t('Loading...')}</p>
         )}
         {runs.isError && <p role='alert'>{t('Failed to load data')}</p>}
-        {runs.data?.items.length === 0 && (
-          <Empty className='studio-history-empty'>
-            <EmptyHeader>
-              <EmptyMedia variant='icon'>
-                <HugeiconsIcon icon={Clock01Icon} aria-hidden='true' />
-              </EmptyMedia>
-              <EmptyTitle>{t('No generation records')}</EmptyTitle>
-              <EmptyDescription>
-                {t(
-                  'Generated images will be collected here, ready to revisit and download.'
-                )}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
-        <div className='studio-history-list'>
+        <div className='grid max-h-[480px] min-h-0 grid-cols-1 content-start gap-2.5 overflow-y-auto overscroll-contain has-[article]:flex-1 md:grid-cols-2 min-[75rem]:max-h-none min-[75rem]:grid-cols-1'>
           {runs.data?.items.flatMap((run) =>
             (run.results.length ? run.results : [undefined]).map((result) => (
               <article key={result?.id || run.id} className='relative min-w-0'>
@@ -170,14 +164,14 @@ export function StudioHistory(props: {
                     props.runId === run.id &&
                     (!result || props.resultId === result.id)
                   }
-                  className='studio-history-item'
+                  className='hover:bg-muted aria-pressed:border-primary focus-visible:outline-ring flex w-full min-w-0 items-start gap-2.5 rounded-[10px] border bg-(--studio-history-item) p-2.5 pr-6.5 text-left transition-colors hover:border-(--studio-hover-border) focus-visible:outline-2 focus-visible:-outline-offset-2 disabled:cursor-not-allowed disabled:opacity-55 aria-pressed:bg-(--studio-selection)'
                 >
                   {(result?.thumbnail_url || result?.preview_url) && (
                     <img
                       src={result.thumbnail_url || result.preview_url}
                       alt={t('Generated image')}
                       loading='lazy'
-                      className='studio-history-thumbnail'
+                      className='bg-background h-[76px] w-16 shrink-0 rounded-md object-contain'
                     />
                   )}
                   <div className='flex min-w-0 flex-1 flex-col gap-1'>

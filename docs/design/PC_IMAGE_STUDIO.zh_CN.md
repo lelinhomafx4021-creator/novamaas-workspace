@@ -8,6 +8,8 @@
 
 桌面画布和记录分别滚动，提示词编辑器固定在中间区域底部；窄屏改为单栏滚动，并在顶部提供新建和记录定位。选择历史记录后，视图和键盘焦点回到画布；新建创作仅清空当前草稿和选择，保留历史。个人记录只显示图像、提示词、模型、日期和状态，完整审查信息仍由审查页承载。
 
+展示层进一步精简：通用布局、间距与响应式规则使用 Tailwind，独立 CSS 从 841 行缩减为 146 行，仅保留主题、组件变体和主视觉规则。访客与登录后的记录空状态共用结构；业务流程不变。响应式断点统一使用 rem，平板网格按内容安排高度，避免输入区与记录区重叠。
+
 ## 主视觉
 
 - 文件：`web/public/images/image-studio/orbit.jpg`，1600 × 900，约 355 KiB。
@@ -22,10 +24,10 @@ Use case: stylized-concept. Asset type: panoramic artwork for the empty canvas o
 ## 验证
 
 - 前端最终全量 126 个文件、696 项测试通过；相关 5 个文件、40 项测试也已单独通过。
-- 本机 Node 的 Web Storage 全局对象会覆盖 jsdom 的 localStorage。测试启动使用 `NODE_OPTIONS=--no-experimental-webstorage bun run test`，不修改业务代码。
+- 本机 Node 的 Web Storage 全局对象会覆盖 jsdom 的 localStorage。测试启动使用 `NODE_OPTIONS=--no-experimental-webstorage bun run test --maxWorkers=3`，不修改业务代码。
 - `bun run typecheck`、受影响文件 lint、生产构建通过。
 - Go 的 model、storage、imagestudio、controller、router、authz、common 和 relay/channel 八个包回归通过；根模块与 relaykit 的独立构建通过。
-- 实际浏览器检查 1440 × 900 桌面和 375px 窄屏，无横向溢出。1440 × 900 下示例卡完整位于画布内，输入区保持可见。
+- 实际浏览器检查 1440 × 900 桌面、1024px 平板和 375px 窄屏，无横向溢出。1440 × 900 下示例卡完整位于画布内，输入区保持可见；平板的记录区位于完整编辑器之后。
 - 复用 PC PR 已有的 MySQL 数据验证管理员登录、模型读取、两条生成记录、历史选择、1254px OSS 原图加载及预览弹窗。本轮未新增或删除业务图片记录。
 
 本地凭据、数据库连接和验证截图不进入提交；原工作目录及 PR #69 均保留。

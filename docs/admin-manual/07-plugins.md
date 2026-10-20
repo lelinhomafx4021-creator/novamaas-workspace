@@ -113,6 +113,183 @@
 
 全局配置按平台环境和兼容条件缓存，本人权益按账号隔离。换号清除旧账号数据及待执行计划，重新取得当前身份下的同一全局目标；离线不能使用旧计划切换。读取失败保留最后有效配置并提示，不能报告策略已应用或安装成功。
 
+### 5.1 全局配置字段（拟新增）
+
+GET /api/apps/starpath/config 的 Query 提交 `client_version`、`host_version`、`os`、`arch`，均为必填 string；os 使用 darwin / win32 / linux，arch 使用 arm64 / x64，其他组合待适配后明确增加。兼容条件不能从账号或 User-Agent 猜测；同环境、同兼容条件的结果保持一致。成功返回 `data` 如下，表内字段均须返回：
+
+| 字段 | 类型 | 含义与约束 |
+| --- | --- | --- |
+| `schema_version` | integer | 首期 1；不支持的版本阻止应用 |
+| `config_revision` | integer | 服务端递增发布版本；旧版本响应不得覆盖新版本 |
+| `published_at` | integer | Unix 秒，配置实际发布时间 |
+| `refresh_interval_seconds` | integer | 建议刷新间隔秒数，首期拟 60，允许联调调整 |
+| `plugins` | object[] | 完整受管目录，空数组仅代表无受管项，基础扩展仍按原规则运行 |
+| `plugins[].plugin_id` | string | 平台稳定标识，登记后不随改名变化 |
+| `plugins[].runtime_id` | string | 对应 manifest 实际运行标识，邮箱等允许与包名不同 |
+| `plugins[].package_name` | string | 真实包名，不使用显示名称或目录名代替 |
+| `plugins[].name` / `description` | string | 显示名称及纯文本说明 |
+| `plugins[].management_type` | string | independent / bundled；本期只对合格 independent 包提供独立安装 |
+| `plugins[].placement` | string | plugins / remote_connections / email_settings；只映射已支持入口，不是任意路由或执行地址 |
+| `plugins[].listed` | boolean | 是否上架；false 不允许新发现、新安装 |
+| `plugins[].visible` | boolean | 是否显示入口；不改变订阅或本机安装事实 |
+| `plugins[].enabled` | boolean | 是否允许新的受管操作；全局关闭优先 |
+| `plugins[].sort_order` | integer | 展示降序，值相同按 plugin_id 升序保持稳定 |
+| `plugins[].required_feature_ids` | string[] | 使用需同时满足的稳定功能 ID；[] 为无需额外订阅授予，仍受全局开关约束 |
+| `plugins[].target_release_id` | string 或 null | 统一目标发布；尚未纳入独立安装的随包项可为 null |
+| `plugins[].target_version` | string 或 null | 服务端从目标发布得出，不接受客户端自报；无目标时 null |
+| `plugins[].install_paused` | boolean | 是否暂停新的下载和切换计划 |
+| `plugins[].upgrade_deadline` | integer 或 null | Unix 秒，目标必须达到的期限；无强制期限时 null |
+
+已有安装可能仍需响应下架或隐藏，完整快照保留对应记录；`visible` 是界面规则，不承诺元数据保密。物理移除目录记录另做迁移，客户端不能把“本次未看到”解释为卸载命令。配置只含非敏感元数据，不带包下载凭证或私有配置。
+
+GET /api/apps/starpath/admin/config 返回完整未筛减的管理快照。PUT 同地址提交 `expected_revision:integer`、`reason:string`、`plugins:object[]`，三项必填；首次版本为 0。plugins 是完整替换，子项使用上表字段，但 `target_version` 由服务端派生，不由管理员提交。reason 为 1–500 字符；所有项验证通过后原子发布，否则不改变原配置。清空须明确提交 []，不存在的目标、撤销包及未知功能标识均拒绝保存。
+
+发布请求节选，示例沿用已有随包飞书，暂不指派独立包：
+
+```json
+{
+  "expected_revision": 3,
+  "reason": "恢复飞书入口",
+  "plugins": [{
+    "plugin_id": "openclaw-lark", "runtime_id": "openclaw-lark", "package_name": "openclaw-lark",
+    "name": "飞书", "description": "飞书连接配置", "management_type": "bundled", "placement": "remote_connections",
+    "listed": true, "visible": true, "enabled": true, "sort_order": 10, "required_feature_ids": [],
+    "target_release_id": null, "install_paused": false, "upgrade_deadline": null
+  }]
+}
+```
+
+该例假设目录仅有这一项；实际发布须带完整目录。成功 data 返回已发布的完整配置和新 config_revision。引用旧 revision 返回 409 POLICY_REVISION_CONFLICT，不自动重试覆盖。
+
+### 5.2 固定发布与文件字段（拟新增）
+
+POST /api/apps/starpath/admin/plugin-releases 登记请求如下；表中“必填”均指提交字段。`release_id`、`artifacts[].artifact_id`、`created_at` 和 `revoked_at` 由服务端返回，不能由客户端覆盖。
+
+| 请求字段 | 类型 | 必填 | 含义与约束 |
+| --- | --- | --- | --- |
+| `plugin_id` | string | 是 | 已登记的 independent 插件 |
+| `runtime_id` / `package_name` | string | 是 | 与目录及实际包身份对应 |
+| `version` | string | 是 | 精确 package.json 版本，不接受 latest、范围或分支名 |
+| `compatibility.client_range` | string | 是 | 已验证的客户端版本范围，必须能按版本规则解析 |
+| `compatibility.host_versions` | string[] | 是 | 已测试宿主精确版本，非空；不以客户端版本代替 |
+| `compatibility.node_majors` | integer[] | 是 | 已验证 Node 主版本，非空；安装时核对实际宿主环境 |
+| `config_schema_version` | integer | 是 | >0，配置读写和恢复的版本依据 |
+| `health_check_profile` | string | 是 | 客户端已支持的运行检查标识，不接收远程脚本 |
+| `rollback_supported` | boolean | 是 | 是否具备已验证恢复条件 |
+| `rollback_notes` | string | 是 | 配置/数据恢复说明；不支持回滚时写明人工处理方式 |
+| `test_evidence_ref` | string | 是 | 脱敏测试记录引用，不能仅写“已测试” |
+| `artifacts` | object[] | 是 | 至少一个固定文件，不重复声明同一系统/架构组合 |
+| `artifacts[].os` / `arch` | string | 是 | 对应支持的系统及架构，不能将本机包标为任意平台 |
+| `artifacts[].format` | string | 是 | 首期 npm_tgz；其他格式须先适配安装器 |
+| `artifacts[].source_type` | string | 是 | npm_registry / fixed_archive |
+| `artifacts[].source_uri` | string | 是 | 精确 tarball 地址或公司固定文件引用；不夹带账号密码，私有存储鉴权另行配置 |
+| `artifacts[].registry_url` | string | 条件 | npm_registry 时必填固定 registry；fixed_archive 时 null |
+| `artifacts[].size_bytes` | integer | 是 | >0，实际文件字节数 |
+| `artifacts[].sha256` | string | 是 | 64 位十六进制摘要；下载后校验实际文件 |
+
+成功 data 为上列对象加服务端生成的发布及文件 ID、created_at:integer、revoked_at:integer或null、revoke_reason:string。已登记的身份、版本、文件与兼容资料不可覆盖；修复另建发布。固定 tgz 的摘要不等于安装依赖已固定，发布流程还须验证依赖解析和可复现产物，不满足时不开放受管更新。
+
+GET 同一管理地址要求 Query `plugin_id:string`，可选 `page:integer` 默认 1、`page_size:integer` 默认 20、范围 1–100；成功 data 为 `items:object[]`、`total:integer`、`page:integer`、`page_size:integer`，items 使用上述完整发布结构，包括撤销记录。仅 Root 可读原始存储引用，客户端全局配置只读目标摘要资料。
+
+POST /api/apps/starpath/admin/plugin-releases/:release_id/revoke 的 body 为 `{"reason":"撤销原因"}`，reason 必填且 1–500 字符；返回发布 ID、revoked_at、revoke_reason。重复撤销不重复创建撤销事件。撤销立即拒绝该发布的新计划及切换复核，已安装设备是否停用或回滚仍按全局配置另行发布。
+
+### 5.3 安装计划请求与响应（拟新增）
+
+POST /api/apps/starpath/plugins/:plugin_id/install-plan 使用当前用户登录会话。登录账号由服务端绑定，不接收 body.user_id。安装的包与版本不按订阅分配。
+
+| 请求字段 | 类型 | 必填 | 含义与约束 |
+| --- | --- | --- | --- |
+| `operation_id` | string | 是 | 客户端为一次安装生成 UUID；申请、复核和回报沿用同一个值 |
+| `device_id` | string | 是 | 本机随机安装标识，不用用户名或硬件序列号代替 |
+| `phase` | string | 是 | download / switch，分别表示下载申请、切换前复核 |
+| `plan_id` | string | 条件 | switch 时必须提供下载阶段取得的计划 ID |
+| `client_version` / `host_version` | string | 是 | 客户端版本、宿主实际版本 |
+| `node_major` | integer | 是 | 实际运行宿主 Node 主版本 |
+| `os` / `arch` | string | 是 | 与固定文件匹配的系统及架构 |
+| `installed_release_id` | string 或 null | 是 | 本机已验证受管发布，无记录时 null |
+| `installed_version` | string 或 null | 是 | 本机实际包版本，未安装为 null |
+| `config_revision` | integer | 是 | 当前观察到的配置版本 |
+| `target_release_id` | string | 是 | 当前观察到的目标，必须与平台现目标一致 |
+
+| 成功 data 字段 | 类型 | 返回要求 |
+| --- | --- | --- |
+| `plan_id` / `operation_id` / `device_id` / `plugin_id` | string | 必有，绑定计划、操作、设备和插件 |
+| `config_revision` | integer | 必有，校验通过时的当前配置版本 |
+| `phase` | string | 必有，与本次申请阶段一致 |
+| `target_release_id` / `target_version` | string | 必有，唯一目标和精确版本 |
+| `artifact.artifact_id` / `format` | string | 必有，匹配文件身份及格式 |
+| `artifact.url` | string 或 null | download 时给 HTTPS 下载地址；switch 返回 null，不重新选包 |
+| `artifact.size_bytes` / `sha256` | integer / string | 必有，登记时的字节数和摘要 |
+| `artifact.expires_at` | integer 或 null | 下载地址有效期；switch 无地址时为 null |
+| `expires_at` | integer | 必有，当前阶段计划有效期；下载地址不得长于此期限 |
+| `preserve_config` | boolean | 必有，首期 true；不因更新清除私有配置或本机禁用选择 |
+| `health_check_profile` | string | 必有，采用客户端已支持的检查 |
+| `rollback_supported` / `rollback_notes` | boolean / string | 必有，明确恢复能力与限制 |
+
+switch 复核仍绑定同一账号、设备、插件、目标及 artifact_id；目标变化、撤销、暂停、兼容不符或过期均拒绝。切换授权只在 expires_at 前使用，已知失效不继续切换；配置发布与本机文件替换不构成跨网络原子事务，平台只能依据回报确认实际结果。
+
+相同账号、设备、operation_id 和 phase 的重复申请应返回相同未过期计划；同一键改变绑定字段返回 IDEMPOTENCY_CONFLICT。已过期、策略改变或换号后重新读取规则并创建新操作，不复用旧授权。下载文件只依据计划，renderer 不提交任意替换地址。
+
+下载申请示例，路径插件为 `example.tool`；这是协议示例，不表示已有该商品：
+
+```json
+{
+  "operation_id": "00000000-0000-4000-8000-000000000001",
+  "device_id": "00000000-0000-4000-8000-000000000002",
+  "phase": "download",
+  "client_version": "<客户端实际版本>", "host_version": "<宿主实际版本>", "node_major": 24,
+  "os": "darwin", "arch": "arm64", "installed_release_id": null, "installed_version": null,
+  "config_revision": 4, "target_release_id": "rel_example"
+}
+```
+
+对应成功响应示例，零值摘要仅占位，必须替换为真实文件摘要：
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "plan_id": "plan_example", "operation_id": "00000000-0000-4000-8000-000000000001",
+    "device_id": "00000000-0000-4000-8000-000000000002", "plugin_id": "example.tool",
+    "config_revision": 4, "phase": "download", "target_release_id": "rel_example", "target_version": "1.0.0",
+    "artifact": {
+      "artifact_id": "artifact_example", "format": "npm_tgz", "url": "https://files.example.com/example-tool-1.0.0.tgz",
+      "size_bytes": 1024, "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "expires_at": 1900000060
+    },
+    "expires_at": 1900000060, "preserve_config": true,
+    "health_check_profile": "<客户端已支持的检查标识>", "rollback_supported": true, "rollback_notes": "保留并恢复安装前配置及有效包"
+  }
+}
+```
+
+下载、staging 安装和本机检查完成后，先等待空闲，再用相同绑定字段、phase=switch 及 plan_id 在线复核；复核成功后才能切换。上述示例的节点版本、期限、文件大小和恢复说明均不作为正式发布默认值。
+
+### 5.4 设备结果回报字段（拟新增）
+
+POST /api/apps/starpath/plugin-reports 使用用户登录会话，服务端记账号及 received_at；设备自报的时间不作为服务端授权依据。
+
+| 请求字段 | 类型 | 必填 | 含义与约束 |
+| --- | --- | --- | --- |
+| `report_id` | string | 是 | 单条回报 UUID，网络重试沿用 |
+| `device_id` / `plugin_id` | string | 是 | 实际设备及插件 |
+| `operation_id` | string 或 null | 是 | 安装相关阶段必须关联已有操作；独立配置应用或本机卸载可为 null |
+| `config_revision` | integer | 是 | 此次实际应用或执行依据的配置版本 |
+| `sequence` | integer | 是 | >0，同设备、插件、配置和操作内递增；迟到低序号不覆盖较新事实 |
+| `phase` | string | 是 | config / download / install / health / rollback / uninstall |
+| `status` | string | 是 | success / failed / deferred / not_run；deferred 表示任务忙等延期，not_run 表示尚未执行检查 |
+| `target_release_id` | string 或 null | 是 | 操作目标；无独立目标的随包项可为 null |
+| `actual_release_id` | string 或 null | 是 | 本机核验后的实际受管发布，未安装或无法确认时 null |
+| `actual_version` | string 或 null | 是 | 本机实际版本，未安装时 null |
+| `local_enabled` | boolean | 是 | 用户的本机启停选择，不伪称全局已启用 |
+| `reported_at` | integer | 是 | 客户端 Unix 秒，用于记录及排查 |
+| `reason_code` | string 或 null | 是 | 成功时 null；异常或延期使用稳定原因，如 ARTIFACT_MISMATCH、RUNTIME_CHECK_FAILED、TASK_BUSY、LOCAL_DISABLED |
+| `error_message` | string | 否 | 脱敏说明，最多 1000 字符，不含凭据、命令原文或私有配置 |
+
+成功 data 为 `report_id:string`、`accepted:boolean`、`received_at:integer`。同 report_id 同内容幂等返回；同 ID 不同内容返回 IDEMPOTENCY_CONFLICT，不能覆盖旧记录。安装相关回报须核对登录账号与计划绑定；换号后待上传旧回报保留原归属，不能改为新账号提交。
+
+本机禁用时 install=success 后可回报 health=not_run、reason_code=LOCAL_DISABLED；实际启用后再用新 report_id 和递增 sequence 回报检查。平台区分“文件安装成功”和“运行检查成功”，离线或没有近期回报仍为未确认，不能由目录发布结果推断全部设备已生效。
+
 ## 六、开发交付与验收
 
 本章对应 DP-01、DP-03、DP-04 和 DP-05。平台开发交付目录、发布、计划及回报接口；星途开发接入入口、安装器与运行检查；插件维护者交付固定文件、兼容和恢复依据。

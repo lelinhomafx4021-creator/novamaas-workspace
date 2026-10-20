@@ -2,7 +2,7 @@
 
 **聚合平台与星途管理及接口对接手册**
 
-文档版本：V1.0 评审稿　｜　更新日期：2026-10-19　｜　适用阶段：方案评审与开发准备
+文档版本：V1.1 评审稿　｜　更新日期：2026-10-20　｜　适用阶段：方案评审与开发准备
 
 本手册用于统一管理口径、明确双方职责，并为开发排期和交付验收提供依据。全册包含管理总览、套餐订阅、插件、账户密钥、文本、图片、视频七个章节。
 
@@ -61,7 +61,9 @@
 | 用途 | 接口 | 权限与约定 | 状态 |
 | --- | --- | --- | --- |
 | 读取全局配置 | GET /api/apps/starpath/config | 登录前可读已发布的非敏感目录与策略，内容不按账号定制 | 拟新增 |
+| 读取管理配置 | GET /api/apps/starpath/admin/config | Root 读取完整当前配置及版本，作为整体编辑的基础 | 拟新增 |
 | 发布全局配置 | PUT /api/apps/starpath/admin/config | Root 提交目录、开关、已登记目标及原配置版本，校验后整体发布 | 拟新增 |
+| 查询固定发布 | GET /api/apps/starpath/admin/plugin-releases | Root 按插件查询已登记发布及撤销状态，供选择目标和回滚 | 拟新增 |
 | 登记固定发布 | POST /api/apps/starpath/admin/plugin-releases | Root 登记精确版本、固定文件、摘要、兼容及测试资料 | 拟新增 |
 | 撤销固定发布 | POST /api/apps/starpath/admin/plugin-releases/:release_id/revoke | Root 撤销指定发布，记录原因并阻止后续受管安装 | 拟新增 |
 | 申请及复核安装计划 | POST /api/apps/starpath/plugins/:plugin_id/install-plan | 客户端登录会话；下载前申请、切换前复核同一全局目标和包状态 | 拟新增 |
@@ -72,6 +74,48 @@
 现有套餐、用户订阅管理继续使用原管理员接口。全局配置不返回用户资料、私有配置或下载凭证；私有文件短期下载地址由安装计划提供。订阅不分配不同安装包或版本，校验放在需订阅的功能使用环节。
 
 插件发布、计划、回报的最小字段及失败处理见[插件管理与统一版本](/admin-manual?article=plugins)；套餐和本人订阅数据要求见[套餐与订阅管理](/admin-manual?article=subscriptions)。新增字段须兼容现有调用，错误须区分无数据、读取失败、策略变化和权限失效。
+
+### 4.1 字段约定与协议状态
+
+后续各章的“已有”字段按本分支路由、控制器和数据结构核对；“拟新增”字段是开发评审契约，当前不能直接调用。名称采用实际 JSON 名，不用界面文案代替字段名。示例中的模型、插件、版本和 ID 均须替换为实际登记值。
+
+| 项目 | 约定 |
+| --- | --- |
+| 类型与必填 | `integer` 为整数，`number` 为数值；表中“必填”指提交必须提供或成功响应必须返回；“条件”须满足同行条件 |
+| 时间 | 本手册新增协议一律使用 Unix 秒；现有接口的其他单位在对应章节单独说明。客户端本地毫秒时间须转换 |
+| 额度与金额 | `quota`、`total_amount`、`amount_*` 为平台原始额度；`price_amount` 为金额，不能混用。展示单位读取 GET /api/status 的 `quota_per_unit`、`quota_display_type` 等站点配置 |
+| 标识与版本 | ID 不使用名称替代；客户端不得静默舍入超过安全整数范围的 ID 或额度。`config_revision`、套餐扩展 `revision`、权益 `version` 各自独立，不能跨资源比较 |
+| 空值与清空 | 拟新增字段明确使用 `null` 表示无目标或无期限，`[]` 表示清空列表；必填字段省略报错。现有字段的 `0` 语义继续沿用 |
+| 兼容扩展 | 客户端忽略未知附加字段；缺少必需的新协议字段时标记不支持，不默认获得权益或报告安装成功 |
+
+### 4.2 响应与错误处理
+
+现有账户和订阅接口通常使用 `success/message/data`；失败也可能是 HTTP 200 且 `success=false`。模型接口直接返回对应协议对象，密钥用量接口另有 `code=true`，均不强行改成同一封装。
+
+拟新增管理接口统一成功返回 `{"success":true,"message":"","data":{...}}`；错误增加以下字段。该格式也适用于订阅章主动请求的新扩展，原有调用保持兼容。
+
+| 错误字段 | 类型 | 必填 | 含义 |
+| --- | --- | --- | --- |
+| `success` | boolean | 是 | 固定为 false |
+| `message` | string | 是 | 可展示的脱敏说明，不能依此判断程序分支 |
+| `error.code` | string | 是 | 稳定原因，见下表 |
+| `error.retryable` | boolean | 是 | 是否允许稍后重试；不代表可以重复提交付费请求 |
+| `error.field` | string | 否 | 字段路径，如 `plugins[0].target_release_id` |
+| `request_id` | string | 是 | 服务端生成的排查标识，不是安装操作标识 |
+
+| HTTP | 拟定 `error.code` | 处理要求 |
+| --- | --- | --- |
+| 400 | INVALID_ARGUMENT | 更正字段或格式 |
+| 401 / 403 | AUTH_REQUIRED / FORBIDDEN | 刷新会话一次或停止无权限操作 |
+| 404 | RESOURCE_NOT_FOUND | 回查资源；不能把不存在当作空配置发布 |
+| 409 | POLICY_REVISION_CONFLICT / TARGET_CHANGED | 重读配置，不自动覆盖管理者修改或继续旧计划 |
+| 409 | RELEASE_REVOKED / INSTALL_PAUSED / INCOMPATIBLE | 停止安装，展示具体原因 |
+| 409 | PLAN_EXPIRED / IDEMPOTENCY_CONFLICT | 重取计划，或更正同一操作的冲突参数 |
+| 422 | ARTIFACT_MISMATCH | 文件、身份或版本校验失败，拒绝覆盖并回报 |
+| 429 | RATE_LIMITED | 按 Retry-After 退避 |
+| 503 | CONFIG_UNAVAILABLE / ENTITLEMENTS_UNAVAILABLE / INSTALL_SERVICE_UNAVAILABLE | 保留最后有效资料并标记未更新，失效授权不继续授予 |
+
+`ARTIFACT_MISMATCH` 也可作为客户端回报原因；本机尚未上传的错误不能假称服务端返回。新协议中的缓存时长、幂等和版本冲突均待实现与联调。
 
 ## 五、实施顺序与交付责任
 
@@ -113,5 +157,7 @@
 | 交付记录 | 实际调用、设备结果、费用核查及回归证据 | 双方开发、测试 |
 
 本版用于评审和开发交接。后续按七章统一更新实际进展、接口约定及验收记录；手册页面和访问权限验证不等于业务验收通过。
+
+字段依据：平台 `controller/subscription.go`、`model/subscription.go`、`controller/user.go`、`controller/auth_session.go`、`controller/token.go`、`router/api-router.go`、`router/video-router.go` 及 `relaykit/dto/`；星途 `src/main/libs/maasAuth.ts`、`src/shared/auth/maasSubscriptions.ts` 和 `src/renderer/services/starpathPlatform.ts`。已有字段以对应源码为准，新增字段需双方评审后冻结，变更同步更新本手册。
 
 章节入口：[套餐订阅](/admin-manual?article=subscriptions) · [插件管理](/admin-manual?article=plugins) · [账户密钥](/admin-manual?article=api-keys) · [文本](/admin-manual?article=text-models) · [图片](/admin-manual?article=image-models) · [视频](/admin-manual?article=video-models)。

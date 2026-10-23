@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	storageService "github.com/QuantumNous/new-api/service/storage"
 )
@@ -21,6 +23,28 @@ type ReferenceView struct {
 	ID        string `json:"id"`
 	URL       string `json:"url"`
 	ExpiresAt int64  `json:"expires_at"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+type ReferenceList struct {
+	Items []ReferenceView `json:"items"`
+	Total int64           `json:"total"`
+}
+
+func ListReferences(ctx context.Context, userID int, page *common.PageInfo) (*ReferenceList, error) {
+	objects, total, err := model.ListImageStudioReferenceObjects(ctx, userID, page)
+	if err != nil {
+		return nil, err
+	}
+	list := &ReferenceList{Items: make([]ReferenceView, 0, len(objects)), Total: total}
+	for _, object := range objects {
+		value, err := storageService.PresignImageStudioReference(ctx, object.ObjectID, userID)
+		if err != nil {
+			return nil, err
+		}
+		list.Items = append(list.Items, ReferenceView{ID: object.ObjectID, URL: value, ExpiresAt: object.DeleteAfter, CreatedAt: object.CreatedAt})
+	}
+	return list, nil
 }
 
 func ImportReference(ctx context.Context, userID int, source string) (*ReferenceView, error) {
@@ -58,5 +82,5 @@ func UploadReference(ctx context.Context, userID int, data []byte) (*ReferenceVi
 		_ = storageService.DeleteAssetObject(object.ID, "reference URL signing failed")
 		return nil, err
 	}
-	return &ReferenceView{ID: object.ObjectID, URL: value, ExpiresAt: object.DeleteAfter}, nil
+	return &ReferenceView{ID: object.ObjectID, URL: value, ExpiresAt: object.DeleteAfter, CreatedAt: object.CreatedAt}, nil
 }

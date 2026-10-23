@@ -16,9 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  Camera01Icon,
+  CubeIcon,
+  Image01Icon,
+  PaintBrush01Icon,
+  SparklesIcon,
+} from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
-
-import { StudioPromptExamples } from './studio-prompt-examples'
 
 export function StudioWelcome(props: {
   disabled: boolean
@@ -26,43 +32,98 @@ export function StudioWelcome(props: {
   onPrompt?: (prompt: string) => void
 }) {
   const { t } = useTranslation()
+  const examples = [
+    {
+      name: t('Cinematic photography'),
+      icon: Camera01Icon,
+      prompt: t(
+        'A ginger cat on a sunny windowsill, warm afternoon light, cinematic photography, soft shadows and a calm composition.'
+      ),
+    },
+    {
+      name: t('Anime illustration'),
+      icon: Image01Icon,
+      prompt: t(
+        'A small seaside town at sunset, an anime illustration with glowing clouds, colorful rooftops and a gentle breeze.'
+      ),
+    },
+    {
+      name: t('3D product'),
+      icon: CubeIcon,
+      prompt: t(
+        'A pastel ceramic coffee cup on a studio pedestal, a playful 3D product render with soft lighting and subtle reflections.'
+      ),
+    },
+    {
+      name: t('Ink painting'),
+      icon: PaintBrush01Icon,
+      prompt: t(
+        'A mountain lake in morning mist, traditional ink painting, flowing brushwork and generous negative space.'
+      ),
+    },
+  ]
 
   return (
     <section
-      className='studio-welcome flex flex-col gap-5 md:gap-6'
+      className='studio-welcome m-auto flex w-full max-w-4xl flex-col items-center gap-6 px-5 py-8 md:-translate-y-3 md:gap-8'
       aria-label={t('Generation results')}
     >
-      <div className='studio-hero relative isolate flex min-h-48 items-center md:min-h-56'>
-        <img
-          className='studio-hero-art pointer-events-none absolute inset-y-0 right-0 h-full w-[65%] object-cover object-right opacity-35 md:w-[58%] md:opacity-90'
-          src='/images/image-studio/orbit.jpg'
-          alt=''
-          fetchPriority='high'
-          width={1600}
-          height={900}
-        />
-        <div className='studio-hero-copy relative flex w-[82%] flex-col items-start gap-3 py-3 md:w-[55%] md:gap-4'>
-          <p className='text-[9px] font-medium tracking-[0.16em] text-(--studio-eyebrow) uppercase md:text-[10px]'>
-            {t('A new perspective')}
-          </p>
-          <h2 className='text-[30px] leading-[1.25] font-medium tracking-[-0.045em] text-balance text-(--studio-title) md:text-[38px]'>
-            {t('Imagine it.')}
-            <br />
-            <span className='text-primary'>{t('Make it real.')}</span>
-          </h2>
-          <p className='max-w-60 text-xs leading-[1.8] text-pretty text-(--studio-description) md:max-w-72'>
-            {t(
-              'Turn your ideas into extraordinary images. Start with a few words, and see where they take you.'
-            )}
-          </p>
-        </div>
+      <div className='flex flex-col items-center gap-4 text-center md:gap-5'>
+        <p className='inline-flex items-center gap-2 rounded-full border border-(--studio-panel-border) bg-(--studio-panel)/70 px-4 py-1.5 text-xs font-medium text-(--studio-eyebrow) backdrop-blur'>
+          <span
+            className='size-1.5 rounded-full bg-(--studio-accent) shadow-[0_0_8px_var(--studio-accent)]'
+            aria-hidden='true'
+          />
+          {t('A new perspective')}
+        </p>
+        <h2 className='text-[32px] leading-[1.15] font-bold tracking-[-0.04em] text-balance text-(--studio-title) sm:text-5xl md:text-[56px] xl:text-[60px]'>
+          {t('Imagine it.')}{' '}
+          <span className='studio-title-gradient'>{t('Make it real.')}</span>
+        </h2>
+        <p className='max-w-2xl text-sm leading-relaxed text-pretty text-(--studio-description) md:text-base'>
+          {t(
+            'From a spark of inspiration to a finished image. Bring every idea to life, in your own style.'
+          )}
+        </p>
       </div>
       {props.onPrompt && (
-        <StudioPromptExamples
-          maxCharacters={props.maxCharacters}
-          disabled={props.disabled}
-          onChange={props.onPrompt}
-        />
+        <section
+          aria-label={t('Try an example')}
+          className='flex w-full flex-col items-center gap-3 md:gap-4'
+        >
+          <h3 className='text-muted-foreground flex items-center gap-2 text-sm font-normal'>
+            <HugeiconsIcon
+              icon={SparklesIcon}
+              className='size-4 text-(--studio-accent)'
+              aria-hidden='true'
+            />
+            {t('Try an example')}
+          </h3>
+          <div className='grid w-full max-w-sm grid-cols-2 gap-3 sm:flex sm:w-auto sm:max-w-none sm:flex-wrap sm:justify-center'>
+            {examples.map((example) => (
+              <button
+                key={example.name}
+                type='button'
+                aria-label={example.name}
+                title={example.prompt}
+                disabled={
+                  props.disabled || example.prompt.length > props.maxCharacters
+                }
+                onClick={() => props.onPrompt?.(example.prompt)}
+                className='studio-example-card focus-visible:outline-ring inline-flex min-h-11 items-center justify-center gap-3 rounded-full border border-(--studio-panel-border) bg-(--studio-panel)/80 px-3 py-2 text-sm font-medium text-(--studio-soft-text) backdrop-blur transition-[border-color,background-color,transform] hover:-translate-y-px hover:border-(--studio-hover-border) hover:bg-(--studio-panel) focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 sm:min-h-13 sm:min-w-37 sm:ps-2 sm:pe-5'
+              >
+                <span className='studio-example-icon grid size-8 shrink-0 place-items-center rounded-full'>
+                  <HugeiconsIcon
+                    icon={example.icon}
+                    className='size-4'
+                    aria-hidden='true'
+                  />
+                </span>
+                {example.name}
+              </button>
+            ))}
+          </div>
+        </section>
       )}
     </section>
   )

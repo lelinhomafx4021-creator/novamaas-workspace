@@ -16,7 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Download01Icon, FolderAddIcon } from '@hugeicons/core-free-icons'
+import {
+  Alert02Icon,
+  Download01Icon,
+  FolderAddIcon,
+  Image01Icon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -35,22 +40,22 @@ import {
   Empty,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 
 import { getStudioRun } from '../api'
 import {
   downloadStudioImage,
   studioErrorMessage,
+  studioStatusBadgeVariant,
   studioStatusLabelKey,
   studioTaskName,
 } from '../studio-utils'
 import type { StudioResult, StudioRun } from '../types'
 import { StudioWelcome } from './studio-welcome'
-
-const canvasClassName =
-  'studio-result-frame mx-auto aspect-[4/3] min-h-48 w-full max-w-[48rem] flex-none'
 
 export function StudioGallery(props: {
   run?: StudioRun
@@ -62,13 +67,14 @@ export function StudioGallery(props: {
   saving?: boolean
   compact?: boolean
   maxPromptCharacters?: number
+  onPreview?: () => void
 }) {
   const { t } = useTranslation()
   const [preview, setPreview] = useState<StudioResult>()
   const [unavailable, setUnavailable] = useState<string[]>([])
   const layout = props.compact
     ? 'contents'
-    : 'flex min-h-0 min-w-0 flex-col gap-3'
+    : 'flex min-h-0 min-w-0 flex-1 flex-col'
   const run = props.run
   const runId = run?.id || ''
   const original = useQuery({
@@ -99,46 +105,69 @@ export function StudioGallery(props: {
   return (
     <section className={layout} aria-label={t('Generation results')}>
       {!props.compact && (
-        <div className='flex shrink-0 flex-wrap items-center justify-between gap-2'>
-          <p className='text-muted-foreground mr-auto text-xs font-medium'>
-            {t('Generation results')}
+        <div className='flex shrink-0 flex-wrap items-center gap-2 px-4 pt-4 md:px-5'>
+          <Badge variant={studioStatusBadgeVariant(run.status)}>
+            {t(studioStatusLabelKey(run.status))}
+          </Badge>
+          <p className='text-muted-foreground mr-auto truncate text-xs'>
+            {t('Generation results')} · {run.model}
           </p>
           {props.onReusePrompt && run.prompt ? (
             <Button
               type='button'
               size='sm'
               variant='outline'
+              className='rounded-full'
               disabled={props.reuseDisabled}
               onClick={() => props.onReusePrompt?.(run.prompt || '')}
             >
               {t('Use this prompt')}
             </Button>
           ) : null}
-          <Badge variant='secondary'>
-            {t(studioStatusLabelKey(run.status))}
-          </Badge>
         </div>
       )}
       {!props.compact && run.status === 'running' && (
-        <p role='status' className='text-muted-foreground text-sm'>
+        <p
+          role='status'
+          className='text-muted-foreground flex items-center gap-2 px-5 pt-3 text-sm'
+        >
+          <Spinner />
           {t('This generation is still in progress')}
         </p>
       )}
-      {!props.compact && run.error_message && (
-        <p role='alert' className='text-destructive text-sm'>
+      {!props.compact && run.error_message && run.results.length > 0 && (
+        <p role='alert' className='text-destructive px-5 pt-3 text-sm'>
           {run.error_message}
         </p>
       )}
       {run.results.length === 0 && (
         <Empty
-          className={cn('border', props.compact ? 'min-h-24' : canvasClassName)}
+          className={cn(
+            props.compact
+              ? 'min-h-24 rounded-2xl border'
+              : 'm-auto max-w-lg border-0 p-8'
+          )}
         >
           <EmptyHeader>
+            <EmptyMedia
+              variant='icon'
+              className={cn(
+                run.status === 'failed' && 'bg-destructive/10 text-destructive'
+              )}
+            >
+              <HugeiconsIcon
+                icon={run.status === 'failed' ? Alert02Icon : Image01Icon}
+                aria-hidden='true'
+              />
+            </EmptyMedia>
             <EmptyTitle>{t(studioStatusLabelKey(run.status))}</EmptyTitle>
             {props.compact && (
-              <StudioRunSummary run={run} ownerName={props.ownerName} compact />
+              <StudioRunSummary run={run} ownerName={props.ownerName} />
             )}
-            <EmptyDescription>
+            <EmptyDescription
+              role={run.error_message ? 'alert' : undefined}
+              className='break-words'
+            >
               {run.error_message || run.prompt}
             </EmptyDescription>
           </EmptyHeader>
@@ -154,22 +183,24 @@ export function StudioGallery(props: {
               key={result.id}
               className={cn(
                 'relative flex min-w-0 flex-col gap-3',
-                props.compact ? 'bg-card rounded-xl border p-2' : 'min-h-0'
+                props.compact
+                  ? 'bg-card rounded-xl border p-2'
+                  : 'grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-x-6 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:p-5'
               )}
             >
               {imageURL && !unavailable.includes(imageURL) ? (
                 <button
                   type='button'
                   aria-label={t('Preview')}
-                  onClick={() => setPreview(result)}
+                  onClick={() => {
+                    props.onPreview?.()
+                    setPreview(result)
+                  }}
                   className={cn(
                     'bg-muted/30 focus-visible:outline-ring rounded-xl focus-visible:outline-2',
                     props.compact
                       ? ''
-                      : cn(
-                          canvasClassName,
-                          'relative flex items-center justify-center overflow-hidden border'
-                        )
+                      : 'relative col-span-full min-h-64 cursor-zoom-in bg-transparent'
                   )}
                 >
                   <img
@@ -179,8 +210,10 @@ export function StudioGallery(props: {
                     }
                     loading='lazy'
                     className={cn(
-                      'w-full rounded-lg object-contain',
-                      props.compact ? 'h-40' : 'absolute inset-0 h-full'
+                      'rounded-xl object-contain',
+                      props.compact
+                        ? 'h-40 w-full'
+                        : 'absolute inset-0 m-auto h-auto max-h-full w-auto max-w-full shadow-[0_30px_80px_-30px_#000]'
                     )}
                     onError={(event) => {
                       const url = event.currentTarget.src
@@ -189,7 +222,9 @@ export function StudioGallery(props: {
                   />
                 </button>
               ) : (
-                <Empty className={props.compact ? 'h-40' : canvasClassName}>
+                <Empty
+                  className={props.compact ? 'h-40' : 'col-span-full min-h-64'}
+                >
                   <EmptyHeader>
                     <EmptyTitle>
                       {result.expired
@@ -203,11 +238,11 @@ export function StudioGallery(props: {
                 className={
                   props.compact
                     ? 'absolute top-3 right-3'
-                    : 'flex shrink-0 flex-wrap items-center justify-end gap-2'
+                    : 'order-2 flex flex-wrap items-center justify-end gap-2 self-center'
                 }
               >
                 {!props.compact && (
-                  <p className='text-muted-foreground mr-auto text-xs'>
+                  <p className='text-muted-foreground mr-1 text-[11px]'>
                     {result.asset_id
                       ? t('Saved to asset library')
                       : t('Saved in generation records')}
@@ -217,6 +252,7 @@ export function StudioGallery(props: {
                   type='button'
                   size={props.compact ? 'icon-sm' : 'sm'}
                   variant='outline'
+                  className={cn(!props.compact && 'rounded-full')}
                   aria-label={t('Download')}
                   disabled={!imageURL}
                   onClick={async () => {
@@ -244,6 +280,7 @@ export function StudioGallery(props: {
                     type='button'
                     size='sm'
                     variant='outline'
+                    className='rounded-full'
                     aria-describedby={
                       props.compact
                         ? undefined
@@ -260,27 +297,22 @@ export function StudioGallery(props: {
               {!props.compact && props.onSave && !result.asset_id && (
                 <p
                   id={`${result.id}-asset-library-help`}
-                  className='text-muted-foreground shrink-0 text-xs leading-relaxed'
+                  className='text-muted-foreground/70 order-3 col-span-full mt-2 text-[11px] leading-relaxed'
                 >
                   {t(
-                    'Images are saved in the generation records on the right for 30 days. Download them before expiry. Save to the asset library only for direct use in video generation; library copies are kept separately.'
+                    'Images in generation records expire automatically. Download them before expiry. Asset library copies are kept separately for video generation.'
                   )}
                 </p>
               )}
               {props.compact && (
-                <StudioRunSummary
-                  run={run}
-                  ownerName={props.ownerName}
-                  compact
-                />
+                <StudioRunSummary run={run} ownerName={props.ownerName} />
               )}
               {(result.description || run.prompt) && (
                 <p
                   className={cn(
-                    'text-muted-foreground break-words',
-                    props.compact
-                      ? 'line-clamp-2 text-xs'
-                      : 'max-h-20 shrink-0 overflow-y-auto whitespace-pre-wrap text-xs'
+                    'text-muted-foreground line-clamp-2 text-xs break-words',
+                    // Under the stage image the prompt reads before the actions.
+                    !props.compact && 'order-1 self-center leading-relaxed'
                   )}
                   title={result.description || run.prompt}
                 >
@@ -309,7 +341,7 @@ export function StudioGallery(props: {
             <img
               src={previewURL}
               alt={preview?.description || run.prompt || t('Generated image')}
-              className='max-h-[75vh] w-full object-contain'
+              className='mx-auto h-auto max-h-[75svh] w-auto max-w-full object-contain'
             />
           )}
         </DialogContent>
@@ -318,19 +350,12 @@ export function StudioGallery(props: {
   )
 }
 
-export function StudioRunSummary(props: {
-  run: StudioRun
-  ownerName?: string
-  compact?: boolean
-}) {
+function StudioRunSummary(props: { run: StudioRun; ownerName?: string }) {
   const { t } = useTranslation()
   const run = props.run
   return (
     <div className='min-w-0 flex-1 space-y-1'>
-      <p
-        className={cn('truncate font-semibold', props.compact && 'text-sm')}
-        title={studioTaskName(run)}
-      >
+      <p className='truncate text-sm font-semibold' title={studioTaskName(run)}>
         {studioTaskName(run)}
       </p>
       <p className='text-muted-foreground truncate text-xs' title={run.id}>
@@ -340,13 +365,10 @@ export function StudioRunSummary(props: {
         <p className='text-muted-foreground truncate text-xs'>
           {props.ownerName || run.username} · {t('User ID')}:{' '}
           {run.owner_user_id}
-          {!props.compact && ` · ${run.model}`}
         </p>
-        {props.compact && (
-          <Badge variant='secondary'>
-            {t(studioStatusLabelKey(run.status))}
-          </Badge>
-        )}
+        <Badge variant={studioStatusBadgeVariant(run.status)}>
+          {t(studioStatusLabelKey(run.status))}
+        </Badge>
       </div>
     </div>
   )

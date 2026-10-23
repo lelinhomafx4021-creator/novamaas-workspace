@@ -5,10 +5,12 @@ import "github.com/QuantumNous/new-api/setting/config"
 const (
 	ImageStudioMaxImages           = 4
 	ImageStudioMaxPromptCharacters = 4000
+	// ImageStudioMaxRunningPerUser bounds simultaneous generations per user.
+	ImageStudioMaxRunningPerUser = 5
 )
 
 // ImageStudioSetting controls the PC image generation studio. Generated images
-// require the asset library storage policy to be enabled; their lifetime is 30 days.
+// and references use independent, configurable business storage policies.
 type ImageStudioSetting struct {
 	Enabled bool `json:"enabled"`
 }

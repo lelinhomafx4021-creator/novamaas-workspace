@@ -18,7 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import axios from 'axios'
 
-import type { StudioResponse, StudioResult, StudioRun } from './types'
+import type {
+  StudioImageSize,
+  StudioResponse,
+  StudioResult,
+  StudioRun,
+} from './types'
 
 export function studioTaskName(run: StudioRun): string {
   return run.prompt?.trim().replaceAll(/\s+/g, ' ').slice(0, 40) || run.model
@@ -45,6 +50,14 @@ export function studioStatusLabelKey(status: string): string {
   return labels[status] ?? status
 }
 
+export function studioStatusBadgeVariant(
+  status: string
+): 'secondary' | 'destructive' | 'warning' {
+  if (status === 'failed') return 'destructive'
+  if (status === 'running') return 'warning'
+  return 'secondary'
+}
+
 // The signed download URL carries Content-Disposition with the stored file
 // name and extension, so the browser saves it without fetching through CORS.
 export function downloadStudioImage(result: StudioResult): void {
@@ -53,4 +66,46 @@ export function downloadStudioImage(result: StudioResult): void {
   link.href = result.download_url
   link.rel = 'noopener noreferrer'
   link.click()
+}
+
+export const studioAspectRatios: Record<string, StudioImageSize> = {
+  '1:1': '1024x1024',
+  '3:2': '1536x1024',
+  '2:3': '1024x1536',
+  '16:9': '1792x1024',
+  '9:16': '1024x1792',
+}
+
+// Only map ratios to the server's bounded size presets. Explicit UI choices win.
+export function studioImageSize(
+  prompt: string,
+  selection: StudioImageSize
+): StudioImageSize | undefined {
+  if (selection !== 'auto') return selection
+  const matches = [
+    ...prompt.matchAll(
+      /(?<![\d.])(16|9|3|2|1)\s*[:：/]\s*(16|9|3|2|1)(?![\d.])/g
+    ),
+  ]
+  for (const match of matches.reverse()) {
+    const size = studioAspectRatios[`${match[1]}:${match[2]}`]
+    if (size) return size
+  }
+  return undefined
+}
+
+export function studioPollInterval(error: unknown, batches = 1): number {
+  const interval = Math.max(3000, batches * 1500)
+  if (!axios.isAxiosError(error) || error.response?.status !== 429) {
+    return interval
+  }
+  const retryAfter = error.response.headers?.['retry-after']
+  const seconds = Number(retryAfter)
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.max(interval, seconds * 1000)
+  }
+  const date =
+    typeof retryAfter === 'string' ? Date.parse(retryAfter) : Number.NaN
+  if (Number.isFinite(date)) return Math.max(interval, date - Date.now())
+  return Math.max(interval, 30_000)
 }

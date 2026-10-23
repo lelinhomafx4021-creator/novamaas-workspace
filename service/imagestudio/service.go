@@ -39,6 +39,7 @@ type RelayContext struct {
 }
 
 type RelayResult struct {
+	ChannelID  int
 	StatusCode int
 	Body       []byte
 	RequestID  string

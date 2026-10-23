@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"image"
-	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -18,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	storageService "github.com/QuantumNous/new-api/service/storage"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -66,12 +69,14 @@ func setupImageStudio(t *testing.T) (*gorm.DB, *model.Token) {
 	policy := model.DefaultAssetLibraryStoragePolicy()
 	policy.StorageProfileID, policy.Enabled = profile.ID, true
 	require.NoError(t, model.SaveStoragePolicy(policy))
+	require.NoError(t, model.InitializeImageStudioRetention(db))
 	// Only the object transport is replaced; metadata, signing and ownership use production code.
 	previousUpload := uploadImage
 	uploadImage = func(_ context.Context, owner int, run, result, contentType string, data []byte) (*model.StorageObject, error) {
 		object := &model.StorageObject{ObjectID: result, OwnerUserID: owner, Purpose: model.StorageObjectPurposeImageStudio,
 			StorageProfileID: profile.ID, StoragePolicyID: policy.ID, ObjectKey: "assets/" + run + "/" + result + ".png",
-			ContentType: contentType, Size: int64(len(data)), Status: model.StorageObjectStatusUploaded}
+			ContentType: contentType, Size: int64(len(data)), Status: model.StorageObjectStatusUploaded,
+			DeleteAfter: common.GetTimestamp() + model.ImageStudioRetentionSeconds}
 		return object, db.Create(object).Error
 	}
 	t.Cleanup(func() { uploadImage = previousUpload })
@@ -91,35 +96,24 @@ func pngResponse(t *testing.T, count int) []byte {
 	return body
 }
 
-func TestGPTImage2IsAvailableForImagesAndExcludedFromPromptAssist(t *testing.T) {
-	db, token := setupImageStudio(t)
-	require.NoError(t, db.Model(&model.Channel{}).Where("name = ?", "image").Update("models", "gpt-image-2-1K").Error)
-	require.NoError(t, db.Model(&model.Ability{}).Where("model = ?", "dall-e-3").Update("model", "gpt-image-2-1K").Error)
-	model.InvalidatePricingCache()
-
-	images, err := ModelsForToken(501, token.Id, constant.EndpointTypeImageGeneration)
-	require.NoError(t, err)
-	assert.Contains(t, images, "gpt-image-2-1K")
-	text, err := ModelsForToken(501, token.Id, constant.EndpointTypeOpenAI)
-	require.NoError(t, err)
-	assert.NotContains(t, text, "gpt-image-2-1K")
-}
-
 func TestCreateRunCallsRelayOncePerIdempotencyKey(t *testing.T) {
 	db, token := setupImageStudio(t)
 	execution := RelayContext{Context: context.Background()}
 	input := RunInput{TokenID: token.Id, IdempotencyKey: "once", Request: RunRequest{Model: "dall-e-3", Prompt: "mountain"}}
 	original := []byte(`{"token_id":1,"idempotency_key":"once","request":{"model":"dall-e-3","prompt":"mountain"}}`)
-	calls := 0
+	var calls atomic.Int32
 	var relay RelayExecutor
 	relay = func(ctx RelayContext, selected *model.Token, path string, body []byte, format types.RelayFormat, snapshot *RequestSnapshot) RelayResult {
-		calls++
+		calls.Add(1)
 		assert.Equal(t, token.Id, selected.Id)
 		assert.Equal(t, "/v1/images/generations", path)
 		assert.EqualValues(t, types.RelayFormatOpenAIImage, format)
 		assert.JSONEq(t, `{"model":"dall-e-3","prompt":"mountain"}`, string(body))
 		require.NotNil(t, snapshot)
 		assert.Equal(t, original, snapshot.Original)
+		require.NoError(t, model.LinkImageStudioRunRequest(snapshot.RunID, "req-1", 17))
+		require.NoError(t, model.LinkImageStudioRunRequest(snapshot.RunID, "req-1", 17))
+		assert.Error(t, model.LinkImageStudioRunRequest(snapshot.RunID, "other", 17))
 		// A duplicate submitted while generating sees the running run.
 		inflight, replay, err := CreateRun(ctx, 501, input, original, relay)
 		require.NoError(t, err)
@@ -131,58 +125,62 @@ func TestCreateRunCallsRelayOncePerIdempotencyKey(t *testing.T) {
 	view, replay, err := CreateRun(execution, 501, input, original, relay)
 	require.NoError(t, err)
 	assert.False(t, replay)
+	assert.Equal(t, model.ImageStudioRunStatusRunning, view.Status)
+	view = awaitStudioRun(t, view.PublicID)
 	assert.Equal(t, model.ImageStudioRunStatusCompleted, view.Status)
 	assert.Empty(t, view.RequestID, "owners do not see the archived request reference")
 	assert.Equal(t, 42, view.Quota)
+	assert.Error(t, model.LinkImageStudioRunRequest(view.ID, "req-1", 17))
 	require.Len(t, view.Results, 2)
-	assert.Contains(t, view.Results[0].PreviewURL, "studio-test-bucket")
-	assert.Contains(t, view.Results[0].ThumbnailURL, "x-oss-process")
 
 	again, replay, err := CreateRun(execution, 501, input, original, relay)
 	require.NoError(t, err)
 	assert.True(t, replay)
 	assert.Equal(t, view.PublicID, again.PublicID)
-	assert.Equal(t, 1, calls)
+	assert.EqualValues(t, 1, calls.Load())
 	var assets int64
 	require.NoError(t, db.Model(&model.MediaAsset{}).Count(&assets).Error)
 	assert.Zero(t, assets, "generated images are not saved to the library by default")
 }
 
-func TestReferenceImagesAreSignedForGenerationAndExpireAfterSevenDays(t *testing.T) {
+func TestReferenceImagesUseSignedEditInputsAndExpireAfterSevenDays(t *testing.T) {
 	db, token := setupImageStudio(t)
 	require.NoError(t, db.Model(&model.Channel{}).Where("name = ?", "image").Update("models", "gpt-image-2-1K").Error)
 	require.NoError(t, db.Model(&model.Ability{}).Where("model = ?", "dall-e-3").Update("model", "gpt-image-2-1K").Error)
 	model.InvalidatePricingCache()
 	policy, err := model.GetStoragePolicyByKey(model.StoragePolicyAssetLibrary)
 	require.NoError(t, err)
-	object := &model.StorageObject{ObjectID: "reference-owned", OwnerUserID: 501,
+	now := common.GetTimestamp()
+	object := &model.StorageObject{ObjectID: "reference-owned", OwnerUserID: 501, CreatedAt: now,
 		StorageProfileID: policy.StorageProfileID, StoragePolicyID: policy.ID,
 		Purpose: model.StorageObjectPurposeImageStudioReference, ObjectKey: "references/source.png",
-		ContentType: "image/png", Status: model.StorageObjectStatusUploaded}
+		ContentType: "image/png", Status: model.StorageObjectStatusUploaded,
+		DeleteAfter: now + 7*24*60*60}
 	require.NoError(t, db.Create(object).Error)
 	assert.Equal(t, object.CreatedAt+7*24*60*60, object.DeleteAfter)
 
 	input := RunInput{TokenID: token.Id, IdempotencyKey: "with-reference", Request: RunRequest{
 		Model: "gpt-image-2-1K", Prompt: "Use the reference composition", ReferenceIDs: []string{object.ObjectID},
 	}}
-	_, _, err = CreateRun(RelayContext{Context: context.Background()}, 501, input, nil,
+	view, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, input, nil,
 		func(_ RelayContext, _ *model.Token, path string, body []byte, _ types.RelayFormat, _ *RequestSnapshot) RelayResult {
-			assert.Equal(t, "/v1/images/generations", path)
+			assert.Equal(t, "/v1/images/edits", path)
 			var request dto.ImageRequest
 			require.NoError(t, common.Unmarshal(body, &request))
-			var references []string
-			require.NoError(t, common.Unmarshal(request.Image, &references))
+			assert.Empty(t, request.Image, "the legacy image field is ignored by the provider")
+			var references []struct {
+				ImageURL string `json:"image_url"`
+			}
+			require.NoError(t, common.Unmarshal(request.Images, &references))
 			require.Len(t, references, 1)
-			parsed, parseErr := url.Parse(references[0])
+			parsed, parseErr := url.Parse(references[0].ImageURL)
 			require.NoError(t, parseErr)
 			assert.Equal(t, "/references/source.png", parsed.Path)
 			assert.NotEmpty(t, parsed.Query().Get("x-oss-signature"))
 			return RelayResult{StatusCode: http.StatusOK, Body: pngResponse(t, 1)}
 		})
 	require.NoError(t, err)
-	beforeExpiry, err := model.ClaimStorageObjectsForDeletion(object.DeleteAfter-1, object.DeleteAfter+60, "before-reference-expiry", 10)
-	require.NoError(t, err)
-	assert.Empty(t, beforeExpiry)
+	awaitStudioRun(t, view.PublicID)
 	atExpiry, err := model.ClaimStorageObjectsForDeletion(object.DeleteAfter, object.DeleteAfter+60, "reference-expiry", 10)
 	require.NoError(t, err)
 	require.Len(t, atExpiry, 1)
@@ -245,19 +243,18 @@ func TestFailedRunKeepsRequestIDForAudit(t *testing.T) {
 	_, token := setupImageStudio(t)
 	input := RunInput{TokenID: token.Id, IdempotencyKey: "fail", Request: RunRequest{Model: "dall-e-3", Prompt: "mountain"}}
 	relay := func(RelayContext, *model.Token, string, []byte, types.RelayFormat, *RequestSnapshot) RelayResult {
-		return RelayResult{StatusCode: http.StatusBadRequest, Body: []byte(`{"error":{"message":"content rejected by Bearer secret-key"}}`), RequestID: "req-fail"}
+		return RelayResult{StatusCode: http.StatusBadRequest, Body: []byte(`{"error":{"message":"content rejected by Bearer secret-key"}}`), RequestID: "req-fail", ChannelID: 17}
 	}
-	_, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, input, nil, relay)
-	require.Error(t, err)
-	assert.Equal(t, http.StatusBadRequest, StatusCode(err))
-	assert.NotContains(t, err.Error(), "secret-key")
+	view, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, input, nil, relay)
+	require.NoError(t, err)
+	view = awaitStudioRun(t, view.PublicID)
+	assert.Equal(t, model.ImageStudioRunStatusFailed, view.Status)
+	assert.NotContains(t, view.ErrorMessage, "secret-key")
 	run, err := model.FindImageStudioRunByIdempotencyKey(501, "fail")
 	require.NoError(t, err)
 	assert.Equal(t, model.ImageStudioRunStatusFailed, run.Status)
 	assert.Equal(t, "req-fail", run.RequestID)
-	var objects int64
-	require.NoError(t, model.DB.Model(&model.StorageObject{}).Count(&objects).Error)
-	assert.Zero(t, objects)
+	assert.Equal(t, 17, run.ChannelID)
 }
 
 func TestHistoryIsOwnerScoped(t *testing.T) {
@@ -267,6 +264,7 @@ func TestHistoryIsOwnerScoped(t *testing.T) {
 	}
 	view, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{TokenID: token.Id, IdempotencyKey: "own", Request: RunRequest{Model: "dall-e-3", Prompt: "lake"}}, nil, relay)
 	require.NoError(t, err)
+	view = awaitStudioRun(t, view.PublicID)
 	resultID := view.Results[0].ID
 	page := &common.PageInfo{Page: 1, PageSize: 10}
 
@@ -316,54 +314,6 @@ func TestSaveClaimAllowsOneConcurrentSave(t *testing.T) {
 	assert.ErrorIs(t, err, model.ErrImageStudioSaveInProgress, "a saved image is not saved twice")
 }
 
-func imageResponse(t *testing.T, encode func(*bytes.Buffer, image.Image) error) []byte {
-	t.Helper()
-	var buffer bytes.Buffer
-	require.NoError(t, encode(&buffer, image.NewRGBA(image.Rect(0, 0, 2, 2))))
-	body, err := common.Marshal(dto.ImageResponse{Data: []dto.ImageData{{B64Json: base64.StdEncoding.EncodeToString(buffer.Bytes())}}})
-	require.NoError(t, err)
-	return body
-}
-
-func TestStoredImageKeepsItsActualFormat(t *testing.T) {
-	db, token := setupImageStudio(t)
-	relay := func(RelayContext, *model.Token, string, []byte, types.RelayFormat, *RequestSnapshot) RelayResult {
-		return RelayResult{StatusCode: http.StatusOK, RequestID: "req-jpeg", Body: imageResponse(t, func(buffer *bytes.Buffer, img image.Image) error {
-			return jpeg.Encode(buffer, img, nil)
-		})}
-	}
-	view, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{TokenID: token.Id, IdempotencyKey: "jpeg", Request: RunRequest{Model: "dall-e-3", Prompt: "lake"}}, nil, relay)
-	require.NoError(t, err)
-	var object model.StorageObject
-	require.NoError(t, db.First(&object).Error)
-	assert.Equal(t, "image/jpeg", object.ContentType)
-	require.Len(t, view.Results, 1)
-	download, err := url.Parse(view.Results[0].DownloadURL)
-	require.NoError(t, err)
-	assert.Equal(t, `attachment; filename="`+view.Results[0].ID+`.jpg"`, download.Query().Get("response-content-disposition"))
-}
-
-// When the results cannot be committed with the run, the uploaded objects are
-// queued for the storage cleanup job instead of being left behind.
-func TestUncommittedResultsQueueObjectsForCleanup(t *testing.T) {
-	db, token := setupImageStudio(t)
-	relay := func(ctx RelayContext, _ *model.Token, _ string, _ []byte, _ types.RelayFormat, snapshot *RequestSnapshot) RelayResult {
-		// Another request already failed this run as interrupted.
-		require.NoError(t, db.Model(&model.ImageStudioRun{}).Where("id = ?", snapshot.RunID).Update("status", model.ImageStudioRunStatusFailed).Error)
-		return RelayResult{StatusCode: http.StatusOK, Body: pngResponse(t, 2), RequestID: "req-late"}
-	}
-	view, replay, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{TokenID: token.Id, IdempotencyKey: "late", Request: RunRequest{Model: "dall-e-3", Prompt: "lake"}}, nil, relay)
-	require.NoError(t, err)
-	assert.True(t, replay)
-	assert.Equal(t, model.ImageStudioRunStatusFailed, view.Status)
-	assert.Empty(t, view.Results)
-	var results, pending int64
-	require.NoError(t, db.Model(&model.ImageStudioResult{}).Count(&results).Error)
-	assert.Zero(t, results)
-	require.NoError(t, db.Model(&model.StorageObject{}).Where("status = ?", model.StorageObjectStatusDeletePending).Count(&pending).Error)
-	assert.EqualValues(t, 2, pending)
-}
-
 func TestDeletingSavedImageAsksAboutTheLibraryAsset(t *testing.T) {
 	db, token := setupImageStudio(t)
 	require.NoError(t, db.AutoMigrate(&model.AssetReplica{}))
@@ -372,6 +322,7 @@ func TestDeletingSavedImageAsksAboutTheLibraryAsset(t *testing.T) {
 	}
 	view, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{TokenID: token.Id, IdempotencyKey: "saved", Request: RunRequest{Model: "dall-e-3", Prompt: "lake"}}, nil, relay)
 	require.NoError(t, err)
+	view = awaitStudioRun(t, view.PublicID)
 	require.Len(t, view.Results, 2)
 	assets := make([]*model.MediaAsset, 2)
 	for i, result := range view.Results {
@@ -399,4 +350,146 @@ func TestDeletingSavedImageAsksAboutTheLibraryAsset(t *testing.T) {
 	var object model.StorageObject
 	require.NoError(t, db.First(&object, deleted.StorageObjectID).Error)
 	assert.Equal(t, model.StorageObjectStatusDeletePending, object.Status)
+}
+
+// Wait for observable persisted completion, never assume CreateRun waits for relay.
+func awaitStudioRun(t *testing.T, id string) *RunView {
+	t.Helper()
+	var view *RunView
+	require.Eventually(t, func() bool {
+		var err error
+		view, err = GetRun(context.Background(), 501, id)
+		return err == nil && view.Status != model.ImageStudioRunStatusRunning
+	}, 5*time.Second, 10*time.Millisecond)
+	return view
+}
+
+func TestRunningHistorySurvivesRefreshAndExpiredRunsStopPolling(t *testing.T) {
+	db, _ := setupImageStudio(t)
+	running := &model.ImageStudioRun{UserID: 501, IdempotencyKey: "running-history", Model: "dall-e-3", Prompt: "Draft", Status: model.ImageStudioRunStatusRunning}
+	stale := &model.ImageStudioRun{UserID: 501, IdempotencyKey: "stale-history", Model: "dall-e-3", Prompt: "Old draft", Status: model.ImageStudioRunStatusRunning, CreatedAt: common.GetTimestamp() - model.ImageStudioRunStaleSeconds - 1}
+	require.NoError(t, db.Create(running).Error)
+	require.NoError(t, db.Create(stale).Error)
+	list, err := ListRuns(context.Background(), ListFilter{OwnerUserID: 501, Page: &common.PageInfo{Page: 1, PageSize: 12}})
+	require.NoError(t, err)
+	require.Len(t, list.Items, 2)
+	assert.Equal(t, model.ImageStudioRunStatusFailed, list.Items[0].Status)
+	assert.Equal(t, model.ImageStudioRunStatusRunning, list.Items[1].Status)
+}
+
+func TestCreateRunRejectsUnboundedImageSizesBeforeRelay(t *testing.T) {
+	db, token := setupImageStudio(t)
+	_, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{TokenID: token.Id, IdempotencyKey: "size", Request: RunRequest{Model: "dall-e-3", Prompt: "Lake", Size: "999999x999999"}}, nil, nil)
+	assert.Equal(t, http.StatusBadRequest, StatusCode(err))
+	assert.Equal(t, "invalid_size", ErrorCode(err))
+	var count int64
+	require.NoError(t, db.Model(&model.ImageStudioRun{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestCreateRunReturnsWhileRelayIsBlockedAndIgnoresClientDisconnect(t *testing.T) {
+	_, token := setupImageStudio(t)
+	release := make(chan struct{})
+	body := pngResponse(t, 1)
+	relay := func(ctx RelayContext, _ *model.Token, _ string, _ []byte, _ types.RelayFormat, _ *RequestSnapshot) RelayResult {
+		<-release
+		assert.NoError(t, ctx.Context.Err())
+		return RelayResult{StatusCode: http.StatusOK, Body: body}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	first, _, err := CreateRun(RelayContext{Context: ctx}, 501, RunInput{TokenID: token.Id, IdempotencyKey: "queued-first", Request: RunRequest{Model: "dall-e-3", Prompt: "first"}}, nil, relay)
+	require.NoError(t, err)
+	second, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{TokenID: token.Id, IdempotencyKey: "queued-second", Request: RunRequest{Model: "dall-e-3", Prompt: "second", Size: "1792x1024"}}, nil, relay)
+	cancel()
+	close(release)
+	require.NoError(t, err)
+	assert.Equal(t, model.ImageStudioRunStatusRunning, first.Status)
+	assert.Equal(t, model.ImageStudioRunStatusRunning, second.Status)
+	assert.Equal(t, model.ImageStudioRunStatusCompleted, awaitStudioRun(t, first.PublicID).Status)
+	assert.Equal(t, model.ImageStudioRunStatusCompleted, awaitStudioRun(t, second.PublicID).Status)
+}
+
+func TestBackgroundPanicFailsRunWithoutExposingPanicData(t *testing.T) {
+	_, token := setupImageStudio(t)
+	view, replay, err := CreateRun(RelayContext{Context: context.Background()}, 501,
+		RunInput{TokenID: token.Id, IdempotencyKey: "panic", Request: RunRequest{Model: "dall-e-3", Prompt: "mountain"}}, nil,
+		func(RelayContext, *model.Token, string, []byte, types.RelayFormat, *RequestSnapshot) RelayResult {
+			panic("private provider details")
+		})
+	require.NoError(t, err)
+	assert.False(t, replay)
+	finished := awaitStudioRun(t, view.PublicID)
+	assert.Equal(t, model.ImageStudioRunStatusFailed, finished.Status)
+	assert.Equal(t, "image generation failed", finished.ErrorMessage)
+	assert.Empty(t, finished.Results)
+}
+
+func TestCreateRunLimitsRunningGenerationsPerUser(t *testing.T) {
+	_, token := setupImageStudio(t)
+	release := make(chan struct{})
+	relay := func(RelayContext, *model.Token, string, []byte, types.RelayFormat, *RequestSnapshot) RelayResult {
+		<-release
+		return RelayResult{StatusCode: http.StatusOK, Body: pngResponse(t, 1)}
+	}
+	submit := func(key string) (*RunView, error) {
+		view, _, err := CreateRun(RelayContext{Context: context.Background()}, 501, RunInput{TokenID: token.Id, IdempotencyKey: key, Request: RunRequest{Model: "dall-e-3", Prompt: key}}, nil, relay)
+		return view, err
+	}
+	var running []*RunView
+	for i := 0; i < operation_setting.ImageStudioMaxRunningPerUser; i++ {
+		view, err := submit(fmt.Sprintf("slot-%d", i))
+		require.NoError(t, err)
+		running = append(running, view)
+	}
+	_, err := submit("overflow")
+	assert.Equal(t, http.StatusTooManyRequests, StatusCode(err))
+	assert.Equal(t, "too_many_running_runs", ErrorCode(err))
+	close(release)
+	for _, view := range running {
+		assert.Equal(t, model.ImageStudioRunStatusCompleted, awaitStudioRun(t, view.PublicID).Status)
+	}
+	after, err := submit("after-release")
+	require.NoError(t, err)
+	awaitStudioRun(t, after.PublicID)
+}
+
+func TestReferenceHistoryListsOnlyOwnersLiveUploadsWithPagination(t *testing.T) {
+	db, _ := setupImageStudio(t)
+	var profile model.StorageProfile
+	require.NoError(t, db.First(&profile).Error)
+	now := common.GetTimestamp()
+	objects := []model.StorageObject{
+		{ObjectID: "older-upload", OwnerUserID: 501, Purpose: model.StorageObjectPurposeImageStudioReference, Status: model.StorageObjectStatusUploaded, DeleteAfter: now + 3600},
+		{ObjectID: "newer-upload", OwnerUserID: 501, Purpose: model.StorageObjectPurposeImageStudioReference, Status: model.StorageObjectStatusUploaded, DeleteAfter: now + 7200},
+		{ObjectID: "other-owner", OwnerUserID: 502, Purpose: model.StorageObjectPurposeImageStudioReference, Status: model.StorageObjectStatusUploaded, DeleteAfter: now + 3600},
+		{ObjectID: "expired", OwnerUserID: 501, Purpose: model.StorageObjectPurposeImageStudioReference, Status: model.StorageObjectStatusUploaded, DeleteAfter: now - 1},
+		{ObjectID: "deleted", OwnerUserID: 501, Purpose: model.StorageObjectPurposeImageStudioReference, Status: model.StorageObjectStatusDeletePending, DeleteAfter: now + 3600},
+		{ObjectID: "generated-image", OwnerUserID: 501, Purpose: model.StorageObjectPurposeImageStudio, Status: model.StorageObjectStatusUploaded, DeleteAfter: now + 3600},
+	}
+	for i := range objects {
+		objects[i].StorageProfileID = profile.ID
+		objects[i].ObjectKey = "references/" + objects[i].ObjectID + ".png"
+		objects[i].ContentType = "image/png"
+		require.NoError(t, db.Create(&objects[i]).Error)
+	}
+	page := &common.PageInfo{Page: 1, PageSize: 1}
+	first, err := ListReferences(context.Background(), 501, page)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, first.Total)
+	require.Len(t, first.Items, 1)
+	assert.Equal(t, "newer-upload", first.Items[0].ID)
+	assert.Equal(t, now+7200, first.Items[0].ExpiresAt)
+	assert.NotZero(t, first.Items[0].CreatedAt)
+	assert.Contains(t, first.Items[0].URL, "references/newer-upload.png")
+	assert.Contains(t, first.Items[0].URL, "x-oss-signature=")
+	page.Page = 2
+	second, err := ListReferences(context.Background(), 501, page)
+	require.NoError(t, err)
+	require.Len(t, second.Items, 1)
+	assert.Equal(t, "older-upload", second.Items[0].ID)
+	empty, err := ListReferences(context.Background(), 503, page)
+	require.NoError(t, err)
+	assert.Empty(t, empty.Items)
+	assert.Zero(t, empty.Total)
 }

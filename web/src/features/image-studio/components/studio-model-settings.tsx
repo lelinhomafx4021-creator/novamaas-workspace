@@ -47,16 +47,6 @@ import type { ApiKey } from '@/features/keys/types'
 
 export type StudioModelSelection = { tokenId: number; model: string }
 
-type ModelFieldProps = {
-  kind: 'image' | 'text'
-  keys: ApiKey[]
-  userGroup: string
-  selection: StudioModelSelection
-  models: UseQueryResult<string[], Error>
-  disabled: boolean
-  onChange: (selection: StudioModelSelection) => void
-}
-
 export function StudioModelSettings(props: {
   keys: ApiKey[]
   userGroup: string
@@ -121,7 +111,15 @@ export function StudioModelSettings(props: {
   )
 }
 
-function ModelField(props: ModelFieldProps) {
+function ModelField(props: {
+  kind: 'image' | 'text'
+  keys: ApiKey[]
+  userGroup: string
+  selection: StudioModelSelection
+  models: UseQueryResult<string[], Error>
+  disabled: boolean
+  onChange: (selection: StudioModelSelection) => void
+}) {
   const { t } = useTranslation()
   const prefix = `studio-${props.kind}`
   const label = props.kind === 'image' ? t('Image model') : t('Text model')

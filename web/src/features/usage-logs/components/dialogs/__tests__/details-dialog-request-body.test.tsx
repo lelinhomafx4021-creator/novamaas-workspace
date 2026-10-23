@@ -160,7 +160,6 @@ describe('DetailsDialog request body', () => {
         ...videoUsageLog,
         other: JSON.stringify({
           request_body_available: true,
-          request_body_resource: 'image_studio',
         }),
       })
 

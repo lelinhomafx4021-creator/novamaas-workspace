@@ -32,11 +32,14 @@ import { StudioComposer } from './components/studio-composer'
 import { StudioGallery } from './components/studio-gallery'
 import { StudioHistory } from './components/studio-history'
 import { StudioSaveDialog } from './components/studio-save-dialog'
+import { StudioReferencePreview } from './components/studio-upload-history'
+import { useStudioPolling } from './hooks/use-studio-polling'
 import type {
   StudioResult,
   StudioRun,
   StudioRunList,
   StudioSettings,
+  StudioReference,
 } from './types'
 
 export function ImageStudio() {
@@ -105,34 +108,38 @@ function StudioWorkspace(props: {
   keys: ApiKey[]
 }) {
   const { t } = useTranslation()
-  const ownerName = useAuthStore((state) => state.auth.user?.username || '')
   const client = useQueryClient()
   const galleryRef = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(1)
-  const [runId, setActiveId] = useState('')
-  const [activeResultId, setActiveResultId] = useState('')
+  const [historyTab, setHistoryTab] = useState('generated')
+  const [selection, setSelection] = useState<{
+    runId?: string
+    resultId?: string
+    upload?: StudioReference
+  }>({})
+  const {
+    runId = '',
+    resultId: activeResultId,
+    upload: selectedUpload,
+  } = selection
   const [saveTarget, setSaveTarget] = useState<StudioResult>()
   const runs = useQuery({
     queryKey: ['image-studio', 'runs', props.userId, page],
     queryFn: () => listStudioRuns(page),
     enabled: Boolean(props.userId),
   })
+  const { track: trackRun, runningCount } = useStudioPolling(props.userId, runs.data?.items)
   const current = useQuery({
     queryKey: ['image-studio', 'run', props.userId, runId],
     queryFn: () => getStudioRun(runId),
     enabled: Boolean(props.userId && runId),
     staleTime: 30_000,
-    // Like the miniapp, keep polling while the run is still generating.
-    refetchInterval: (query) =>
-      query.state.data?.status === 'running' ? 1500 : false,
-    gcTime: 0,
   })
   const resultId =
     current.data?.results.find((result) => result.id === activeResultId)?.id ||
     current.data?.results[0]?.id
-  const selectRun = (run: StudioRun, selectedId = run.results[0]?.id || '') => {
-    setActiveId(run.id)
-    setActiveResultId(selectedId)
+  const selectRun = (run: StudioRun, resultId?: string) => {
+    setSelection({ runId: run.id, resultId })
   }
   const removed = async () => {
     await client.invalidateQueries({ queryKey: ['image-studio', 'runs'] })
@@ -154,8 +161,7 @@ function StudioWorkspace(props: {
         queryKey: ['image-studio', 'run', props.userId, selected.id],
       })
     } else {
-      setActiveId('')
-      setActiveResultId('')
+      setSelection({})
       if (page > 1) setPage(page - 1)
     }
   }
@@ -164,43 +170,61 @@ function StudioWorkspace(props: {
       authenticated={Boolean(props.userId)}
       settings={props.settings}
       keys={props.keys}
-      disabled={current.data?.status === 'running'}
-      onNewCreation={() => {
-        setActiveId('')
-        setActiveResultId('')
-      }}
+      runningCount={runningCount}
+      onNewCreation={() => setSelection({})}
       onGenerated={(run) => {
+        trackRun(run)
+        setPage(1)
+        setHistoryTab('generated')
         client.setQueryData(['image-studio', 'run', props.userId, run.id], run)
-        selectRun(run)
+        setSelection({})
         void client.invalidateQueries({ queryKey: ['image-studio', 'runs'] })
       }}
     >
-      {(generating, reusePrompt) => ({
-        hasResults: Boolean(runId),
+      {(actions) => ({
         canvas: (
           <div
-            className='min-w-0 [&>section:not(.studio-welcome)]:py-2'
+            className='flex min-h-0 min-w-0 flex-1 flex-col outline-none'
             ref={galleryRef}
             tabIndex={-1}
             role='group'
             aria-label={t('Generation results')}
           >
-            {current.isError && <p role='alert'>{t('Failed to load data')}</p>}
-            {current.isPending && runId && (
-              <p role='status'>{t('Loading...')}</p>
+            {!selectedUpload && current.isError && (
+              <p role='alert' className='m-auto p-6 text-sm'>
+                {t('Failed to load data')}
+              </p>
             )}
-            <StudioGallery
-              run={current.data}
-              resultId={resultId}
-              ownerName={ownerName}
-              onReusePrompt={reusePrompt}
-              reuseDisabled={
-                !props.settings.enabled || generating || Boolean(saveTarget)
-              }
-              onSave={setSaveTarget}
-              saving={Boolean(saveTarget) || generating}
-              maxPromptCharacters={props.settings.max_prompt_characters}
-            />
+            {!selectedUpload && current.isPending && runId && (
+              <p role='status' className='text-muted-foreground m-auto p-6'>
+                {t('Loading...')}
+              </p>
+            )}
+            {selectedUpload ? (
+              <StudioReferencePreview
+                reference={selectedUpload}
+                disabled={!actions.canAddReference}
+                onUse={() => actions.useReference(selectedUpload)}
+                onPreview={actions.preview}
+              />
+            ) : (
+              (!runId || current.data) && (
+                <StudioGallery
+                  run={current.data}
+                  resultId={resultId}
+                  onReusePrompt={actions.reusePrompt}
+                  onPreview={actions.preview}
+                  reuseDisabled={
+                    !props.settings.enabled ||
+                    actions.generating ||
+                    Boolean(saveTarget)
+                  }
+                  onSave={setSaveTarget}
+                  saving={Boolean(saveTarget) || actions.generating}
+                  maxPromptCharacters={props.settings.max_prompt_characters}
+                />
+              )
+            )}
             {saveTarget && (
               <StudioSaveDialog
                 result={saveTarget}
@@ -211,13 +235,30 @@ function StudioWorkspace(props: {
         ),
         history: (
           <StudioHistory
+            tab={historyTab}
+            onTabChange={setHistoryTab}
             authenticated={Boolean(props.userId)}
             runs={runs}
             page={page}
             runId={runId}
             resultId={resultId}
-            disabled={generating || Boolean(saveTarget)}
+            disabled={actions.generating || Boolean(saveTarget)}
+            uploadId={selectedUpload?.id}
+            referenceIds={actions.referenceIds}
+            canAddReference={actions.canAddReference}
+            uploading={actions.uploading}
+            onUpload={actions.uploadReferences}
+            onUseReference={actions.useReference}
+            onSelectUpload={(reference) => {
+              setSelection({ upload: reference })
+              actions.preview()
+              requestAnimationFrame(() => {
+                galleryRef.current?.scrollIntoView({ block: 'start' })
+                galleryRef.current?.focus({ preventScroll: true })
+              })
+            }}
             onSelect={(run, id) => {
+              actions.preview()
               selectRun(run, id)
               galleryRef.current?.scrollIntoView({ block: 'start' })
               galleryRef.current?.focus({ preventScroll: true })

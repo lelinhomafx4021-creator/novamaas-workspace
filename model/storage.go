@@ -117,6 +117,19 @@ type StorageObject struct {
 	DeletedAt        int64  `json:"deleted_at" gorm:"bigint;index"`
 }
 
+func ListImageStudioReferenceObjects(ctx context.Context, userID int, page *common.PageInfo) ([]StorageObject, int64, error) {
+	query := DB.WithContext(ctx).Model(&StorageObject{}).
+		Where("owner_user_id = ? AND purpose = ? AND status = ? AND delete_after > ?",
+			userID, StorageObjectPurposeImageStudioReference, StorageObjectStatusUploaded, common.GetTimestamp())
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var objects []StorageObject
+	err := query.Order("id desc").Offset(page.GetStartIdx()).Limit(page.GetPageSize()).Find(&objects).Error
+	return objects, total, err
+}
+
 func (profile *StorageProfile) BeforeCreate(_ *gorm.DB) error {
 	now := common.GetTimestamp()
 	if profile.CreatedAt == 0 {
@@ -163,12 +176,6 @@ func (object *StorageObject) BeforeCreate(_ *gorm.DB) error {
 	now := common.GetTimestamp()
 	if object.CreatedAt == 0 {
 		object.CreatedAt = now
-	}
-	if object.Purpose == StorageObjectPurposeImageStudio && object.DeleteAfter == 0 {
-		object.DeleteAfter = object.CreatedAt + ImageStudioRetentionSeconds
-	}
-	if object.Purpose == StorageObjectPurposeImageStudioReference && object.DeleteAfter == 0 {
-		object.DeleteAfter = object.CreatedAt + 7*24*60*60
 	}
 	object.UpdatedAt = now
 	return nil

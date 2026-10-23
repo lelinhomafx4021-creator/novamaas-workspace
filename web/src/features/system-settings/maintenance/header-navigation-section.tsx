@@ -47,7 +47,6 @@ import {
   type HeaderNavModulesConfig,
   serializeHeaderNavModules,
 } from './config'
-import { ImageStudioSettingsField } from './image-studio-settings-field'
 
 const headerNavSchema = z.object({
   home: z.boolean(),
@@ -188,6 +187,13 @@ export function HeaderNavigationSection({
       title: t('About'),
       description: t('Static page describing the platform.'),
     },
+    {
+      key: 'imageStudioEnabled',
+      title: t('Image creation'),
+      description: t(
+        'Show image creation in the application center. Disabling it also stops access and generation.'
+      ),
+    },
   ]
 
   const accessModules: Array<{
@@ -268,7 +274,6 @@ export function HeaderNavigationSection({
                 )}
               />
             ))}
-            <ImageStudioSettingsField />
           </div>
 
           <div className='grid gap-4 lg:grid-cols-2'>

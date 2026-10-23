@@ -16,26 +16,56 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { Delete02Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { hasPermission } from '@/lib/admin-permissions'
+import { useAuthStore } from '@/stores/auth-store'
 
-import { listStudioRuns } from '../api'
+import { deleteStudioRun, listStudioRuns } from '../api'
+import type { StudioRun, StudioRunList } from '../types'
 import { StudioGallery } from './studio-gallery'
-import { StudioRunPagination } from './studio-history'
+import { StudioDeleteDialog, StudioRunPagination } from './studio-history'
 
 export function StudioReview() {
   const { t } = useTranslation()
+  const client = useQueryClient()
+  const canDelete = useAuthStore((state) =>
+    hasPermission(state.auth.user, 'image_studio', 'write')
+  )
+  const [deleteTarget, setDeleteTarget] = useState<StudioRun>()
   const [page, setPage] = useState(1)
   const [userId, setUserId] = useState(0)
   const runs = useQuery({
     queryKey: ['image-studio', 'review', userId, page],
     queryFn: () => listStudioRuns(page, 12, 'all', userId),
     placeholderData: keepPreviousData,
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteStudioRun(id, undefined, 'all'),
+    onSuccess: async () => {
+      setDeleteTarget(undefined)
+      await client.invalidateQueries({ queryKey: ['image-studio'] })
+      const refreshed = client.getQueryData<StudioRunList>([
+        'image-studio',
+        'review',
+        userId,
+        page,
+      ])
+      if (!refreshed?.items.length && page > 1) setPage(page - 1)
+    },
   })
 
   return (
@@ -95,17 +125,55 @@ export function StudioReview() {
         )}
         {!runs.isPlaceholderData &&
           runs.data?.items.map((run) => (
-            <StudioGallery
-              key={run.id}
-              run={run}
-              ownerName={
-                runs.data?.users?.find((user) => user.id === run.owner_user_id)
-                  ?.name
-              }
-              compact
-            />
+            <article key={run.id} className='flex min-w-0 flex-col gap-2'>
+              <StudioGallery
+                run={run}
+                ownerName={
+                  runs.data?.users?.find(
+                    (user) => user.id === run.owner_user_id
+                  )?.name
+                }
+                compact
+              />
+              {canDelete && (
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='text-destructive self-end'
+                  aria-label={t('Delete record')}
+                  disabled={run.status === 'running' || remove.isPending}
+                  onClick={() => {
+                    remove.reset()
+                    setDeleteTarget(run)
+                  }}
+                >
+                  <HugeiconsIcon icon={Delete02Icon} aria-hidden='true' />
+                  {t('Delete record')}
+                </Button>
+              )}
+            </article>
           ))}
       </div>
+      <StudioDeleteDialog
+        open={Boolean(deleteTarget)}
+        busy={remove.isPending}
+        title={t('Delete record')}
+        description={t(
+          'Delete this reviewed generation record? Asset library copies will be kept. This action is audited and cannot be undone.'
+        )}
+        error={remove.error}
+        onClose={() => setDeleteTarget(undefined)}
+      >
+        <Button
+          variant='destructive'
+          disabled={remove.isPending || !deleteTarget}
+          onClick={() => {
+            if (deleteTarget) remove.mutate(deleteTarget.id)
+          }}
+        >
+          {remove.isPending ? t('Deleting...') : t('Delete')}
+        </Button>
+      </StudioDeleteDialog>
       <StudioRunPagination
         page={page}
         runs={runs}

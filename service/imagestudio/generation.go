@@ -41,6 +41,13 @@ type RunRequest struct {
 	ReferenceIDs []string `json:"reference_ids,omitempty"`
 }
 
+// allowedImageSizes bounds the size the studio forwards. Size changes the
+// upstream price, so only the aspect presets the UI offers are accepted.
+var allowedImageSizes = map[string]bool{
+	"auto": true, "1024x1024": true, "1536x1024": true, "1024x1536": true,
+	"1792x1024": true, "1024x1792": true,
+}
+
 type RunInput struct {
 	TokenID        int        `json:"token_id"`
 	IdempotencyKey string     `json:"idempotency_key"`
@@ -67,6 +74,9 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 	request.Model = strings.TrimSpace(request.Model)
 	request.Prompt = strings.TrimSpace(request.Prompt)
 	request.Size = strings.TrimSpace(request.Size)
+	if request.Size != "" && !allowedImageSizes[request.Size] {
+		return nil, false, &RequestError{http.StatusBadRequest, "invalid_size", errors.New("unsupported image size")}
+	}
 	if request.Model == "" {
 		return nil, false, &RequestError{http.StatusBadRequest, "model_required", errors.New("model is required")}
 	}
@@ -86,20 +96,22 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 	if err = validateModel(userID, token, request.Model, types.EndpointTypeImageGeneration); err != nil {
 		return nil, false, err
 	}
-	if _, _, _, err = storageService.ResolveEnabledPolicy(model.StoragePolicyAssetLibrary); err != nil {
-		return nil, false, &RequestError{http.StatusServiceUnavailable, "image_storage_unavailable", errors.New("image storage is unavailable; enable permanent asset storage before generating")}
+	if _, _, _, err = storageService.ResolveEnabledPolicy(model.StorageObjectPurposeImageStudio); err != nil {
+		return nil, false, &RequestError{http.StatusServiceUnavailable, "image_storage_unavailable", errors.New("image storage is unavailable; configure image creation storage before generating")}
 	}
 	imageRequest := dto.ImageRequest{Model: request.Model, Prompt: request.Prompt, N: request.N, Size: request.Size}
+	path := "/v1/images/generations"
 	if len(request.ReferenceIDs) > 0 {
-		urls := make([]string, 0, len(request.ReferenceIDs))
+		path = "/v1/images/edits"
+		images := make([]map[string]string, 0, len(request.ReferenceIDs))
 		for _, id := range request.ReferenceIDs {
 			value, signErr := storageService.PresignImageStudioReference(execution.Context, id, userID)
 			if signErr != nil {
 				return nil, false, &RequestError{http.StatusBadRequest, "reference_unavailable", errors.New("A reference image has expired or is unavailable. Please upload it again.")}
 			}
-			urls = append(urls, value)
+			images = append(images, map[string]string{"image_url": value})
 		}
-		imageRequest.Image, err = common.Marshal(urls)
+		imageRequest.Images, err = common.Marshal(images)
 		if err != nil {
 			return nil, false, err
 		}
@@ -107,6 +119,13 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 	body, err := common.Marshal(imageRequest)
 	if err != nil {
 		return nil, false, err
+	}
+	running, err := model.CountRunningImageStudioRuns(userID)
+	if err != nil {
+		return nil, false, err
+	}
+	if running >= operation_setting.ImageStudioMaxRunningPerUser {
+		return nil, false, &RequestError{http.StatusTooManyRequests, "too_many_running_runs", fmt.Errorf("up to %d images can be generating at once; wait for one to finish", operation_setting.ImageStudioMaxRunningPerUser)}
 	}
 	run := &model.ImageStudioRun{
 		UserID: userID, IdempotencyKey: key, TokenID: token.Id,
@@ -119,14 +138,40 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 		}
 		return nil, false, err
 	}
-	ctx, cancel := context.WithTimeout(execution.Context, 4*time.Minute)
-	defer cancel()
-	execution.Context = ctx
 	if len(original) == 0 {
 		original = body
 	}
-	result := relay(execution, token, "/v1/images/generations", body, types.RelayFormatOpenAIImage, &RequestSnapshot{RunID: run.ID, Original: original})
+	// Generation continues after the response so the user can queue more runs;
+	// clients poll the run until it leaves the running state.
+	view := &RunView{ImageStudioRun: *run, Results: make([]ResultView, 0)}
+	background := execution
+	background.Context = context.WithoutCancel(execution.Context)
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				common.SysError(fmt.Sprintf("image studio run %d panicked", run.ID))
+				_ = model.DB.Model(&model.ImageStudioRun{}).
+					Where("id = ? AND status = ?", run.ID, model.ImageStudioRunStatusRunning).
+					Updates(map[string]any{
+						"status": model.ImageStudioRunStatusFailed, "error_message": "image generation failed", "updated_at": common.GetTimestamp(),
+					}).Error
+			}
+		}()
+		if err := executeRun(background, userID, token, run, path, body, original, relay); err != nil {
+			common.SysLog(fmt.Sprintf("image studio run %d failed: %v", run.ID, err))
+		}
+	}()
+	return view, false, nil
+}
+
+// executeRun relays a recorded running run, stores its images and finishes it.
+func executeRun(execution RelayContext, userID int, token *model.Token, run *model.ImageStudioRun, path string, body, original []byte, relay RelayExecutor) error {
+	ctx, cancel := context.WithTimeout(execution.Context, 4*time.Minute)
+	defer cancel()
+	execution.Context = ctx
+	result := relay(execution, token, path, body, types.RelayFormatOpenAIImage, &RequestSnapshot{RunID: run.ID, Original: original})
 	run.RequestID = result.RequestID
+	run.ChannelID = result.ChannelID
 	run.DurationMS = result.DurationMS
 	run.Quota = quotaForRequest(result.RequestID, userID)
 	results, generationErr := uploadImages(execution.Context, run, result)
@@ -137,29 +182,20 @@ func CreateRun(execution RelayContext, userID int, input RunInput, original []by
 	} else if generationErr != nil {
 		run.ErrorMessage = CleanErrorMessage(generationErr.Error())
 	}
-	if err = model.FinishImageStudioRun(run, results); err != nil {
+	if err := model.FinishImageStudioRun(run, results); err != nil {
 		// The results were not recorded, so their objects go to the cleanup queue.
 		for _, record := range results {
 			_ = storageService.DeleteAssetObject(record.StorageObjectID, "record generated image failed")
 		}
 		if errors.Is(err, model.ErrImageStudioRunFinished) {
-			var current model.ImageStudioRun
-			if findErr := model.DB.First(&current, run.ID).Error; findErr != nil {
-				return nil, false, findErr
-			}
-			return replayRun(execution.Context, &current)
+			return nil
 		}
-		return nil, false, err
+		return err
 	}
 	if run.Status == model.ImageStudioRunStatusFailed {
-		status := http.StatusBadGateway
-		if result.StatusCode >= http.StatusBadRequest && result.StatusCode < http.StatusInternalServerError {
-			status = result.StatusCode
-		}
-		return nil, false, &RequestError{status, "generation_failed", errors.New(run.ErrorMessage)}
+		return errors.New(run.ErrorMessage)
 	}
-	view, err := buildRunView(execution.Context, run)
-	return view, false, err
+	return nil
 }
 
 func replayRun(ctx context.Context, run *model.ImageStudioRun) (*RunView, bool, error) {

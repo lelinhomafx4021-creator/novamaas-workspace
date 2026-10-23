@@ -33,6 +33,7 @@ func TestImageStudioPublicSurfaceKeepsModelsAndPersonalDataAuthenticated(t *test
 	assert.Equal(t, map[string]any{
 		"enabled":               operation_setting.GetImageStudioSetting().Enabled,
 		"max_images":            float64(operation_setting.ImageStudioMaxImages),
+		"max_running_runs":      float64(operation_setting.ImageStudioMaxRunningPerUser),
 		"max_prompt_characters": float64(operation_setting.ImageStudioMaxPromptCharacters),
 		"max_reference_images":  float64(studioService.MaxReferenceImages),
 		"max_reference_bytes":   float64(studioService.MaxReferenceImageBytes),
@@ -40,6 +41,9 @@ func TestImageStudioPublicSurfaceKeepsModelsAndPersonalDataAuthenticated(t *test
 	for _, route := range []struct{ method, path string }{
 		{http.MethodGet, "/models"},
 		{http.MethodGet, "/runs"},
+		{http.MethodGet, "/runs/poll"},
+		{http.MethodGet, "/references"},
+		{http.MethodGet, "/logs"},
 		{http.MethodGet, "/runs/private-run"},
 		{http.MethodPost, "/runs"},
 		{http.MethodPost, "/prompt-assist"},

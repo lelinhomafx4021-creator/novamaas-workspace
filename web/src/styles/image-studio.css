@@ -9,35 +9,37 @@ body:has(.studio-shell)
     [data-slot='alert-dialog-content']
   ) {
   color-scheme: dark;
-  --background: #0b0e14;
-  --foreground: #edf2fa;
-  --card: #111620;
-  --card-foreground: #edf2fa;
-  --popover: #151c28;
-  --popover-foreground: #edf2fa;
-  --primary: #b7dbff;
-  --primary-foreground: #102237;
-  --secondary: #1c293b;
-  --secondary-foreground: #dcecff;
-  --muted: #192230;
-  --muted-foreground: #98a6bc;
-  --accent: #1d2a3e;
-  --accent-foreground: #edf2fa;
-  --border: #263040;
-  --input: #354154;
-  --ring: #9acbff;
-  --destructive: #ff929d;
-  --studio-surface: #0f141e;
-  --studio-subtle-border: #1e2735;
-  --studio-panel: #131b28;
-  --studio-panel-border: #39475b;
-  --studio-history-item: #111a27;
-  --studio-selection: #1b2c42;
-  --studio-hover-border: #536985;
-  --studio-title: #f3f6fd;
-  --studio-eyebrow: #c1d3eb;
-  --studio-description: #b4c0d1;
-  --studio-soft-text: #d0dbea;
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --card: #111113;
+  --card-foreground: #f4f4f5;
+  --popover: #141417;
+  --popover-foreground: #f4f4f5;
+  --primary: #f4f4f5;
+  --primary-foreground: #09090b;
+  --secondary: #1c1c21;
+  --secondary-foreground: #e4e4e7;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #1f1f25;
+  --accent-foreground: #f4f4f5;
+  --border: #27272a;
+  --input: #2e2e33;
+  --ring: #a78bfa;
+  --destructive: #f87171;
+  --studio-accent: #a78bfa;
+  --studio-accent-soft: #a78bfa1f;
+  --studio-surface: #0c0c0e;
+  --studio-subtle-border: #1f1f23;
+  --studio-panel: #121215;
+  --studio-panel-border: #2a2a30;
+  --studio-history-item: #111114;
+  --studio-selection: #a78bfa14;
+  --studio-hover-border: #3f3f46;
+  --studio-title: #fafafa;
+  --studio-eyebrow: #c4b5fd;
+  --studio-description: #a1a1aa;
+  --studio-soft-text: #d4d4d8;
   --font-body:
     'Public Sans Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-heading: var(--font-body);
@@ -47,92 +49,112 @@ body:has(.studio-shell)
 }
 
 /* Shared studio variants for existing UI primitives. */
+.studio-shell [data-slot='tabs-trigger'] {
+  font-size: 0.8125rem;
+}
 .studio-composer-actions [data-slot='button'] {
   @apply text-xs;
 }
 .studio-history-empty [data-slot='empty-icon'] {
-  @apply text-muted-foreground mb-3 size-11 rounded-xl border;
-  background: linear-gradient(140deg, var(--secondary), var(--studio-surface));
+  @apply text-muted-foreground mb-3 size-11 rounded-xl border bg-(--studio-panel);
 }
 .studio-history-empty [data-slot='empty-title'] {
-  @apply text-xs font-normal text-(--studio-soft-text);
+  @apply text-sm font-medium text-(--studio-soft-text);
 }
 .studio-history-empty [data-slot='empty-description'] {
-  @apply text-[11px] leading-[1.9];
+  @apply text-xs leading-relaxed;
 }
 .studio-history-empty > a {
-  @apply mt-1.5 text-[11px];
+  @apply mt-1.5 text-xs;
 }
 
-.studio-center {
+/* Quiet ambient light behind a bounded, independent particle canvas. */
+.studio-stage {
+  isolation: isolate;
   background:
-    radial-gradient(ellipse at 50% 0%, #14203366, transparent 65%),
-    var(--background);
+    radial-gradient(ellipse 45% 32% at 50% 36%, #6250bd1c, transparent 100%),
+    radial-gradient(ellipse 70% 45% at 50% 0%, #263b6026, transparent 100%),
+    linear-gradient(180deg, #0b0d15, #090a10 65%, #09090d);
+  box-shadow: inset 0 1px #c4b5fd14;
+}
+.studio-particles {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.studio-title-gradient {
+  background: linear-gradient(100deg, #c4b5fd 0%, #f0abfc 45%, #fcd34d 100%);
+  background-clip: text;
+  color: transparent;
 }
 .studio-composer {
   box-shadow:
-    0 8px 36px #00000033,
-    inset 0 1px #ffffff06;
+    0 24px 60px -24px #000000b3,
+    0 0 0 1px #ffffff05 inset;
 }
-.studio-composer button[type='submit'] {
-  box-shadow: 0 0 18px #b7dbff10;
+.studio-composer:focus-within {
+  box-shadow:
+    0 24px 60px -24px #000000b3,
+    0 0 0 4px var(--studio-accent-soft);
+}
+.studio-generate {
+  background: linear-gradient(135deg, #ede9fe, #f5f5f4);
+  box-shadow: 0 6px 24px -8px #a78bfa80;
+}
+.studio-generate:not(:disabled):hover {
+  background: linear-gradient(135deg, #ddd6fe, #e7e5e4);
 }
 .image-studio-theme .studio-prompt-input {
+  field-sizing: content;
+  min-height: 2.25rem;
+  max-height: min(10rem, 22svh);
   background: transparent;
   box-shadow: none;
 }
-.studio-prompt-input::placeholder {
-  color: #8999b0;
+.image-studio-theme .studio-prompt-expanded {
+  field-sizing: fixed;
+  height: 32svh;
+  max-height: 32svh;
 }
-.studio-hero-art {
-  mask-image: radial-gradient(ellipse at 68% 48%, #000 32%, transparent 74%);
-  mix-blend-mode: screen;
+.studio-composer-help {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 160ms ease,
+    opacity 160ms ease;
+}
+.studio-composer-help > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.studio-composer:is(:focus-within, [data-has-prompt='true'])
+  .studio-composer-help {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.studio-prompt-input::placeholder {
+  color: #71717a;
+}
+.studio-example-card:nth-child(1) .studio-example-icon {
+  color: #93c5fd;
+  background: #93c5fd14;
 }
 .studio-example-card:nth-child(2) .studio-example-icon {
-  color: #efbd99;
+  color: #f9a8d4;
+  background: #f9a8d414;
 }
 .studio-example-card:nth-child(3) .studio-example-icon {
-  color: #c8c1f3;
+  color: #c4b5fd;
+  background: #c4b5fd14;
 }
 .studio-example-card:nth-child(4) .studio-example-icon {
-  color: #b9d3c4;
+  color: #86efac;
+  background: #86efac14;
 }
-
-@media (width >= 768px) and (height < 760px) {
-  .studio-center {
-    padding-block: 1.5rem;
-  }
-  .studio-hero {
-    min-height: 11rem;
-  }
-  .studio-hero-copy {
-    gap: 0.75rem;
-    padding-block: 0.5rem;
-  }
-  .studio-hero h2 {
-    font-size: 2rem;
-  }
-  .studio-hero-art {
-    object-fit: contain;
-  }
-}
-
-@media (width >= 1200px) and (height >= 760px) {
-  .studio-center:has(.studio-result-viewport) {
-    overflow: hidden;
-  }
-  .studio-result-viewport {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    container-type: size;
-  }
-  .studio-result-viewport .studio-result-frame {
-    width: min(100%, max(16rem, calc((100cqh - 6rem) * 4 / 3)));
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .image-studio-theme *,
   .image-studio-theme *::before,

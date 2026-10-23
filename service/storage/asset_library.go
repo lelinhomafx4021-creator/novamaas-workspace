@@ -118,7 +118,14 @@ func presignPermanentObject(ctx context.Context, object *model.StorageObject, tt
 		return "", err
 	}
 	if ttl <= 0 {
-		policy, policyErr := model.GetStoragePolicyByKey(model.StoragePolicyAssetLibrary)
+		var policy *model.StoragePolicy
+		var policyErr error
+		if object.StoragePolicyID > 0 {
+			policy = &model.StoragePolicy{}
+			policyErr = model.DB.First(policy, object.StoragePolicyID).Error
+		} else {
+			policy, policyErr = model.GetStoragePolicyByKey(model.StoragePolicyAssetLibrary)
+		}
 		if policyErr != nil || policy == nil {
 			return "", fmt.Errorf("asset storage policy is unavailable")
 		}

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 export type StudioSettings = {
   enabled: boolean
   max_images: number
+  max_running_runs: number
   max_prompt_characters: number
   max_reference_images: number
   max_reference_bytes: number
@@ -28,9 +29,12 @@ export type StudioReference = {
   id: string
   url: string
   expires_at: number
+  created_at?: number
 }
 
-export type StudioRunStatus = 'running' | 'completed' | 'failed'
+export type StudioReferenceList = { items: StudioReference[]; total: number }
+
+type StudioRunStatus = 'running' | 'completed' | 'failed'
 
 export type StudioResult = {
   id: string
@@ -77,13 +81,21 @@ export type StudioRunList = {
   users?: { id: number; name: string }[]
 }
 
+export type StudioImageSize =
+  | 'auto'
+  | '1024x1024'
+  | '1536x1024'
+  | '1024x1536'
+  | '1792x1024'
+  | '1024x1792'
+
 export type CreateStudioRunInput = {
   token_id: number
   idempotency_key: string
   request: {
     model: string
     prompt: string
-    size?: string
+    size?: StudioImageSize
     reference_ids?: string[]
   }
 }

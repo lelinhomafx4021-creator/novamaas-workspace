@@ -88,9 +88,9 @@ const (
 	// Synchronous request audit. The caller registers a recorder that receives
 	// the final upstream body before it is sent; a recorder error aborts the
 	// request so every accepted call has an archived snapshot. The recorder
-	// then stores the authz resource required to read that snapshot.
+	// then marks the snapshot as available for the request log.
 	ContextKeyUpstreamRequestRecorder ContextKey = "upstream_request_recorder"
-	ContextKeyRequestSnapshotResource ContextKey = "request_snapshot_resource"
+	ContextKeyRequestSnapshotStored   ContextKey = "request_snapshot_stored"
 
 	// ContextKeyAdminRejectReason stores an admin-only reject/block reason extracted from upstream responses.
 	// It is not returned to end users, but can be persisted into consume/error logs for debugging.

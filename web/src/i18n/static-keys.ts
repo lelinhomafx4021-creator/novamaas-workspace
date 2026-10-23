@@ -816,4 +816,7 @@ export const STATIC_I18N_KEYS = [
   'This user account is disabled.',
   'Telegram binding failed. Please try again.',
   'Verification scope is missing',
+  'Delete reviewed images',
+  'Review generated images',
+  "Delete other users' generated images from image review. Deletions are audited.",
 ] as const

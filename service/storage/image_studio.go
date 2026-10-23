@@ -13,8 +13,36 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-// UploadImageStudioObject uses the asset library's storage connection for a
-// generated image, with a separate 30-day lifetime and no library asset.
+func GetImageStudioPolicy(purpose string) (*model.StoragePolicy, error) {
+	if purpose != model.StorageObjectPurposeImageStudio && purpose != model.StorageObjectPurposeImageStudioReference {
+		return nil, &RequestError{StatusCode: 400, Err: errors.New("invalid image studio storage purpose")}
+	}
+	policy, err := model.GetStoragePolicyByKey(purpose)
+	if err == nil && policy == nil {
+		policy = model.DefaultImageStudioStoragePolicy(purpose)
+	}
+	return policy, err
+}
+
+func SaveImageStudioPolicy(purpose string, input PolicyInput) (*model.StoragePolicy, error) {
+	policy, err := GetImageStudioPolicy(purpose)
+	if err != nil {
+		return nil, err
+	}
+	policy.StorageProfileID, policy.Enabled = input.StorageProfileID, input.Enabled
+	policy.ObjectPrefix = strings.Trim(strings.TrimSpace(input.ObjectPrefix), "/")
+	policy.SignedURLTTLSeconds, policy.RetentionSeconds = input.SignedURLTTLSeconds, input.RetentionSeconds
+	policy.MaxFileBytes, policy.MaxTotalBytes = input.MaxFileBytes, input.MaxFileBytes
+	if input.RetentionSeconds < 3600 || input.MaxFileBytes > model.DefaultImageStudioStoragePolicy(purpose).MaxFileBytes {
+		return nil, &RequestError{StatusCode: 400, Err: errors.New("retention must be at least one hour and file size must not exceed the image studio limit")}
+	}
+	if err := validatePolicy(policy); err != nil {
+		return nil, &RequestError{StatusCode: 400, Err: err}
+	}
+	return policy, model.SaveStoragePolicy(policy)
+}
+
+// Generated images and references have independent business storage policies.
 func UploadImageStudioObject(ctx context.Context, ownerUserID int, runID string, resultID string, contentType string, data []byte) (*model.StorageObject, error) {
 	return uploadImageStudioObject(ctx, ownerUserID, runID, resultID, model.StorageObjectPurposeImageStudio, contentType, data)
 }
@@ -24,7 +52,7 @@ func UploadImageStudioReference(ctx context.Context, ownerUserID int, contentTyp
 }
 
 func uploadImageStudioObject(ctx context.Context, ownerUserID int, runID, resultID, purpose, contentType string, data []byte) (*model.StorageObject, error) {
-	policy, profile, credential, err := ResolveEnabledPolicy(model.StoragePolicyAssetLibrary)
+	policy, profile, credential, err := ResolveEnabledPolicy(purpose)
 	if err != nil {
 		return nil, &RequestError{StatusCode: 503, Err: fmt.Errorf("permanent storage is unavailable: %w", err)}
 	}
@@ -52,6 +80,7 @@ func uploadImageStudioObject(ctx context.Context, ownerUserID int, runID, result
 		ContentType:      contentType,
 		Size:             size,
 		Status:           model.StorageObjectStatusUploading,
+		DeleteAfter:      common.GetTimestamp() + policy.RetentionSeconds,
 	}
 	if err = model.CreateStorageObject(object); err != nil {
 		return nil, err
@@ -92,13 +121,8 @@ func PresignImageStudioReference(ctx context.Context, objectID string, ownerUser
 func PresignImageStudioObject(ctx context.Context, objectID int64, ownerUserID int, mode AssetObjectURLMode, downloadName string) (string, error) {
 	var object model.StorageObject
 	if err := model.DB.Where("id = ? AND owner_user_id = ? AND purpose = ? AND status = ?",
-		objectID, ownerUserID, model.StorageObjectPurposeImageStudio, model.StorageObjectStatusUploaded).
-		Where("created_at > ?", common.GetTimestamp()-model.ImageStudioRetentionSeconds).First(&object).Error; err != nil {
+		objectID, ownerUserID, model.StorageObjectPurposeImageStudio, model.StorageObjectStatusUploaded).First(&object).Error; err != nil {
 		return "", err
-	}
-	expiresAt := object.CreatedAt + model.ImageStudioRetentionSeconds
-	if object.DeleteAfter == 0 || object.DeleteAfter > expiresAt {
-		object.DeleteAfter = expiresAt
 	}
 	if mode == AssetObjectURLDownload && assetExtension(object.ContentType) == "" {
 		return "", errors.New("invalid image download type")

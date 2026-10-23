@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -28,10 +29,47 @@ const (
 // InitializeImageStudioRetention schedules existing generated images without
 // changing explicit deletion requests or permanent asset library copies.
 func InitializeImageStudioRetention(db *gorm.DB) error {
+	var legacy StoragePolicy
+	err := db.Where(map[string]any{"key": StoragePolicyAssetLibrary}).First(&legacy).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	for _, purpose := range []string{StorageObjectPurposeImageStudio, StorageObjectPurposeImageStudioReference} {
+		policy := DefaultImageStudioStoragePolicy(purpose)
+		if legacy.ID > 0 {
+			policy.StorageProfileID, policy.Enabled = legacy.StorageProfileID, legacy.Enabled
+			policy.SignedURLTTLSeconds = min(legacy.SignedURLTTLSeconds, policy.RetentionSeconds)
+		}
+		// Seed once; never follow later asset-library policy edits.
+		if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoNothing: true}).Create(policy).Error; err != nil {
+			return err
+		}
+	}
 	return db.Model(&StorageObject{}).
 		Where("purpose = ? AND delete_after = 0 AND status IN ?", StorageObjectPurposeImageStudio,
 			[]string{StorageObjectStatusUploading, StorageObjectStatusUploaded}).
 		Update("delete_after", gorm.Expr("created_at + ?", ImageStudioRetentionSeconds)).Error
+}
+
+func DefaultImageStudioStoragePolicy(purpose string) *StoragePolicy {
+	retention, maxBytes := ImageStudioRetentionSeconds, int64(64<<20)
+	if purpose == StorageObjectPurposeImageStudioReference {
+		retention, maxBytes = 7*24*3600, 20<<20
+	}
+	return &StoragePolicy{Key: purpose, Name: purpose, Purpose: purpose,
+		ObjectPrefix: "images/" + purpose, SignedURLTTLSeconds: 24 * 3600,
+		RetentionSeconds: retention, MaxFileBytes: maxBytes, MaxTotalBytes: maxBytes, MaxFiles: 1,
+		AllowedMIMETypes: "image/jpeg,image/png,image/webp"}
+}
+
+// CountRunningImageStudioRuns counts a user's generations that are still within
+// the stale window; interrupted runs no longer occupy a slot.
+func CountRunningImageStudioRuns(userID int) (int64, error) {
+	var count int64
+	err := DB.Model(&ImageStudioRun{}).
+		Where("user_id = ? AND status = ? AND created_at > ?", userID, ImageStudioRunStatusRunning, common.GetTimestamp()-ImageStudioRunStaleSeconds).
+		Count(&count).Error
+	return count, err
 }
 
 var (
@@ -45,6 +83,7 @@ type ImageStudioRun struct {
 	UserID         int    `json:"owner_user_id" gorm:"uniqueIndex:idx_image_studio_runs_user_key,priority:1;index:idx_image_studio_runs_user_created,priority:1"`
 	IdempotencyKey string `json:"-" gorm:"type:varchar(128);uniqueIndex:idx_image_studio_runs_user_key,priority:2"`
 	TokenID        int    `json:"-"`
+	ChannelID      int    `json:"-" gorm:"index;default:0"`
 	Model          string `json:"model" gorm:"type:varchar(255)"`
 	Prompt         string `json:"prompt" gorm:"type:text"`
 	Status         string `json:"status" gorm:"type:varchar(16);index"`
@@ -114,13 +153,13 @@ func FailStaleImageStudioRun(run *ImageStudioRun) error {
 // LinkImageStudioRunRequest binds the relay request ID to a running run before
 // its snapshot is archived, so every archived studio snapshot already has an
 // owner run when it becomes readable. Channel retries reuse the same ID.
-func LinkImageStudioRunRequest(runID int64, requestID string) error {
+func LinkImageStudioRunRequest(runID int64, requestID string, channelID int) error {
 	if requestID == "" {
 		return errors.New("relay request ID is missing")
 	}
 	update := DB.Model(&ImageStudioRun{}).
 		Where("id = ? AND status = ? AND request_id IN ?", runID, ImageStudioRunStatusRunning, []string{"", requestID}).
-		Update("request_id", requestID)
+		Updates(map[string]any{"request_id": requestID, "channel_id": channelID})
 	if update.Error != nil {
 		return update.Error
 	}
@@ -145,7 +184,7 @@ func FinishImageStudioRun(run *ImageStudioRun, results []*ImageStudioResult) err
 	return DB.Transaction(func(tx *gorm.DB) error {
 		run.UpdatedAt = common.GetTimestamp()
 		update := tx.Model(&ImageStudioRun{}).Where("id = ? AND status = ?", run.ID, ImageStudioRunStatusRunning).Updates(map[string]any{
-			"status": run.Status, "request_id": run.RequestID, "quota": run.Quota, "duration_ms": run.DurationMS,
+			"status": run.Status, "request_id": run.RequestID, "quota": run.Quota, "duration_ms": run.DurationMS, "channel_id": run.ChannelID,
 			"error_message": run.ErrorMessage, "updated_at": run.UpdatedAt,
 		})
 		if update.Error != nil {
@@ -245,11 +284,16 @@ func DeleteImageStudioResults(tx *gorm.DB, userID int, results []ImageStudioResu
 	return tx.Where("id IN ?", ids).Delete(&ImageStudioResult{}).Error
 }
 
-// FindDeletableImageStudioRun returns an owned completed or failed run.
+// FindDeletableImageStudioRun returns a completed or failed run owned by
+// userID; userID 0 matches any owner for image review.
 func FindDeletableImageStudioRun(userID int, publicID string) (*ImageStudioRun, error) {
 	var run ImageStudioRun
-	err := DB.Where("public_id = ? AND user_id = ? AND status IN ?", publicID, userID,
-		[]string{ImageStudioRunStatusCompleted, ImageStudioRunStatusFailed}).First(&run).Error
+	query := DB.Where("public_id = ? AND status IN ?", publicID,
+		[]string{ImageStudioRunStatusCompleted, ImageStudioRunStatusFailed})
+	if userID > 0 {
+		query = query.Where("user_id = ?", userID)
+	}
+	err := query.First(&run).Error
 	return &run, err
 }
 

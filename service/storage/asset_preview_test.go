@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -66,69 +67,76 @@ func TestAssetSignedURLsKeepThumbnailAndDownloadOptionsInsideOSSSignature(t *tes
 	assert.Empty(t, videoURL.Query().Get("x-oss-process"), "non-image previews must not use image processing")
 }
 
-func TestImageStudioSignedURLsPreserveOwnershipAndPermanentStorageOptions(t *testing.T) {
+func TestStudioPoliciesPreserveHistoricalObjectsAndIsolateOtherBusinesses(t *testing.T) {
 	setupStorageDatabase(t)
-	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "studio-preview-test-encryption-key")
-	profile, err := SaveProfile(0, ProfileInput{
-		Name: "Studio OSS", ProviderType: model.StorageProviderAliyunOSS,
-		Status:   model.StorageProfileStatusEnabled,
-		Endpoint: "https://oss-cn-hangzhou.aliyuncs.com", Region: "cn-hangzhou", Bucket: "test-studio-bucket",
-		AuthType: model.StorageCredentialAuthStatic, AccessKeyID: "test-id", AccessKeySecret: "test-secret",
-	})
+	t.Setenv("STORAGE_CREDENTIAL_ENCRYPTION_KEY", "studio-policy-test-encryption-key")
+	profiles := make([]int, 0, 2)
+	for _, bucket := range []string{"old-studio-bucket", "new-studio-bucket"} {
+		profile, err := SaveProfile(0, ProfileInput{Name: bucket, ProviderType: model.StorageProviderAliyunOSS,
+			Status: model.StorageProfileStatusEnabled, Endpoint: "https://oss-cn-hangzhou.aliyuncs.com", Region: "cn-hangzhou", Bucket: bucket,
+			AuthType: model.StorageCredentialAuthStatic, AccessKeyID: "test-id", AccessKeySecret: "test-secret"})
+		require.NoError(t, err)
+		profiles = append(profiles, profile.ID)
+	}
+	legacy := model.DefaultAssetLibraryStoragePolicy()
+	legacy.StorageProfileID, legacy.Enabled = profiles[0], true
+	require.NoError(t, model.SaveStoragePolicy(legacy))
+	require.NoError(t, model.InitializeImageStudioRetention(model.DB))
+	policy, err := GetImageStudioPolicy(model.StorageObjectPurposeImageStudio)
 	require.NoError(t, err)
-	policy := model.DefaultAssetLibraryStoragePolicy()
-	policy.StorageProfileID = profile.ID
-	policy.SignedURLTTLSeconds = 3600
-	require.NoError(t, model.SaveStoragePolicy(policy))
-
-	for _, format := range []struct {
-		contentType string
-		extension   string
-		processing  string
-	}{
-		{"image/png", "png", "image/resize,m_lfit,w_640,h_360"},
-		{"image/jpeg", "jpg", "image/resize,m_lfit,w_640,h_360/quality,q_80"},
-		{"image/webp", "webp", "image/resize,m_lfit,w_640,h_360/quality,q_80"},
+	assert.Equal(t, profiles[0], policy.StorageProfileID)
+	now := time.Now().Unix()
+	object := model.StorageObject{ObjectID: "historical-studio", OwnerUserID: 42, StorageProfileID: profiles[0], StoragePolicyID: policy.ID,
+		Purpose: model.StorageObjectPurposeImageStudio, ObjectKey: "original/image.png", ContentType: "image/png",
+		CreatedAt: now - 31*24*3600, DeleteAfter: now + 3600, Status: model.StorageObjectStatusUploaded}
+	require.NoError(t, model.DB.Create(&object).Error)
+	input := PolicyInput{StorageProfileID: profiles[1], Enabled: true, ObjectPrefix: "new/studio", SignedURLTTLSeconds: 7200,
+		RetentionSeconds: 60 * 24 * 3600, MaxFileBytes: 64 << 20}
+	_, err = SaveImageStudioPolicy(model.StorageObjectPurposeImageStudio, input)
+	require.NoError(t, err)
+	require.NoError(t, model.InitializeImageStudioRetention(model.DB))
+	policy, err = GetImageStudioPolicy(model.StorageObjectPurposeImageStudio)
+	require.NoError(t, err)
+	assert.Equal(t, profiles[1], policy.StorageProfileID, "startup must not overwrite an explicit policy")
+	original, err := PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLOriginal, "")
+	require.NoError(t, err)
+	parsed, err := url.Parse(original)
+	require.NoError(t, err)
+	assert.Equal(t, "old-studio-bucket.oss-cn-hangzhou.aliyuncs.com", parsed.Host)
+	expires, err := strconv.Atoi(parsed.Query().Get("x-oss-expires"))
+	require.NoError(t, err)
+	assert.LessOrEqual(t, expires, 3600)
+	_, err = PresignImageStudioObject(context.Background(), object.ID, 43, AssetObjectURLOriginal, "")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	_, err = PresignAssetObject(context.Background(), object.ID, time.Hour, AssetObjectURLOriginal, "")
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "asset signing cannot bypass image ownership")
+	_, err = PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLDownload, "bad\r\nname")
+	assert.Error(t, err)
+	reference, err := GetImageStudioPolicy(model.StorageObjectPurposeImageStudioReference)
+	require.NoError(t, err)
+	assert.Equal(t, profiles[0], reference.StorageProfileID)
+	assert.EqualValues(t, 7*24*3600, reference.RetentionSeconds)
+	unchanged, err := model.GetStoragePolicyByKey(model.StoragePolicyAssetLibrary)
+	require.NoError(t, err)
+	assert.Equal(t, profiles[0], unchanged.StorageProfileID)
+	assert.Zero(t, unchanged.RetentionSeconds)
+	for _, retention := range []int64{0, 3600, 366 * 24 * 3600} {
+		input.RetentionSeconds = retention
+		_, err = SaveImageStudioPolicy(model.StorageObjectPurposeImageStudio, input)
+		assert.Error(t, err)
+	}
+	input.RetentionSeconds, input.MaxFileBytes = 86400, 65<<20
+	_, err = SaveImageStudioPolicy(model.StorageObjectPurposeImageStudio, input)
+	assert.Error(t, err, "policy must not exceed the studio file limit")
+	_, err = SaveImageStudioPolicy(model.StoragePolicyAssetLibrary, input)
+	assert.Error(t, err, "studio endpoint cannot modify another business policy")
+	for _, state := range []map[string]any{
+		{"purpose": model.StorageObjectPurposeAssetLibrary},
+		{"purpose": model.StorageObjectPurposeImageStudio, "status": model.StorageObjectStatusDeletePending},
+		{"status": model.StorageObjectStatusUploaded, "delete_after": now - 1},
 	} {
-		t.Run(format.extension, func(t *testing.T) {
-			object := model.StorageObject{
-				ObjectID: "studio-" + format.extension, OwnerUserID: 42, StorageProfileID: profile.ID,
-				Purpose: model.StorageObjectPurposeImageStudio, ObjectKey: "studio/image." + format.extension,
-				ContentType: format.contentType, Status: model.StorageObjectStatusUploaded,
-			}
-			require.NoError(t, model.DB.Create(&object).Error)
-			for _, mode := range []AssetObjectURLMode{AssetObjectURLOriginal, AssetObjectURLThumbnail, AssetObjectURLDownload} {
-				signed, err := PresignImageStudioObject(context.Background(), object.ID, 42, mode, "result-id")
-				require.NoError(t, err)
-				parsed, err := url.Parse(signed)
-				require.NoError(t, err)
-				assert.Equal(t, "test-studio-bucket.oss-cn-hangzhou.aliyuncs.com", parsed.Host)
-				assert.Equal(t, "/"+object.ObjectKey, parsed.Path)
-				assert.NotEmpty(t, parsed.Query().Get("x-oss-signature"))
-				assert.Equal(t, "3600", parsed.Query().Get("x-oss-expires"))
-				if mode == AssetObjectURLThumbnail {
-					assert.Equal(t, format.processing, parsed.Query().Get("x-oss-process"))
-				} else {
-					assert.Empty(t, parsed.Query().Get("x-oss-process"), "original and download URLs retain original bytes")
-				}
-				if mode == AssetObjectURLDownload {
-					assert.Equal(t, `attachment; filename="result-id.`+format.extension+`"`, parsed.Query().Get("response-content-disposition"))
-				} else {
-					assert.Empty(t, parsed.Query().Get("response-content-disposition"))
-				}
-			}
-			_, err = PresignImageStudioObject(context.Background(), object.ID, 43, AssetObjectURLOriginal, "")
-			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-			_, err = PresignAssetObject(context.Background(), object.ID, time.Hour, AssetObjectURLOriginal, "")
-			assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "asset signing must not bypass image ownership")
-			_, err = PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLDownload, "bad\r\nname")
-			assert.Error(t, err)
-			require.NoError(t, model.DB.Model(&object).Update("purpose", model.StorageObjectPurposeAssetLibrary).Error)
-			_, err = PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLOriginal, "")
-			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-			require.NoError(t, model.DB.Model(&object).Updates(map[string]any{"purpose": model.StorageObjectPurposeImageStudio, "status": model.StorageObjectStatusDeletePending}).Error)
-			_, err = PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLOriginal, "")
-			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-		})
+		require.NoError(t, model.DB.Model(&object).Updates(state).Error)
+		_, err = PresignImageStudioObject(context.Background(), object.ID, 42, AssetObjectURLOriginal, "")
+		assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 	}
 }

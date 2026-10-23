@@ -28,10 +28,20 @@ func GetImageStudioSettings(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"enabled":               operation_setting.GetImageStudioSetting().Enabled,
 		"max_images":            operation_setting.ImageStudioMaxImages,
+		"max_running_runs":      operation_setting.ImageStudioMaxRunningPerUser,
 		"max_prompt_characters": operation_setting.ImageStudioMaxPromptCharacters,
 		"max_reference_images":  studioService.MaxReferenceImages,
 		"max_reference_bytes":   studioService.MaxReferenceImageBytes,
 	})
+}
+
+func ListImageStudioReferences(c *gin.Context) {
+	list, err := studioService.ListReferences(c.Request.Context(), c.GetInt("id"), common.GetPageQuery(c))
+	if err != nil {
+		imageStudioError(c, err)
+		return
+	}
+	common.ApiSuccess(c, list)
 }
 
 func UploadImageStudioReference(c *gin.Context) {
@@ -133,6 +143,35 @@ func CreateImageStudioRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": view, "idempotent_replay": replay})
 }
 
+// ListImageStudioLogs remains available when generation is disabled.
+func ListImageStudioLogs(c *gin.Context) {
+	owner := c.GetInt("id")
+	if c.Query("scope") == "all" {
+		if !canReviewImageStudio(c) {
+			return
+		}
+		owner = 0
+	}
+	start, startErr := strconv.ParseInt(c.DefaultQuery("start_timestamp", "0"), 10, 64)
+	end, endErr := strconv.ParseInt(c.DefaultQuery("end_timestamp", "0"), 10, 64)
+	id := strings.TrimSpace(c.Query("filter"))
+	channelID, channelErr := strconv.Atoi(c.DefaultQuery("channel_id", "0"))
+	if channelErr != nil || channelID < 0 || (channelID > 0 && owner > 0) || startErr != nil || endErr != nil || start < 0 || end < 0 || (end > 0 && start > end) || len(id) > 64 {
+		imageStudioError(c, &studioService.RequestError{StatusCode: http.StatusBadRequest, Code: "invalid_log_filter", Err: errors.New("invalid image task log filter")})
+		return
+	}
+	page := common.GetPageQuery(c)
+	page.Page, page.PageSize = max(1, page.Page), max(1, page.PageSize)
+	list, err := studioService.ListTaskLogs(c.Request.Context(), studioService.TaskLogFilter{
+		OwnerUserID: owner, ChannelID: channelID, ID: id, Start: start, End: end, Page: page,
+	})
+	if err != nil {
+		imageStudioError(c, err)
+		return
+	}
+	common.ApiSuccess(c, list)
+}
+
 func ListImageStudioRuns(c *gin.Context) {
 	filter := studioService.ListFilter{OwnerUserID: c.GetInt("id"), Page: common.GetPageQuery(c)}
 	if c.Query("scope") == "all" {
@@ -147,8 +186,14 @@ func ListImageStudioRuns(c *gin.Context) {
 		imageStudioError(c, err)
 		return
 	}
-	if filter.Review {
-		recordManageAudit(c, "image_studio.review_list", map[string]interface{}{"owner_user_id": filter.OwnerUserID, "count": len(list.Items)})
+	common.ApiSuccess(c, list)
+}
+
+func PollImageStudioRuns(c *gin.Context) {
+	list, err := studioService.PollRuns(c.Request.Context(), c.GetInt("id"), strings.Split(c.Query("ids"), ","))
+	if err != nil {
+		imageStudioError(c, err)
+		return
 	}
 	common.ApiSuccess(c, list)
 }
@@ -174,6 +219,23 @@ func GetImageStudioRun(c *gin.Context) {
 }
 
 func DeleteImageStudioRun(c *gin.Context) {
+	if c.Query("scope") == "all" {
+		if !canReviewImageStudio(c) {
+			return
+		}
+		if !authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ImageStudioWrite) {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "code": "permission_denied", "message": "image review delete permission is required"})
+			return
+		}
+		ownerUserID, err := studioService.ReviewDeleteRun(c.Param("id"))
+		if err != nil {
+			imageStudioError(c, err)
+			return
+		}
+		recordManageAuditFor(c, ownerUserID, "image_studio.review_delete", map[string]interface{}{"run_id": c.Param("id")})
+		common.ApiSuccess(c, nil)
+		return
+	}
 	if err := studioService.DeleteRun(c.GetInt("id"), c.Param("id"), c.Query("linked_assets")); err != nil {
 		imageStudioError(c, err)
 		return
@@ -234,18 +296,19 @@ func RelayImageStudio(execution studioService.RelayContext, token *model.Token, 
 			if snapshot != nil {
 				common.SetContextKey(internal, constant.ContextKeyUpstreamRequestRecorder, relaycommon.UpstreamRequestRecorder(func(c *gin.Context, upstream []byte) error {
 					requestID := c.GetString(common.RequestIdKey)
-					if err := model.LinkImageStudioRunRequest(snapshot.RunID, requestID); err != nil {
+					if err := model.LinkImageStudioRunRequest(snapshot.RunID, requestID, c.GetInt("channel_id")); err != nil {
 						return err
 					}
 					if err := model.SaveTaskRequestSnapshots("", requestID, snapshot.Original, upstream); err != nil {
 						return err
 					}
-					common.SetContextKey(c, constant.ContextKeyRequestSnapshotResource, authz.ResourceImageStudio)
+					common.SetContextKey(c, constant.ContextKeyRequestSnapshotStored, true)
 					return nil
 				}))
 			}
 			result.RequestID = internal.GetString(common.RequestIdKey)
 			internal.Next()
+			result.ChannelID = internal.GetInt("channel_id")
 		},
 		middleware.TokenAuth(),
 		middleware.ModelRequestRateLimit(),

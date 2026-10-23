@@ -27,6 +27,7 @@ import type {
   StudioRunList,
   StudioSettings,
   StudioReference,
+  StudioReferenceList,
 } from './types'
 
 async function studioData<T>(
@@ -36,6 +37,17 @@ async function studioData<T>(
 }
 
 const quietErrors = { skipBusinessError: true, skipErrorHandler: true }
+
+export function listStudioReferences(page = 1) {
+  return studioData(
+    api.get<StudioResponse<StudioReferenceList>>(
+      '/api/image-studio/references',
+      {
+        params: { p: page, page_size: 12 },
+      }
+    )
+  )
+}
 
 export function uploadStudioReference(source: File | string) {
   const data = typeof source === 'string' ? { url: source } : new FormData()
@@ -79,22 +91,14 @@ export function assistStudioPrompt(input: {
   )
 }
 
-export async function createStudioRun(
-  input: CreateStudioRunInput
-): Promise<{ run: StudioRun; replay: boolean }> {
-  const response = await api.post<StudioResponse<StudioRun>>(
-    '/api/image-studio/runs',
-    input,
-    {
+export function createStudioRun(input: CreateStudioRunInput) {
+  return studioData(
+    api.post<StudioResponse<StudioRun>>('/api/image-studio/runs', input, {
       timeout: 300_000,
       headers: { 'Idempotency-Key': input.idempotency_key },
       ...quietErrors,
-    }
+    })
   )
-  return {
-    run: assertStudioSuccess(response.data),
-    replay: response.data.idempotent_replay === true,
-  }
 }
 
 export function listStudioRuns(
@@ -115,6 +119,26 @@ export function listStudioRuns(
   )
 }
 
+// Keep a single query for the workspace; each HTTP request is bounded to 50 IDs.
+export async function pollStudioRuns(ids: string[]): Promise<StudioRunList> {
+  const requests = []
+  for (let start = 0; start < ids.length; start += 50) {
+    requests.push(
+      studioData(
+        api.get<StudioResponse<StudioRunList>>('/api/image-studio/runs/poll', {
+          ...quietErrors,
+          params: { ids: ids.slice(start, start + 50).join(',') },
+        })
+      )
+    )
+  }
+  const results = await Promise.all(requests)
+  return {
+    items: results.flatMap((result) => result.items),
+    total: results.reduce((total, result) => total + result.total, 0),
+  }
+}
+
 export function getStudioRun(id: string, scope?: 'all') {
   return studioData(
     api.get<StudioResponse<StudioRun>>(
@@ -124,11 +148,15 @@ export function getStudioRun(id: string, scope?: 'all') {
   )
 }
 
-export function deleteStudioRun(id: string, linkedAssets?: StudioLinkedAssets) {
+export function deleteStudioRun(
+  id: string,
+  linkedAssets?: StudioLinkedAssets,
+  scope?: 'all'
+) {
   return studioData(
     api.delete<StudioResponse<undefined>>(
       `/api/image-studio/runs/${encodeURIComponent(id)}`,
-      { ...quietErrors, params: { linked_assets: linkedAssets } }
+      { ...quietErrors, params: { linked_assets: linkedAssets, scope } }
     )
   )
 }

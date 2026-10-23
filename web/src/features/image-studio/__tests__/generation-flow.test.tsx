@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -25,25 +29,18 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError, AxiosHeaders } from 'axios'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
-import { ImageStudioPage } from '@/routes/image-studio'
 import { useAuthStore } from '@/stores/auth-store'
 
 import * as api from '../api'
 import { ImageStudio } from '../image-studio'
-import type { StudioReference, StudioRun } from '../types'
+import type { StudioRun } from '../types'
 
 vi.mock('../api')
 vi.mock('@/features/keys/api')
@@ -65,13 +62,21 @@ const completed: StudioRun = {
     },
   ],
 }
-const key = {
-  id: 1,
-  name: 'Image key',
-  key: '***',
-  status: 1,
-  group: '',
-} as ApiKey
+const key = { id: 1, name: 'Image key', status: 1 } as ApiKey
+
+function promptInput() {
+  return screen.getByRole('textbox', { name: 'Describe your image' })
+}
+function createImages() {
+  return screen.getByRole('button', { name: 'Create images' })
+}
+
+function showRuns(...items: StudioRun[]) {
+  vi.mocked(api.listStudioRuns).mockResolvedValue({
+    items,
+    total: items.length,
+  })
+}
 
 let client: QueryClient
 beforeEach(() => {
@@ -101,6 +106,7 @@ beforeEach(() => {
     max_prompt_characters: 1000,
     max_reference_images: 8,
     max_reference_bytes: 20 * 1024 * 1024,
+    max_running_runs: 5,
   })
   vi.mocked(getApiKeys).mockResolvedValue({
     success: true,
@@ -109,7 +115,10 @@ beforeEach(() => {
   vi.mocked(api.listStudioModels).mockImplementation(async (_id, kind) =>
     kind === 'text' ? ['text-model'] : ['dall-e-3']
   )
-  vi.mocked(api.listStudioRuns).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(api.createStudioRun).mockResolvedValue(completed)
+  showRuns()
+  vi.mocked(api.pollStudioRuns).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(api.listStudioReferences).mockResolvedValue({ items: [], total: 0 })
 })
 afterEach(() => {
   client.clear()
@@ -117,28 +126,15 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-async function openStudio(guest = false) {
+async function openStudio() {
   const root = createRootRoute({ component: Outlet })
   const studio = createRoute({
     getParentRoute: () => root,
     path: '/image-studio',
-    component: guest ? ImageStudioPage : ImageStudio,
-  })
-  const dashboard = createRoute({
-    getParentRoute: () => root,
-    path: '/dashboard',
-    component: () => <main>Dashboard page</main>,
-  })
-  const signIn = createRoute({
-    getParentRoute: () => root,
-    path: '/sign-in',
-    validateSearch: (search: Record<string, unknown>) => ({
-      redirect: String(search.redirect || ''),
-    }),
-    component: () => <main>Sign in page</main>,
+    component: ImageStudio,
   })
   const router = createRouter({
-    routeTree: root.addChildren([studio, dashboard, signIn]),
+    routeTree: root.addChildren([studio]),
     history: createMemoryHistory({ initialEntries: ['/image-studio'] }),
   })
   await router.load()
@@ -147,534 +143,246 @@ async function openStudio(guest = false) {
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  if (guest) await screen.findByRole('heading', { name: 'Image creation' })
-  else await screen.findByText('dall-e-3', { exact: true })
-  const user = userEvent.setup()
-  return user
+  await screen.findByText('dall-e-3', { exact: true })
+  return userEvent.setup()
 }
 
-test('guests can browse the editor and examples without fetching keys, models or private records', async () => {
-  useAuthStore.getState().auth.reset()
-  const user = await openStudio(true)
-  expect(screen.getByRole('main').closest('.h-svh')).toHaveClass(
-    'w-full',
-    'overflow-hidden'
-  )
-  const retention = screen.getByText(
-    'Generated images are kept for 30 days, then automatically deleted. Please download them in time.'
-  )
-  expect(retention).toBeVisible()
+test('guests can try examples without loading private records and signing out clears the draft', async () => {
+  const user = await openStudio()
+  await user.type(promptInput(), 'Private draft')
+  await act(() => useAuthStore.getState().auth.reset())
+  expect(promptInput()).toHaveValue('')
   expect(
-    screen
-      .getByRole('form', { name: 'Image prompt editor' })
-      .compareDocumentPosition(retention) & Node.DOCUMENT_POSITION_FOLLOWING
-  ).toBeTruthy()
+    screen.getByRole('link', { name: 'Sign in to create images' })
+  ).toBeVisible()
+  vi.mocked(getApiKeys).mockClear()
+  vi.mocked(api.listStudioRuns).mockClear()
   await user.click(
     screen.getByRole('button', { name: 'Cinematic photography' })
   )
-  expect(
-    screen.getByRole('textbox', { name: 'Describe your image' })
-  ).not.toHaveValue('')
-  expect(screen.getByRole('button', { name: 'Optimize prompt' })).toBeDisabled()
+  expect(promptInput()).not.toHaveValue('')
   expect(getApiKeys).not.toHaveBeenCalled()
-  expect(api.listStudioModels).not.toHaveBeenCalled()
   expect(api.listStudioRuns).not.toHaveBeenCalled()
-  expect(api.createStudioRun).not.toHaveBeenCalled()
-  expect(screen.getByText('Your creative journey starts here')).toBeVisible()
-  expect(screen.queryByText('No generation records')).not.toBeInTheDocument()
-  expect(
-    screen.getByRole('link', {
-      name: 'Sign in to view your generation records',
-    })
-  ).toHaveAttribute('href', '/sign-in?redirect=%2Fimage-studio')
-  const signIn = screen.getByRole('link', { name: 'Sign in to create images' })
-  expect(signIn).toHaveAttribute('href', '/sign-in?redirect=%2Fimage-studio')
-  await user.click(signIn)
-  expect(await screen.findByText('Sign in page')).toBeVisible()
 })
 
-test('signing out clears the prompt, private generation records and model selection from the editor', async () => {
-  vi.mocked(api.listStudioRuns).mockResolvedValue({
-    items: [completed],
-    total: 1,
-  })
+test('accepted tasks leave a blank editor, allow another task, and open details only on selection', async () => {
+  const first: StudioRun = { ...completed, status: 'running', results: [] }
+  const second = { ...first, id: 'run-2', prompt: 'Second composition' }
+  vi.mocked(api.createStudioRun)
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce(second)
+  vi.mocked(api.pollStudioRuns).mockResolvedValue({ items: [first], total: 1 })
   const user = await openStudio()
-  await user.type(
-    screen.getByRole('textbox', { name: 'Describe your image' }),
-    'Private draft'
+  showRuns(first)
+  await user.type(promptInput(), 'A mountain')
+  await user.click(createImages())
+  await waitFor(() => expect(promptInput()).toHaveValue(''))
+  expect(promptInput()).toHaveFocus()
+  expect(screen.getByRole('heading', { name: /Imagine it/ })).toBeVisible()
+  showRuns(second, first)
+  vi.mocked(api.pollStudioRuns).mockResolvedValue({
+    items: [first, second],
+    total: 2,
+  })
+  await user.type(promptInput(), second.prompt)
+  await user.click(createImages())
+  await waitFor(() => expect(api.createStudioRun).toHaveBeenCalledTimes(2))
+  expect(
+    vi.mocked(api.createStudioRun).mock.calls[0][0].idempotency_key
+  ).not.toBe(vi.mocked(api.createStudioRun).mock.calls[1][0].idempotency_key)
+  const history = screen.getByRole('region', { name: 'Generation records' })
+  expect(
+    await within(history).findByRole('button', { name: /Second composition/ })
+  ).toHaveTextContent('Running')
+  showRuns(completed, second)
+  vi.mocked(api.pollStudioRuns).mockResolvedValue({
+    items: [completed, second],
+    total: 2,
+  })
+  await waitFor(
+    () =>
+      expect(
+        within(history).getByRole('button', { name: /A mountain/ })
+      ).toHaveTextContent('Completed'),
+    { timeout: 4000 }
   )
-  expect(screen.getByRole('button', { name: 'Delete image' })).toBeVisible()
-  await act(() => useAuthStore.getState().auth.reset())
   expect(
-    await screen.findByRole('link', { name: 'Sign in to create images' })
-  ).toBeVisible()
-  expect(
-    screen.queryByRole('button', { name: 'Delete image' })
+    screen.queryByRole('button', { name: 'Preview' })
   ).not.toBeInTheDocument()
-  expect(
-    screen.queryByText('dall-e-3', { exact: true })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.getByRole('textbox', { name: 'Describe your image' })
-  ).toHaveValue('')
+  vi.mocked(api.getStudioRun).mockResolvedValue(completed)
+  await user.click(within(history).getByRole('button', { name: /A mountain/ }))
+  expect(await screen.findByRole('button', { name: 'Preview' })).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'New creation' }))
+  expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()
 })
 
-test('the canvas and editor share the creation area while records remain separate', async () => {
-  await openStudio()
-  const editor = screen.getByRole('form', { name: 'Image prompt editor' })
-  const canvas = screen.getByRole('region', { name: 'Generation results' })
-  const records = screen.getByRole('region', { name: 'Generation records' })
-  const workspace = screen.getByRole('region', { name: 'Creative canvas' })
-  expect(workspace).toContainElement(canvas)
-  expect(workspace).toContainElement(editor)
-  expect(workspace).not.toContainElement(records)
-  expect(
-    canvas.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING
-  ).toBeTruthy()
-  expect(editor).not.toContainElement(records)
-  expect(
-    await within(records).findByText('No generation records')
-  ).toBeVisible()
-  expect(
-    within(records).queryByRole('link', {
-      name: 'Sign in to view your generation records',
-    })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.queryByRole('complementary', { name: 'Workspace' })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.getByRole('textbox', { name: 'Describe your image' })
-  ).toHaveAccessibleDescription(/Text model/)
+test('failed submissions preserve the draft and retry with the same idempotency key', async () => {
+  vi.mocked(api.createStudioRun).mockRejectedValueOnce(new Error('network'))
+  const user = await openStudio()
+  await user.type(promptInput(), 'A mountain')
+  await user.click(createImages())
+  expect(await screen.findByRole('alert')).toHaveTextContent('network')
+  expect(promptInput()).toHaveValue('A mountain')
+  await user.click(createImages())
+  await waitFor(() => expect(promptInput()).toHaveValue(''))
+  const calls = vi.mocked(api.createStudioRun).mock.calls
+  expect(calls).toHaveLength(2)
+  expect(calls[1][0].idempotency_key).toBe(calls[0][0].idempotency_key)
+  expect(api.saveStudioResult).not.toHaveBeenCalled()
 })
 
-test.each([
-  ['keep', 'Delete generated image only'],
-  ['delete', 'Also delete asset library image'],
-] as const)(
-  'deleting a saved image explains cleanup and applies the %s library choice',
-  async (choice, label) => {
-    const saved = {
-      ...completed,
-      results: [{ ...completed.results[0], asset_id: 'asset-1' }],
-    }
-    vi.mocked(api.listStudioRuns).mockResolvedValueOnce({
-      items: [saved],
-      total: 1,
-    })
-    vi.mocked(api.deleteStudioResult).mockResolvedValue(undefined)
-    const user = await openStudio()
-    await user.click(screen.getByRole('button', { name: 'Delete image' }))
-    const dialog = screen.getByRole('alertdialog', { name: 'Delete image' })
-    expect(
-      within(dialog).getByText(
-        'Deleted images cannot be restored. Files are removed in the background.'
-      )
-    ).toBeVisible()
-    await user.click(within(dialog).getByRole('button', { name: label }))
-    await waitFor(() =>
-      expect(api.deleteStudioResult).toHaveBeenCalledWith('result-1', choice)
-    )
-    await waitFor(() =>
-      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-    )
-    expect(api.deleteStudioRun).not.toHaveBeenCalled()
-  }
-)
-
-test('deleting a failed record confirms irreversible removal and deletes the record instead of an image', async () => {
-  vi.mocked(api.listStudioRuns).mockResolvedValueOnce({
-    items: [{ ...completed, status: 'failed', results: [] }],
+test('stored reference IDs are reused and submission clears references and returns to generation records', async () => {
+  vi.mocked(api.listStudioReferences).mockResolvedValue({
+    items: [
+      {
+        id: 'stored',
+        url: 'https://example.test/reference.png',
+        expires_at: 2000000000,
+      },
+    ],
     total: 1,
   })
-  vi.mocked(api.deleteStudioRun).mockResolvedValue(undefined)
   const user = await openStudio()
-  await user.click(screen.getByRole('button', { name: 'Delete record' }))
-  expect(
-    screen.getByText('Delete this generation record? This cannot be undone.')
-  ).toBeVisible()
+  await user.click(screen.getByRole('tab', { name: 'Upload history' }))
   await user.click(
-    within(screen.getByRole('alertdialog')).getByRole('button', {
-      name: 'Delete',
-    })
+    await screen.findByRole('button', { name: 'Add reference image 1' })
   )
-  await waitFor(() =>
-    expect(api.deleteStudioRun).toHaveBeenCalledWith('run-1', undefined)
-  )
-  expect(api.deleteStudioResult).not.toHaveBeenCalled()
-})
-
-async function generate() {
-  const user = await openStudio()
-  await user.type(
-    screen.getByRole('textbox', { name: 'Describe your image' }),
-    'A mountain'
-  )
-  await user.click(screen.getByRole('button', { name: 'Create images' }))
-  return user
-}
-
-test('completed images fit a landscape canvas with the prompt only below it and still open the full preview', async () => {
-  vi.mocked(api.createStudioRun).mockResolvedValue({
-    run: completed,
-    replay: false,
-  })
-  const user = await generate()
-  const preview = await screen.findByRole('button', { name: 'Preview' })
-  expect(preview).toHaveClass(
-    'studio-result-frame',
-    'aspect-[4/3]',
-    'flex-none'
-  )
-  expect(within(preview).getByRole('img', { name: 'A mountain' })).toHaveClass(
-    'object-contain'
-  )
-  const gallery = within(
-    screen.getByRole('region', { name: 'Generation results' })
-  )
-  expect(gallery.getAllByText('A mountain', { exact: true })).toHaveLength(1)
+  await user.type(promptInput(), 'Keep this image')
+  expect(screen.getByAltText('Reference image 1')).toBeVisible()
+  await user.click(createImages())
+  await waitFor(() => expect(promptInput()).toHaveValue(''))
   expect(
-    preview.compareDocumentPosition(
-      gallery.getByText('A mountain', { exact: true })
-    ) & Node.DOCUMENT_POSITION_FOLLOWING
-  ).toBeTruthy()
-  await user.click(preview)
+    vi.mocked(api.createStudioRun).mock.calls[0][0].request.reference_ids
+  ).toEqual(['stored'])
+  expect(api.uploadStudioReference).not.toHaveBeenCalled()
+  expect(screen.queryByAltText('Reference image 1')).not.toBeInTheDocument()
   expect(
-    within(screen.getByRole('dialog', { name: 'Generated image' })).getByRole(
-      'img',
-      { name: 'A mountain' }
-    )
-  ).toHaveAttribute('src', completed.results[0].preview_url)
+    screen.getByRole('tab', { name: 'Generation records' })
+  ).toHaveAttribute('aria-selected', 'true')
 })
 
-test('asset saving explains automatic history storage and is optional for using images in video generation', async () => {
-  vi.mocked(api.createStudioRun).mockResolvedValue({
-    run: completed,
-    replay: false,
+test('reference uploads preserve IDs and reject invalid formats before upload', async () => {
+  vi.mocked(api.uploadStudioReference).mockResolvedValue({
+    id: 'uploaded',
+    url: 'https://example.test/upload.png',
+    expires_at: 2000000000,
   })
-  const user = await generate()
-  const explanation =
-    'Images are saved in the generation records on the right for 30 days. Download them before expiry. Save to the asset library only for direct use in video generation; library copies are kept separately.'
-  const save = await screen.findByRole('button', {
-    name: 'Save to asset library (for video generation)',
-  })
-  expect(save).toHaveAccessibleDescription(explanation)
-  expect(screen.getByText(explanation)).toBeVisible()
-  expect(api.saveStudioResult).not.toHaveBeenCalled()
-  await user.click(save)
-  const dialog = screen.getByRole('dialog', {
-    name: 'Save to asset library (for video generation)',
-  })
-  expect(dialog).toHaveAccessibleDescription(explanation)
-  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-  expect(api.saveStudioResult).not.toHaveBeenCalled()
-})
-
-test('prompt optimization identifies and calls the chosen text model separately from image generation', async () => {
-  vi.mocked(api.listStudioModels).mockImplementation(async (_id, kind) =>
-    kind === 'text' ? ['text-model', 'chosen-text-model'] : ['dall-e-3']
+  const user = userEvent.setup({ applyAccept: false })
+  await openStudio()
+  const input = screen.getByLabelText('Upload reference images')
+  await user.upload(
+    input,
+    new File(['invalid'], 'file.pdf', { type: 'application/pdf' })
   )
-  vi.mocked(api.assistStudioPrompt).mockResolvedValue({
-    suggested_prompt: 'A mountain in soft light',
-  })
-  const user = await openStudio()
-  await user.click(screen.getByRole('button', { name: 'Model settings' }))
-  const textModels = within(screen.getByRole('group', { name: 'Text model' }))
-  await user.selectOptions(
-    textModels.getByRole('combobox', { name: 'Model' }),
-    'chosen-text-model'
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Reference images must be PNG, JPEG or WebP'
   )
-  await user.click(screen.getByRole('button', { name: 'Done' }))
+  expect(api.uploadStudioReference).not.toHaveBeenCalled()
+  await user.upload(
+    input,
+    new File(['image'], 'reference.png', { type: 'image/png' })
+  )
+  expect(await screen.findByAltText('Reference image 1')).toBeVisible()
+  await user.type(promptInput(), 'Use the uploaded image')
+  await user.click(createImages())
+  await waitFor(() => expect(api.createStudioRun).toHaveBeenCalled())
   expect(
-    await screen.findByText('Text model: chosen-text-model')
-  ).toBeInTheDocument()
-  const prompt = screen.getByRole('textbox', { name: 'Describe your image' })
-  await user.type(prompt, 'A mountain')
-  await user.click(screen.getByRole('button', { name: 'Optimize prompt' }))
-  await waitFor(() => expect(prompt).toHaveValue('A mountain in soft light'))
-  expect(api.assistStudioPrompt).toHaveBeenCalledWith({
-    token_id: 1,
-    model: 'chosen-text-model',
-    prompt: 'A mountain',
-  })
-  expect(screen.getByText('dall-e-3', { exact: true })).toBeInTheDocument()
-  expect(api.createStudioRun).not.toHaveBeenCalled()
+    vi.mocked(api.createStudioRun).mock.calls[0][0].request.reference_ids
+  ).toEqual(['uploaded'])
 })
 
-test('the dashboard link leaves the studio', async () => {
+test('the records sidebar starts collapsed and can open without losing the draft', async () => {
   const user = await openStudio()
-  await user.click(screen.getByRole('link', { name: 'Back to Dashboard' }))
-  expect(await screen.findByText('Dashboard page')).toBeVisible()
-})
-
-test('collapsing and expanding the editor preserves the prompt and exposes its current state', async () => {
-  const user = await openStudio()
-  await user.type(
-    screen.getByRole('textbox', { name: 'Describe your image' }),
-    'Keep this draft'
-  )
+  const toggle = screen.getByRole('button', { name: 'Show generation records' })
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await user.type(promptInput(), 'Keep my draft')
   await user.click(
     screen.getByRole('button', { name: 'Collapse prompt editor' })
   )
   expect(
     screen.queryByRole('textbox', { name: 'Describe your image' })
   ).not.toBeInTheDocument()
-  expect(
-    screen.getByRole('button', { name: 'Show prompt editor' })
-  ).toHaveAttribute('aria-expanded', 'false')
-  expect(screen.getByText('Keep this draft')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Show prompt editor' }))
-  expect(
-    screen.getByRole('textbox', { name: 'Describe your image' })
-  ).toHaveValue('Keep this draft')
-  await user.click(screen.getByRole('button', { name: 'Expand prompt editor' }))
-  expect(
-    screen.getByRole('button', { name: 'Restore prompt editor' })
-  ).toHaveAttribute('aria-pressed', 'true')
-  await user.click(
-    screen.getByRole('button', { name: 'Restore prompt editor' })
-  )
-  expect(
-    screen.getByRole('textbox', { name: 'Describe your image' })
-  ).toHaveValue('Keep this draft')
+  expect(promptInput()).toHaveValue('Keep my draft')
+  await user.click(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
 })
 
-test('file uploads and dropped images become removable references, block generation during upload and send only retained object IDs', async () => {
-  let finishUpload!: (reference: StudioReference) => void
-  vi.mocked(api.uploadStudioReference)
-    .mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishUpload = resolve
+test('the create button is disabled with a notice while the running task limit is reached', async () => {
+  const running = Array.from({ length: 5 }, (_, index) => ({
+    ...completed,
+    id: `run-${index}`,
+    status: 'running' as const,
+    results: [],
+  }))
+  showRuns(...running)
+  vi.mocked(api.pollStudioRuns).mockResolvedValue({
+    items: running,
+    total: running.length,
+  })
+  const user = await openStudio()
+  await user.type(promptInput(), 'Another mountain')
+  expect(
+    await screen.findByText(/Up to 5 images can be generating at once/)
+  ).toBeVisible()
+  expect(createImages()).toBeDisabled()
+})
+
+test('adding a task or regaining focus during a 429 cooldown does not restart polling early', async () => {
+  const first = { ...completed, status: 'running' as const, results: [] }
+  const second = { ...first, id: 'run-during-cooldown' }
+  showRuns(first)
+  let rejectPoll!: (error: Error) => void
+  vi.mocked(api.pollStudioRuns).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectPoll = reject
+      })
+  )
+  await openStudio()
+  await waitFor(() => expect(api.pollStudioRuns).toHaveBeenCalledTimes(1))
+  vi.useFakeTimers()
+  try {
+    await act(async () => {
+      rejectPoll(
+        new AxiosError('rate limited', undefined, undefined, undefined, {
+          status: 429,
+          statusText: '',
+          data: '',
+          headers: new AxiosHeaders({ 'retry-after': '20' }),
+          config: { headers: new AxiosHeaders() },
         })
+      )
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    vi.mocked(api.pollStudioRuns).mockResolvedValue({
+      items: [first, second],
+      total: 2,
+    })
+    await act(async () => {
+      client.setQueryData(['image-studio', 'runs', 7, 1], {
+        items: [second, first],
+        total: 2,
+      })
+      await vi.advanceTimersByTimeAsync(1)
+      focusManager.setFocused(false)
+      focusManager.setFocused(true)
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(api.pollStudioRuns).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(19000)
+    })
+    expect(api.pollStudioRuns).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(api.pollStudioRuns).toHaveBeenCalledTimes(2)
+    expect(api.pollStudioRuns).toHaveBeenLastCalledWith(
+      expect.arrayContaining([first.id, second.id])
     )
-    .mockResolvedValueOnce({
-      id: 'ref-2',
-      url: 'https://example.test/second.png',
-      expires_at: 2000000000,
-    })
-    .mockResolvedValueOnce({
-      id: 'ref-3',
-      url: 'https://example.test/third.png',
-      expires_at: 2000000000,
-    })
-  vi.mocked(api.createStudioRun).mockResolvedValue({
-    run: completed,
-    replay: false,
-  })
-  const user = await openStudio()
-  const file = new File(['image'], 'reference.png', { type: 'image/png' })
-  await user.type(
-    screen.getByRole('textbox', { name: 'Describe your image' }),
-    'Use the reference'
-  )
-  await user.upload(screen.getByLabelText('Upload reference images'), file)
-  expect(await screen.findByText('Uploading...')).toBeVisible()
-  expect(screen.getByRole('button', { name: 'Create images' })).toBeDisabled()
-  await act(() =>
-    finishUpload({
-      id: 'ref-1',
-      url: 'https://example.test/first.png',
-      expires_at: 2000000000,
-    })
-  )
-  expect(await screen.findByAltText('Reference image 1')).toBeVisible()
-  const editor = screen.getByRole('form', { name: 'Image prompt editor' })
-  fireEvent.drop(editor, { dataTransfer: { files: [file], getData: () => '' } })
-  expect(await screen.findByAltText('Reference image 2')).toBeVisible()
-  fireEvent.drop(editor, {
-    dataTransfer: {
-      files: [],
-      getData: () => 'https://example.test/source.png',
-    },
-  })
-  expect(await screen.findByAltText('Reference image 3')).toBeVisible()
-  expect(api.uploadStudioReference).toHaveBeenNthCalledWith(1, file)
-  expect(api.uploadStudioReference).toHaveBeenNthCalledWith(2, file)
-  expect(api.uploadStudioReference).toHaveBeenNthCalledWith(
-    3,
-    'https://example.test/source.png'
-  )
-  await user.click(
-    screen.getByRole('button', { name: 'Remove reference image 3' })
-  )
-  await user.click(
-    screen.getByRole('button', { name: 'Remove reference image 1' })
-  )
-  expect(api.createStudioRun).not.toHaveBeenCalled()
-  await user.click(screen.getByRole('button', { name: 'Create images' }))
-  await waitFor(() =>
-    expect(api.createStudioRun).toHaveBeenCalledWith({
-      token_id: 1,
-      idempotency_key: expect.any(String),
-      request: {
-        model: 'dall-e-3',
-        prompt: 'Use the reference',
-        reference_ids: ['ref-2'],
-      },
-    })
-  )
-  await screen.findByRole('button', { name: 'Preview' })
-  await user.click(screen.getByRole('button', { name: 'New creation' }))
-  expect(screen.queryByAltText('Reference image 1')).not.toBeInTheDocument()
-})
-
-test('invalid image files and batches beyond the reference limit do not upload', async () => {
-  const user = userEvent.setup({ applyAccept: false })
-  await openStudio()
-  const input = screen.getByLabelText('Upload reference images')
-  await user.upload(
-    input,
-    new File(['not an image'], 'file.pdf', { type: 'application/pdf' })
-  )
-  expect(await screen.findByRole('alert')).toHaveTextContent(
-    'Reference images must be PNG, JPEG or WebP'
-  )
-  await user.upload(
-    input,
-    Array.from(
-      { length: 9 },
-      (_, index) => new File(['image'], `${index}.png`, { type: 'image/png' })
-    )
-  )
-  expect(await screen.findByRole('alert')).toHaveTextContent(
-    'You can add up to 8 reference images.'
-  )
-  expect(api.uploadStudioReference).not.toHaveBeenCalled()
-})
-
-test('a failed submission retries with the same idempotency key and nothing is saved by default', async () => {
-  vi.mocked(api.createStudioRun)
-    .mockRejectedValueOnce(new Error('network'))
-    .mockResolvedValueOnce({ run: completed, replay: false })
-  const user = await generate()
-  await screen.findByText('network')
-  await user.click(screen.getByRole('button', { name: 'Create images' }))
-  await screen.findByRole('img', { name: 'A mountain' })
-  const calls = vi.mocked(api.createStudioRun).mock.calls
-  expect(calls).toHaveLength(2)
-  expect(calls[0][0]).toEqual({
-    token_id: 1,
-    idempotency_key: expect.any(String),
-    request: { model: 'dall-e-3', prompt: 'A mountain' },
-  })
-  expect(calls[1][0].idempotency_key).toBe(calls[0][0].idempotency_key)
-  expect(api.saveStudioResult).not.toHaveBeenCalled()
-  expect(
-    screen.getByRole('button', {
-      name: 'Save to asset library (for video generation)',
-    })
-  ).toBeEnabled()
-})
-
-test('a replayed run that is still generating polls until it completes', async () => {
-  const running: StudioRun = { ...completed, status: 'running', results: [] }
-  vi.mocked(api.createStudioRun).mockResolvedValue({
-    run: running,
-    replay: true,
-  })
-  vi.mocked(api.getStudioRun).mockResolvedValue(running)
-  await generate()
-  await screen.findByText('This generation is still in progress')
-  vi.mocked(api.getStudioRun).mockResolvedValue(completed)
-  await screen.findByRole('img', { name: 'A mountain' }, { timeout: 3000 })
-  await waitFor(() =>
-    expect(
-      screen.queryByText('This generation is still in progress')
-    ).not.toBeInTheDocument()
-  )
-})
-
-test('starting a new creation clears the canvas and draft while keeping existing records', async () => {
-  vi.mocked(api.createStudioRun).mockResolvedValue({
-    run: completed,
-    replay: false,
-  })
-  vi.mocked(api.listStudioRuns).mockResolvedValue({
-    items: [completed],
-    total: 1,
-  })
-  const user = await generate()
-  await screen.findByRole('button', { name: 'Preview' })
-  await user.click(screen.getByRole('button', { name: 'New creation' }))
-  const prompt = screen.getByRole('textbox', { name: 'Describe your image' })
-  expect(prompt).toHaveValue('')
-  expect(prompt).toHaveFocus()
-  await waitFor(() => expect(prompt).toHaveAttribute('aria-invalid', 'false'))
-  await user.type(prompt, 'Next composition')
-  expect(prompt).toHaveAttribute('aria-invalid', 'false')
-  expect(
-    screen.queryByRole('button', { name: 'Preview' })
-  ).not.toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: /Imagine it/ })).toBeVisible()
-  expect(screen.getByRole('button', { name: 'Delete image' })).toBeVisible()
-  expect(api.deleteStudioRun).not.toHaveBeenCalled()
-  expect(api.deleteStudioResult).not.toHaveBeenCalled()
-})
-
-test('the records shortcut scrolls to the history panel and moves keyboard focus there', async () => {
-  const user = await openStudio()
-  await user.click(screen.getByRole('button', { name: 'Generation records' }))
-  const panel = document.querySelector('#studio-history')
-  expect(panel).toHaveFocus()
-  expect(panel).toContainElement(
-    screen.getByRole('region', { name: 'Generation records' })
-  )
-})
-
-test('selecting a record opens its image and returns keyboard focus to the canvas', async () => {
-  vi.mocked(api.listStudioRuns).mockResolvedValue({
-    items: [completed],
-    total: 1,
-  })
-  vi.mocked(api.getStudioRun).mockResolvedValue(completed)
-  const user = await openStudio()
-  const history = screen.getByRole('region', { name: 'Generation records' })
-  await user.click(within(history).getByRole('button', { name: /A mountain/ }))
-  expect(await screen.findByRole('button', { name: 'Preview' })).toBeVisible()
-  expect(
-    screen.getByRole('group', { name: 'Generation results' })
-  ).toHaveFocus()
-  expect(
-    within(history).getByRole('button', { name: /A mountain/ })
-  ).toHaveAttribute('aria-pressed', 'true')
-})
-
-test('dragging a historical thumbnail uses its full-resolution original as the reference', async () => {
-  vi.mocked(api.listStudioRuns).mockResolvedValue({
-    items: [completed],
-    total: 1,
-  })
-  await openStudio()
-  const history = screen.getByRole('region', { name: 'Generation records' })
-  const setData = vi.fn()
-  fireEvent.dragStart(
-    within(history).getByRole('img', { name: 'Generated image' }),
-    { dataTransfer: { setData } }
-  )
-  expect(setData).toHaveBeenCalledWith(
-    'text/uri-list',
-    'https://example.test/original.png'
-  )
-})
-
-test('Ctrl Enter generates from the editor and prevents another submission while pending', async () => {
-  let finish: (value: { run: StudioRun; replay: boolean }) => void = () =>
-    undefined
-  vi.mocked(api.createStudioRun).mockReturnValue(
-    new Promise((resolve) => {
-      finish = resolve
-    })
-  )
-  const user = await openStudio()
-  const prompt = screen.getByRole('textbox', { name: 'Describe your image' })
-  await user.type(prompt, 'A mountain')
-  await user.keyboard('{Control>}{Enter}{/Control}')
-  await waitFor(() => expect(api.createStudioRun).toHaveBeenCalledTimes(1))
-  expect(screen.getByRole('button', { name: 'New creation' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: /Generating/ })).toBeDisabled()
-  expect(prompt).toBeDisabled()
-  await act(async () => finish({ run: completed, replay: false }))
-  expect(await screen.findByRole('button', { name: 'Preview' })).toBeVisible()
-  expect(screen.getByRole('button', { name: 'Create images' })).toBeEnabled()
+  } finally {
+    focusManager.setFocused(undefined)
+    vi.useRealTimers()
+  }
 })

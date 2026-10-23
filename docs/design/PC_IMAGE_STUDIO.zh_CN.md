@@ -1,35 +1,43 @@
-# PC 图片工作室重构
+# 图片工作室
 
-日期：2026-10-19
+图片工作室复用现有模型网关，提供 PC 端图片生成、参考图编辑、历史记录与独立存储配置。
 
-新分支 `codex/pc-image-studio-pro` 从公司 `main` 的 `112fb826fd9c395417d05b046f8130a0832bb8eb` 创建。业务基础取自 [PC 生图 PR #69](https://github.com/yeruyi1024/novamaas-workspace/pull/69) 的 `460fc0e7dc181ae581ca18004dde0e61783cb787`，保留模型权限、API Key 计费、提示词优化、幂等重试、OSS 原图、30 天文件保留、素材库副本和图片审查边界。
+## 入口与使用
 
-界面重新设计为独立的深石墨色工作室，使用冷蓝交互色、原创光学装置主视觉和独立语义变量。当前采用创作区和 300px 生成记录两栏，新建入口在顶部。空画布的引导、灵感按钮和编辑器统一居中，内容宽度最多 960px；主视觉融入背景，灵感示例改为紧凑按钮。所有配色、背景和组件样式均重新设计，主题变量限定于工作室及其弹窗。保留站点品牌和原有项目归属信息。
+- 创作入口：`/image-studio`。页面可公开浏览；模型调用、个人记录和参考图需要登录。
+- 在应用中心打开「图片创作」，选择自己的有效 API Key 与可用图片模型。模型范围沿用 Key 的分组及模型权限，不在工作室写死供应商。
+- 输入提示词，可选择比例或自动识别提示词中的比例；手动选择优先。支持优化提示词。
+- 支持最多 8 张 PNG、JPEG 或 WebP 参考图，每张不超过 20 MiB。可点击添加、拖入本地图片，或从上传记录复用；服务端重新校验图片归属和有效期。
+- 提交成功后清空草稿，恢复空白创作页，任务进入侧栏。可继续编辑和生成，点击记录才查看结果；提交失败保留草稿供重试。
+- 记录栏默认收起，可通过顶栏「展开生成记录」打开。输入框随内容增长，并支持收起、放大与恢复。
+- 舞台使用动态粒子背景，限制粒子数量与帧率；页面隐藏时暂停，系统开启减少动态效果时展示静态帧。
 
-桌面查看结果时，画布和记录分别滚动，编辑器保持在画布下方，图片按剩余画布高度缩放。窗口高度不足 760px 时，创作区整体滚动，避免压缩结果区域；空画布同时压缩主视觉和上下间距。窄屏改为单栏，灵感按钮按两列排列，顶部提供新建和记录定位。选择历史记录后，视图和键盘焦点回到画布；新建创作仅清空当前草稿和选择，保留历史。输入框支持收起、放大和拖动调整高度，切换时保留草稿和参考图；收起后显示一行草稿摘要，并紧邻引导区域。个人记录只显示图像、提示词、模型、日期和状态，完整审查信息仍由审查页承载。
+## 生成、计费与日志
 
-通用布局、间距与响应式规则使用 Tailwind，独立 CSS 仅保留主题、组件变体、主视觉和画布高度约束。删除左侧导航、说明卡、重复画布工具栏、灵感长段落及其冗余展示断言；访客与登录后的记录空状态共用结构。窄屏按内容安排高度，避免输入区与记录区重叠。
+所有模型请求复用现有 Relay 链路，沿用模型授权、分组、渠道选择、模型限流、预扣费、结算和普通消费日志。没有参考图时调用生成接口，有参考图时调用编辑接口并传入签名图片地址；火山 Seedream 渠道转换其要求的参考图字段与推荐尺寸。
 
-参考图支持文件选择、拖入本地文件或网页图片，最多 8 张，每张不超过 20 MiB，格式为 PNG、JPEG 或 WebP。历史缩略图拖入时使用完整原图链接。图片进入私有 OSS 的独立临时对象，7 天后由现有存储清理队列删除。生成请求仅提交对象 ID；服务端校验归属、状态和有效期后重新签名，通过通用图片请求的 `image` URL 数组转发，继续使用既有权限、渠道和计费链路。参考图移除只解除本次引用，生成结果仍按 30 天规则保留。
+创建接口先保存任务并返回，后台继续生成。同一用户使用相同幂等键重试会复用记录，避免重复调用及扣费。运行任务按每用户 5 个做预检查；前端可继续编辑其他草稿。状态采用批量轮询，单批最多 50 个任务；无进行中任务时停止，遇到 429 遵守 `Retry-After`，无有效值时至少等待 30 秒。轮询只查询数据库，不重新发起生图。
 
-## 主视觉
+控制台「任务日志」入口默认展示任务页签，「绘图日志」默认展示图片工作室记录。支持按任务 ID、请求 ID、时间范围和自己／全部范围查询；管理员另可按渠道 ID 筛选。请求 ID 可定位普通消费日志，失败任务保留可追踪的渠道、请求 ID 和经过清理的错误信息。普通用户只能查看自己的记录，且不返回渠道信息。列表不读取图片正文、不写查询审计，删除图片后仍保留任务元数据。
 
-- 文件：`web/public/images/image-studio/orbit.jpg`，1600 × 900，约 355 KiB。
-- 使用内置 imagegen 生成，原始 PNG 转为 JPEG 以控制交付体积。
-- 原创科技装置插画，用于空画布。示例按钮只填入提示词，不会自动发起付费模型调用。
-- 图片生成提示词如下：
+## 存储与图片生命周期
 
-```text
-Use case: stylized-concept. Asset type: panoramic artwork for the empty canvas of a professional AI image creation studio. Primary request: an elegant futuristic optical sculpture, a precision machined silver titanium torus encircling a luminous icy blue glass core, fine concentric orbital rings and sparse suspended refractive glass fragments. Scene/backdrop: deep near-black graphite studio fading into darkness, a subtle horizon of light and restrained fine star particles. Composition: cinematic 16:9 landscape, sculpture at the right third, left half mostly clean dark negative space for HTML headline, sculpture occupies 60 percent of height, nothing cropped. Style: premium physically based 3D render, sophisticated industrial art direction, realistic brushed metal, luminous caustics and delicate blue edge light, high contrast but calm. Palette: black graphite, silver, ice blue, a tiny hint of warm reflection. Constraints: artwork only, no interface, no lettering, no watermark, no logos, no purple, no green, no cyberpunk city, no people. Make it look like a premium creative software product's editorial artwork, not a generic gradient wallpaper.
-```
+在「系统设置 → 存储 → 图片创作」中，Root 可为生成图片和参考图分别选择已有 OSS 连接，配置对象前缀、签名有效期、文件上限及保留期。
 
-## 验证
+- 默认生成图片保留 30 天、参考图保留 7 天；保留期可设置为 1 小时至 365 天，且不能短于签名有效期。
+- 升级时初始化独立策略，复用已有素材库连接；之后各业务策略独立管理。
+- 对象写入时固定存储连接和到期时间，修改策略只影响新对象。历史图片仍使用原连接签名，签名期限不超过图片剩余寿命。
+- 生成结果可下载，或主动保存到素材库。素材库副本独立保留；删除个人结果时，可选择仅删除生成记录或连带删除素材库副本。
+- 移除当前参考图只解除本次引用，不立即删除上传对象；临时文件到期由既有对象清理机制回收。
 
-- 前端最终全量 126 个文件、699 项测试通过，包含工作室的 20 项流程测试，覆盖收起后的草稿摘要和新建草稿清除校验状态。
-- 本机 Node 的 Web Storage 全局对象会覆盖 jsdom 的 localStorage。测试启动使用 `NODE_OPTIONS=--no-experimental-webstorage bun run test --maxWorkers=1`，不修改业务代码。
-- `bun run typecheck`、受影响文件 lint、生产构建通过。
-- Go 的 model、storage、imagestudio、controller、router 五个相关包回归通过；根模块构建通过。
-- 实际浏览器检查 1440 × 900 桌面、1440 × 700 短窗口和 375px 窄屏，无横向溢出。桌面的主视觉、灵感和编辑器共享宽度和间距，收起后保持相邻；结果预览完整位于可用画布内。窄屏的记录区位于完整编辑器之后。
-- 复用本地 MySQL 验证管理员登录、模型读取和历史记录；文件上传与网页图片拖入均成功落到 OSS，1600px 参考图预览正常，存储账本的到期时间确认为创建后 604800 秒。实际生图调用中，本地 API 令牌验证通过，上游返回 `Invalid token`，因此未验证到真实成图；未修改密钥和渠道配置。
+## 管理权限
 
-本地凭据、数据库连接和验证截图不进入提交；原工作目录及 PR #69 均保留。
+图片巡查入口为 `/image-review`。跨用户查看需 Root 或具备 `image_studio.read` 的管理员；删除还需 `image_studio.write`，仅可删除已结束的任务。管理员巡查删除会保留用户素材库副本。详情读取与删除分别写入 `image_studio.review_read`、`image_studio.review_delete`，频繁列表查询不写审计。
+
+请求快照的读取沿用 main 的管理员权限规则。关闭图片工作室会停止创作入口及生成访问，已有任务日志仍可查询。
+
+## 当前边界
+
+- 后台使用进程内任务，单次执行超时 4 分钟，不是持久队列。进程重启不会自动重放生图；超过 10 分钟的中断记录在读取时转为失败。
+- 运行数量预检查与任务插入不是原子操作；极端同时提交不同幂等键时，可能超过 5 个任务，不能作为严格并发配额。
+- 尺寸按固定白名单提交，最终尺寸及参考图效果取决于模型和上游支持。Gemini 渠道目前仅支持工作室中的 `imagen-*` 图片转换。

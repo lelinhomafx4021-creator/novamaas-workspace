@@ -20,6 +20,22 @@ curl "$PLATFORM_URL/api/user/self" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
+## 切换星途连接的平台环境
+
+统一修改客户端源码 **`src/shared/auth/localMaasEnvironment.json`**，无需在每个页面分别替换地址：
+
+| 字段 | 修改说明 |
+|---|---|
+| `origin` | MaaS 根地址，例如本机 `http://127.0.0.1:3303` 或目标 `https://maas.example.com`；不要附带 `/api`、`/v1`、查询参数或凭据 |
+| `frontendOrigin` | 本地开发工具使用的 MaaS 管理前端地址，例如 `http://127.0.0.1:5183`；不替代客户端 API 的 `origin` |
+| 其他本地工具字段 | `database`、`mysqlContainer`、`worktreeName` 是本机环境工具参数，不是线上数据库连接配置 |
+
+`src/shared/auth/maas.ts` 从 `origin` 派生账户地址，`src/shared/auth/platformConfig.ts` 自动将模型地址派生为 **`origin + '/v1'`**。账号资料、钱包、套餐与模型调用因此连接同一目标平台。
+
+这是构建时配置：修改后必须重新构建、重启客户端并在新环境登录，不会热切换正在使用的窗口。新旧平台会话和模型 Key 隔离，不把旧平台凭据直接发给新地址；新环境将创建或复用该环境对应账号的星途专属 Key。
+
+目标环境必须提供兼容的账户、账务与受管 Key 接口，并正确路由 `/api` 与 `/v1`；只有 OpenAI 兼容 `/v1` 的第三方网关不能直接替代 MaaS。非本机地址须使用 HTTPS，切换后仍应核对模型资格、展示计量配置与实际消费归属。
+
 ## 平台 JSON 响应结构
 
 除 `/v1/*` 模型接口外，平台接口统一返回如下 JSON 包装结构：

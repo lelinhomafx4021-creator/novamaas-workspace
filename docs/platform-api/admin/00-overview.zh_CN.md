@@ -33,7 +33,8 @@
 | **二次验证登录（2FA / TOTP / 短信 MFA）** | 平台源码有 `/api/user/login/2fa`、`/api/user/login/sms/mfa*`，客户端主进程留有适配桩 | **未完成客户端完整接入** | **待审核 / 未实现**：第一阶段不支持；遇到 `require_2fa: true` 须提示暂不支持，禁止当作登录成功或绕过验证 |
 | **短信验证码登录（SMS）** | 平台源码有 `/api/user/login/sms/code`、`/api/user/login/sms`（依赖后台开启与短信通道） | 主进程与登录弹窗含短信分支代码 | **待审核 / 开放与验收状态待确认**：不作为第一阶段已交付能力对外承诺；保留接口定义供领导审核 |
 | **钱包、套餐查询与余额购买** | 已有接口（`/api/subscription/plans`、`/api/subscription/self`、`/api/user/topup/info`、`/api/subscription/balance/pay`） | 已接入（`split/pr2-account-wallet`） | 购买确认单在客户端本地生成；年包“一次付款、按月发放”及完整扣款对账仍属**待业务验收**事项 |
-| **星途托管模型密钥** | 已有接口（`POST /api/apps/starpath/managed-key`，位于 `local/full-platform` `0fd626517`） | `pr2-account-wallet` 已接入；`pr3-extensions` 分支尚未合入该端点 | 依赖 `tokens.managed` 数据库字段迁移；合并 `pr2` 与 `pr3` 的 `maasAuth.ts` 时须保留 `managedKey` 端点 |
+| **星途托管模型密钥** | 已有接口（`POST /api/apps/starpath/managed-key`，需配套后端与 `tokens.managed`） | 账户基础已接入；集成账务/扩展时保留 `managedKey` IPC 与来源隔离 | 托管 Key 不自带免费额度；目标环境部署、迁移与真实消费归属须分别核对 |
+| **星途专属 Key 全局分组（2026-10-26 补充）** | MaaS M1 新增 `GET/PUT /api/apps/starpath/admin/key-policy`，后台入口 `/starpath-keys`，Root 可委派 `starpath_keys:view/manage` | 配套账户适配已补齐同名组目录刷新、短时合并与忙时延后 | **独立开发分支已实现及验证，未合入 main、未加载共享服务**；仅更新本手册不会开放接口；详见“套餐与托管密钥” |
 | **模型列表与流式对话（正文/思考）** | 已有接口（`GET /v1/models`、`POST /v1/chat/completions`） | 已接入（`split/pr1-conversation-recovery`，`f460f675`） | 仅覆盖文本对话；图片、视频为平台其他能力，星途客户端未接入 |
 | **内置连接器展示管理（微信/钉钉/飞书/企微/邮件）** | 已有接口（`/api/apps/starpath/config`、`/admin/config`、`/admin/extensions/connectors`） | 已接入（`split/pr3-extensions`，`f4d596e5`） | 连接器代码内置于客户端安装包；后台仅管推荐展示与排序，**不支持远程热加载新连接器或远程卸载**；客户端读取需启用对应运行开关 |
 | **公司 MCP 目录分发、一键更新与统一停用** | 已有接口（`/api/apps/starpath/extensions/mcp` 及管理端草稿/发布/回执接口） | 已接入（`split/pr3-extensions`，含工作树停用刷新修复） | **支持远程统一停用**公司来源 MCP（同步时关闭，不删配置）；更新需用户点击确认 |

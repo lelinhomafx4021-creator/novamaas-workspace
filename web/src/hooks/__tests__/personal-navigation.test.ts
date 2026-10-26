@@ -1,12 +1,8 @@
 import { renderHook } from '@testing-library/react'
 import i18next from 'i18next'
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 
 import { useSidebarData } from '../use-sidebar-data'
-
-vi.mock('@/features/admin-manual/use-admin-manual-access', () => ({
-  useAdminManualAccess: () => ({ available: false }),
-}))
 
 test('personal navigation lists profile, statements and wallet in order', () => {
   const { result } = renderHook(() => useSidebarData())

@@ -19,39 +19,53 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { useRouteContext, useSearch } from '@tanstack/react-router'
 
-import { useAdminManualAccess } from '@/features/admin-manual/use-admin-manual-access'
 import { api } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { DocumentationReader, type APIDocument } from './reader'
 
 export function APIDocs() {
-  const { article = 'quickstart' } = useSearch({ from: '/docs/' })
+  const { section, article } = useSearch({ from: '/docs/' })
   const { access } = useRouteContext({ from: '/docs/' })
   const userID = useAuthStore((state) => state.auth.user?.id)
   const sessionID = useAuthStore((state) => state.auth.session?.sid)
-  const manual = useAdminManualAccess()
-  const allowed = access.enabled && (!access.requireAuth || !!userID)
+  const role = useAuthStore((state) => state.auth.user?.role ?? 0)
+  const hasToken = useAuthStore((state) => !!state.auth.accessToken)
+  const isAdmin = hasToken && role >= ROLE.ADMIN
+  const allowed =
+    access.enabled &&
+    (!access.requireAuth || !!userID) &&
+    (section !== 'admin' || isAdmin)
   const docs = useQuery({
-    queryKey: ['api-docs', userID ?? null, sessionID ?? null],
-    queryFn: async () => {
+    queryKey: [
+      'api-docs',
+      section ?? 'api',
+      userID ?? null,
+      sessionID ?? null,
+      role,
+    ],
+    queryFn: async ({ signal }) => {
       const response = await api.get<{ success: boolean; data: APIDocument[] }>(
-        '/api/docs',
-        { skipErrorHandler: true }
+        section === 'admin' ? '/api/docs/admin' : '/api/docs',
+        { signal, disableDuplicate: true, skipErrorHandler: true }
       )
       return response.data.data
     },
     enabled: allowed,
     gcTime: 0,
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
     retry: false,
   })
   return (
     <DocumentationReader
+      key={section ?? 'api'}
       query={docs}
-      article={article}
-      to='/docs'
+      article={article ?? (section === 'admin' ? 'overview' : 'quickstart')}
+      section={section}
       allowed={allowed}
-      manualAvailable={manual.available}
+      manualAvailable={isAdmin}
     />
   )
 }

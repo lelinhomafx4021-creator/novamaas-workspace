@@ -52,10 +52,7 @@ const DirectoryLink = createLink(
   }
 )
 
-export function Document(props: {
-  content: string
-  to?: '/docs' | '/admin-manual'
-}) {
+export function Document(props: { content: string; section?: 'admin' }) {
   const { t } = useTranslation()
   const hash = useLocation({ select: (location) => location.hash })
   const blocks = useMemo(() => {
@@ -185,7 +182,7 @@ export function Document(props: {
                 )}
               >
                 <Link
-                  to={props.to ?? '/docs'}
+                  to='/docs'
                   search={(previous) => previous}
                   hash={anchor}
                   onClick={() => setActiveAnchor(anchor)}
@@ -245,7 +242,7 @@ export function Document(props: {
                 key={position}
                 role='region'
                 aria-label={
-                  props.to === '/admin-manual'
+                  props.section === 'admin'
                     ? t('Administrator manual')
                     : t('API documentation')
                 }
@@ -283,7 +280,7 @@ export function Document(props: {
           {headings.map(({ token, anchor }) => (
             <DirectoryLink
               key={anchor}
-              to={props.to ?? '/docs'}
+              to='/docs'
               search={(previous) => previous}
               hash={anchor}
               activeOptions={{ includeHash: true }}

@@ -35,7 +35,6 @@ func AllOption() ([]*Option, error) {
 func InitOptionMap() {
 	common.OptionMapRWMutex.Lock()
 	common.OptionMap = make(map[string]string)
-	common.OptionMap[AdminManualEnabledOptionKey] = "false"
 
 	// 添加原有的系统配置
 	common.OptionMap["FileUploadPermission"] = strconv.Itoa(common.FileUploadPermission)
@@ -215,9 +214,6 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
-	if key == AdminManualEnabledOptionKey && value != "true" && value != "false" {
-		return errors.New("AdminManualEnabled must be true or false")
-	}
 	if key == "OperatingEntityName" {
 		if utf8.RuneCountInString(strings.TrimSpace(value)) > 120 {
 			return errors.New("operating entity name exceeds 120 characters")

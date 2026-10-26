@@ -134,7 +134,6 @@ export type SystemTaskListResponse = {
 }
 
 export type SiteSettings = {
-  AdminManualEnabled: boolean
   Notice: string
   SystemName: string
   Logo: string

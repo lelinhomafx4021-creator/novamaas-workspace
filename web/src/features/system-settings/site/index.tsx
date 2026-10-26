@@ -25,7 +25,6 @@ import {
 } from './section-registry.tsx'
 
 const defaultSiteSettings: SiteSettings = {
-  AdminManualEnabled: false,
   Notice: '',
   SystemName: 'New API',
   Logo: '',

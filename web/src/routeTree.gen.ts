@@ -30,7 +30,6 @@ import { Route as AuthenticatedChat2linkRouteImport } from './routes/_authentica
 import { Route as AuthenticatedRequestSnapshotsRouteImport } from './routes/_authenticated/request-snapshots'
 import { Route as AuthenticatedSystemSettingsRouteRouteImport } from './routes/_authenticated/system-settings/route'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
-import { Route as AdminManualIndexRouteImport } from './routes/admin-manual/index'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
 import { Route as PricingIndexRouteImport } from './routes/pricing/index'
@@ -179,11 +178,6 @@ const AuthenticatedSystemSettingsRouteRoute =
 const AboutIndexRoute = AboutIndexRouteImport.update({
   id: '/about/',
   path: '/about/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminManualIndexRoute = AdminManualIndexRouteImport.update({
-  id: '/admin-manual/',
-  path: '/admin-manual/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsIndexRoute = DocsIndexRouteImport.update({
@@ -462,7 +456,6 @@ export interface FileRoutesByFullPath {
   '/request-snapshots': typeof AuthenticatedRequestSnapshotsRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
-  '/admin-manual/': typeof AdminManualIndexRoute
   '/docs/': typeof DocsIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
@@ -527,7 +520,6 @@ export interface FileRoutesByTo {
   '/request-snapshots': typeof AuthenticatedRequestSnapshotsRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/about': typeof AboutIndexRoute
-  '/admin-manual': typeof AdminManualIndexRoute
   '/docs': typeof DocsIndexRoute
   '/pricing': typeof PricingIndexRoute
   '/rankings': typeof RankingsIndexRoute
@@ -596,7 +588,6 @@ export interface FileRoutesById {
   '/_authenticated/request-snapshots': typeof AuthenticatedRequestSnapshotsRoute
   '/oauth/$provider': typeof OauthProviderRoute
   '/about/': typeof AboutIndexRoute
-  '/admin-manual/': typeof AdminManualIndexRoute
   '/docs/': typeof DocsIndexRoute
   '/pricing/': typeof PricingIndexRoute
   '/rankings/': typeof RankingsIndexRoute
@@ -664,7 +655,6 @@ export interface FileRouteTypes {
     | '/request-snapshots'
     | '/oauth/$provider'
     | '/about/'
-    | '/admin-manual/'
     | '/docs/'
     | '/pricing/'
     | '/rankings/'
@@ -729,7 +719,6 @@ export interface FileRouteTypes {
     | '/request-snapshots'
     | '/oauth/$provider'
     | '/about'
-    | '/admin-manual'
     | '/docs'
     | '/pricing'
     | '/rankings'
@@ -797,7 +786,6 @@ export interface FileRouteTypes {
     | '/_authenticated/request-snapshots'
     | '/oauth/$provider'
     | '/about/'
-    | '/admin-manual/'
     | '/docs/'
     | '/pricing/'
     | '/rankings/'
@@ -856,7 +844,6 @@ export interface RootRouteChildren {
   errors503Route: typeof errors503Route
   OauthProviderRoute: typeof OauthProviderRoute
   AboutIndexRoute: typeof AboutIndexRoute
-  AdminManualIndexRoute: typeof AdminManualIndexRoute
   DocsIndexRoute: typeof DocsIndexRoute
   PricingIndexRoute: typeof PricingIndexRoute
   RankingsIndexRoute: typeof RankingsIndexRoute
@@ -1011,13 +998,6 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about/'
       preLoaderRoute: typeof AboutIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin-manual/': {
-      id: '/admin-manual/'
-      path: '/admin-manual'
-      fullPath: '/admin-manual/'
-      preLoaderRoute: typeof AdminManualIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/': {
@@ -1490,7 +1470,6 @@ const rootRouteChildren: RootRouteChildren = {
   errors503Route: errors503Route,
   OauthProviderRoute: OauthProviderRoute,
   AboutIndexRoute: AboutIndexRoute,
-  AdminManualIndexRoute: AdminManualIndexRoute,
   DocsIndexRoute: DocsIndexRoute,
   PricingIndexRoute: PricingIndexRoute,
   RankingsIndexRoute: RankingsIndexRoute,

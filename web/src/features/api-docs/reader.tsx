@@ -50,7 +50,7 @@ const GATEWAY_URL = 'https://gateway.ai.shilijia.xyz'
 type DocumentationReaderProps = {
   query: UseQueryResult<APIDocument[]>
   article: string
-  to: '/docs' | '/admin-manual'
+  section?: 'admin'
   allowed: boolean
   manualAvailable: boolean
 }
@@ -62,7 +62,7 @@ export function DocumentationReader(props: DocumentationReaderProps) {
   const docs = props.query
   const article = props.article
   const allowed = props.allowed
-  const manual = props.to === '/admin-manual'
+  const manual = props.section === 'admin'
   const sectionLabel = manual
     ? t('Administrator manual')
     : t('API documentation')
@@ -92,15 +92,20 @@ export function DocumentationReader(props: DocumentationReaderProps) {
 
   let content: ReactNode
   if (!allowed || docs.isError) {
+    let reason = t('Request failed')
+    if (!allowed) {
+      reason = t('The documentation may be disabled or require login.')
+      if (manual && !props.manualAvailable) {
+        reason = t('Administrator access required')
+      }
+    }
     content = (
       <div role='alert' className='space-y-4 rounded-xl border p-6'>
         <h1 className='text-xl font-semibold'>
           {t('Documentation unavailable')}
         </h1>
         <p className='text-muted-foreground text-sm'>
-          {!allowed
-            ? t('The documentation may be disabled or require login.')
-            : t('Request failed')}
+          {reason}
           {allowed &&
             isAxiosError(docs.error) &&
             docs.error.response &&
@@ -127,8 +132,11 @@ export function DocumentationReader(props: DocumentationReaderProps) {
       <div role='alert' className='space-y-4'>
         <h1 className='text-xl font-semibold'>{t('Document not found')}</h1>
         <Link
-          to={props.to}
-          search={{ article: manual ? 'overview' : 'quickstart' }}
+          to='/docs'
+          search={{
+            section: props.section,
+            article: manual ? 'overview' : 'quickstart',
+          }}
         >
           {t('Quick start')}
         </Link>
@@ -182,15 +190,15 @@ export function DocumentationReader(props: DocumentationReaderProps) {
             </section>
           )}
         </header>
-        <Document content={selected.content} to={props.to} />
+        <Document content={selected.content} section={props.section} />
         <footer className='border-border/60 mt-14 grid grid-cols-2 gap-4 border-t pt-8 text-sm'>
           {[previous, next].map(
             (neighbor, index) =>
               neighbor && (
                 <Link
                   key={neighbor.id}
-                  to={props.to}
-                  search={{ article: neighbor.id }}
+                  to='/docs'
+                  search={{ section: props.section, article: neighbor.id }}
                   className={cn(
                     'group flex flex-col justify-between gap-2.5 rounded-xl border border-border/70 bg-card/60 p-4 transition-all duration-200 hover:border-primary/50 hover:bg-muted/40 hover:shadow-xs',
                     index === 1 && 'col-start-2 text-right'
@@ -235,6 +243,7 @@ export function DocumentationReader(props: DocumentationReaderProps) {
         >
           <Link
             to='/docs'
+            search={{}}
             aria-current={!manual ? 'page' : undefined}
             className={cn(
               'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
@@ -247,7 +256,8 @@ export function DocumentationReader(props: DocumentationReaderProps) {
           </Link>
           {props.manualAvailable && (
             <Link
-              to='/admin-manual'
+              to='/docs'
+              search={{ section: 'admin' }}
               aria-current={manual ? 'page' : undefined}
               className={cn(
                 'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
@@ -322,8 +332,8 @@ export function DocumentationReader(props: DocumentationReaderProps) {
                   return (
                     <Link
                       key={doc.id}
-                      to={props.to}
-                      search={{ article: doc.id }}
+                      to='/docs'
+                      search={{ section: props.section, article: doc.id }}
                       onClick={() => setMenuOpen(false)}
                       aria-current={isActive ? 'page' : undefined}
                       className={cn(
